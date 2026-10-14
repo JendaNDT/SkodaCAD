@@ -136,9 +136,11 @@ def slot_errors(monkeypatch):
 @pytest.fixture
 def no_dialogs(monkeypatch):
     """Dialogy by v testu čekaly na kliknutí – nahradíme je zrušením / zavřením."""
-    from PySide6.QtWidgets import QFileDialog, QMessageBox
+    from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
     shown = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("", False))
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: ("", ""))
     for name in ("information", "about", "warning", "critical"):
@@ -214,3 +216,178 @@ def test_every_action_runs_without_error(window, slot_errors, no_dialogs):
         item.trigger()
     assert slot_errors == []
     assert {"information", "about"} <= set(no_dialogs)  # Ovládání a O aplikaci se ukázaly
+
+
+# --- tvorba a úpravy dílu v okně ---------------------------------------------------------
+
+
+@pytest.fixture
+def empty_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    action(w, "Nový").trigger()
+    yield w
+    assert slot_errors == [], slot_errors
+    w.session.dirty = False
+    w.close()
+
+
+def selected_text(w):
+    item = w.tree.currentItem()
+    return item.text(0) if item else None
+
+
+def form_field(w, key):
+    return w.feature_editor.form.widget(key)
+
+
+def set_text(widget, text):
+    widget.setText(text)
+    widget.editingFinished.emit()
+
+
+def build_box(w):
+    action(w, "Skica").trigger()
+    action(w, "Vysunutí").trigger()
+
+
+def test_new_part_from_scratch(empty_window):
+    w = empty_window
+    assert w.tree.topLevelItemCount() == 0
+    assert "Vyber prvek" in w.feature_editor.title.text()
+    build_box(w)
+    assert tree_texts(w) == ["✓  Skica „Skica 1“", "✓  Vysunutí „Vysunutí 1“"]
+    assert selected_text(w) == "✓  Vysunutí „Vysunutí 1“"  # nový prvek je hned vybraný
+    assert "Vysunutí" in w.feature_editor.title.text()
+    assert "Objem:  12 000 mm³" in w.props_label.text()
+    assert w.viewer.parts[-1][0] is not None
+
+
+def test_edit_feature_value_in_form(empty_window):
+    w = empty_window
+    build_box(w)
+    set_text(form_field(w, "distance"), "2 * 12,5".replace(",", "."))
+    assert "Rozměry:  40.00 × 30.00 × 25.00 mm" in w.props_label.text()
+    set_text(form_field(w, "distance"), "7,5")  # desetinná čárka
+    assert "× 7.50 mm" in w.props_label.text()
+
+
+def test_invalid_form_value_is_red_and_model_unchanged(empty_window):
+    w = empty_window
+    build_box(w)
+    action(w, "Zaoblení").trigger()
+    radius = form_field(w, "radius")
+    set_text(radius, "")
+    assert "c0392b" in radius.styleSheet()
+    assert "povinná" in w.statusBar().currentMessage()
+    assert w.session.feature("fillet1")["radius"] == 2
+    set_text(radius, "1")
+    assert radius.styleSheet() == ""
+    assert w.session.feature("fillet1")["radius"] == 1
+
+
+def test_cut_with_choice_field(empty_window):
+    w = empty_window
+    build_box(w)
+    action(w, "Skica").trigger()  # druhá skica – automaticky na horní ploše
+    sketch = w.session.feature("sketch2")
+    assert sketch["plane"] == "top"
+    action(w, "Vysunutí").trigger()
+    operation = form_field(w, "operation")
+    operation.setCurrentIndex(operation.findData("cut"))
+    assert w.session.feature("extrude2")["operation"] == "cut"
+    assert w.session.result.ok
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - math.pi * 25 * 10)
+
+
+def test_shapes_editor_adds_hole(empty_window):
+    w = empty_window
+    build_box(w)
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))  # vybrat skicu
+    shapes = form_field(w, "elements")
+    shapes.add_shape("circle")
+    assert [e["shape"] for e in w.session.feature("sketch1")["elements"]] == ["rectangle",
+                                                                             "circle"]
+    mode = shapes._form.widget("mode")
+    mode.setCurrentIndex(mode.findData("subtract"))
+    assert w.session.feature("sketch1")["elements"][1]["mode"] == "subtract"
+    assert w.session.properties.volume_mm3 == pytest.approx(
+        (40 * 30 - math.pi * 10**2) * 10, rel=1e-6)
+    assert shapes.list.item(1).text() == "Kružnice (odečíst)"
+
+
+def test_delete_move_and_undo(empty_window, no_dialogs):
+    w = empty_window
+    build_box(w)
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))
+    action(w, "Smazat prvek").trigger()  # skicu používá vysunutí → jen varování
+    assert "warning" in no_dialogs
+    assert w.tree.topLevelItemCount() == 2
+
+    w.tree.setCurrentItem(w.tree.topLevelItem(1))
+    action(w, "Posunout nahoru").trigger()
+    assert tree_texts(w)[0].startswith("✕  Vysunutí")  # vysunutí před skicou nejde
+    assert w.error_label.isVisibleTo(w)
+
+    action(w, "Zpět").trigger()
+    assert all(text.startswith("✓") for text in tree_texts(w))
+    action(w, "Znovu").trigger()
+    assert tree_texts(w)[0].startswith("✕")
+    action(w, "Zpět").trigger()
+
+    w.tree.setCurrentItem(w.tree.topLevelItem(1))
+    action(w, "Smazat prvek").trigger()
+    assert tree_texts(w) == ["✓  Skica „Skica 1“"]
+    assert selected_text(w) == "✓  Skica „Skica 1“"
+
+
+def test_undo_redo_enabled_states(empty_window):
+    w = empty_window
+    assert not action(w, "Zpět").isEnabled()
+    action(w, "Skica").trigger()
+    assert action(w, "Zpět").isEnabled() and not action(w, "Znovu").isEnabled()
+    action(w, "Zpět").trigger()
+    assert w.tree.topLevelItemCount() == 0
+    assert action(w, "Znovu").isEnabled()
+
+
+def test_add_and_delete_parameter(empty_window, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    w = empty_window
+    answers = iter([("sirka", True), ("55", True)])
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
+    action(w, "Přidat parametr…").trigger()
+    assert w._param_fields["sirka"].text() == "55"
+
+    build_box(w)
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))
+    shapes = form_field(w, "elements")
+    set_text(shapes._form.widget("width"), "sirka")
+    assert "Rozměry:  55.00 × 30.00" in w.props_label.text()
+
+    set_text(w._param_fields["sirka"], "60")
+    assert "Rozměry:  60.00 × 30.00" in w.props_label.text()
+
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("sirka", True))
+    action(w, "Smazat parametr…").trigger()  # používá ho skica → jen varování
+    assert "sirka" in w._param_fields
+
+
+def test_part_name_and_material(empty_window):
+    w = empty_window
+    build_box(w)
+    set_text(w.name_edit, "Držák senzoru")
+    assert w.windowTitle().startswith("*Držák senzoru")
+    combo = w.material_combo
+    combo.setCurrentIndex(combo.findData("hliník"))
+    assert w.session.document.material == "hliník"
+    assert "(hliník)" in w.props_label.text()
+    action(w, "Zpět").trigger()
+    assert w.material_combo.currentData() == "ocel"
+
+
+def test_example_material_is_shown(window):
+    assert window.material_combo.currentData() == "ocel"
+    window.session.dirty = False
+    action(window, "krabicka").trigger()
+    assert window.material_combo.currentData() == "PETG"

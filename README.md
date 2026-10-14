@@ -36,6 +36,23 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 Neplatná hodnota parametru se zbarví červeně a model zůstane beze změny. Když některý
 prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
 
+### Vlastní díl od nuly
+
+1. **Soubor → Nový**, vlevo nahoře vyplň název a materiál.
+2. **Přidat prvek → Skica**: na rovině XY vznikne obdélník 40 × 30. Vpravo v panelu
+   *Úprava prvku* změň rozměry, přidej další tvary (*Přidat tvar*) – otvor je tvar
+   s režimem *odečíst*.
+3. **Přidat prvek → Vysunutí**: ze skici vznikne těleso, vpravo nastav vzdálenost.
+4. Díra nebo výstupek: další **Skica** se sama položí na horní plochu dílu (kružnice Ø10),
+   pak **Vysunutí** s operací *odebrat materiál* a případně *Řez skrz celý díl*.
+5. **Zaoblení / Sražení**: hrany se vybírají popisem („na horní ploše“, „rovnoběžné s osou Z“,
+   „poloměr 9“) – výběr tak platí i po změně rozměrů.
+6. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
+   pole (např. `sirka` nebo `sirka/2 - 5`).
+
+Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
+se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
+
 Do složky **`SkodaCAD`** ve tvém uživatelském profilu (`C:\Users\<jméno>\SkodaCAD`) se
 zapisuje soubor `skodacad.log` – při potížích ho pošli, je v něm popis chyby.
 

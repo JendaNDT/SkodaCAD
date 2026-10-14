@@ -18,11 +18,27 @@ DENSITIES_G_CM3 = {
 }
 
 
-def _key(name: str) -> str:
+# Jak se materiál ukáže v okně (a uloží do modelu).
+DISPLAY_NAMES = {
+    "ocel": "ocel",
+    "nerez": "nerez",
+    "litina": "litina",
+    "hlinik": "hliník",
+    "mosaz": "mosaz",
+    "med": "měď",
+    "titan": "titan",
+    "pla": "PLA",
+    "petg": "PETG",
+    "abs": "ABS",
+}
+
+
+def material_key(name: str) -> str:
+    """„Hliník“ → „hlinik“ (bez diakritiky, malá písmena)."""
     without_accents = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return without_accents.strip().lower()
 
 
 def density_g_cm3(material: str) -> float | None:
     """Hustota materiálu; diakritika a velikost písmen nevadí („Hliník“ = „hlinik“)."""
-    return DENSITIES_G_CM3.get(_key(material))
+    return DENSITIES_G_CM3.get(material_key(material))

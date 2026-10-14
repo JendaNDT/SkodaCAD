@@ -59,6 +59,7 @@ class Field:
     required: bool = True
     choices: tuple[tuple[str, str], ...] = ()
     help: str = ""
+    default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,7 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
         Schema("revolve", "Rotace", (
             _NAME,
             Field("sketch", "Skica", "sketch"),
-            Field("axis", "Osa rotace", "choice", required=False, choices=AXIS_CHOICES),
+            Field("axis", "Osa rotace", "choice", choices=AXIS_CHOICES, default="Z"),
             Field("angle", "Úhel [°]", "number", required=False),
             Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
         ), "Orotuje skicu kolem osy (skica musí ležet v rovině s osou)."),
@@ -117,7 +118,7 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
 }
 
 _COMMON_SHAPE_FIELDS = (
-    Field("mode", "Režim", "choice", required=False, choices=MODE_CHOICES),
+    Field("mode", "Režim", "choice", choices=MODE_CHOICES, default="add"),
     Field("center", "Střed [x, y]", "point", required=False),
     Field("angle", "Natočení [°]", "number", required=False),
 )
@@ -198,7 +199,11 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     }
 
     if feature_type == "sketch":
-        feature.update(plane="top" if has_solid else "XY", elements=[new_shape("rectangle")])
+        # Na ploše hotového dílu spíš otvor/výstupek než obdélník přes celý díl.
+        shape = new_shape("circle") if has_solid else new_shape("rectangle")
+        if has_solid:
+            shape["diameter"] = 10
+        feature.update(plane="top" if has_solid else "XY", elements=[shape])
     elif feature_type == "extrude":
         if sketches:
             feature["sketch"] = sketches[-1]

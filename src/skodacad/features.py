@@ -93,6 +93,10 @@ class BuildContext:
                     f"{label}: řez neodebral žádný materiál – zkontroluj rovinu skici, "
                     "směr („direction“) a hloubku."
                 )
+            if result.volume < 1e-9 * max(1.0, part.volume):
+                raise FeatureError(
+                    f"{label}: řez by odebral celý díl – zmenši skicu nebo hloubku řezu."
+                )
             self.part = result
         else:
             raise FeatureError(f"Neznámá operace „{operation}“, povolené: new, add, cut.")

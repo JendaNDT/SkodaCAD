@@ -39,10 +39,12 @@
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
 | `cli.py` | příkazová řádka `skodacad build` |
-| `session.py` | `ModelSession` – otevřený model: změna parametru, uložení, export (bez Qt) |
+| `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt) |
+| `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
-| `gui/main_window.py` | hlavní okno: parametry, strom prvků, vlastnosti, menu |
+| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu |
+| `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
 
@@ -63,6 +65,10 @@
    `gui/viewer.py`, který OCCT používá jen ke kreslení a výběru.
 9. Okno se testuje dvakrát: `tests/test_gui.py` (offscreen, náhradní prohlížeč) a skutečně
    pod Xvfb snímkem okna. Změnu vzhledu ukaž uživateli snímkem.
+10. Každá úprava modelu z okna jde přes metodu `ModelSession` (→ `_change`), aby fungovalo
+    Zpět/Znovu a neplatná úprava model nepoškodila.
+11. Testy okna s dialogem (`QInputDialog`, `QMessageBox`, `QFileDialog`) musí dialog nahradit
+    (fixture `no_dialogs`), jinak test čeká navždy. Testy okna pouštěj s `timeout`.
 
 ## Příkazy
 
@@ -104,8 +110,10 @@
 
 1. Funkce v `features.py` s dekorátorem `@feature("typ", "Český název")`.
 2. Číselné hodnoty čti přes `ctx.num` / `ctx.positive` (umí výrazy), chyby hlas `FeatureError`.
-3. Test v `tests/test_features.py` s očekávaným objemem podle vzorce.
-4. Doplň tabulku prvků v README.md.
+3. Pole prvku popiš v `schema.py` (`FEATURE_SCHEMAS`) a doplň výchozí hodnoty v `new_feature`
+   – podle toho okno postaví formulář (test `test_schema.py` hlídá shodu s jádrem).
+4. Test v `tests/test_features.py` s očekávaným objemem podle vzorce.
+5. Doplň tabulku prvků v README.md.
 
 ## Plán
 
@@ -115,7 +123,9 @@
   závity podle strojnických tabulek, pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
-- [ ] **Fáze 2b** – úprava prvků ve stromu, převod kliknutí na sémantický výběr hran
-  (např. „zaobli tuhle hranu“), přepočet na pozadí, nový model od nuly.
+- [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun
+  prvků, parametry, název a materiál, Zpět/Znovu.
+- [ ] **Fáze 2c** – převod kliknutí na hranu/plochu na sémantický výběr (např. „zaobli tuhle
+  hranu“, „skicuj na téhle ploše“), přepočet na pozadí u pomalých modelů.
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

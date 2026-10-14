@@ -46,6 +46,7 @@ jobs:
         run: ruff check src tests
 
       - name: Testy
+        timeout-minutes: 10  # zaseknutý dialog v testu nesmí blokovat celé sestavení
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
