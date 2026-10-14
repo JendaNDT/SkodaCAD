@@ -1,0 +1,108 @@
+# Sestavení ŠkodaCAD pro Windows: testy → SkodaCAD.exe → kontroly → ke stažení.
+# Druhá úloha si stáhne přesně ten balíček, který dostane uživatel, a zkontroluje ho znovu.
+# Z větve main se navíc zveřejní jako vydání „nejnovejsi“ (stránka Releases).
+name: Windows aplikace
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUTF8: "1"  # Windows konzole jinak neumí vypsat českou diakritiku
+
+jobs:
+  sestaveni:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui,build]" pefile
+
+      - name: Kontrola kódu
+        run: ruff check src tests
+
+      - name: Testy
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Sestavení SkodaCAD.exe
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+
+      - name: Kontrola knihoven DLL (čistý Windows)
+        run: python packaging/check_dlls.py dist/SkodaCAD
+
+      # Artefakt GitHub sám zabalí do ZIPu – nahrává se složka, ať se rozbaluje jen jednou.
+      # include-hidden-files: bez toho by chyběly složky začínající tečkou (např. sklearn/.libs).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkodaCAD-windows
+          path: dist/
+          include-hidden-files: true
+          retention-days: 7
+
+  kontrola-stazeni:
+    needs: sestaveni
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SkodaCAD-windows
+          path: stazeno
+
+      - name: Self-test staženého balíčku
+        timeout-minutes: 5
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/skodacad-home
+        run: |
+          set +e
+          ./stazeno/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt || echo "Zpráva self-testu nevznikla"
+          exit $code
+
+      - name: Zabalení do ZIP pro vydání (jen z main)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: Compress-Archive -Path stazeno/SkodaCAD -DestinationPath SkodaCAD-windows.zip
+
+      - name: Zveřejnění ke stažení (jen z main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete nejnovejsi --yes --cleanup-tag || true
+          gh release create nejnovejsi SkodaCAD-windows.zip \
+            --target "${{ github.sha }}" \
+            --title "ŠkodaCAD – nejnovější verze pro Windows" \
+            --notes "Sestaveno automaticky z commitu ${{ github.sha }}. Stáhni SkodaCAD-windows.zip, rozbal a spusť SkodaCAD.exe ve složce SkodaCAD." \
+            --latest
