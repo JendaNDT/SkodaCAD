@@ -1,0 +1,61 @@
+{
+  "format": "skodacad",
+  "version": 1,
+  "name": "Odstupňovaný hřídel",
+  "description": "Ukázka rotačního dílu. Profil se nakreslí do roviny XZ (x = poloměr, y = výška) a orotuje kolem osy Z. d1..d3 = průměry, l1..l3 = délky stupňů, s = sražení konců.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "d1": 30,
+    "l1": 40,
+    "d2": 40,
+    "l2": 60,
+    "d3": 25,
+    "l3": 35,
+    "s": 1.5
+  },
+  "features": [
+    {
+      "id": "profil",
+      "name": "Polovina profilu",
+      "type": "sketch",
+      "plane": "XZ",
+      "elements": [
+        {
+          "shape": "polygon",
+          "points": [
+            [0, 0],
+            ["d1/2", 0],
+            ["d1/2", "l1"],
+            ["d2/2", "l1"],
+            ["d2/2", "l1 + l2"],
+            ["d3/2", "l1 + l2"],
+            ["d3/2", "l1 + l2 + l3"],
+            [0, "l1 + l2 + l3"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hridel",
+      "name": "Rotace profilu",
+      "type": "revolve",
+      "sketch": "profil",
+      "axis": "Z"
+    },
+    {
+      "id": "sraz_horni",
+      "name": "Sražení horního konce",
+      "type": "chamfer",
+      "edges": {"face": "top", "type": "circle"},
+      "distance": "s"
+    },
+    {
+      "id": "sraz_spodni",
+      "name": "Sražení spodního konce",
+      "type": "chamfer",
+      "edges": {"face": "bottom", "type": "circle"},
+      "distance": "s"
+    }
+  ]
+}

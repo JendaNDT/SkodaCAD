@@ -1,0 +1,65 @@
+{
+  "format": "skodacad",
+  "version": 1,
+  "name": "Krabička pro 3D tisk",
+  "description": "Ukázka pro 3D tisk. L × W × H = vnější rozměry, r = zaoblení svislých rohů, stena = tloušťka stěny, dira = průměr otvoru na kabel v přední stěně.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {
+    "L": 80,
+    "W": 50,
+    "H": 30,
+    "r": 6,
+    "stena": 2,
+    "dira": 8
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "name": "Obrys krabičky",
+      "type": "sketch",
+      "plane": "XY",
+      "elements": [
+        {"shape": "rectangle", "width": "L", "height": "W", "corner_radius": "r"}
+      ]
+    },
+    {
+      "id": "kvadr",
+      "name": "Plné těleso",
+      "type": "extrude",
+      "sketch": "obrys",
+      "distance": "H"
+    },
+    {
+      "id": "dno_zaobleni",
+      "name": "Zaoblení dna",
+      "type": "fillet",
+      "edges": {"face": "bottom"},
+      "radius": 3
+    },
+    {
+      "id": "vydlabani",
+      "name": "Vydlabání (otevřená horní strana)",
+      "type": "shell",
+      "thickness": "stena",
+      "open_faces": ["top"]
+    },
+    {
+      "id": "otvor_skica",
+      "name": "Otvor na kabel",
+      "type": "sketch",
+      "plane": "front",
+      "elements": [
+        {"shape": "circle", "diameter": "dira", "center": [0, "H/2"]}
+      ]
+    },
+    {
+      "id": "otvor",
+      "name": "Vyříznutí otvoru",
+      "type": "extrude",
+      "sketch": "otvor_skica",
+      "operation": "cut",
+      "distance": "stena + 1"
+    }
+  ]
+}

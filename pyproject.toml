@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skodacad"
+version = "0.1.0"
+description = "Osobní parametrický 3D CAD postavený na build123d / Open CASCADE"
+readme = "README.md"
+requires-python = ">=3.11"
+# Verze jádra je zamčená, aby AI negenerovala kód pro jiné API (viz CLAUDE.md).
+dependencies = ["build123d==0.13.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+skodacad = "skodacad.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
