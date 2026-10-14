@@ -13,9 +13,14 @@ dependencies = ["build123d==0.13.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+gui = ["PySide6==6.11.2"]
+build = ["pyinstaller==6.22.3"]
 
 [project.scripts]
 skodacad = "skodacad.cli:main"
+
+[project.gui-scripts]
+skodacad-gui = "skodacad.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -56,6 +56,12 @@ class ModelSession:
         self.dirty = False
         return self.rebuild()
 
+    def open_template(self, path: str | Path) -> BuildResult:
+        """Otevře model jako předlohu (ukázku): „Uložit“ se zeptá na nový soubor."""
+        result = self.open(path)
+        self.path = None
+        return result
+
     def rebuild(self) -> BuildResult:
         if self.document is None:
             raise DocumentError("Není otevřený žádný model.")

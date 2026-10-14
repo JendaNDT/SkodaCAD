@@ -91,6 +91,16 @@ def test_save_writes_changed_parameter(session, tmp_path):
     assert session.path == copy_path and copy_path.exists()
 
 
+def test_template_does_not_overwrite_example(examples_dir, tmp_path):
+    s = ModelSession()
+    s.open_template(examples_dir / "priruba.json")
+    assert s.path is None
+    assert "(nový model)" in s.title
+    with pytest.raises(DocumentError, match="Uložit jako"):
+        s.save()
+    assert s.save(tmp_path / "moje.json").exists()
+
+
 def test_export(session, tmp_path):
     path = session.export(tmp_path / "priruba.step")
     assert path.stat().st_size > 0
