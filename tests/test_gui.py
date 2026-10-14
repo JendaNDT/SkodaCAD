@@ -117,3 +117,100 @@ def test_selection_shows_in_status_bar(window):
     assert window.statusBar().currentMessage() == "Plocha – rovinná"
     window.viewer.selection_changed.emit("")
     assert "otáčení" in window.statusBar().currentMessage()
+
+
+# --- tlačítka a položky menu -----------------------------------------------------------
+# Každá akce se opravdu „stiskne“. Chyba uvnitř akce by v Qt jen tiše skončila v
+# sys.excepthook, proto ji fixture slot_errors zachytí a test pak selže.
+
+
+@pytest.fixture
+def slot_errors(monkeypatch):
+    import sys
+
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda kind, value, tb: errors.append(value))
+    return errors
+
+
+@pytest.fixture
+def no_dialogs(monkeypatch):
+    """Dialogy by v testu čekaly na kliknutí – nahradíme je zrušením / zavřením."""
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    shown = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: ("", ""))
+    for name in ("information", "about", "warning", "critical"):
+        monkeypatch.setattr(QMessageBox, name, lambda *a, n=name, **k: shown.append(n))
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: QMessageBox.StandardButton.Discard)
+    return shown
+
+
+def action(window, text):
+    from PySide6.QtGui import QAction
+
+    matches = [a for a in window.findChildren(QAction) if a.text() == text]
+    assert matches, f"akce „{text}“ v okně není"
+    return matches[0]
+
+
+def test_view_buttons_switch_view(window, slot_errors):
+    from skodacad.gui.viewer_views import VIEW_LABELS
+
+    for key, (label, _shortcut) in VIEW_LABELS.items():
+        action(window, label).trigger()
+        assert window.viewer.views[-1] == key
+    action(window, "Celý díl").trigger()
+    assert window.viewer.views[-1] == "fit"
+    assert slot_errors == []
+
+
+def test_examples_menu_items_open_examples(window, slot_errors):
+    for stem, title in (("krabicka", "Krabička"), ("hridel", "hřídel"), ("priruba", "příruba")):
+        window.session.dirty = False
+        action(window, stem).trigger()
+        assert title in window.windowTitle()
+        assert window.session.path is None
+    assert slot_errors == []
+
+
+@pytest.mark.parametrize("fmt", ["step", "stl", "3mf"])
+def test_export_menu_writes_file(window, slot_errors, monkeypatch, tmp_path, fmt):
+    from PySide6.QtWidgets import QFileDialog
+
+    target = tmp_path / f"export.{fmt}"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    label = next(text for f, text in __import__(
+        "skodacad.gui.main_window", fromlist=["EXPORT_FORMATS"]).EXPORT_FORMATS if f == fmt)
+    action(window, label + "…").trigger()
+    assert target.stat().st_size > 0
+    assert slot_errors == []
+
+
+def test_open_and_save_as_buttons(window, slot_errors, monkeypatch, examples_dir, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        lambda *a, **k: (str(examples_dir / "hridel.json"), ""))
+    action(window, "Otevřít…").trigger()
+    assert "hřídel" in window.windowTitle()
+
+    target = tmp_path / "kopie.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    action(window, "Uložit jako…").trigger()
+    assert target.exists()
+    assert window.session.path == target
+    assert slot_errors == []
+
+
+def test_every_action_runs_without_error(window, slot_errors, no_dialogs):
+    from PySide6.QtGui import QAction
+
+    actions = [a for a in window.findChildren(QAction) if a.text() and a.text() != "Konec"]
+    assert len(actions) >= 15
+    for item in actions:
+        item.trigger()
+    assert slot_errors == []
+    assert {"information", "about"} <= set(no_dialogs)  # Ovládání a O aplikaci se ukázaly

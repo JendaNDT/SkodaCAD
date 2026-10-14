@@ -122,7 +122,9 @@ class MainWindow(QMainWindow):
         action = QAction(text, self)
         if shortcut:
             action.setShortcut(QKeySequence(shortcut))
-        action.triggered.connect(slot)
+        # Signál triggered posílá navíc hodnotu „checked“ (False). Lambda s výchozím parametrem
+        # (lambda k=key: …) by ji dostala místo svého k – proto slot voláme vždy bez argumentů.
+        action.triggered.connect(lambda _checked=False: slot())
         return action
 
     def _build_menus(self) -> None:

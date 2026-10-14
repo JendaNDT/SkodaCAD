@@ -86,6 +86,9 @@
 - Ve Windows se HWND předává OCCT jako PyCapsule (`viewer._as_capsule`).
 - Souřadnice myši z Qt násobit `devicePixelRatioF()` (škálování obrazovky 125–150 %).
 - build123d importuje IPython – v PyInstalleru ho nevynechávat.
+- `QAction.triggered` posílá navíc `checked` (False) – do `lambda k=key: …` by se dostalo
+  místo `k`. Akce zakládej jen přes `MainWindow._action` (volá slot bez argumentů) a každou
+  novou akci pokryj testem, který ji opravdu stiskne (`tests/test_gui.py`).
 
 ## Známé pasti (sestavení pro Windows)
 
