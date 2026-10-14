@@ -87,6 +87,16 @@
 - Souřadnice myši z Qt násobit `devicePixelRatioF()` (škálování obrazovky 125–150 %).
 - build123d importuje IPython – v PyInstalleru ho nevynechávat.
 
+## Známé pasti (sestavení pro Windows)
+
+- `actions/upload-artifact` bez `include-hidden-files: true` vynechá složky s tečkou
+  (`sklearn/.libs` s `vcomp140.dll`) → aplikace u uživatele spadla při startu. Proto úloha
+  `kontrola-stazeni` testuje přesně stažený balíček, ne složku na sestavovacím počítači.
+- Sestavovací počítač GitHubu má Visual C++ Redistributable, uživatel ne. Hlídá to
+  `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
+- Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
+- Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
+
 ## Jak přidat nový prvek
 
 1. Funkce v `features.py` s dekorátorem `@feature("typ", "Český název")`.
