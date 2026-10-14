@@ -34,6 +34,7 @@ def imported_dlls(path: Path) -> list[str]:
 
 
 def main(root: str) -> int:
+    sys.stdout.reconfigure(encoding="utf-8")  # česká diakritika i ve Windows konzoli
     bundle = Path(root)
     files = [p for p in bundle.rglob("*") if p.suffix.lower() in (".dll", ".pyd", ".exe")]
     if not files:

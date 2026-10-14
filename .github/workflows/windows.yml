@@ -21,6 +21,9 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  PYTHONUTF8: "1"  # Windows konzole jinak neumí vypsat českou diakritiku
+
 jobs:
   sestaveni:
     runs-on: windows-latest
