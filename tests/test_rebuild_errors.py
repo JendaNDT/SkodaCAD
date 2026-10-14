@@ -54,6 +54,17 @@ def test_cut_that_misses_the_part_is_reported():
     assert "neodebral žádný materiál" in result.first_error.message
 
 
+def test_cut_removing_whole_part_is_reported():
+    doc = make_doc(box_features(20, 20, 10) + [
+        {"id": "h", "type": "sketch", "plane": "top",
+         "elements": [{"shape": "rectangle", "width": 30, "height": 30}]},
+        {"id": "c", "type": "extrude", "sketch": "h", "operation": "cut", "through_all": True},
+    ])
+    result = rebuild(doc)
+    assert "odebral celý díl" in result.first_error.message
+    assert result.part.volume == pytest.approx(20 * 20 * 10)
+
+
 def test_second_new_body_is_rejected():
     doc = make_doc(box_features() + [
         {"id": "e2", "type": "extrude", "sketch": "s", "distance": 5, "operation": "new"},

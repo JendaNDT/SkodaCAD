@@ -1,0 +1,221 @@
+"""Popis polí každého prvku a tvaru skici – podle něj okno staví formuláře.
+
+Schéma je jediný seznam toho, co který prvek umí. Když přibude nový prvek
+v ``features.py``, musí přibýt i sem (hlídá to test), jinak by ho okno
+neumělo upravit.
+
+Druhy polí (``Field.kind``):
+
+* ``number`` – číslo nebo výraz s parametry („D/2 + 5“)
+* ``choice`` – výběr z možností (``choices``)
+* ``sketch`` – odkaz na dřívější skicu
+* ``bool`` – ano/ne
+* ``faces`` – seznam pojmenovaných ploch dílu (horní, spodní …)
+* ``edges`` – sémantický výběr hran (viz ``selectors.select_edges``)
+* ``point`` – bod [x, y]
+* ``points`` – seznam bodů [[x, y], …]
+* ``shapes`` – seznam tvarů skici
+* ``text`` – obyčejný text
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from skodacad.selectors import FACE_NAMES_CZ
+
+PLANE_CHOICES = (
+    ("XY", "XY – vodorovná rovina"),
+    ("XZ", "XZ – svislá rovina (zepředu)"),
+    ("YZ", "YZ – svislá rovina (zboku)"),
+    ("top", "horní plocha dílu"),
+    ("bottom", "spodní plocha dílu"),
+    ("front", "přední plocha dílu"),
+    ("back", "zadní plocha dílu"),
+    ("right", "pravá plocha dílu"),
+    ("left", "levá plocha dílu"),
+)
+OPERATION_CHOICES = (
+    ("new", "nové těleso"),
+    ("add", "přidat materiál"),
+    ("cut", "odebrat materiál (řez)"),
+)
+DIRECTION_CHOICES = (
+    ("normal", "ven z roviny"),
+    ("reverse", "opačně"),
+    ("both", "symetricky na obě strany"),
+)
+AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
+MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
+FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.items())
+
+
+@dataclass(frozen=True)
+class Field:
+    key: str
+    label: str
+    kind: str
+    required: bool = True
+    choices: tuple[tuple[str, str], ...] = ()
+    help: str = ""
+    default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
+
+
+@dataclass(frozen=True)
+class Schema:
+    type: str
+    label: str
+    fields: tuple[Field, ...]
+    help: str = ""
+
+
+_NAME = Field("name", "Název", "text", required=False)
+
+FEATURE_SCHEMAS: dict[str, Schema] = {
+    schema.type: schema
+    for schema in (
+        Schema("sketch", "Skica", (
+            _NAME,
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+            Field("elements", "Tvary", "shapes"),
+        ), "2D tvary na rovině nebo na ploše dílu."),
+        Schema("extrude", "Vysunutí", (
+            _NAME,
+            Field("sketch", "Skica", "sketch"),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES,
+                  help="Bez volby: první těleso nové, další přidávají materiál."),
+            Field("distance", "Vzdálenost [mm]", "number", required=False,
+                  help="Nepovinné jen při řezu skrz celý díl."),
+            Field("direction", "Směr", "choice", required=False, choices=DIRECTION_CHOICES,
+                  help="Bez volby: ven, u řezu do materiálu."),
+            Field("through_all", "Řez skrz celý díl", "bool", required=False),
+        ), "Vytáhne skicu do prostoru."),
+        Schema("revolve", "Rotace", (
+            _NAME,
+            Field("sketch", "Skica", "sketch"),
+            Field("axis", "Osa rotace", "choice", choices=AXIS_CHOICES, default="Z"),
+            Field("angle", "Úhel [°]", "number", required=False),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
+        ), "Orotuje skicu kolem osy (skica musí ležet v rovině s osou)."),
+        Schema("fillet", "Zaoblení", (
+            _NAME,
+            Field("edges", "Hrany", "edges"),
+            Field("radius", "Poloměr [mm]", "number"),
+        ), "Zaoblí vybrané hrany."),
+        Schema("chamfer", "Sražení", (
+            _NAME,
+            Field("edges", "Hrany", "edges"),
+            Field("distance", "Velikost [mm]", "number"),
+        ), "Srazí vybrané hrany."),
+        Schema("shell", "Skořepina", (
+            _NAME,
+            Field("thickness", "Tloušťka stěny [mm]", "number"),
+            Field("open_faces", "Otevřené plochy", "faces", required=False),
+        ), "Vydlabe díl na danou tloušťku stěny."),
+    )
+}
+
+_COMMON_SHAPE_FIELDS = (
+    Field("mode", "Režim", "choice", choices=MODE_CHOICES, default="add"),
+    Field("center", "Střed [x, y]", "point", required=False),
+    Field("angle", "Natočení [°]", "number", required=False),
+)
+
+SHAPE_SCHEMAS: dict[str, Schema] = {
+    schema.type: schema
+    for schema in (
+        Schema("rectangle", "Obdélník", (
+            Field("width", "Šířka [mm]", "number"),
+            Field("height", "Výška [mm]", "number"),
+            Field("corner_radius", "Zaoblení rohů [mm]", "number", required=False),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+        Schema("circle", "Kružnice", (
+            Field("diameter", "Průměr [mm]", "number"),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+        Schema("circle_pattern", "Díry na roztečné kružnici", (
+            Field("count", "Počet", "number"),
+            Field("pitch_diameter", "Roztečný průměr [mm]", "number"),
+            Field("diameter", "Průměr děr [mm]", "number"),
+            Field("start_angle", "Počáteční úhel [°]", "number", required=False),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+        Schema("regular_polygon", "Pravidelný mnohoúhelník", (
+            Field("sides", "Počet stran", "number"),
+            Field("diameter", "Opsaný průměr [mm]", "number"),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+        Schema("slot", "Drážka", (
+            Field("length", "Rozteč středů [mm]", "number"),
+            Field("width", "Šířka [mm]", "number"),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+        Schema("polygon", "Mnohoúhelník z bodů", (
+            Field("points", "Body", "points"),
+            *_COMMON_SHAPE_FIELDS,
+        )),
+    )
+}
+
+# Výchozí tvary pro nové skici a nově přidané tvary.
+SHAPE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "rectangle": {"shape": "rectangle", "width": 40, "height": 30},
+    "circle": {"shape": "circle", "diameter": 20},
+    "circle_pattern": {"shape": "circle_pattern", "count": 4, "pitch_diameter": 40,
+                       "diameter": 6},
+    "regular_polygon": {"shape": "regular_polygon", "sides": 6, "diameter": 20},
+    "slot": {"shape": "slot", "length": 20, "width": 6},
+    "polygon": {"shape": "polygon", "points": [[0, 0], [30, 0], [0, 20]]},
+}
+
+
+def new_shape(shape_type: str) -> dict[str, Any]:
+    return dict(SHAPE_DEFAULTS[shape_type])
+
+
+def new_feature(feature_type: str, existing: list[dict[str, Any]],
+                index: int | None = None) -> dict[str, Any]:
+    """Nový prvek s rozumnými výchozími hodnotami a jedinečným id.
+
+    ``existing`` je seznam prvků modelu, ``index`` místo, kam se prvek vloží
+    (výchozí: na konec). Podle prvků před ním se volí třeba skica pro vysunutí.
+    """
+    schema = FEATURE_SCHEMAS[feature_type]
+    before = existing if index is None else existing[:index]
+    has_solid = any(f.get("type") in ("extrude", "revolve") for f in before)
+    sketches = [f["id"] for f in before if f.get("type") == "sketch"]
+
+    ids = {f.get("id") for f in existing}
+    number = 1 + sum(1 for f in existing if f.get("type") == feature_type)
+    while f"{feature_type}{number}" in ids:
+        number += 1
+    feature: dict[str, Any] = {
+        "id": f"{feature_type}{number}",
+        "name": f"{schema.label} {number}",
+        "type": feature_type,
+    }
+
+    if feature_type == "sketch":
+        # Na ploše hotového dílu spíš otvor/výstupek než obdélník přes celý díl.
+        shape = new_shape("circle") if has_solid else new_shape("rectangle")
+        if has_solid:
+            shape["diameter"] = 10
+        feature.update(plane="top" if has_solid else "XY", elements=[shape])
+    elif feature_type == "extrude":
+        if sketches:
+            feature["sketch"] = sketches[-1]
+        feature["distance"] = 10
+    elif feature_type == "revolve":
+        if sketches:
+            feature["sketch"] = sketches[-1]
+        feature["axis"] = "Z"
+    elif feature_type == "fillet":
+        feature.update(edges={"face": "top"}, radius=2)
+    elif feature_type == "chamfer":
+        feature.update(edges={"face": "top"}, distance=1)
+    elif feature_type == "shell":
+        feature.update(thickness=2, open_faces=["top"])
+    return feature

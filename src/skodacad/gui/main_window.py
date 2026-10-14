@@ -1,4 +1,5 @@
-"""Hlavní okno: 3D prohlížeč uprostřed, vlevo parametry, strom prvků a vlastnosti.
+"""Hlavní okno: 3D prohlížeč uprostřed, vlevo díl, parametry, strom prvků a vlastnosti,
+vpravo úprava vybraného prvku.
 
 Okno nikdy nemodeluje samo – všechno jde přes ``ModelSession`` (jádro).
 """
@@ -13,15 +14,20 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDockWidget,
     QFileDialog,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QScrollArea,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -29,8 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.features import describe
+from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
+from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
+from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.session import ModelSession, format_parameter_value
 
 log = logging.getLogger(__name__)
@@ -41,6 +51,7 @@ HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé: posun  ·  
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·"}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888")}
 _INVALID_STYLE = "QLineEdit { border: 2px solid #c0392b; background: #fdecea; }"
+_FEATURE_ID = Qt.ItemDataRole.UserRole
 
 EXPORT_FORMATS = [
     ("step", "STEP – pro jiné CAD programy"),
@@ -57,6 +68,7 @@ class MainWindow(QMainWindow):
         self.examples_dir = examples_dir
         self.user_dir = user_dir or Path.home()
         self._param_fields: dict[str, QLineEdit] = {}
+        self._selected_id: str | None = None
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -66,11 +78,54 @@ class MainWindow(QMainWindow):
         self.viewer.selection_changed.connect(self._show_selection)
         self.setCentralWidget(self.viewer)
 
+        self._create_actions()
         self._build_side_panel()
+        self._build_editor_panel()
         self._build_menus()
-        self.resize(1280, 800)
-        self._refresh_all()
+        self.resize(1400, 860)
+        self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
+                         Qt.Orientation.Horizontal)
+        self._had_part = False
+        self._reload_all()
         self.statusBar().showMessage(HELP_HINT)
+
+    # --- akce (tlačítka a položky menu) ------------------------------------------------
+
+    def _action(self, text: str, slot: Callable[[], object],
+                shortcut: str | None = None) -> QAction:
+        action = QAction(text, self)
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
+        # Signál triggered posílá navíc hodnotu „checked“ (False). Lambda s výchozím parametrem
+        # (lambda k=key: …) by ji dostala místo svého k – proto slot voláme vždy bez argumentů.
+        action.triggered.connect(lambda _checked=False: slot())
+        return action
+
+    def _create_actions(self) -> None:
+        self.new_action = self._action("Nový", self.new_model, "Ctrl+N")
+        self.open_action = self._action("Otevřít…", self.open_dialog, "Ctrl+O")
+        self.save_action = self._action("Uložit", self.save, "Ctrl+S")
+        self.save_as_action = self._action("Uložit jako…", self.save_as, "Ctrl+Shift+S")
+        self.undo_action = self._action("Zpět", self.undo, "Ctrl+Z")
+        self.redo_action = self._action("Znovu", self.redo, "Ctrl+Y")
+        self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
+        self.add_feature_actions = {
+            key: self._action(schema.label, lambda k=key: self.add_feature(k))
+            for key, schema in FEATURE_SCHEMAS.items()
+        }
+        self.delete_feature_action = self._action("Smazat prvek", self.delete_feature, "Delete")
+        self.move_up_action = self._action("Posunout nahoru", lambda: self.move_feature(-1))
+        self.move_down_action = self._action("Posunout dolů", lambda: self.move_feature(+1))
+        self.add_parameter_action = self._action("Přidat parametr…", self.add_parameter)
+        self.delete_parameter_action = self._action("Smazat parametr…", self.delete_parameter)
+        # Krátké popisky pro malá tlačítka v panelu (v menu zůstává celý text).
+        for action, short in ((self.delete_feature_action, "Smazat"),
+                              (self.move_up_action, "▲"), (self.move_down_action, "▼"),
+                              (self.add_parameter_action, "+ Parametr"),
+                              (self.delete_parameter_action, "− Parametr")):
+            action.setIconText(short)
+            action.setToolTip(action.text())
+        self.fit_action = self._action("Celý díl", lambda: self.viewer.fit_all(), "F")
 
     # --- stavba okna ---------------------------------------------------------------
 
@@ -78,13 +133,34 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
+        info_box = QGroupBox("Díl")
+        info_form = QFormLayout(info_box)
+        self.name_edit = QLineEdit()
+        self.name_edit.setObjectName("part_name")
+        self.name_edit.editingFinished.connect(self._name_edited)
+        info_form.addRow("Název", self.name_edit)
+        self.material_combo = QComboBox()
+        self.material_combo.setObjectName("part_material")
+        for key, density in DENSITIES_G_CM3.items():
+            self.material_combo.addItem(f"{DISPLAY_NAMES[key]} ({density} g/cm³)",
+                                        DISPLAY_NAMES[key])
+        self.material_combo.currentIndexChanged.connect(self._material_changed)
+        info_form.addRow("Materiál", self.material_combo)
         self.description_label = QLabel()
         self.description_label.setWordWrap(True)
         self.description_label.setStyleSheet("color: #555;")
-        layout.addWidget(self.description_label)
+        info_form.addRow(self.description_label)
+        layout.addWidget(info_box)
 
         params_box = QGroupBox("Parametry (Enter = přepočítat)")
-        self.params_form = QFormLayout(params_box)
+        params_layout = QVBoxLayout(params_box)
+        self.params_form = QFormLayout()
+        params_layout.addLayout(self.params_form)
+        params_buttons = QHBoxLayout()
+        for action in (self.add_parameter_action, self.delete_parameter_action):
+            params_buttons.addWidget(self._tool_button(action))
+        params_buttons.addStretch()
+        params_layout.addLayout(params_buttons)
         layout.addWidget(params_box)
 
         tree_box = QGroupBox("Strom prvků")
@@ -92,7 +168,21 @@ class MainWindow(QMainWindow):
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(False)
+        self.tree.currentItemChanged.connect(self._tree_selection_changed)
         tree_layout.addWidget(self.tree)
+        tree_buttons = QHBoxLayout()
+        self.add_feature_button = QToolButton()
+        self.add_feature_button.setText("Přidat prvek")
+        self.add_feature_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        add_menu = QMenu(self.add_feature_button)
+        for action in self.add_feature_actions.values():
+            add_menu.addAction(action)
+        self.add_feature_button.setMenu(add_menu)
+        tree_buttons.addWidget(self.add_feature_button)
+        for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
+            tree_buttons.addWidget(self._tool_button(action))
+        tree_buttons.addStretch()
+        tree_layout.addLayout(tree_buttons)
         self.error_label = QLabel()
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #c0392b; font-weight: bold;")
@@ -107,25 +197,34 @@ class MainWindow(QMainWindow):
         props_layout.addWidget(self.props_label)
         layout.addWidget(props_box)
 
+        self.model_dock = self._add_dock("Model", "model_dock", panel,
+                                         Qt.DockWidgetArea.LeftDockWidgetArea)
+
+    def _build_editor_panel(self) -> None:
+        self.feature_editor = FeatureEditor()
+        self.feature_editor.changed.connect(self._feature_edited)
+        self.feature_editor.invalid.connect(
+            lambda message: self.statusBar().showMessage(message, 10000))
+        self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
+                                          Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def _add_dock(self, title: str, name: str, content: QWidget,
+                  area: Qt.DockWidgetArea) -> QDockWidget:
         scroll = QScrollArea()
-        scroll.setWidget(panel)
+        scroll.setWidget(content)
         scroll.setWidgetResizable(True)
-        dock = QDockWidget("Model", self)
-        dock.setObjectName("model_dock")
+        dock = QDockWidget(title, self)
+        dock.setObjectName(name)
         dock.setWidget(scroll)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        dock.setMinimumWidth(330)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        dock.setMinimumWidth(340)
+        self.addDockWidget(area, dock)
+        return dock
 
-    def _action(self, text: str, slot: Callable[[], object],
-                shortcut: str | None = None) -> QAction:
-        action = QAction(text, self)
-        if shortcut:
-            action.setShortcut(QKeySequence(shortcut))
-        # Signál triggered posílá navíc hodnotu „checked“ (False). Lambda s výchozím parametrem
-        # (lambda k=key: …) by ji dostala místo svého k – proto slot voláme vždy bez argumentů.
-        action.triggered.connect(lambda _checked=False: slot())
-        return action
+    def _tool_button(self, action: QAction) -> QToolButton:
+        button = QToolButton()
+        button.setDefaultAction(action)  # bez ikony ukazuje action.iconText()
+        return button
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
@@ -134,9 +233,9 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
 
         file_menu = bar.addMenu("&Soubor")
-        open_action = self._action("Otevřít…", self.open_dialog, "Ctrl+O")
-        file_menu.addAction(open_action)
-        toolbar.addAction(open_action)
+        for action in (self.new_action, self.open_action):
+            file_menu.addAction(action)
+            toolbar.addAction(action)
         examples_menu = file_menu.addMenu("Otevřít ukázku")
         for path in sorted(self.examples_dir.glob("*.json")) if self.examples_dir else []:
             examples_menu.addAction(
@@ -144,26 +243,39 @@ class MainWindow(QMainWindow):
             )
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
-        self.save_action = self._action("Uložit", self.save, "Ctrl+S")
         file_menu.addAction(self.save_action)
         toolbar.addAction(self.save_action)
-        file_menu.addAction(self._action("Uložit jako…", self.save_as, "Ctrl+Shift+S"))
+        file_menu.addAction(self.save_as_action)
         export_menu = file_menu.addMenu("Exportovat")
         for fmt, label in EXPORT_FORMATS:
             export_menu.addAction(self._action(label + "…", lambda f=fmt: self.export_dialog(f)))
         file_menu.addSeparator()
         file_menu.addAction(self._action("Konec", self.close, "Ctrl+Q"))
+        toolbar.addSeparator()
+
+        edit_menu = bar.addMenu("Ú&pravy")
+        for action in (self.undo_action, self.redo_action):
+            edit_menu.addAction(action)
+            toolbar.addAction(action)
+        edit_menu.addSeparator()
+        add_menu = edit_menu.addMenu("Přidat prvek")
+        for action in self.add_feature_actions.values():
+            add_menu.addAction(action)
+        for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
+            edit_menu.addAction(action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.add_parameter_action)
+        edit_menu.addAction(self.delete_parameter_action)
+        toolbar.addSeparator()
 
         model_menu = bar.addMenu("&Model")
-        rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
-        model_menu.addAction(rebuild_action)
-        toolbar.addAction(rebuild_action)
+        model_menu.addAction(self.rebuild_action)
+        toolbar.addAction(self.rebuild_action)
         toolbar.addSeparator()
 
         view_menu = bar.addMenu("&Zobrazení")
-        fit_action = self._action("Celý díl", self.viewer.fit_all, "F")
-        view_menu.addAction(fit_action)
-        toolbar.addAction(fit_action)
+        view_menu.addAction(self.fit_action)
+        toolbar.addAction(self.fit_action)
         for key, (label, shortcut) in VIEW_LABELS.items():
             action = self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
             view_menu.addAction(action)
@@ -176,6 +288,15 @@ class MainWindow(QMainWindow):
 
     # --- práce se souborem -------------------------------------------------------
 
+    def new_model(self) -> bool:
+        if not self._confirm_discard():
+            return False
+        self.session.new_document()
+        self._selected_id = None
+        self._reload_all(fit=True)
+        self.statusBar().showMessage("Nový díl – začni tlačítkem „Přidat prvek“ → Skica.", 10000)
+        return True
+
     def open_model(self, path: str | Path, template: bool = False) -> bool:
         if not self._confirm_discard():
             return False
@@ -186,8 +307,8 @@ class MainWindow(QMainWindow):
             self._error("Model nejde otevřít", str(exc))
             return False
         log.info("Otevřen model %s", path)
-        self._rebuild_param_fields()
-        self._refresh_all(fit=True)
+        self._selected_id = None
+        self._reload_all(fit=True)
         return True
 
     def open_dialog(self) -> None:
@@ -251,6 +372,93 @@ class MainWindow(QMainWindow):
         name = self.session.document.name if self.session.document else "model"
         return "".join(c if c.isalnum() or c in "-_" else "_" for c in name).strip("_") or "model"
 
+    # --- úpravy modelu -------------------------------------------------------------
+
+    def _apply(self, change: Callable[[], object], structural: bool = True) -> bool:
+        """Provede úpravu přes ModelSession; chybu ukáže česky a model nechá beze změny."""
+        if self.session.document is None:
+            return False
+        try:
+            self._busy(change)
+        except DocumentError as exc:
+            self._error("Úprava nejde provést", str(exc))
+            return False
+        if structural:
+            self._reload_all()
+        else:
+            self._refresh_all()
+        return True
+
+    def add_feature(self, feature_type: str) -> None:
+        if self.session.document is None:
+            self.session.new_document()
+        new_id: list[str] = []
+        if self._apply(lambda: new_id.append(
+                self.session.add_feature(feature_type, after_id=self._selected_id)),
+                structural=False):
+            self._selected_id = new_id[0]
+            self._reload_all()
+
+    def delete_feature(self) -> None:
+        if self._selected_id is None:
+            return
+        index = self.session.feature_index(self._selected_id)
+        if self._apply(lambda: self.session.delete_feature(self._selected_id), structural=False):
+            features = self.session.document.features
+            self._selected_id = features[max(index - 1, 0)]["id"] if features else None
+            self._reload_all()
+
+    def move_feature(self, offset: int) -> None:
+        if self._selected_id is not None:
+            self._apply(lambda: self.session.move_feature(self._selected_id, offset))
+
+    def _feature_edited(self, feature_id: str, feature: dict) -> None:
+        # Formulář zůstává, jak ho uživatel vyplnil – přestavět jen strom, 3D a vlastnosti.
+        self._apply(lambda: self.session.update_feature(feature_id, feature), structural=False)
+
+    def add_parameter(self) -> None:
+        if self.session.document is None:
+            return
+        name, ok = QInputDialog.getText(self, "Přidat parametr",
+                                        "Název parametru (např. D, tloustka, roztec):")
+        if not ok or not name.strip():
+            return
+        value, ok = QInputDialog.getText(self, "Přidat parametr",
+                                         f"Hodnota parametru {name.strip()} (číslo nebo výraz):",
+                                         text="10")
+        if ok:
+            self._apply(lambda: self.session.add_parameter(name, value))
+
+    def delete_parameter(self) -> None:
+        if not self.session.document or not self.session.document.parameters:
+            return
+        names = list(self.session.document.parameters)
+        name, ok = QInputDialog.getItem(self, "Smazat parametr", "Parametr:", names, 0, False)
+        if ok and name:
+            self._apply(lambda: self.session.delete_parameter(name))
+
+    def _name_edited(self) -> None:
+        document = self.session.document
+        if document is not None and self.name_edit.text().strip() != document.name:
+            self._apply(lambda: self.session.set_info(name=self.name_edit.text()),
+                        structural=False)
+
+    def _material_changed(self) -> None:
+        document = self.session.document
+        material = self.material_combo.currentData()
+        if document is not None and material_key(material) != material_key(document.material):
+            self._apply(lambda: self.session.set_info(material=material), structural=False)
+
+    def undo(self) -> None:
+        if self.session.can_undo:
+            self._busy(self.session.undo)
+            self._reload_all()
+
+    def redo(self) -> None:
+        if self.session.can_redo:
+            self._busy(self.session.redo)
+            self._reload_all()
+
     # --- parametry a přepočet ------------------------------------------------------
 
     def _rebuild_param_fields(self) -> None:
@@ -290,36 +498,96 @@ class MainWindow(QMainWindow):
 
     # --- obnovení zobrazení --------------------------------------------------------
 
+    def _reload_all(self, fit: bool = False) -> None:
+        """Po změně struktury (otevření, přidání/smazání prvku, Zpět …) obnov vše."""
+        self._rebuild_param_fields()
+        self._reload_info()
+        self._refresh_all(fit=fit)
+        self._load_editor()
+
     def _refresh_all(self, fit: bool = False) -> None:
         self._refresh_title()
-        document = self.session.document
-        self.description_label.setText(document.description if document else
-                                       "Otevři model přes Soubor → Otevřít, nebo ukázku.")
         self._refresh_tree()
         self._refresh_properties()
+        self._refresh_actions()
         part = self.session.result.part if self.session.result else None
-        self.viewer.show_part(part, fit=fit)
+        # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
+        self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
+        self._had_part = part is not None
 
     def _refresh_title(self) -> None:
         self.setWindowTitle(self.session.title)
 
+    def _reload_info(self) -> None:
+        document = self.session.document
+        for widget in (self.name_edit, self.material_combo):
+            widget.blockSignals(True)
+        self.name_edit.setText(document.name if document else "")
+        self.name_edit.setEnabled(document is not None)
+        self.material_combo.setEnabled(document is not None)
+        if document is not None:
+            keys = [material_key(self.material_combo.itemData(i))
+                    for i in range(self.material_combo.count())]
+            key = material_key(document.material)
+            self.material_combo.setCurrentIndex(keys.index(key) if key in keys else 0)
+        for widget in (self.name_edit, self.material_combo):
+            widget.blockSignals(False)
+        self.description_label.setText(document.description if document else
+                                       "Začni přes Soubor → Nový, nebo otevři ukázku.")
+        self.description_label.setVisible(bool(self.description_label.text()))
+
     def _refresh_tree(self) -> None:
+        self.tree.blockSignals(True)
         self.tree.clear()
         result = self.session.result
-        if result is None:
+        document = self.session.document
+        if result is None or document is None:
             self.error_label.hide()
+            self.tree.blockSignals(False)
             return
         for status in result.statuses:
             item = QTreeWidgetItem([f"{_STATUS_ICONS[status.status]}  {status.label}"])
+            item.setData(0, _FEATURE_ID, status.id)
             item.setForeground(0, _STATUS_COLORS[status.status])
             item.setToolTip(0, status.message or status.id)
             self.tree.addTopLevelItem(item)
+            if status.id == self._selected_id:
+                self.tree.setCurrentItem(item)
+        if self._selected_id not in {s.id for s in result.statuses}:
+            self._selected_id = None
+        self.tree.blockSignals(False)
         error = result.first_error
         if error is None:
             self.error_label.hide()
         else:
             self.error_label.setText(f"✕ {error.label}: {error.message}")
             self.error_label.show()
+
+    def _refresh_actions(self) -> None:
+        has_document = self.session.document is not None
+        selected = self._selected_id is not None
+        self.undo_action.setEnabled(self.session.can_undo)
+        self.redo_action.setEnabled(self.session.can_redo)
+        for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
+            action.setEnabled(selected)
+        for action in (self.save_action, self.save_as_action, self.add_parameter_action):
+            action.setEnabled(has_document)
+        self.delete_parameter_action.setEnabled(
+            has_document and bool(self.session.document.parameters))
+
+    def _tree_selection_changed(self, current: QTreeWidgetItem | None, _previous=None) -> None:
+        self._selected_id = current.data(0, _FEATURE_ID) if current is not None else None
+        self._refresh_actions()
+        self._load_editor()
+
+    def _load_editor(self) -> None:
+        if self._selected_id is None or self.session.document is None:
+            self.feature_editor.show_feature(None)
+            return
+        features = self.session.document.features
+        index = self.session.feature_index(self._selected_id)
+        sketches = [(f["id"], describe(f)) for f in features[:index] if f["type"] == "sketch"]
+        self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches)
 
     def _refresh_properties(self) -> None:
         props = self.session.properties

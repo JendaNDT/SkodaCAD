@@ -113,7 +113,7 @@ def resolve_parameters(raw: Mapping[str, Any]) -> dict[str, float]:
             cycle = " → ".join([*in_progress[in_progress.index(name) :], name])
             raise ExpressionError(f"Parametry se odkazují samy na sebe v kruhu: {cycle}.")
         in_progress.append(name)
-        for dependency in _referenced_names(raw[name]):
+        for dependency in referenced_names(raw[name]):
             if dependency in raw:
                 resolve(dependency)
         try:
@@ -130,7 +130,8 @@ def resolve_parameters(raw: Mapping[str, Any]) -> dict[str, float]:
     return resolved
 
 
-def _referenced_names(value: Any) -> set[str]:
+def referenced_names(value: Any) -> set[str]:
+    """Názvy, které výraz používá („D/2 + k“ → {"D", "k"}); číslo nepoužívá žádné."""
     if not isinstance(value, str):
         return set()
     try:
