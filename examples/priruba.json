@@ -1,0 +1,67 @@
+{
+  "format": "skodacad",
+  "version": 1,
+  "name": "Plochá příruba",
+  "description": "Ukázkový strojní díl. D = vnější průměr, d = vnitřní otvor, t = tloušťka, k = roztečná kružnice děr, n = počet děr, dh = průměr děr, s = sražení vnější hrany. Rozměry jsou ilustrační, nejde o normalizovanou přírubu.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "D": 165,
+    "d": 62,
+    "t": 18,
+    "k": 125,
+    "n": 4,
+    "dh": 18,
+    "s": 2
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "name": "Obrys příruby",
+      "type": "sketch",
+      "plane": "XY",
+      "elements": [
+        {"shape": "circle", "diameter": "D"},
+        {"shape": "circle", "diameter": "d", "mode": "subtract"}
+      ]
+    },
+    {
+      "id": "deska",
+      "name": "Deska",
+      "type": "extrude",
+      "sketch": "obrys",
+      "distance": "t"
+    },
+    {
+      "id": "diry_skica",
+      "name": "Díry na roztečné kružnici",
+      "type": "sketch",
+      "plane": "top",
+      "elements": [
+        {"shape": "circle_pattern", "count": "n", "pitch_diameter": "k", "diameter": "dh", "start_angle": "180 / n"}
+      ]
+    },
+    {
+      "id": "diry",
+      "name": "Vrtání děr",
+      "type": "extrude",
+      "sketch": "diry_skica",
+      "operation": "cut",
+      "through_all": true
+    },
+    {
+      "id": "sraz_obvod",
+      "name": "Sražení obvodu",
+      "type": "chamfer",
+      "edges": {"face": "top", "type": "circle", "radius": "D/2"},
+      "distance": "s"
+    },
+    {
+      "id": "sraz_otvor",
+      "name": "Sražení otvoru",
+      "type": "chamfer",
+      "edges": {"face": "top", "type": "circle", "radius": "d/2"},
+      "distance": 1
+    }
+  ]
+}
