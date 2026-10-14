@@ -1,0 +1,82 @@
+# Sestavení ŠkodaCAD pro Windows: testy → SkodaCAD.exe → kontrola → ke stažení.
+# Z větve main se navíc zveřejní jako vydání „nejnovejsi“ (stránka Releases).
+name: Windows aplikace
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui,build]"
+
+      - name: Kontrola kódu
+        run: ruff check src tests
+
+      - name: Testy
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Sestavení SkodaCAD.exe
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+
+      - name: Kontrola sestavené aplikace (self-test)
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/skodacad-home
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt || echo "Zpráva self-testu nevznikla"
+          exit $code
+
+      - name: Zabalení do ZIP
+        shell: pwsh
+        run: Compress-Archive -Path dist/SkodaCAD -DestinationPath SkodaCAD-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkodaCAD-windows
+          path: SkodaCAD-windows.zip
+          retention-days: 7
+
+      - name: Zveřejnění ke stažení (jen z main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nejnovejsi --yes --cleanup-tag || true
+          gh release create nejnovejsi SkodaCAD-windows.zip \
+            --target "${{ github.sha }}" \
+            --title "ŠkodaCAD – nejnovější verze pro Windows" \
+            --notes "Sestaveno automaticky z commitu ${{ github.sha }}. Stáhni SkodaCAD-windows.zip, rozbal a spusť SkodaCAD.exe ve složce SkodaCAD." \
+            --latest
