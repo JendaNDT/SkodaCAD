@@ -21,8 +21,9 @@
   nevymýšlej třídy ani parametry (OCCT 7.x a 8.x se liší).
 - **Model je čitelný JSON „recept“** (parametry + seznam prvků), ne Python skript (bezpečnost,
   editace z GUI i AI) a ne binární formát. Popis formátu je v README.md.
-- **Nejdřív jádro bez GUI**, grafické rozhraní (pravděpodobně PySide6 s OCCT prohlížečem) až
-  potom. Windows .exe se bude stavět přes GitHub Actions.
+- **Okno: PySide6 6.11.2 + 3D prohlížeč Open CASCADE (V3d/AIS)**. Windows `.exe` staví
+  PyInstaller v GitHub Actions (`.github/workflows/windows.yml`); z větve `main` se zveřejní
+  jako vydání „nejnovejsi“ (odkaz ke stažení je v README). Repozitář je veřejný.
 - Podklady jsou v `docs/` (tři výzkumy; `VYZKUM_3D_CAD.md` a `zprava-hluboky-vyzkum.md` jsou
   stejný text).
 
@@ -38,6 +39,12 @@
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
 | `cli.py` | příkazová řádka `skodacad build` |
+| `session.py` | `ModelSession` – otevřený model: změna parametru, uložení, export (bez Qt) |
+| `inspection.py` | český popis vybrané plochy/hrany |
+| `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
+| `gui/main_window.py` | hlavní okno: parametry, strom prvků, vlastnosti, menu |
+| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení) |
+| `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
 
 ## Pravidla
 
@@ -52,7 +59,10 @@
 6. Pracuj po **malých krocích**; po každém musí projít `ruff check src tests` a `pytest -q`,
    teprve pak commit.
 7. Nové závislosti jen se zdůvodněním a se zamčenou verzí.
-8. Budoucí GUI nesmí volat build123d/OCCT napřímo – jen přes jádro (`Document` → `rebuild`).
+8. GUI nesmí modelovat přes build123d/OCCT – jen přes `ModelSession`. Výjimkou je
+   `gui/viewer.py`, který OCCT používá jen ke kreslení a výběru.
+9. Okno se testuje dvakrát: `tests/test_gui.py` (offscreen, náhradní prohlížeč) a skutečně
+   pod Xvfb snímkem okna. Změnu vzhledu ukaž uživateli snímkem.
 
 ## Příkazy
 
@@ -61,6 +71,21 @@
 - Testy: `pytest -q`  ·  Kontrola kódu: `ruff check src tests`
 - Postavit model: `skodacad build examples/priruba.json --set D=200` → soubory v `out/`
 - Výsledek ukaž uživateli jako náhled `out/<model>.svg` spolu s objemem a hmotností.
+- Snímek okna v cloudu:
+  `xvfb-run -a -s "-screen 0 1280x800x24" skodacad-gui --screenshot out/okno.png`
+- Kontrola okna i 3D: `xvfb-run -a skodacad-gui --self-test out/self-test.txt`
+- Sestavení aplikace lokálně: `uv pip install -e ".[build]"` a
+  `pyinstaller packaging/skodacad.spec --noconfirm`; pak self-test `dist/SkodaCAD/SkodaCAD`.
+- Stav sestavení pro Windows sleduj v GitHub Actions (workflow „Windows aplikace“).
+
+## Známé pasti (OCCT prohlížeč)
+
+- Po změně velikosti nativního okna se musí volat `V3d_View.MustBeResized()`, jinak výběr
+  myší míří vedle (`OccViewer._sync_size` porovnává skutečnou velikost okna).
+- Obrysy ploch (`SetFaceBoundaryAspect`) nastavovat až po `SetColor`, jinak je přebarví.
+- Ve Windows se HWND předává OCCT jako PyCapsule (`viewer._as_capsule`).
+- Souřadnice myši z Qt násobit `devicePixelRatioF()` (škálování obrazovky 125–150 %).
+- build123d importuje IPython – v PyInstalleru ho nevynechávat.
 
 ## Jak přidat nový prvek
 
@@ -75,7 +100,9 @@
   zaoblení, sražení, skořepina, exporty, testy.
 - [ ] **Fáze 1** – skicář s vazbami (řešič SolveSpace, balík `python-solvespace`), díry se
   závity podle strojnických tabulek, pole a zrcadlení.
-- [ ] **Fáze 2** – GUI (PySide6 + OCCT prohlížeč): strom prvků, editace parametrů, výběr myší;
-  Windows .exe přes GitHub Actions.
+- [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
+  vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
+- [ ] **Fáze 2b** – úprava prvků ve stromu, převod kliknutí na sémantický výběr hran
+  (např. „zaobli tuhle hranu“), přepočet na pozadí, nový model od nuly.
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

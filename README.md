@@ -3,11 +3,43 @@
 Osobní parametrický 3D CAD postavený na jádře **Open CASCADE** (přes knihovnu
 [build123d](https://github.com/gumyr/build123d)). Vyvíjený vibecodingem v Claude Code.
 
-**Stav:** fáze 0 – výpočetní jádro bez grafického rozhraní. Díl se popíše v čitelném
-souboru JSON (parametry + seznam prvků) a jádro z něj postaví přesné těleso, spočítá
-objem a hmotnost a uloží exporty pro jiné CAD programy i 3D tisk.
+**Stav:** jádro + první okno pro Windows. Díl se popíše v čitelném souboru JSON
+(parametry + seznam prvků), jádro z něj postaví přesné těleso, spočítá objem a hmotnost
+a uloží exporty pro jiné CAD programy i 3D tisk. Okno ukáže díl ve 3D a dovolí měnit
+parametry.
 
-## Vyzkoušení
+## Aplikace pro Windows
+
+1. Stáhni **[SkodaCAD-windows.zip](https://github.com/JendaNDT/SkodaCAD/releases/latest/download/SkodaCAD-windows.zip)**
+   (stránka [Releases](https://github.com/JendaNDT/SkodaCAD/releases), vydání „nejnovejsi“).
+2. Rozbal ho (pravé tlačítko → *Extrahovat vše*).
+3. Ve složce `SkodaCAD` spusť **`SkodaCAD.exe`**.
+4. Windows může napsat *„Systém Windows ochránil váš počítač“* – aplikace není digitálně
+   podepsaná. Klikni na *Další informace* → *Přesto spustit*.
+
+Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
+(postup [.github/workflows/windows.yml](.github/workflows/windows.yml)).
+
+### Ovládání
+
+| Akce | Jak |
+|---|---|
+| Otáčení | levé tlačítko + táhnout |
+| Posun | prostřední nebo pravé tlačítko + táhnout |
+| Zoom | kolečko (ke kurzoru) |
+| Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku |
+| Celý díl | dvojklik nebo `F` |
+| Pohledy | `0` izometrie, `1` zepředu, `3` zprava, `7` shora (s `Ctrl` opačná strana) |
+| Změna parametru | přepiš hodnotu vlevo a stiskni Enter (číslo, `12,5` i výraz `D/2 + 5`) |
+| Přepočítat | `F5` |
+
+Neplatná hodnota parametru se zbarví červeně a model zůstane beze změny. Když některý
+prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
+
+Do složky **`SkodaCAD`** ve tvém uživatelském profilu (`C:\Users\<jméno>\SkodaCAD`) se
+zapisuje soubor `skodacad.log` – při potížích ho pošli, je v něm popis chyby.
+
+## Příkazová řádka
 
 ```bash
 skodacad build examples/priruba.json            # postaví přírubu, exporty do out/
@@ -109,6 +141,9 @@ Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladov
 jsou ve složce [docs/](docs/).
 
 ```bash
-pytest -q             # testy (ověřují geometrii výpočtem objemu)
-ruff check src tests  # kontrola kódu
+pip install -e ".[dev,gui]"   # jádro, okno a nástroje pro vývoj
+pytest -q                     # testy (ověřují geometrii výpočtem objemu)
+ruff check src tests          # kontrola kódu
+skodacad-gui                  # spustí okno (bez argumentu otevře ukázku příruby)
+skodacad-gui --self-test zprava.txt   # kontrola aplikace bez obsluhy
 ```
