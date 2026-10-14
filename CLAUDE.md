@@ -7,6 +7,9 @@
 - Autor **neprogramuje**, projekt vzniká vibecodingem. Komunikuj česky, jednoduše a bez žargonu:
   co se změnilo, proč, a jak si to může ověřit (náhled, čísla, testy). Zásadní rozhodnutí
   (architektura, nové závislosti, změna formátu) nejdřív navrhni a nech schválit.
+- **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
+  `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
+  Případné alternativy uveď až za ním, krátce.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
