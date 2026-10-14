@@ -59,15 +59,17 @@ jobs:
           cat self-test.txt || echo "Zpráva self-testu nevznikla"
           exit $code
 
-      - name: Zabalení do ZIP
-        shell: pwsh
-        run: Compress-Archive -Path dist/SkodaCAD -DestinationPath SkodaCAD-windows.zip
-
+      # Artefakt GitHub sám zabalí do ZIPu – nahrává se složka, ať se rozbaluje jen jednou.
       - uses: actions/upload-artifact@v4
         with:
           name: SkodaCAD-windows
-          path: SkodaCAD-windows.zip
+          path: dist/
           retention-days: 7
+
+      - name: Zabalení do ZIP pro vydání (jen z main)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: Compress-Archive -Path dist/SkodaCAD -DestinationPath SkodaCAD-windows.zip
 
       - name: Zveřejnění ke stažení (jen z main)
         if: github.ref == 'refs/heads/main'
