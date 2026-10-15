@@ -470,9 +470,13 @@ class MainWindow(QMainWindow):
             self._selected_id = new_id[0]
             self._reload_all()
 
-    def edit_profile(self, profile: dict) -> dict | None:
-        """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit)."""
-        dialog = SketcherDialog(profile, self.session.solve_profile, self)
+    def edit_profile(self, profile: dict, new: bool = False) -> dict | None:
+        """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit).
+        ``new`` = obrys nové skici (vloží se za vybraný prvek), jinak vybraná skica."""
+        projection = self.session.sketch_projection(
+            profile, feature_id=None if new else self._selected_id,
+            after_id=self._selected_id if new else None)
+        dialog = SketcherDialog(profile, self.session.solve_profile, self, projection)
         try:
             if self._exec_dialog(dialog) == QDialog.DialogCode.Accepted:
                 return dialog.result_profile()
@@ -488,7 +492,7 @@ class MainWindow(QMainWindow):
         if self.session.document is None:
             self.session.new_document()
             self._reload_all()
-        profile = self.edit_profile(empty_profile())
+        profile = self.edit_profile(empty_profile(), new=True)
         if profile is None:
             return
         if not profile["segments"]:

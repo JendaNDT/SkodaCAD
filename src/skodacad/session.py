@@ -33,7 +33,7 @@ from skodacad.expressions import (
     referenced_names,
     resolve_parameters,
 )
-from skodacad.features import describe, profile_problem
+from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.picking import (
@@ -44,6 +44,8 @@ from skodacad.picking import (
     open_face_name,
     split_shapes,
 )
+from skodacad.projection import Projected, ProjectionError, candidates, reference_for
+from skodacad.projection import refresh as refresh_references
 from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
@@ -361,6 +363,35 @@ class ModelSession:
             warning = profile_problem(profile, params)
         return ProfileSolution(solved.points, solved.dof, radii=solved.radii, warning=warning)
 
+    def sketch_projection(self, element: dict[str, Any], feature_id: str | None = None,
+                          after_id: str | None = None) -> SketchProjection | None:
+        """Díl pod skicou pro skicář (promítnutí hran). ``feature_id`` = upravovaná skica,
+        bez něj nová skica vložená za ``after_id`` (s výchozí rovinou nové skici).
+        None = pod skicou není spočítaný díl."""
+        document = self.document
+        if document is None or self.result is None or self.computing:
+            return None
+        params = self._params()
+        try:
+            if feature_id is not None:
+                feature = document.features[self.feature_index(feature_id)]
+                part = self.result.parts_before.get(feature_id)
+            else:
+                index = self.feature_index(after_id) + 1 if after_id else len(document.features)
+                feature = new_feature("sketch", document.features, index)
+                part = (self.result.part if index >= len(document.features)
+                        else self.result.parts_before.get(document.features[index]["id"]))
+            if part is None:
+                return None
+            plane = sketch_plane(part, feature, params)
+            x, y = (evaluate(v, params) for v in element.get("center", [0, 0]))
+            place = (x, y, evaluate(element.get("angle", 0), params))
+            found = candidates(part, plane, place)
+        except Exception:  # noqa: BLE001 – bez promítnutí jde skicář použít dál
+            return None
+        return SketchProjection(part, plane, place, params, [p for _, p in found],
+                                [e for e, _ in found])
+
     # --- výběr ve 3D ---------------------------------------------------------------
 
     def selection_info(self, shapes: list[Any]) -> SelectionInfo:
@@ -590,6 +621,32 @@ class ModelSession:
         star = "*" if self.dirty else ""
         filename = self.path.name if self.path else "nový model"
         return f"{star}{self.document.name} ({filename}) – ŠkodaCAD"
+
+
+@dataclass
+class SketchProjection:
+    """Hrany dílu pod skicou: co jde promítnout (``candidates`` – tvary v souřadnicích
+    obrysu pro kreslení) a jak z toho udělat odkaz do obrysu."""
+
+    part: Any
+    plane: Any
+    place: tuple[float, float, float]
+    params: dict[str, float]
+    candidates: list[Projected]
+    _edges: list[Any]
+
+    def reference(self, index: int) -> dict[str, Any]:
+        """Odkaz na ``index``-tou hranu (popis hrany významem + promítnutý tvar)."""
+        return reference_for(self.part, self._edges[index], self.plane, self.place)
+
+    def refresh(self, profile: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """Promítnuté hrany obrysu spočítané znovu z dílu; při potíži původní obrys a
+        česká zpráva."""
+        try:
+            return refresh_references(profile, self.part, self.plane, self.place,
+                                      lambda value: evaluate(value, self.params)), ""
+        except ProjectionError as exc:
+            return profile, str(exc)
 
 
 @dataclass

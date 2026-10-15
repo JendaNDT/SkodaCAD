@@ -58,6 +58,8 @@ COLOR_SELECTED = QColor("#ff8c00")
 COLOR_FAILED = QColor("#c0392b")
 COLOR_CONSTRUCTION = QColor("#8a8a8a")
 COLOR_GRID = QColor("#ececec")
+COLOR_REFERENCE = QColor("#8e44ad")  # promítnutá hrana dílu (pevná)
+COLOR_CANDIDATE = QColor("#c4c4c4")  # hrana dílu pod skicou, kterou jde promítnout
 COLOR_TEXT = QColor("#666666")
 
 # Vazba → značka u čáry na kreslicí ploše.
@@ -73,6 +75,9 @@ TOOL_HELP = {
     "arc": "Oblouk: klikni začátek, konec a pak bod, kudy má oblouk vést.",
     "circle": "Kružnice: klikni střed a pak bod na obvodu. Střed na existujícím bodě (třeba "
               "středu oblouku) = soustředně. Kružnice uvnitř obrysu je díra.",
+    "project": "Promítnout: klikni na šedou hranu dílu – stane se pevnou (fialovou) a jde "
+               "k ní dát vazby a kóty. Vybrané fialové hrany udělá skutečným obrysem tlačítko "
+               "Převzít do obrysu.",
 }
 
 
@@ -113,8 +118,10 @@ class SketchCanvas(QWidget):
         """Celý obrys (a počátek) do okna."""
         profile = self.dialog.profile
         coordinates = [(0.0, 0.0)] + [(float(x), float(y)) for x, y in profile["points"].values()]
-        for name in profile["segments"]:  # oblouky se vyboulí za své body
+        for name in [*profile["segments"], *edit.references_of(profile)]:  # i oblouky
             coordinates += self.dialog.polyline(name)
+        for candidate in self.dialog.candidate_polylines():  # hrany dílu pod skicou
+            coordinates += candidate
         xs, ys = [x for x, _ in coordinates], [y for _, y in coordinates]
         if len(coordinates) == 1:
             xs, ys = [0.0, 60.0], [0.0, 40.0]
@@ -178,6 +185,15 @@ class SketchCanvas(QWidget):
         done = dialog.solution is not None and dialog.solution.ok and dialog.solution.dof == 0
         base = COLOR_DONE if done else COLOR_FREE
 
+        painter.setPen(QPen(COLOR_CANDIDATE, 1))
+        for points in dialog.candidate_polylines():
+            painter.drawPolyline(QPolygonF([self.to_screen(*p) for p in points]))
+        for name in edit.references_of(profile):
+            color = (COLOR_SELECTED if name in marked
+                     else COLOR_FAILED if name in failed_refs else COLOR_REFERENCE)
+            painter.setPen(QPen(color, 3 if name in marked else 2))
+            painter.drawPolyline(QPolygonF([self.to_screen(*p) for p in dialog.polyline(name)]))
+
         for name, segment in profile["segments"].items():
             color = base
             if segment.get("construction"):
@@ -195,6 +211,13 @@ class SketchCanvas(QWidget):
         self._paint_preview(painter)
         self._paint_labels(painter)
 
+        for name in edit.reference_point_names(profile):  # pevné body promítnutých hran
+            pos = self.to_screen(*edit.point_xy(profile, name))
+            color = COLOR_SELECTED if name in marked else COLOR_REFERENCE
+            painter.setPen(QPen(color, 1))
+            painter.setBrush(color)
+            painter.drawPolygon(QPolygonF([pos + QPointF(dx, dy) for dx, dy in
+                                           ((0, -5), (5, 0), (0, 5), (-5, 0))]))
         for name in [ORIGIN, *profile["points"]]:
             x, y = edit.point_xy(profile, name)
             pos = self.to_screen(x, y)
@@ -284,7 +307,7 @@ class SketchCanvas(QWidget):
                 for ref in edit.references(constraint):
                     glyphs.setdefault(ref, []).append(GLYPHS[kind])
         painter.setPen(COLOR_TEXT)
-        for name in profile["segments"]:
+        for name in [*profile["segments"], *edit.references_of(profile)]:
             mid = dialog.midpoint(name)
             pos = self.to_screen(*mid)
             label = name + ("  " + " ".join(glyphs.get(name, [])) if glyphs.get(name) else "")
@@ -331,6 +354,18 @@ def _arc_points(start: tuple, end: tuple, center: tuple, steps: int = 48) -> lis
              center[1] + radius * math.sin(a0 + (a1 - a0) * i / steps)) for i in range(steps + 1)]
 
 
+def _shape_points(kind: str, points: tuple, center: tuple | None, radius: float
+                  ) -> list[tuple[float, float]]:
+    """Úsečka, kružnice nebo oblouk jako lomená čára pro kreslení."""
+    if kind == "line":
+        return [tuple(points[0]), tuple(points[1])]
+    if kind == "arc":
+        return _arc_points(tuple(points[0]), tuple(points[1]), tuple(center))
+    cx, cy = center
+    return [(cx + radius * math.cos(2 * math.pi * i / 72),
+             cy + radius * math.sin(2 * math.pi * i / 72)) for i in range(73)]
+
+
 def _distance_to_segment(p: tuple, a: tuple, b: tuple) -> float:
     (px, py), (ax, ay), (bx, by) = p, a, b
     length2 = (bx - ax) ** 2 + (by - ay) ** 2
@@ -344,7 +379,9 @@ class SketcherDialog(QDialog):
     """Skicář obrysu. ``solve`` = ``ModelSession.solve_profile``."""
 
     def __init__(self, profile: dict[str, Any], solve: Callable[[dict], Any],
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, projection: Any = None) -> None:
+        """``projection`` = díl pod skicou (``ModelSession.sketch_projection``) – jeho hrany
+        se ukážou šedě a jdou promítnout; None = skica bez dílu."""
         super().__init__(parent)
         self.setWindowTitle("Skicář – obrys z úseček, oblouků a kružnic")
         self.resize(1180, 760)
@@ -352,6 +389,10 @@ class SketcherDialog(QDialog):
         for key, empty in (("points", {}), ("segments", {}), ("constraints", [])):
             self.profile.setdefault(key, copy.deepcopy(empty))
         self._solve = solve
+        self.projection = projection
+        self.projection_warning = ""
+        if projection is not None and edit.references_of(self.profile):
+            self.profile, self.projection_warning = projection.refresh(self.profile)
         self.solution = None
         self.tool = "select"
         self.selection: list[str] = []
@@ -398,7 +439,14 @@ class SketcherDialog(QDialog):
             "line": self._act("Úsečka", lambda: self.set_tool("line"), "L"),
             "arc": self._act("Oblouk", lambda: self.set_tool("arc"), "A"),
             "circle": self._act("Kružnice", lambda: self.set_tool("circle"), "R"),
+            "project": self._act("Promítnout", lambda: self.set_tool("project"), "U",
+                                 "Převzít hranu dílu pod skicou jako pevnou čáru"),
         }
+        self.tool_actions["project"].setEnabled(projection_available := bool(
+            self.projection is not None and self.projection.candidates))
+        if not projection_available:
+            self.tool_actions["project"].setToolTip("Pod skicou není díl (nebo se ještě "
+                                                    "přepočítává) – není co promítnout.")
         for action in self.tool_actions.values():
             action.setCheckable(True)
         self.constraint_actions = {
@@ -423,6 +471,9 @@ class SketcherDialog(QDialog):
                                           "vzdálenost, úhel")
         self.construction_action = self._act("Pomocná čára", self.toggle_construction, "G",
                                              "Čára jen pro vazby – nebude součástí obrysu")
+        self.convert_action = self._act("Převzít do obrysu", self.convert_references, "W",
+                                        "Z vybraných promítnutých (fialových) hran udělá "
+                                        "skutečný obrys navázaný na díl")
         self.delete_action = self._act("Smazat", self.delete_selected, "Delete")
         self.undo_action = self._act("Zpět", self.undo, "Ctrl+Z")
         self.fit_action = self._act("Celý obrys", self.canvas.fit, "0")
@@ -432,6 +483,7 @@ class SketcherDialog(QDialog):
         tools.addWidget(self._group("Vazby (na vybrané)", list(self.constraint_actions.values())))
         tools.addWidget(self._group("Kóty a úpravy", [self.dimension_action,
                                                        self.construction_action,
+                                                       self.convert_action,
                                                        self.delete_action, self.undo_action,
                                                        self.fit_action]))
         self.help_label = QLabel()
@@ -533,8 +585,9 @@ class SketcherDialog(QDialog):
                     self.selection.append(hit)
             elif hit not in self.selection:
                 self.selection = [hit]
-            if not toggle and (hit in self.profile["points"]
-                               or edit.kind_of(self.profile, hit or "") == "circle"):
+            if not toggle and (hit in self.profile["points"] or (
+                    hit in self.profile["segments"]
+                    and self.profile["segments"][hit]["type"] == "circle")):
                 self._drag, self._drag_moved = hit, False
             self.canvas.update()
         elif self.tool == "line":
@@ -543,6 +596,8 @@ class SketcherDialog(QDialog):
             self._arc_click(x, y)
         elif self.tool == "circle":
             self._circle_click(x, y)
+        elif self.tool == "project":
+            self._project_click(x, y)
 
     def move(self, x: float, y: float) -> None:
         self.hover = (x, y)
@@ -643,6 +698,17 @@ class SketcherDialog(QDialog):
         edit.toggle_construction(self.profile, self.selection)
         self._resolve()
 
+    def convert_references(self) -> None:
+        try:
+            edit.convert_references(copy.deepcopy(self.profile), self.selection)
+        except EditError as exc:
+            self._message(str(exc), error=True)
+            return
+        self._remember()
+        edit.convert_references(self.profile, self.selection)
+        self.selection = []
+        self._resolve()
+
     def undo(self) -> None:
         if self._history:
             self.profile = self._history.pop()
@@ -653,10 +719,11 @@ class SketcherDialog(QDialog):
     # --- kreslení ---------------------------------------------------------------------
 
     def snap(self, x: float, y: float) -> tuple[str | None, tuple[float, float]]:
-        """Nejbližší bod (i počátek) v dosahu kliknutí, jinak None a místo kliknutí."""
+        """Nejbližší bod (i počátek a body promítnutých hran) v dosahu kliknutí, jinak None
+        a místo kliknutí."""
         tolerance = SNAP_PIXELS / self.canvas.scale
         best, best_distance = None, tolerance
-        for name in [ORIGIN, *self.profile["points"]]:
+        for name in [ORIGIN, *edit.reference_point_names(self.profile), *self.profile["points"]]:
             distance = math.dist((x, y), edit.point_xy(self.profile, name))
             if distance <= best_distance:
                 best, best_distance = name, distance
@@ -665,12 +732,13 @@ class SketcherDialog(QDialog):
         return best, edit.point_xy(self.profile, best)
 
     def _point_at(self, x: float, y: float) -> str:
-        """Bod pro kreslení: existující v dosahu, nebo nový. Počátek → nový bod na něm."""
+        """Bod pro kreslení: existující v dosahu, nebo nový. Pevný bod (počátek, bod
+        promítnuté hrany) → nový bod na něm s vazbou „na bodě“."""
         name, _ = self.snap(x, y)
-        if name == ORIGIN:
-            new = edit.add_point(self.profile, 0.0, 0.0)
+        if name is not None and edit.is_fixed(self.profile, name):
+            new = edit.add_point(self.profile, *edit.point_xy(self.profile, name))
             self.profile["constraints"].append({"type": "coincident", "point": new,
-                                                "on": ORIGIN})
+                                                "on": name})
             return new
         return name if name is not None else edit.add_point(self.profile, x, y)
 
@@ -712,6 +780,39 @@ class SketcherDialog(QDialog):
         edit.add_arc(self.profile, first, second, middle)
         self.arc_points = []
         self._resolve()
+
+    def _project_click(self, x: float, y: float) -> None:
+        """Klik na šedou hranu dílu → promítnutá (pevná) hrana v obrysu."""
+        if self.projection is None:
+            return
+        tolerance = HIT_PIXELS / self.canvas.scale
+        best, best_distance = None, tolerance
+        for index, points in enumerate(self.candidate_polylines()):
+            distance = min(_distance_to_segment((x, y), a, b)
+                           for a, b in zip(points, points[1:], strict=False))
+            if distance <= best_distance:
+                best, best_distance = index, distance
+        if best is None:
+            self._message("Klikni přímo na šedou hranu dílu.", error=False)
+            return
+        try:
+            reference = self.projection.reference(best)
+        except Exception as exc:  # noqa: BLE001 – hrana nejde popsat, skicář jede dál
+            self._message(f"Hranu nejde promítnout: {exc}", error=True)
+            return
+        self._remember()
+        name = edit.add_reference(self.profile, reference)
+        self.selection = [name]
+        self._resolve()
+
+    def candidate_polylines(self) -> list[list[tuple[float, float]]]:
+        """Šedé hrany dílu pod skicou (body pro kreslení a výběr kliknutím)."""
+        if self.projection is None:
+            return []
+        if not hasattr(self, "_candidates"):
+            self._candidates = [_shape_points(p.kind, p.points, p.center, p.radius)
+                                for p in self.projection.candidates]
+        return self._candidates
 
     def _circle_click(self, x: float, y: float) -> None:
         if not self.arc_points:
@@ -815,6 +916,8 @@ class SketcherDialog(QDialog):
             closed += ("<br><span style='color:#c0392b'>Čára " + ", ".join(collapsed)
                        + " má nulovou délku – vazby ji smrskly do bodu (třeba vodorovně i "
                        "svisle zároveň). Vrať to tlačítkem Zpět.</span>")
+        if self.projection_warning:
+            closed += f"<br><span style='color:#c0392b'>{self.projection_warning}</span>"
         if solution.dof == 0:
             text = "<span style='color:#1b7f3b'>✓ Obrys je plně určený.</span>"
         else:
@@ -844,12 +947,10 @@ class SketcherDialog(QDialog):
     # --- geometrie pro kreslení a výběr -------------------------------------------------
 
     def polyline(self, name: str) -> list[tuple[float, float]]:
-        segment = self.profile["segments"][name]
+        segment = edit.segment_view(self.profile, name)
         if segment["type"] == "circle":
-            cx, cy = edit.point_xy(self.profile, segment["center"])
-            r = float(segment["radius"])
-            angles = [2 * math.pi * i / 72 for i in range(73)]
-            return [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in angles]
+            center = edit.point_xy(self.profile, segment["center"])
+            return _shape_points("circle", (), center, float(segment["radius"]))
         start = edit.point_xy(self.profile, segment["start"])
         end = edit.point_xy(self.profile, segment["end"])
         if segment["type"] == "line":
@@ -857,7 +958,7 @@ class SketcherDialog(QDialog):
         return _arc_points(start, end, edit.point_xy(self.profile, segment["center"]))
 
     def midpoint(self, name: str) -> tuple[float, float]:
-        segment = self.profile["segments"][name]
+        segment = edit.segment_view(self.profile, name)
         if segment["type"] == "circle":  # popisek vpravo nahoře na obvodu
             cx, cy = edit.point_xy(self.profile, segment["center"])
             r = float(segment["radius"]) / math.sqrt(2)
@@ -874,7 +975,7 @@ class SketcherDialog(QDialog):
             return name
         tolerance = HIT_PIXELS / self.canvas.scale
         best, best_distance = None, tolerance
-        for segment in self.profile["segments"]:
+        for segment in [*self.profile["segments"], *edit.references_of(self.profile)]:
             points = self.polyline(segment)
             distance = min(_distance_to_segment((x, y), a, b)
                            for a, b in zip(points, points[1:], strict=False))
@@ -885,7 +986,7 @@ class SketcherDialog(QDialog):
     def dimension_label(self, constraint: dict[str, Any]) -> tuple[tuple | None, str]:
         kind, value = constraint["type"], constraint["value"]
         try:
-            segment = self.profile["segments"].get(constraint.get("segment"), {})
+            segment = edit.segment_view(self.profile, constraint.get("segment", "")) or {}
             if segment.get("type") == "circle":  # průměr kružnice nad ní
                 cx, cy = edit.point_xy(self.profile, segment["center"])
                 anchor = (cx, cy + float(segment["radius"]))

@@ -187,3 +187,18 @@ def test_vanished_edge_is_reported_in_czech():
     assert "Promítnutá hrana „r1“ už na dílu není" in message
     no_part = rebuild(make_doc([{"id": "s", "type": "sketch", "elements": [profile]}]))
     assert "žádný díl není" in no_part.first_error.message
+
+
+@pytest.mark.parametrize(("rx", "ry"), [(80, 50), (60, 30)])
+def test_standoffs_example_stay_on_holes(examples_dir, rx, ry):
+    from skodacad import Document
+
+    result = rebuild(Document.load(examples_dir / "sloupky.json"), {"rx": rx, "ry": ry})
+    assert result.ok, result.first_error and result.first_error.message
+    plate = 100 * 70 - (4 - math.pi) * 5**2  # zaoblené rohy R5
+    hole = math.pi * 1.7**2  # průchozí M3 střední řada Ø3,4
+    standoff = math.pi * (3.5**2 - 1.7**2)  # sloupek Ø7 s dírou Ø3,4
+    assert result.part.volume == pytest.approx(plate * 3 - 4 * hole * 3 + 4 * standoff * 6)
+    tops = [f for f in result.part.faces() if f.center().Z == pytest.approx(9)]
+    centers = sorted((round(f.center().X, 6), round(f.center().Y, 6)) for f in tops)
+    assert centers == sorted((sx * rx / 2, sy * ry / 2) for sx in (1, -1) for sy in (1, -1))
