@@ -51,6 +51,11 @@
   *Měření*, čára s hodnotou ve 3D), tloušťka stěny v bodě paprskem kolmo do materiálu (jako UT
   tloušťkoměr). Měření jde uložit do modelu (`measurements`, plochy a hrany významem) a
   přepočítá se s každou změnou. Formát verze 9.
+- (15. 10. 2026, schváleno) **Mapa tloušťky stěny (NDT)** – `thickness_map.py`: povrch se
+  rozdělí na trojúhelníky do zvoleného kroku, v každém těžišti tloušťka paprskem (pravidlo
+  koncového echa). Škála červená → modrá + minimum fialově, nejtenčí místo, export CSV.
+  Nastavení (`limit`, `step`, `scale_max`) se ukládá do modelu, zapnutá mapa se počítá na
+  pozadí s každou změnou, příkazová řádka vypíše souhrn. Formát verze 10.
 
 ## Architektura (`src/skodacad/`)
 
@@ -74,9 +79,10 @@
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
-| `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`) |
+| `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
+| `thickness_map.py` | mapa tloušťky stěny: síť povrchu (půlení nejdelší strany v u, v), tloušťka v těžištích, barvy, souhrn, CSV |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
-| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panel Měření |
+| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření a Mapa tloušťky |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
@@ -205,7 +211,7 @@
 - Objem drážky z plošek se od přesné šroubovice liší řádově o desetiny procenta; testy
   ho porovnávají s Pappovou větou s tolerancí, ne přesně.
 
-## Známé pasti (měření)
+## Známé pasti (měření a mapa tloušťky)
 
 - Tloušťka stěny = paprsek (`IntCurvesFace_ShapeIntersector`) z bodu proti normále plochy;
   první průsečík dál než 1e-4 je protější stěna. `Face.normal_at` už počítá s orientací
@@ -294,6 +300,6 @@
 - [x] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [x] šikmé a zakřivené plochy
   pro skicu (tečná rovina).
 - [ ] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
-  měření; formát verze 9), [ ] řezy modelem, [ ] sweep/loft, [ ] normalizované díly,
-  [ ] NDT – mapa tloušťky stěny.
+  měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [ ] řezy
+  modelem, [ ] sweep/loft, [ ] normalizované díly.
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

@@ -173,6 +173,33 @@ tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo 
   zmizí, měření se zbarví červeně a napíše proč.
 * Měří se vždy jedna nebo dvě věci; u víc vybraných se nic nezměří.
 
+### Mapa tloušťky stěny (NDT)
+
+Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tloušťky stěny** (klávesa
+`M` nebo tlačítko v horní liště). Celý povrch dílu se obarví podle tloušťky stěny:
+
+| Barva | Význam |
+|---|---|
+| červená → žlutá → zelená → modrá | od nejtenčího místa po horní mez škály (výchozí = nejčastější tloušťka dílu, tedy jmenovitá stěna); tlustší místa jsou modrá |
+| fialová | pod **minimální dovolenou tloušťkou** (zadáš ji v panelu) |
+| šedá | tloušťku tu nejde jednoznačně změřit – okraj jamky, drážky nebo ostrá hrana |
+
+* Tloušťka se měří jako ultrazvukovým tloušťkoměrem: v hustě rozmístěných bodech po celém
+  povrchu kolmo do materiálu až k protější stěně. Platí jen stěna, která k paprsku stojí
+  zhruba kolmo („koncové echo“) – jinak je místo šedé, ne s nesmyslně malým číslem.
+* Nejtenčí místo má ve 3D fialovou značku s hodnotou. Klikem kamkoli na mapu změříš přesnou
+  tloušťku v tom bodě (stavový řádek a panel *Měření*).
+* Panel **Mapa tloušťky** (záložka vedle *Měření*): minimální tloušťka, krok bodů (prázdné
+  = automaticky, asi 30 000 bodů) a horní mez škály. Nastavení se **ukládá do modelu**
+  (Zpět/Znovu funguje). Pod nimi legenda a souhrn: nejtenčí místo se souřadnicemi,
+  nejčastější tloušťka, kolik procent povrchu je pod minimem.
+* Zapnutá mapa se **přepočítá s modelem** – změníš tloušťku stěny nebo hloubku jamky a mapa
+  se na pozadí spočítá znovu (okno nezamrzne, výpočet trvá pár sekund).
+* **Export CSV…** uloží body mapy (x, y, z, tloušťka, pod minimem) pro Excel – se
+  středníkem a desetinnou čárkou, jak je zvyklý český Excel. Hodí se k porovnání
+  s naměřenými hodnotami z ultrazvuku.
+* Pod mapou je díl jen v obrysech hran, aby byly vidět barvy.
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
@@ -227,13 +254,20 @@ Vlastnosti dílu:
 Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```
 
-Model s uloženými měřeními je vypíše taky (`skodacad build examples/trubka.json --set h=4`):
+Model s uloženými měřeními je vypíše taky a s nastavenou mapou tloušťky (nebo s volbou
+`--mapa`) i její souhrn – body mapy uloží do `out/<model>-tloustka.csv`
+(`skodacad build examples/trubka.json --set h=4`):
 
 ```
 Měření:
   Jmenovitá tloušťka stěny: 6.00 mm
   Zbytková tloušťka pod jamkou: 2.00 mm
   Vnější průměr: 114.30 mm
+Mapa tloušťky stěny:
+  Nejtenčí místo: 2.00 mm (X 49.24  Y 0.00  Z 53.15)
+  Nejčastější tloušťka: 6.00 mm, největší: 300.00 mm
+  Pod minimem 4.00 mm: 0.30 % povrchu (619 mm²)
+  27940 bodů po 12.4 mm, výpočet 3.9 s
 ```
 
 | Formát | K čemu |
@@ -248,12 +282,13 @@ Měření:
 ```json
 {
   "format": "skodacad",
-  "version": 9,
+  "version": 10,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
   "features": [ ... ],
-  "measurements": [ ... ]
+  "measurements": [ ... ],
+  "thickness_map": {"limit": 4}
 }
 ```
 
@@ -375,6 +410,17 @@ ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se n
   dvou věcí.
 * Hodnota se do souboru neukládá – spočítá se při každém přepočtu (okno, příkazová řádka).
   Soubory verze 1–8 (bez měření) se načtou dál.
+
+### Mapa tloušťky stěny (`thickness_map`)
+
+```json
+"thickness_map": {"limit": 4, "step": 2.5, "scale_max": 8}
+```
+
+Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fialově), `step` =
+vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
+škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
+se znovu. Soubory verze 1–9 se načtou dál.
 
 ### Materiály
 
