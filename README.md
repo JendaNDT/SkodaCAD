@@ -102,6 +102,17 @@ hlásí červeně.
 Ukázky: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
 *prilozka* – příložka s pěti otvory navázanými na obrys; změň `L` nebo `B` a otvory jdou s ní.
 
+**Promítnutí hran dílu:** když skica leží na dílu (třeba na horní ploše), skicář ukáže hrany
+dílu pod ní šedě. Nástroj **Promítnout** (`U`) – klik na šedou hranu ji převezme jako pevnou
+**fialovou** čáru (úsečku, kružnici díry, oblouk zaoblení). K ní jde dát vazby a kóty (bod na
+hraně, vzdálenost od hrany, soustředně s dírou, tečně, napojení na roh – fialové body se
+přichytávají). **Převzít do obrysu** (`W`) z vybraných fialových hran udělá skutečný obrys
+navázaný na díl (třeba výstupek přesně podle plochy). Když se díl změní (parametr, posunutá
+díra), skica jde s ním. Promítnout jde úsečka a kružnice či oblouk rovnoběžné se skicou.
+
+Ukázka *sloupky* – deska se 4 dírami M3 a distančními sloupky pro plošný spoj: sloupky jsou
+soustředné s promítnutými dírami; změň rozteč `rx` nebo `ry` a sloupky jdou s dírami.
+
 ### Díry podle strojnických tabulek
 
 Ukázka: *Soubor → Otevřít ukázku → deska*. Závit je ve výchozím stavu jen **vyznačený**
@@ -197,7 +208,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 6,
+  "version": 7,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -276,6 +287,11 @@ tak vzniká např. otvor v kruhu).
   (segments, °).
 * `tangent` u čar se společným koncovým bodem řeší přímo SolveSpace, jinak (kružnice, oblouk
   bez společného bodu) přes skrytý bod dotyku.
+* Promítnuté hrany dílu: `"references": {"r1": {"edge": {"face": "top", "type": "circle",
+  "near": [40, 25, 3]}, "kind": "circle", "center": [40, 25], "radius": 1.7}}` – `edge` je
+  hrana popsaná významem (jako u zaoblení), `kind` a souřadnice se při každém přepočtu
+  spočítají znovu z dílu před skicou. Jsou pevné; vazby na ně odkazují jménem (`r1`) a body
+  `r1.start`, `r1.end`, `r1.center`.
 
 ### Výběr hran (`edges`)
 
