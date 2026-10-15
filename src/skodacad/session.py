@@ -15,7 +15,7 @@ from __future__ import annotations
 import copy
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +42,7 @@ from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
+from skodacad.solver import SolveError, solve
 
 _NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _UNDO_LIMIT = 100
@@ -204,13 +205,19 @@ class ModelSession:
         """Kopie prvku (úpravy jdou jen přes ``update_feature``)."""
         return copy.deepcopy(self._require().features[self.feature_index(feature_id)])
 
-    def add_feature(self, feature_type: str, after_id: str | None = None) -> str:
-        """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec)."""
+    def add_feature(self, feature_type: str, after_id: str | None = None,
+                    values: dict[str, Any] | None = None) -> str:
+        """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec).
+
+        ``values`` přepíše výchozí hodnoty (např. skica rovnou s nakresleným obrysem) –
+        pořád jde o jeden krok pro Zpět."""
         if feature_type not in FEATURE_SCHEMAS:
             raise DocumentError(f"Neznámý typ prvku „{feature_type}“.")
         features = self._require().features
         index = self.feature_index(after_id) + 1 if after_id else len(features)
         feature = new_feature(feature_type, features, index)
+        feature.update(copy.deepcopy({k: v for k, v in (values or {}).items()
+                                      if k not in ("id", "type")}))
         self._change(lambda doc: doc.features.insert(index, feature))
         return feature["id"]
 
@@ -242,6 +249,20 @@ class ModelSession:
             doc.features.insert(target, doc.features.pop(index))
 
         return self._change(mutate)
+
+    # --- skicář ----------------------------------------------------------------------
+
+    def solve_profile(self, profile: dict[str, Any]) -> ProfileSolution:
+        """Vyřeší obrys skicáře s aktuálními parametry. Nikdy nevyhodí výjimku – chybu
+        vrátí česky v ``message`` (a čísla vadných vazeb ve ``failed``)."""
+        params = self.result.parameters if self.result else {}
+        try:
+            solved = solve(profile, lambda value: evaluate(value, params))
+        except SolveError as exc:
+            return ProfileSolution({}, -1, str(exc), exc.failed)
+        except ExpressionError as exc:
+            return ProfileSolution({}, -1, f"Hodnota kóty: {exc}", [])
+        return ProfileSolution(solved.points, solved.dof)
 
     # --- výběr ve 3D ---------------------------------------------------------------
 
@@ -443,6 +464,18 @@ class ModelSession:
         star = "*" if self.dirty else ""
         filename = self.path.name if self.path else "nový model"
         return f"{star}{self.document.name} ({filename}) – ŠkodaCAD"
+
+
+@dataclass
+class ProfileSolution:
+    points: dict[str, tuple[float, float]]  # vyřešené polohy ({} při chybě)
+    dof: int  # kolik rozměrů chybí (0 = plně určeno, -1 = chyba)
+    message: str = ""  # česká chyba, "" = v pořádku
+    failed: list[int] = field(default_factory=list)  # čísla vazeb, které si odporují
+
+    @property
+    def ok(self) -> bool:
+        return not self.message
 
 
 @dataclass(frozen=True)
