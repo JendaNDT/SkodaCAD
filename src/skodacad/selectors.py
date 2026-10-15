@@ -38,7 +38,7 @@ BASE_PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
 
 _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
 _EDGE_TYPES = {"line": GeomType.LINE, "circle": GeomType.CIRCLE}
-_EDGE_KEYS = {"face", "type", "parallel", "radius"}
+_EDGE_KEYS = {"face", "between", "type", "parallel", "radius", "near"}
 _TOLERANCE = 1e-6
 
 
@@ -78,13 +78,27 @@ def face_plane(part: Part, name: str) -> Plane:
 def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> list[Edge]:
     """Hrany podle popisu ``spec``.
 
-    ``spec`` je buď ``"all"``, nebo objekt s nepovinnými klíči:
+    ``spec`` je ``"all"``, objekt s nepovinnými klíči, nebo seznam takových objektů
+    (pak se vezmou hrany všech popisů dohromady):
 
     * ``face``: jen hrany pojmenované plochy (``top``, ``bottom``, ``front`` …)
+    * ``between``: dvě pojmenované plochy – jen hrany, které leží na obou
+      (např. ``["front", "right"]`` = svislá hrana vpravo vpředu)
     * ``type``: ``line`` (úsečka) nebo ``circle`` (kružnice/oblouk)
     * ``parallel``: jen úsečky rovnoběžné s osou ``X``, ``Y`` nebo ``Z``
     * ``radius``: jen kružnice s tímto poloměrem (číslo nebo výraz)
+    * ``near``: bod ``[x, y, z]`` – z hran, které zbydou, jen ta nejbližší k bodu
+      (rozliší třeba jednu ze čtyř stejných děr)
     """
+    if isinstance(spec, list):
+        if not spec:
+            raise SelectionError("Seznam výběrů hran je prázdný.")
+        edges: list[Edge] = []
+        for item in spec:
+            if isinstance(item, list):
+                raise SelectionError("Seznam výběrů hran nesmí obsahovat další seznam.")
+            _add_unique(edges, select_edges(part, item, evaluate))
+        return edges
     if spec == "all":
         spec = {}
     if not isinstance(spec, dict):
@@ -97,13 +111,17 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
         )
 
     if "face" in spec:
-        edges: list[Edge] = []
-        for face in select_faces(part, spec["face"]):
-            for edge in face.edges():
-                if not any(edge.is_same(known) for known in edges):
-                    edges.append(edge)
+        edges = face_edges(part, spec["face"])
     else:
         edges = list(part.edges())
+
+    if "between" in spec:
+        names = spec["between"]
+        if not isinstance(names, list) or len(names) != 2:
+            raise SelectionError('„between“ musí být dvě plochy, např. ["front", "right"].')
+        first, second = (face_edges(part, name) for name in names)
+        edges = [edge for edge in edges
+                 if any(edge.is_same(e) for e in first) and any(edge.is_same(e) for e in second)]
 
     if "type" in spec:
         if spec["type"] not in _EDGE_TYPES:
@@ -113,13 +131,7 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
     if "parallel" in spec:
         if spec["parallel"] not in _AXES:
             raise SelectionError(f"Osa „{spec['parallel']}“ neexistuje, povolené: X, Y, Z.")
-        axis = _AXES[spec["parallel"]].direction
-        edges = [
-            edge
-            for edge in edges
-            if edge.geom_type == GeomType.LINE
-            and abs(abs(edge.tangent_at(0).dot(axis)) - 1) < _TOLERANCE
-        ]
+        edges = [edge for edge in edges if edge_axis(edge) == spec["parallel"]]
 
     if "radius" in spec:
         radius = evaluate(spec["radius"])
@@ -130,7 +142,71 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
             and abs(edge.radius - radius) <= _TOLERANCE * max(1.0, radius)
         ]
 
+    if "near" in spec and edges:
+        point = spec["near"]
+        if not isinstance(point, list) or len(point) != 3:
+            raise SelectionError("„near“ musí být bod [x, y, z].")
+        target = Vector(*(evaluate(value) for value in point))
+        edges = [min(edges, key=lambda edge: edge.distance_to(target))]
+
     if not edges:
         described = json.dumps(spec, ensure_ascii=False) if spec else '"all"'
         raise SelectionError(f"Výběr hran {described} nenašel žádnou hranu.")
     return edges
+
+
+def face_edges(part: Part, name: str) -> list[Edge]:
+    """Hrany pojmenované plochy (všech jejích kusů, bez opakování)."""
+    edges: list[Edge] = []
+    for face in select_faces(part, name):
+        _add_unique(edges, face.edges())
+    return edges
+
+
+def edge_axis(edge: Edge) -> str | None:
+    """Osa X/Y/Z, se kterou je úsečka rovnoběžná, jinak None."""
+    if edge.geom_type != GeomType.LINE:
+        return None
+    tangent = edge.tangent_at(0)
+    for name, axis in _AXES.items():
+        if abs(abs(tangent.dot(axis.direction)) - 1) < _TOLERANCE:
+            return name
+    return None
+
+
+def _add_unique(edges: list[Edge], new: list[Edge]) -> None:
+    for edge in new:
+        if not any(edge.is_same(known) for known in edges):
+            edges.append(edge)
+
+
+# Tvary pro české věty: „na horní ploše“, „mezi přední a pravou plochou“.
+_FACE_LOCATIVE = {"top": "horní", "bottom": "spodní", "front": "přední", "back": "zadní",
+                  "right": "pravé", "left": "levé"}
+_FACE_INSTRUMENTAL = {"top": "horní", "bottom": "spodní", "front": "přední", "back": "zadní",
+                      "right": "pravou", "left": "levou"}
+
+
+def describe_edges(spec: Any) -> str:
+    """Výběr hran česky, např. „hrany na horní ploše, kružnice R3“."""
+    if isinstance(spec, list):
+        return "; ".join(describe_edges(item) for item in spec)
+    if spec == "all" or spec == {}:
+        return "všechny hrany"
+    if not isinstance(spec, dict):
+        return str(spec)
+    parts = []
+    if "between" in spec and isinstance(spec["between"], list) and len(spec["between"]) == 2:
+        first, second = (_FACE_INSTRUMENTAL.get(name, str(name)) for name in spec["between"])
+        parts.append(f"hrana mezi {first} a {second} plochou")
+    else:
+        parts.append({"line": "úsečky", "circle": "kružnice"}.get(spec.get("type"), "hrany"))
+    if "face" in spec:
+        parts.append(f"na {_FACE_LOCATIVE.get(spec['face'], spec['face'])} ploše")
+    if "parallel" in spec:
+        parts.append(f"rovnoběžné s osou {spec['parallel']}")
+    if "radius" in spec:
+        parts.append(f"poloměr {spec['radius']}")
+    if "near" in spec and isinstance(spec["near"], list):
+        parts.append("nejbližší k bodu [" + "; ".join(str(v) for v in spec["near"]) + "]")
+    return " ".join(parts[:1]) + (" " + ", ".join(parts[1:]) if len(parts) > 1 else "")

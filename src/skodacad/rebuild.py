@@ -34,6 +34,9 @@ class BuildResult:
     part: Part | None
     parameters: dict[str, float]
     statuses: list[FeatureStatus] = field(default_factory=list)
+    # Díl těsně před každým spočítaným prvkem (id → Part nebo None) – na něm prvek vybíral
+    # hrany a plochy. Okno podle toho zvýrazní, co prvek zasahuje.
+    parts_before: dict[str, Part | None] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -66,6 +69,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
             )
             continue
 
+        result.parts_before[feature["id"]] = ctx.part
         message = _run_feature(ctx, feature)
         if message is None:
             result.statuses.append(FeatureStatus(feature["id"], feature["type"], label, "ok"))

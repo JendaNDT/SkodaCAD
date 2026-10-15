@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 1,
+      "version": 2,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -26,7 +26,10 @@ from pathlib import Path
 from typing import Any
 
 FORMAT = "skodacad"
-VERSION = 1
+# Verze 2 přidala do výběru hran klíče „between“, „near“ a seznam výběrů (výběr kliknutím).
+# Verze 1 je její podmnožina, takže se načte beze změny.
+VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
 
 
 class DocumentError(ValueError):
@@ -49,8 +52,12 @@ class Document:
         if data.get("format") != FORMAT:
             raise DocumentError(f"Soubor není model ŠkodaCAD (chybí \"format\": \"{FORMAT}\").")
         version = data.get("version")
-        if version != VERSION:
-            raise DocumentError(f"Nepodporovaná verze formátu {version!r}, umím verzi {VERSION}.")
+        if version not in SUPPORTED_VERSIONS:
+            raise DocumentError(
+                f"Nepodporovaná verze formátu {version!r}, umím verze "
+                f"{', '.join(map(str, SUPPORTED_VERSIONS))}. Soubor je nejspíš z novější "
+                "verze ŠkodaCAD – stáhni aktuální aplikaci."
+            )
         units = data.get("units", "mm")
         if units != "mm":
             raise DocumentError(f"Jednotky „{units}“ nejsou podporované, model musí být v mm.")
