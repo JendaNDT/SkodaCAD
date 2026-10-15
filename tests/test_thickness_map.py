@@ -132,3 +132,85 @@ def test_colors_settings_and_csv(tmp_path):
     assert len(rows) == len(found.values) + 1
     thin = [row for row in rows[1:] if row.endswith(";ano")]
     assert thin and all(row.split(";")[3] == "4,000" for row in thin)
+
+
+# --- mapa v modelu, přepočtu, okně bez Qt a příkazové řádce ------------------------------
+
+
+def test_map_settings_are_saved_in_the_model():
+    from skodacad.document import DocumentError
+
+    base = {"format": "skodacad", "version": 10, "features": []}
+    document = Document.from_dict({**base, "thickness_map": {"limit": 4}})
+    assert document.to_dict()["thickness_map"] == {"limit": 4}
+    assert "thickness_map" not in Document.from_dict(base).to_dict()  # bez nastavení nic
+    with pytest.raises(DocumentError, match="kladné číslo"):
+        Document.from_dict({**base, "thickness_map": {"step": 0}})
+    assert Document.from_dict({**base, "version": 9}).thickness_map is None
+    no_part = rebuild(Document.from_dict(base), with_map=True)
+    assert no_part.thickness_map is None and "potřebuje díl" in no_part.map_error
+
+
+def test_session_shows_map_recomputes_it_and_keeps_settings_with_undo(tmp_path):
+    from skodacad.document import DocumentError
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.document = make_doc(box_features(20, 20, 10) + [
+        {"id": "j", "type": "sketch", "plane": "bottom",
+         "elements": [{"shape": "circle", "diameter": 10}]},
+        {"id": "r", "type": "extrude", "sketch": "j", "operation": "cut", "distance": "h"},
+    ], {"h": 6})
+    session.rebuild()
+    assert session.thickness_map is None  # bez zapnutí se nepočítá
+    session.show_thickness_map(True)
+    assert session.thickness_map.minimum == pytest.approx(4)
+    session.set_map_setting("step", "2,5")
+    session.set_map_setting("limit", "5")
+    assert session.document.thickness_map == {"step": 2.5, "limit": 5}
+    assert session.thickness_map.settings.limit == 5 and session.thickness_map.step == 2.5
+    assert session.thickness_map.area_below > 0
+    session.set_parameter("h", "7")  # hlubší jamka → mapa se přepočítá sama
+    assert session.thickness_map.minimum == pytest.approx(3)
+    session.undo()
+    session.undo()
+    assert session.document.thickness_map == {"step": 2.5}
+    with pytest.raises(DocumentError, match="není číslo"):
+        session.set_map_setting("limit", "tenká")
+    with pytest.raises(DocumentError, match="kladné číslo"):
+        session.set_map_setting("limit", "-2")
+    session.set_map_setting("step", "")
+    assert session.document.thickness_map == {}
+    path = session.export_thickness_map(tmp_path / "mapa.csv")
+    assert path.read_text(encoding="utf-8-sig").startswith("x [mm];y [mm]")
+    session.show_thickness_map(False)
+    session.set_parameter("h", "5")
+    assert session.thickness_map is None  # vypnutá mapa zbytečně nezdržuje
+    with pytest.raises(DocumentError, match="není spočítaná"):
+        session.export_thickness_map(tmp_path / "x.csv")
+
+
+def test_map_travels_from_the_background_process():
+    import pickle
+
+    from skodacad.worker import decode_result, encode_result
+
+    result = rebuild(make_doc(box_features(10, 10, 4)), with_map=True)
+    copied = decode_result(pickle.loads(pickle.dumps(encode_result(result))))
+    assert copied.thickness_map == result.thickness_map
+    assert copied.thickness_map.minimum == pytest.approx(4)
+
+
+def test_cli_prints_map_summary_and_writes_csv(examples_dir, tmp_path, capsys):
+    from skodacad.cli import main
+
+    code = main(["build", str(examples_dir / "trubka.json"), "-o", str(tmp_path),
+                 "--format", "step"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Mapa tloušťky stěny:\n  Nejtenčí místo: 2.50 mm" in out
+    assert "Pod minimem 4.00 mm:" in out
+    assert (tmp_path / "trubka-tloustka.csv").exists()
+    code = main(["build", str(examples_dir / "priruba.json"), "-o", str(tmp_path),
+                 "--format", "step", "--mapa"])
+    assert "Nejčastější tloušťka: 18.00 mm" in capsys.readouterr().out

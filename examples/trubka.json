@@ -1,8 +1,8 @@
 {
   "format": "skodacad",
-  "version": 9,
+  "version": 10,
   "name": "Trubka s korozní jamkou",
-  "description": "Ukázka měření pro NDT: trubka s vnější korozní jamkou a uloženými měřeními tloušťky stěny (jako ultrazvukový tloušťkoměr – kolmo do materiálu). Když změníš tloušťku stěny s nebo hloubku jamky h, měření v panelu Měření se přepočítají. D = vnější průměr, s = tloušťka stěny, L = délka, dj × h = průměr × hloubka jamky, xj = poloha jamky podél trubky. Rozměry jsou ilustrační.",
+  "description": "Ukázka měření pro NDT: trubka s vnější korozní jamkou a uloženými měřeními tloušťky stěny (jako ultrazvukový tloušťkoměr – kolmo do materiálu). Když změníš tloušťku stěny s nebo hloubku jamky h, měření v panelu Měření se přepočítají. Mapa tloušťky stěny (Model → Mapa tloušťky stěny) ukáže celý povrch barevně, minimum 4 mm je uložené v modelu. D = vnější průměr, s = tloušťka stěny, L = délka, dj × h = průměr × hloubka jamky, xj = poloha jamky podél trubky. Rozměry jsou ilustrační.",
   "units": "mm",
   "material": "ocel",
   "parameters": {"D": 114.3, "s": 6, "L": 300, "h": 3.5, "dj": 20, "xj": 40},
@@ -18,6 +18,7 @@
     {"id": "jamka", "type": "extrude", "name": "Korozní jamka", "sketch": "jamka_skica",
      "operation": "cut", "distance": "h"}
   ],
+  "thickness_map": {"limit": 4},
   "measurements": [
     {"id": "m1", "name": "Jmenovitá tloušťka stěny", "kind": "thickness",
      "a": {"face": {"at": [-100, 0, -57.15], "normal": [0, 0, -1], "type": "cylinder",

@@ -54,6 +54,7 @@ from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
 from skodacad.solver import SolveError, loops, solve
+from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
 
 if TYPE_CHECKING:
     from skodacad.worker import BackgroundRebuilder
@@ -100,6 +101,7 @@ class ModelSession:
         self._runner = runner
         self._job: int | None = None  # běžící přepočet na pozadí
         self._computed: Document | None = None  # model, ke kterému patří ``result``
+        self.map_visible = False  # počítat i mapu tloušťky stěny (zapíná okno)
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -136,10 +138,10 @@ class ModelSession:
             raise DocumentError("Není otevřený žádný model.")
         self.failure = ""
         if self._runner is None:
-            self.result = rebuild(self.document)
+            self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
             return self.result
-        self._job = self._runner.submit(self.document.to_dict())
+        self._job = self._runner.submit(self.document.to_dict(), with_map=self.map_visible)
         return self.result
 
     # --- přepočet na pozadí ----------------------------------------------------------
@@ -519,6 +521,65 @@ class ModelSession:
             if measurement.get("id") == measurement_id:
                 return index
         raise DocumentError(f"Měření „{measurement_id}“ v modelu není.")
+
+    # --- mapa tloušťky stěny ----------------------------------------------------------
+
+    @property
+    def map_settings(self) -> MapSettings:
+        try:
+            return MapSettings.from_dict(self._require().thickness_map)
+        except MapError:
+            return MapSettings()
+
+    @property
+    def thickness_map(self) -> ThicknessMap | None:
+        return self.result.thickness_map if self.result is not None else None
+
+    def show_thickness_map(self, visible: bool) -> BuildResult | None:
+        """Zapne/vypne mapu tloušťky. Zapnutá mapa se spočítá (na pozadí) a pak se počítá
+        s každou změnou modelu."""
+        self.map_visible = visible
+        if visible and self.document is not None and (
+                self.result is None or (self.result.thickness_map is None
+                                        and not self.result.map_error)):
+            return self.rebuild()
+        return self.result
+
+    def set_map_setting(self, key: str, text: str) -> BuildResult:
+        """Nastavení mapy z políčka okna (``limit``, ``step``, ``scale_max``); prázdné =
+        bez hranice / automaticky. Uloží se do modelu (Zpět/Znovu)."""
+        document = self._require()
+        current = dict(document.thickness_map or {})
+        text = text.strip()
+        if not text:
+            current.pop(key, None)
+        else:
+            try:
+                current[key] = float(text.replace(",", "."))
+            except ValueError:
+                raise DocumentError(f"„{text}“ není číslo – napiš tloušťku v mm, "
+                                    "např. 4 nebo 2,5.") from None
+            if current[key].is_integer():
+                current[key] = int(current[key])
+        try:
+            settings = MapSettings.from_dict(current)
+        except MapError as exc:
+            raise DocumentError(str(exc)) from None
+        saved = settings.to_dict()
+
+        def mutate(doc: Document) -> None:
+            doc.thickness_map = saved
+
+        return self._change(mutate)
+
+    def export_thickness_map(self, path: str | Path) -> Path:
+        """Body mapy tloušťky do CSV (x, y, z, tloušťka) pro Excel."""
+        self._require_computed("export mapy")
+        found = self.thickness_map
+        if found is None:
+            raise DocumentError("Mapa tloušťky ještě není spočítaná – zapni ji a počkej na "
+                                "výsledek.")
+        return found.write_csv(path)
 
     def _final_part(self) -> Any:
         self._require_computed("přidání prvku z výběru")
