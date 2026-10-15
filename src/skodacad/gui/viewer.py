@@ -29,7 +29,6 @@ from OCP.AIS import (
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_GFM_VER,
-    Aspect_TODT_SUBTITLE,
     Aspect_TOL_SOLID,
     Aspect_TOM_BALL,
     Aspect_TOM_POINT,
@@ -37,6 +36,7 @@ from OCP.Aspect import (
 )
 from OCP.BRep import BRep_Builder
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
+from OCP.Font import Font_FA_Bold
 from OCP.GeomAbs import GeomAbs_C1
 from OCP.gp import gp_Pnt
 from OCP.Graphic3d import (
@@ -52,7 +52,7 @@ from OCP.Prs3d import (
     Prs3d_TypeOfHighlight_LocalDynamic,
     Prs3d_TypeOfHighlight_LocalSelected,
 )
-from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_NOC_WHITE, Quantity_TOC_RGB
+from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
 from OCP.TCollection import TCollection_ExtendedString
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
 from OCP.TopoDS import TopoDS_Compound
@@ -288,11 +288,12 @@ class OccViewer(QWidget):
             label.SetText(TCollection_ExtendedString(text, True))
             label.SetPosition(gp_Pnt((begin.X() + finish.X()) / 2, (begin.Y() + finish.Y()) / 2,
                                      (begin.Z() + finish.Z()) / 2))
-            label.SetColor(Quantity_Color(Quantity_NOC_WHITE))
-            label.SetDisplayType(Aspect_TODT_SUBTITLE)  # bílé písmo na zeleném podkladu
-            label.SetColorSubTitle(color)
-            label.SetHeight(15)
+            label.SetColor(_rgb(0.0, 0.22, 0.07))
+            # Jen prostý text: podklad (Aspect_TODT_SUBTITLE) shodí základní ovladač Windows
+            # bez grafické karty (GDI Generic, OpenGL 1.1) – ověřuje to self-test.
+            label.SetHeight(17)
             label.SetFont("Arial")  # bezpatkové písmo (bez něj OCCT bere patkové)
+            label.SetFontAspect(Font_FA_Bold)  # tučně – čitelné i na šedém dílu
             for shown in (line, label):
                 self._context.Display(shown, False)
                 self._context.Deactivate(shown)
@@ -335,14 +336,14 @@ class OccViewer(QWidget):
         if variant in ("point", "ball"):
             marker = Aspect_TOM_BALL if variant == "ball" else Aspect_TOM_POINT
             shown.Attributes().SetPointAspect(Prs3d_PointAspect(marker, color, 2.0))
-        if variant in ("label", "subtitle"):
+        if variant in ("label", "arial"):
             shown = AIS_TextLabel()
             shown.SetText(TCollection_ExtendedString("12.50 mm 45°", True))
             shown.SetPosition(gp_Pnt(0, 0, 0))
-            if variant == "subtitle":
-                shown.SetDisplayType(Aspect_TODT_SUBTITLE)
-                shown.SetColorSubTitle(color)
+            if variant == "arial":
+                shown.SetHeight(17)
                 shown.SetFont("Arial")
+                shown.SetFontAspect(Font_FA_Bold)
         self._context.Display(shown, False)
         self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
         self._view.Redraw()

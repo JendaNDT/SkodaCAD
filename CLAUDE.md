@@ -221,6 +221,13 @@
   obyčejně (pickle).
 - Popisek ve 3D (`AIS_TextLabel`) chce `TCollection_ExtendedString(text, True)` (UTF-8 –
   jinak se rozbije „°“) a `SetFont("Arial")`, jinak OCCT kreslí patkovým písmem.
+- **Žádný podklad pod popiskem** (`Aspect_TODT_SUBTITLE`): základní ovladač Windows bez
+  grafické karty (GDI Generic, OpenGL 1.1 – sestavovací počítač GitHubu, vzdálená plocha,
+  virtuál) při překreslení spadne (access violation, celý program). Čára, kuličky
+  (`Aspect_TOM_BALL`) a prostý text fungují. Self-test (`_self_test_drawing`) kreslí každý
+  použitý druh značky zvlášť a do zprávy píše ovladač OpenGL – nový druh kreslení přidej i tam.
+- Zpráva self-testu se zapisuje průběžně a `faulthandler` k ní při pádu připíše zásobník
+  Pythonu – v logu GitHubu je pak vidět řádek, kde proces spadl.
 - Self-test okna musí otevřít ukázku přes `MainWindow.open_model` (ne jen `show_part`) –
   měření i výběr jdou přes `ModelSession`, bez výsledku přepočtu se nic nezměří.
 

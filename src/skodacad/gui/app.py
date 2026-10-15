@@ -305,7 +305,7 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "subtitle"):
+    for variant in ("line", "point", "ball", "label", "arial"):  # to, co kreslí měření
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)
