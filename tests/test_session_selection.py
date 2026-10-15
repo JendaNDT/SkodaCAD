@@ -87,6 +87,10 @@ def test_add_clicked_edge_to_existing_fillet(session):
     session.apply_selection(fillet, click_edges(session, (0, -15, 10)))
     assert len(session.feature(fillet)["edges"]) == 3
     assert session.result.ok
+    # Nahradit: jen nově vybraná hrana (spodní zadní), původní zaoblení zmizí.
+    session.apply_selection(fillet, click_edges(session, (0, 15, 0)), replace=True)
+    assert session.feature(fillet)["edges"] == {"between": ["bottom", "back"]}
+    assert session.properties.volume_mm3 == pytest.approx(BOX - corner_loss(2, 40))
 
 
 def test_edge_already_in_feature_is_reported(session):

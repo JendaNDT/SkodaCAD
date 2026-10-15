@@ -268,16 +268,16 @@ class ModelSession:
         document = self._require()
         part = self._final_part()
         feature = new_feature(feature_type, document.features)
-        self._fill_from_selection(feature, part, shapes, point, replace=True)
+        self._fill_from_selection(feature, part, shapes, point, replace=True, new=True)
         self._change(lambda doc: doc.features.append(feature))
         return feature["id"]
 
     def apply_selection(self, feature_id: str, shapes: list[Any],
-                        point: Any = None) -> BuildResult:
+                        replace: bool = False) -> BuildResult:
         """Převezme výběr ve 3D do existujícího prvku.
 
-        Zaoblení/sražení vybrané hrany přidá ke svým, skica se přesune na vybranou
-        plochu, skořepina vybrané plochy otevře.
+        Zaoblení/sražení vybrané hrany přidá ke svým (``replace`` = místo svých),
+        skica se přesune na vybranou plochu, skořepina vybrané plochy otevře.
         """
         feature = self.feature(feature_id)
         if feature["type"] not in SELECTION_FEATURES:
@@ -286,7 +286,7 @@ class ModelSession:
         if part is None:
             raise DocumentError(f"{describe(feature)} se zatím nepočítá (je za chybou "
                                 "nebo před ním není těleso) – výběr nejde převzít.")
-        self._fill_from_selection(feature, part, shapes, point, replace=False)
+        self._fill_from_selection(feature, part, shapes, None, replace=replace, new=False)
         return self.update_feature(feature_id, feature)
 
     def feature_highlight(self, feature_id: str) -> list[Any]:
@@ -325,27 +325,33 @@ class ModelSession:
         return evaluate(value, self.result.parameters if self.result else {})
 
     def _fill_from_selection(self, feature: dict[str, Any], part: Any, shapes: list[Any],
-                             point: Any, replace: bool) -> None:
-        """Doplní do prvku výběr z 3D. ``part`` je díl, na kterém prvek vybírá."""
+                             point: Any, replace: bool, new: bool) -> None:
+        """Doplní do prvku výběr z 3D. ``part`` je díl, na kterém prvek vybírá.
+
+        Nový prvek (``new``) leží na konci stromu, kde je zobrazený díl – kliknuté hrany
+        patří přímo jemu. U existujícího se hledají v dílu před prvkem (``map_edges``).
+        """
         faces, edges = split_shapes(shapes)
         kind = feature["type"]
         try:
             if kind in ("fillet", "chamfer"):
                 if not edges:
                     raise DocumentError("Vyber ve 3D aspoň jednu hranu (Ctrl+klik přidá další).")
-                if replace:
+                if new:
                     feature["edges"] = edge_selector(part, edges)
+                elif replace:
+                    feature["edges"] = edge_selector(part, map_edges(edges, part))
                 else:
                     feature["edges"] = self._added_edges(feature["edges"], part, edges)
             elif kind == "sketch":
                 if len(faces) != 1:
                     raise DocumentError("Vyber ve 3D právě jednu rovinnou plochu.")
-                reference = face_reference(part, faces[0], point if replace else None)
+                reference = face_reference(part, faces[0], point if new else None)
                 feature["plane"] = reference.plane
                 feature.pop("offset", None)
                 if reference.offset:
                     feature["offset"] = reference.offset
-                if replace:
+                if new:
                     feature["elements"][0]["center"] = list(reference.point)
             elif kind == "shell":
                 if not faces:

@@ -41,6 +41,7 @@ from skodacad.schema import (
     Field,
     new_shape,
 )
+from skodacad.selectors import describe_edges
 from skodacad.session import format_parameter_value, parse_parameter_text
 
 MISSING = object()  # pole je prázdné a nepovinné → klíč se z prvku odebere
@@ -49,6 +50,7 @@ _BAD_STYLE = "border: 2px solid #c0392b; background: #fdecea;"
 EDGE_FACE_CHOICES = (("", "všechny plochy"), *FACE_CHOICES)
 EDGE_TYPE_CHOICES = (("", "všechny"), ("line", "úsečky"), ("circle", "kružnice a oblouky"))
 EDGE_AXIS_CHOICES = (("", "libovolně"), ("X", "s osou X"), ("Y", "s osou Y"), ("Z", "s osou Z"))
+_FORM_EDGE_KEYS = {"face", "type", "parallel", "radius"}  # co umí formulář; zbytek = výběr z 3D
 
 
 class InvalidValue(ValueError):
@@ -215,6 +217,8 @@ class FieldsForm(QWidget):
         return holder, read
 
     def _build_edges(self, field: Field, value: Any):
+        if isinstance(value, list) or (isinstance(value, dict) and set(value) - _FORM_EDGE_KEYS):
+            return self._build_picked_edges(value)
         spec = value if isinstance(value, dict) else {}
         holder = QWidget()
         form = QFormLayout(holder)
@@ -247,6 +251,17 @@ class FieldsForm(QWidget):
             return result or "all"
 
         return holder, read
+
+    def _build_picked_edges(self, value: Any):
+        """Výběr kliknutím ve 3D (hrana mezi plochami, nejbližší k bodu …) – jen ukázat."""
+        label = QLabel(f"<b>Vybráno ve 3D:</b> {describe_edges(value)}<br>"
+                       "<span style='color:#666'>Další hrany: vyber je ve 3D (Ctrl+klik) → "
+                       "pravé tlačítko → Přidat vybrané hrany. Hrany prvku jsou ve 3D "
+                       "zvýrazněné růžově.</span>")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        kept = copy.deepcopy(value)
+        return label, lambda: copy.deepcopy(kept)
 
     def _build_point(self, field: Field, value: Any):
         holder = QWidget()
@@ -415,6 +430,7 @@ class ShapesEditor(QWidget):
     def _show_selected(self, row: int) -> None:
         if self._form is not None:
             self._detail.removeWidget(self._form)
+            self._form.hide()  # smaže se až později – do té doby nesmí překrývat nový formulář
             self._form.deleteLater()
             self._form = None
         if not 0 <= row < len(self._elements):
@@ -459,6 +475,7 @@ class FeatureEditor(QWidget):
         """Ukáže formulář prvku; ``sketches`` = skici před ním jako (id, popis)."""
         if self.form is not None:
             self._layout.removeWidget(self.form)
+            self.form.hide()  # smaže se až později – do té doby nesmí překrývat nový formulář
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None

@@ -176,6 +176,7 @@ def _self_test_window(lines: list[str], part) -> bool:
     if viewer.ready:
         image = user_dir() / "self-test-3d.png"
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))})")
+        ok = _self_test_pick(window, part, lines)
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -186,6 +187,22 @@ def _self_test_window(lines: list[str], part) -> bool:
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_pick(window, part, lines: list[str]) -> bool:
+    """Klik doprostřed nejdelší hrany dílu musí něco vybrat (hranu nebo plochu u ní)."""
+    viewer = window.viewer
+    edge = max(part.edges(), key=lambda e: e.length)
+    middle = edge.position_at(0.5)
+    x, y = viewer._view.Convert(float(middle.X), float(middle.Y), float(middle.Z))
+    viewer._select_at(x, y)
+    QApplication.processEvents()
+    picked = viewer.selected_shapes()
+    if not picked:
+        lines.append(f"✕ Výběr kliknutím: na hraně dílu (pixel {x}, {y}) se nic nevybralo")
+        return False
+    lines.append(f"✓ Výběr kliknutím: OK ({window.session.selection_info(picked).text})")
+    return True
 
 
 if __name__ == "__main__":

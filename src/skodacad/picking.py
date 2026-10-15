@@ -261,7 +261,7 @@ def face_reference(part: Part, face: Face, point: Any = None) -> FaceReference:
     plane = outer.offset(offset) if offset else outer
     where = Vector(*point) if point is not None else face.center()
     local = plane.to_local_coords(where)
-    return FaceReference(name, offset, (_number(local.X, 2), _number(local.Y, 2)))
+    return FaceReference(name, offset, (_number(local.X, 1), _number(local.Y, 1)))
 
 
 def open_face_name(part: Part, face: Face) -> str:

@@ -68,7 +68,8 @@
 10. Každá úprava modelu z okna jde přes metodu `ModelSession` (→ `_change`), aby fungovalo
     Zpět/Znovu a neplatná úprava model nepoškodila.
 11. Testy okna s dialogem (`QInputDialog`, `QMessageBox`, `QFileDialog`) musí dialog nahradit
-    (fixture `no_dialogs`), jinak test čeká navždy. Testy okna pouštěj s `timeout`.
+    (fixture `no_dialogs`), jinak test čeká navždy. Totéž místní nabídka: `QMenu.exec` jde
+    přes `MainWindow._exec_menu`, test ji nahradí. Testy okna pouštěj s `timeout`.
 
 ## Příkazy
 
