@@ -141,7 +141,7 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                        "(na průměru). Bez hodnoty 0,2 mm."),
             Field("diameter", "Vlastní průměr [mm]", "number", required=False,
                   help="Přepíše průměr z tabulky (např. podle zkušebního tisku)."),
-        ), "Díra podle strojnických tabulek – závit je jen vyznačený."),
+        ), "Díra podle strojnických tabulek – závit vyznačený, pro 3D tisk i vymodelovaný."),
         Schema("shell", "Skořepina", (
             _NAME,
             Field("thickness", "Tloušťka stěny [mm]", "number"),
