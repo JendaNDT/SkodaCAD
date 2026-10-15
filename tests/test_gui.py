@@ -474,16 +474,17 @@ def test_sketch_on_clicked_face(empty_window):
     assert form_field(w, "plane").currentData() == "front"
 
 
-def test_curved_face_does_not_offer_sketch(window, no_dialogs, slot_errors):
+def test_curved_face_offers_sketch_but_not_shell(window, no_dialogs, slot_errors):
     part = shown_part(window)
     bore = next(face for face in part.faces() if face.geom_type.name == "CYLINDER")
     window.viewer.click([bore])
-    assert not action(window, "Skica na vybrané ploše").isEnabled()
+    assert action(window, "Skica na vybrané ploše").isEnabled()  # na tečné rovině
+    assert action(window, "Díra na vybrané ploše").isEnabled()
     assert not action(window, "Skořepina – otevřít vybrané plochy").isEnabled()
-    assert "díra na ploše" not in window.statusBar().currentMessage()
-    # Kdyby se akce přesto spustila, objeví se česká hláška a model zůstane beze změny.
+    assert "díra na ploše" in window.statusBar().currentMessage()
+    # Skořepina zakřivenou plochu otevřít neumí: česká hláška, model beze změny.
     before = len(window.session.document.features)
-    window.add_from_selection("sketch")
+    window.add_from_selection("shell")
     assert no_dialogs == ["warning"]
     assert len(window.session.document.features) == before
     assert slot_errors == []
@@ -592,3 +593,50 @@ def test_pattern_needs_a_checked_feature(empty_window):
     form.findChild(QtWidgets.QCheckBox, "feature_extrude1").setChecked(True)
     form.findChild(QtWidgets.QCheckBox, "feature_extrude1").setChecked(False)
     assert "zaškrtni aspoň jeden prvek" in w.statusBar().currentMessage()
+
+
+def test_sketch_on_inclined_face_from_click(empty_window):
+    w = empty_window
+    build_box(w)  # kvádr 40 × 30 × 10
+    w.session.add_feature("chamfer", values={"edges": {"between": ["top", "front"]},
+                                             "distance": 5})
+    w._reload_all()
+    slope = face_at(shown_part(w), 0, -12.5, 7.5)  # šikmá plocha sražení
+    w.viewer.click([slope], point=(4, -12.5, 7.5))
+    assert action(w, "Skica na vybrané ploše").isEnabled()
+    action(w, "Skica na vybrané ploše").trigger()
+    sketch = w.session.feature("sketch2")
+    assert sketch["plane"]["at"] == pytest.approx([4, -12.5, 7.5])
+    assert sketch["elements"][0]["center"] == [0.0, 0.0]  # počátek skici = místo kliknutí
+    plane = form_field(w, "plane")
+    assert plane.currentText() == "plocha vybraná ve 3D (u bodu 4; -12.5; 7.5)"
+    shapes = form_field(w, "elements")
+    set_text(shapes._form.widget("diameter"), "4")  # jiné pole – rovina musí zůstat
+    assert w.session.feature("sketch2")["plane"]["at"] == pytest.approx([4, -12.5, 7.5])
+    w.session.add_feature("extrude", values={"operation": "cut", "distance": 2})
+    chamfered = 40 * 30 * 10 - 0.5 * 5 * 5 * 40
+    assert w.session.properties.volume_mm3 == pytest.approx(chamfered - math.pi * 4 * 2)
+
+
+def test_hole_on_shaft_surface_from_click(empty_window):
+    w = empty_window
+    session = w.session
+    session.add_feature("sketch", values={"plane": "YZ", "elements": [
+        {"shape": "circle", "diameter": 20}]})
+    session.add_feature("extrude", values={"distance": 80, "direction": "both"})
+    w._reload_all()
+    shaft = face_at(shown_part(w), 5, 0, 10)
+    assert shaft.geom_type.name == "CYLINDER"
+    w.viewer.click([shaft], point=(5, 0, 10))
+    action(w, "Díra na vybrané ploše").trigger()
+    hole = session.feature("hole1")
+    assert hole["plane"] == {"at": [5.0, 0.0, 10.0], "normal": [0.0, 0.0, 1.0]}
+    assert hole["positions"] == [[0.0, 0.0]] and session.result.ok
+    assert session.properties.volume_mm3 < math.pi * 100 * 80  # díra do hřídele z boku
+    w.viewer.click([face_at(shown_part(w), -20, 0, 10)], point=(-20, 0, 10))
+    assert w.add_to_feature_action.text().startswith("Přidat díru v místě kliknutí do:")
+    w.add_to_feature_action.trigger()  # na horní přímce hřídele = stejná tečná rovina → další díra
+    assert session.feature("hole1")["positions"] == [[0.0, 0.0], [-25.0, 0.0]]
+    w.viewer.click([face_at(shown_part(w), 0, -10, 0)], point=(0, -10, 0))
+    w.add_to_feature_action.trigger()  # na boku hřídele je jiná tečná rovina → jen hláška
+    assert len(session.feature("hole1")["positions"]) == 2

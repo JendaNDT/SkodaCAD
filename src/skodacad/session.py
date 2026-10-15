@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from build123d import Vector
+
 from skodacad.document import Document, DocumentError
 from skodacad.export import export
 from skodacad.expressions import (
@@ -498,7 +500,8 @@ class ModelSession:
                     feature["edges"] = self._added_edges(feature["edges"], part, edges)
             elif kind == "sketch":
                 if len(faces) != 1:
-                    raise DocumentError("Vyber ve 3D právě jednu rovinnou plochu.")
+                    raise DocumentError("Vyber ve 3D právě jednu plochu (rovinnou, šikmou i "
+                                        "zakřivenou – u té bude skica na tečné rovině).")
                 reference = face_reference(part, faces[0], point if new else None)
                 feature["plane"] = reference.plane
                 feature.pop("offset", None)
@@ -526,8 +529,7 @@ class ModelSession:
                              point: Any, new: bool) -> None:
         """Díra v místě kliknutí: nová díra na kliknuté ploše, nebo další poloha díry."""
         if len(faces) != 1:
-            raise DocumentError("Vyber ve 3D právě jednu rovinnou plochu – díra bude v místě "
-                                "kliknutí.")
+            raise DocumentError("Vyber ve 3D právě jednu plochu – díra bude v místě kliknutí.")
         reference = face_reference(part, faces[0], point)
         if new:
             feature["plane"] = reference.plane
@@ -536,14 +538,22 @@ class ModelSession:
                 feature["offset"] = reference.offset
             feature["positions"] = [list(reference.point)]
             return
-        same_plane = (feature.get("plane") == reference.plane
-                      and abs(self._evaluate(feature.get("offset", 0)) - reference.offset) < 1e-6)
+        if point is None:
+            raise DocumentError("Klikni na plochu přesně tam, kde má další díra být.")
+        if isinstance(reference.plane, str) and isinstance(feature.get("plane"), str):
+            same_plane = (feature.get("plane") == reference.plane and abs(
+                self._evaluate(feature.get("offset", 0)) - reference.offset) < 1e-6)
+            position = list(reference.point)
+        else:  # šikmá plocha: kliknutý bod musí ležet v rovině díry
+            plane = sketch_plane(part, feature, self._params())
+            local = plane.to_local_coords(Vector(*point))
+            normal = faces[0].normal_at(Vector(*point))
+            same_plane = abs(local.Z) < 1e-3 and normal.dot(plane.z_dir) > 1 - 1e-6
+            position = [round(local.X, 1) + 0.0, round(local.Y, 1) + 0.0]
         if not same_plane:
             raise DocumentError("Díra leží na jiné ploše, než kam jsi klikl. Pro díru na téhle "
                                 "ploše přidej novou: pravé tlačítko → Díra na vybrané ploše.")
-        if point is None:
-            raise DocumentError("Klikni na plochu přesně tam, kde má další díra být.")
-        feature["positions"] = [*feature.get("positions", []), list(reference.point)]
+        feature["positions"] = [*feature.get("positions", []), position]
 
     def _added_edges(self, current: Any, part: Any, picked: list[Any]) -> Any:
         """Stávající výběr hran + nově vybrané (kliknuté ve zobrazeném dílu)."""

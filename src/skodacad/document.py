@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 7,
+      "version": 8,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -30,9 +30,10 @@ FORMAT = "skodacad"
 # verze 3 tvar skici „profile“ (obrys z úseček a oblouků s vazbami), verze 4 prvek „hole“
 # (díry podle strojnických tabulek), verze 5 prvky „pattern“ (pole) a „mirror“ (zrcadlení),
 # verze 6 kružnice, víc smyček (díry) a nové vazby v obrysu „profile“, verze 7 promítnuté
-# hrany dílu v obrysu („references“). Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 7
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7)
+# hrany dílu v obrysu („references“), verze 8 rovina skici/díry na šikmé či zakřivené ploše
+# („plane“: {"at": …, "normal": …}). Starší verze jsou podmnožinou – načtou se beze změny.
+VERSION = 8
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8)
 
 
 class DocumentError(ValueError):

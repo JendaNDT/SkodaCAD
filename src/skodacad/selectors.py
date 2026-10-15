@@ -75,6 +75,83 @@ def face_plane(part: Part, name: str) -> Plane:
     return Plane(origin=origin, x_dir=x_dir, z_dir=normal)
 
 
+def face_plane_at(part: Part, spec: Any) -> Plane:
+    """Rovina skici na ploše dílu u bodu – i šikmé nebo zakřivené.
+
+    ``spec`` je ``{"at": [x, y, z], "normal": [nx, ny, nz]}``: místo kliknutí na ploše
+    a směr plochy v něm (rozhodne, když je bod na hraně mezi dvěma plochami). Plocha se
+    pozná podle polohy a směru, ne podle čísla, takže přežije změnu parametrů.
+
+    * rovinná (i šikmá) plocha → skica leží přímo na ní,
+    * zakřivená plocha (válec, kužel, koule …) → rovina, která se plochy v bodě dotýká.
+
+    Počátek skici je v místě kliknutí. Osa X skici míří u válce a kužele podél jeho osy,
+    jinak vodorovně po ploše (u vodorovné plochy podél osy X dílu).
+    """
+    try:
+        at = Vector(*(float(v) for v in spec["at"]))
+        hint = Vector(*(float(v) for v in spec.get("normal", (0, 0, 0))))
+    except (KeyError, TypeError, ValueError):
+        raise SelectionError('Plocha pro skicu musí mít „at“: [x, y, z] (a „normal“).') from None
+    from build123d import Vertex
+
+    found = []
+    for face in part.faces():
+        distance, on_face, _ = face.distance_to_with_closest_points(Vertex(at))
+        found.append((distance, face, on_face))
+    if not found:
+        raise SelectionError("Díl nemá žádné plochy.")
+    nearest = min(distance for distance, _, _ in found)
+    close = [(face, on_face) for distance, face, on_face in found if distance <= nearest + 1e-4]
+    face, on_face = max(close, key=lambda item: item[0].normal_at(item[1]).dot(hint))
+    normal = face.normal_at(on_face)
+    if hint.length > 0 and normal.dot(hint.normalized()) < 0.5:
+        raise SelectionError(f"Plocha pro skicu u bodu [{_short(at)}] už na dílu není (nejbližší "
+                             "plocha míří jinam) – vyber plochu znovu ve 3D.")
+    if face.geom_type == GeomType.PLANE:  # šikmá plocha: počátek = bod promítnutý na ni
+        origin = at - normal * (at - on_face).dot(normal)
+    else:
+        origin = on_face
+    x_dir = _sketch_x_dir(face, normal)
+    return Plane(origin=origin, x_dir=x_dir, z_dir=normal)
+
+
+def _sketch_x_dir(face: Face, normal: Vector) -> Vector:
+    """Osa X skici na ploše: podél osy válce/kužele, jinak vodorovně po ploše."""
+    direction = None
+    if face.geom_type in (GeomType.CYLINDER, GeomType.CONE):
+        from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+        surface = BRepAdaptor_Surface(face.wrapped)
+        axis = (surface.Cylinder() if face.geom_type == GeomType.CYLINDER
+                else surface.Cone()).Axis().Direction()
+        direction = Vector(axis.X(), axis.Y(), axis.Z())
+    else:
+        direction = Vector(0, 0, 1).cross(normal)
+    direction = direction - normal * direction.dot(normal)  # do roviny skici
+    if direction.length < 1e-6:  # vodorovná plocha – podél osy X dílu
+        direction = Vector(1, 0, 0) - normal * normal.X
+    direction = direction.normalized()
+    largest = max((direction.X, direction.Y, direction.Z), key=abs)
+    return -direction if largest < 0 else direction  # vždy ke kladným souřadnicím
+
+
+def _short(point: Vector) -> str:
+    return "; ".join(f"{round(v, 1):g}" for v in (point.X, point.Y, point.Z))
+
+
+def describe_plane(plane: Any) -> str:
+    """Rovina skici česky (pro formulář a hlášky)."""
+    if isinstance(plane, dict):
+        try:
+            return f"plocha vybraná ve 3D (u bodu {_short(Vector(*plane['at']))})"
+        except (KeyError, TypeError, ValueError):
+            return "plocha vybraná ve 3D"
+    if plane in FACE_NAMES_CZ:
+        return f"{FACE_NAMES_CZ[plane]} plocha dílu"
+    return f"rovina {plane}"
+
+
 def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> list[Edge]:
     """Hrany podle popisu ``spec``.
 

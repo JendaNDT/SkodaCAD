@@ -783,8 +783,8 @@ class MainWindow(QMainWindow):
         has_part = (self.session.result is not None and self.session.result.part is not None
                     and not self.session.computing)  # výběr jen na hotovém dílu
         flat = info.faces > 0 and info.flat_faces == info.faces
-        needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,
-                 "sketch": info.faces == 1 and flat, "hole": info.faces == 1 and flat,
+        needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,  # skica a díra jdou
+                 "sketch": info.faces == 1, "hole": info.faces == 1,  # i na šikmou a válcovou
                  "shell": flat}
         for key, action in self.selection_actions.items():
             action.setEnabled(has_part and needs[key])
@@ -857,7 +857,7 @@ class MainWindow(QMainWindow):
         hints = []
         if info.edges:
             hints.append("pravým tlačítkem zaoblit nebo srazit")
-        if info.faces == 1 and info.flat_faces == 1:
+        if info.faces == 1:
             hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
         self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))

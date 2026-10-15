@@ -41,10 +41,11 @@ from skodacad.schema import (
     Field,
     new_shape,
 )
-from skodacad.selectors import describe_edges
+from skodacad.selectors import describe_edges, describe_plane
 from skodacad.session import format_parameter_value, parse_parameter_text
 
 MISSING = object()  # pole je prázdné a nepovinné → klíč se z prvku odebere
+_PICKED = "__plocha_z_3D__"  # volba „plocha vybraná ve 3D“ v poli Rovina
 # Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit). Dodává hlavní okno.
 ProfileEditor = Callable[[dict[str, Any]], dict[str, Any] | None]
 _BAD_STYLE = "border: 2px solid #c0392b; background: #fdecea;"
@@ -190,12 +191,17 @@ class FieldsForm(QWidget):
         return edit, lambda: parse_number(edit.text(), field)
 
     def _build_choice(self, field: Field, value: Any):
-        combo = _combo(field.choices, value if value is not None else field.default,
-                       optional=not field.required)
+        choices, current = field.choices, value if value is not None else field.default
+        picked = copy.deepcopy(value) if isinstance(value, dict) else None
+        if picked is not None:  # plocha vybraná ve 3D (šikmá, zakřivená) – nabídne se navíc
+            choices, current = (*choices, (_PICKED, describe_plane(picked))), _PICKED
+        combo = _combo(choices, current, optional=not field.required)
         combo.currentIndexChanged.connect(self._commit)
 
         def read() -> Any:
             key = combo.currentData()
+            if key == _PICKED:
+                return copy.deepcopy(picked)
             return MISSING if key is None else key
 
         return combo, read
