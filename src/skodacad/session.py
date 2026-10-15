@@ -27,7 +27,7 @@ from skodacad.expressions import (
     referenced_names,
     resolve_parameters,
 )
-from skodacad.features import describe
+from skodacad.features import describe, profile_problem
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.picking import (
@@ -42,7 +42,7 @@ from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
-from skodacad.solver import SolveError, solve
+from skodacad.solver import SolveError, loops, solve
 
 _NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _UNDO_LIMIT = 100
@@ -264,7 +264,13 @@ class ModelSession:
             return ProfileSolution({}, -1, str(exc), exc.failed)
         except ExpressionError as exc:
             return ProfileSolution({}, -1, f"Hodnota kóty: {exc}", [])
-        return ProfileSolution(solved.points, solved.dof, radii=solved.radii)
+        try:
+            loops(profile, solved.points, solved.radii)
+        except SolveError:  # neuzavřený obrys hlásí skicář sám
+            warning = ""
+        else:
+            warning = profile_problem(profile, params)
+        return ProfileSolution(solved.points, solved.dof, radii=solved.radii, warning=warning)
 
     # --- výběr ve 3D ---------------------------------------------------------------
 
@@ -501,6 +507,7 @@ class ProfileSolution:
     message: str = ""  # česká chyba, "" = v pořádku
     failed: list[int] = field(default_factory=list)  # čísla vazeb, které si odporují
     radii: dict[str, float] = field(default_factory=dict)  # vyřešené poloměry kružnic
+    warning: str = ""  # obrys je vyřešený, ale plocha z něj nejde (smyčky se kříží …)
 
     @property
     def ok(self) -> bool:

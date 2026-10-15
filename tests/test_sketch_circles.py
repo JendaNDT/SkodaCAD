@@ -178,3 +178,15 @@ def test_circle_errors_are_czech(change, message):
     change(profile)
     with pytest.raises(SolveError, match=message):
         solve(profile, float)
+
+
+@pytest.mark.parametrize(("length", "width"), [(80, 30), (120, 40)])
+def test_strap_example_follows_parameters(examples_dir, length, width):
+    from skodacad import Document
+
+    document = Document.load(examples_dir / "prilozka.json")
+    result = rebuild(document, {"L": length, "B": width})
+    assert result.ok
+    area = (length * width + math.pi * (width / 2) ** 2  # pás se zaoblenými konci
+            - 3 * math.pi * 6**2 - 2 * math.pi * 2**2)  # 3 otvory Ø12 a 2 malé Ø4
+    assert result.part.volume == pytest.approx(area * 6)

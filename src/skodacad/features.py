@@ -263,6 +263,18 @@ def _profile_face(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
     return result
 
 
+def profile_problem(element: dict[str, Any], params: dict[str, float]) -> str:
+    """Proč z obrysu nejde udělat plocha (křížení smyček, nulová plocha …), "" = jde.
+    Pro skicář – ukáže to hned při kreslení, ne až ve 3D."""
+    try:
+        _profile_face(BuildContext(params=params), element)
+    except FeatureError as exc:
+        return str(exc).removeprefix("Obrys: ")
+    except Exception:  # noqa: BLE001 – kontrola nesmí shodit skicář
+        return "Z obrysu nejde udělat plocha – zkontroluj, jestli se čáry nekříží."
+    return ""
+
+
 def _loop_face(loop: list[tuple]) -> Sketch:
     if loop[0][0] == "circle":
         _, (x, y), radius = loop[0]
