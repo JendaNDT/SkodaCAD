@@ -92,6 +92,7 @@ def constraint_text(index: int, constraint: Any) -> str:
     for key in ("points", "segments"):
         if isinstance(constraint.get(key), list):
             refs.extend(str(item) for item in constraint[key])
+    refs = ["počátek" if ref == ORIGIN else ref for ref in refs]
     value = f" = {constraint['value']}" if "value" in constraint else ""
     return f"vazba {index + 1} ({label} {', '.join(refs)}{value})"
 

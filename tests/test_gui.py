@@ -169,6 +169,9 @@ def no_dialogs(monkeypatch):
         monkeypatch.setattr(QMessageBox, name, lambda *a, n=name, **k: shown.append(n))
     monkeypatch.setattr(QMessageBox, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Discard)
+    # Skicář (a další vlastní dialogy) jde přes MainWindow._exec_dialog → „Zrušit“.
+    monkeypatch.setattr(MainWindow, "_exec_dialog",
+                        lambda self, dialog: shown.append(type(dialog).__name__) or 0)
     return shown
 
 

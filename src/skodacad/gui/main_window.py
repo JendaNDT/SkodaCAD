@@ -16,6 +16,7 @@ from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QDockWidget,
     QFileDialog,
     QFormLayout,
@@ -38,9 +39,11 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.features import describe
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
+from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 
@@ -125,6 +128,10 @@ class MainWindow(QMainWindow):
             key: self._action(schema.label, lambda k=key: self.add_feature(k))
             for key, schema in FEATURE_SCHEMAS.items()
         }
+        self.profile_sketch_action = self._action("Skica – nakreslit obrys…",
+                                                  self.add_profile_sketch)
+        self.profile_sketch_action.setToolTip(
+            "Skicář: obrys z úseček a oblouků s vazbami a kótami")
         self.delete_feature_action = self._action("Smazat prvek", self.delete_feature, "Delete")
         self.move_up_action = self._action("Posunout nahoru", lambda: self.move_feature(-1))
         self.move_down_action = self._action("Posunout dolů", lambda: self.move_feature(+1))
@@ -199,6 +206,8 @@ class MainWindow(QMainWindow):
         add_menu = QMenu(self.add_feature_button)
         for action in self.add_feature_actions.values():
             add_menu.addAction(action)
+            if action is self.add_feature_actions["sketch"]:
+                add_menu.addAction(self.profile_sketch_action)
         self.add_feature_button.setMenu(add_menu)
         tree_buttons.addWidget(self.add_feature_button)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
@@ -223,7 +232,7 @@ class MainWindow(QMainWindow):
                                          Qt.DockWidgetArea.LeftDockWidgetArea)
 
     def _build_editor_panel(self) -> None:
-        self.feature_editor = FeatureEditor()
+        self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
         self.feature_editor.changed.connect(self._feature_edited)
         self.feature_editor.invalid.connect(
             lambda message: self.statusBar().showMessage(message, 10000))
@@ -283,6 +292,8 @@ class MainWindow(QMainWindow):
         add_menu = edit_menu.addMenu("Přidat prvek")
         for action in self.add_feature_actions.values():
             add_menu.addAction(action)
+            if action is self.add_feature_actions["sketch"]:
+                add_menu.addAction(self.profile_sketch_action)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
             edit_menu.addAction(action)
         edit_menu.addSeparator()
@@ -431,6 +442,36 @@ class MainWindow(QMainWindow):
                 structural=False):
             self._selected_id = new_id[0]
             self._reload_all()
+
+    def edit_profile(self, profile: dict) -> dict | None:
+        """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit)."""
+        dialog = SketcherDialog(profile, self.session.solve_profile, self)
+        if self._exec_dialog(dialog) == QDialog.DialogCode.Accepted:
+            return dialog.result_profile()
+        return None
+
+    def _exec_dialog(self, dialog: QDialog) -> int:
+        return dialog.exec()  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
+
+    def add_profile_sketch(self) -> None:
+        """Nová skica s obrysem nakresleným ve skicáři (jeden krok pro Zpět)."""
+        if self.session.document is None:
+            self.session.new_document()
+            self._reload_all()
+        profile = self.edit_profile(empty_profile())
+        if profile is None:
+            return
+        if not profile["segments"]:
+            self.statusBar().showMessage("Skicář byl prázdný – skica nevznikla.", 10000)
+            return
+        new_id: list[str] = []
+        if self._apply(lambda: new_id.append(self.session.add_feature(
+                "sketch", after_id=self._selected_id, values={"elements": [profile]})),
+                structural=False):
+            self._selected_id = new_id[0]
+            self._reload_all()
+            self.statusBar().showMessage(
+                "Skica s obrysem přidána – teď ji vysuň (Přidat prvek → Vysunutí).", 10000)
 
     def add_from_selection(self, feature_type: str) -> None:
         """Nový prvek z výběru ve 3D (zaoblení kliknutých hran, skica na ploše …)."""
