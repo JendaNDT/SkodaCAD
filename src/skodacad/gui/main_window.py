@@ -58,6 +58,7 @@ SELECTION_ACTIONS = {
     "fillet": "Zaoblit vybrané hrany",
     "chamfer": "Srazit vybrané hrany",
     "sketch": "Skica na vybrané ploše",
+    "hole": "Díra na vybrané ploše",
     "shell": "Skořepina – otevřít vybrané plochy",
 }
 
@@ -494,8 +495,9 @@ class MainWindow(QMainWindow):
         if self._selected_id is None:
             return
         picked = list(self._picked)
-        if self._apply(lambda: self.session.apply_selection(self._selected_id, picked, replace),
-                       structural=False):
+        point = getattr(self.viewer, "picked_point", None)
+        if self._apply(lambda: self.session.apply_selection(self._selected_id, picked, replace,
+                                                            point=point), structural=False):
             self._load_editor()
 
     def delete_feature(self) -> None:
@@ -687,7 +689,8 @@ class MainWindow(QMainWindow):
         has_part = self.session.result is not None and self.session.result.part is not None
         flat = info.faces > 0 and info.flat_faces == info.faces
         needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,
-                 "sketch": info.faces == 1 and flat, "shell": flat}
+                 "sketch": info.faces == 1 and flat, "hole": info.faces == 1 and flat,
+                 "shell": flat}
         for key, action in self.selection_actions.items():
             action.setEnabled(has_part and needs[key])
         document = self.session.document
@@ -696,6 +699,7 @@ class MainWindow(QMainWindow):
         kind = feature["type"] if feature else None
         texts = {"fillet": "Přidat vybrané hrany do: ", "chamfer": "Přidat vybrané hrany do: ",
                  "sketch": "Přesunout na vybranou plochu: ",
+                 "hole": "Přidat díru v místě kliknutí do: ",
                  "shell": "Otevřít vybrané plochy v: "}
         if kind in SELECTION_FEATURES:
             self.add_to_feature_action.setText(texts[kind] + describe(feature))
@@ -752,7 +756,7 @@ class MainWindow(QMainWindow):
         if info.edges:
             hints.append("pravým tlačítkem zaoblit nebo srazit")
         if info.faces == 1 and info.flat_faces == 1:
-            hints.append("pravým tlačítkem skica na ploše")
+            hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
         self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))
 

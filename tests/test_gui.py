@@ -134,7 +134,7 @@ def test_selection_shows_in_status_bar(window):
     part = window.session.result.part
     window.viewer.click([face_at(part, 60, 0, 18)])
     assert window.statusBar().currentMessage().startswith("Plocha – rovinná")
-    assert "skica na ploše" in window.statusBar().currentMessage()
+    assert "skica nebo díra na ploše" in window.statusBar().currentMessage()
     window.viewer.click([edge_at(part, 82.5, 0, 0), edge_at(part, 0, 32, 0)])
     assert window.statusBar().currentMessage().startswith("Vybráno: 2 hrany")
     window.viewer.click([])
@@ -480,7 +480,7 @@ def test_curved_face_does_not_offer_sketch(window, no_dialogs, slot_errors):
     window.viewer.click([bore])
     assert not action(window, "Skica na vybrané ploše").isEnabled()
     assert not action(window, "Skořepina – otevřít vybrané plochy").isEnabled()
-    assert "skica na ploše" not in window.statusBar().currentMessage()
+    assert "díra na ploše" not in window.statusBar().currentMessage()
     # Kdyby se akce přesto spustila, objeví se česká hláška a model zůstane beze změny.
     before = len(window.session.document.features)
     window.add_from_selection("sketch")
@@ -511,3 +511,21 @@ def test_context_menu_offers_selection_actions(window, monkeypatch):
     assert not items["Skica na vybrané ploše"]
     action(window, "Zrušit výběr ve 3D").trigger()
     assert not action(window, "Zaoblit vybrané hrany").isEnabled()
+
+
+def test_hole_from_clicked_face_and_size_change(empty_window):
+    w = empty_window
+    build_box(w)
+    w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
+    action(w, "Díra na vybrané ploše").trigger()
+    assert selected_text(w) == "✓  Díra „Díra 1“ – M6 závit"
+    size = form_field(w, "size")
+    assert size.currentData() == "M6"
+    size.setCurrentIndex(size.findData("M3"))  # menší závit → menší vrták Ø2,5
+    hole = w.session.feature("hole1")
+    assert hole["size"] == "M3" and hole["positions"] == [[5, 5]]
+    drill = math.pi * 1.25 ** 2 * 6 + math.pi * 1.25 ** 2 * (1.25 / math.tan(math.radians(59))) / 3
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - drill)
+    kind = form_field(w, "kind")
+    kind.setCurrentIndex(kind.findData("countersink"))  # M3 zápustná, skrz? hloubka 6
+    assert "zápustné" in selected_text(w)

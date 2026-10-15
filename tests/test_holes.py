@@ -144,3 +144,20 @@ def test_new_hole_defaults_and_tree_label():
     assert describe(hole).endswith("M6 závit, 2×")
     features.append(hole)
     assert rebuild(make_doc(features)).ok
+
+
+@pytest.mark.parametrize("overrides", [{}, {"A": 150, "e": 15}, {"t": 20}])
+def test_plate_example_follows_parameters(examples_dir, overrides):
+    from skodacad import Document
+
+    document = Document.load(examples_dir / "deska.json")
+    result = rebuild(document, overrides)
+    assert result.ok, result.first_error
+    p = {**document.parameters, **overrides}
+    t = p["t"]
+    plate = p["A"] * p["B"] * t - (4 - math.pi) * 6 ** 2 * t  # rohy R6
+    removed = (4 * removed_volume(hole_shape("counterbore", "M6", through_all=True), t)
+               + 2 * removed_volume(hole_shape("tapped", "M8", depth=12))
+               + 2 * removed_volume(hole_shape("countersink", "M5", through_all=True), t)
+               + 2 * removed_volume(hole_shape("clearance", "M4", "fine", through_all=True), t))
+    assert result.part.volume == pytest.approx(plate - removed, rel=1e-6)

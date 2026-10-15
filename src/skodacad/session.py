@@ -52,7 +52,7 @@ _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "d
                         "shape", "mode", "face", "between", "parallel", "open_faces",
                         "through_all", "kind", "size", "fit"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
-SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell")
+SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole")
 
 
 def parse_parameter_text(text: str) -> int | float | str:
@@ -295,11 +295,12 @@ class ModelSession:
         return feature["id"]
 
     def apply_selection(self, feature_id: str, shapes: list[Any],
-                        replace: bool = False) -> BuildResult:
+                        replace: bool = False, point: Any = None) -> BuildResult:
         """Převezme výběr ve 3D do existujícího prvku.
 
         Zaoblení/sražení vybrané hrany přidá ke svým (``replace`` = místo svých),
-        skica se přesune na vybranou plochu, skořepina vybrané plochy otevře.
+        skica se přesune na vybranou plochu, skořepina vybrané plochy otevře,
+        díra dostane další polohu v místě kliknutí ``point``.
         """
         feature = self.feature(feature_id)
         if feature["type"] not in SELECTION_FEATURES:
@@ -308,7 +309,7 @@ class ModelSession:
         if part is None:
             raise DocumentError(f"{describe(feature)} se zatím nepočítá (je za chybou "
                                 "nebo před ním není těleso) – výběr nejde převzít.")
-        self._fill_from_selection(feature, part, shapes, None, replace=replace, new=False)
+        self._fill_from_selection(feature, part, shapes, point, replace=replace, new=False)
         return self.update_feature(feature_id, feature)
 
     def feature_highlight(self, feature_id: str) -> list[Any]:
@@ -375,6 +376,8 @@ class ModelSession:
                     feature["offset"] = reference.offset
                 if new:
                     feature["elements"][0]["center"] = list(reference.point)
+            elif kind == "hole":
+                self._hole_from_selection(feature, part, faces, point, new)
             elif kind == "shell":
                 if not faces:
                     raise DocumentError("Vyber ve 3D plochy, které má skořepina otevřít.")
@@ -388,6 +391,29 @@ class ModelSession:
                 raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
         except SelectionError as exc:
             raise DocumentError(str(exc)) from None
+
+    def _hole_from_selection(self, feature: dict[str, Any], part: Any, faces: list[Any],
+                             point: Any, new: bool) -> None:
+        """Díra v místě kliknutí: nová díra na kliknuté ploše, nebo další poloha díry."""
+        if len(faces) != 1:
+            raise DocumentError("Vyber ve 3D právě jednu rovinnou plochu – díra bude v místě "
+                                "kliknutí.")
+        reference = face_reference(part, faces[0], point)
+        if new:
+            feature["plane"] = reference.plane
+            feature.pop("offset", None)
+            if reference.offset:
+                feature["offset"] = reference.offset
+            feature["positions"] = [list(reference.point)]
+            return
+        same_plane = (feature.get("plane") == reference.plane
+                      and abs(self._evaluate(feature.get("offset", 0)) - reference.offset) < 1e-6)
+        if not same_plane:
+            raise DocumentError("Díra leží na jiné ploše, než kam jsi klikl. Pro díru na téhle "
+                                "ploše přidej novou: pravé tlačítko → Díra na vybrané ploše.")
+        if point is None:
+            raise DocumentError("Klikni na plochu přesně tam, kde má další díra být.")
+        feature["positions"] = [*feature.get("positions", []), list(reference.point)]
 
     def _added_edges(self, current: Any, part: Any, picked: list[Any]) -> Any:
         """Stávající výběr hran + nově vybrané (kliknuté ve zobrazeném dílu)."""
