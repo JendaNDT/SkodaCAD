@@ -238,3 +238,23 @@ def test_measurements_travel_from_the_background_process():
     copied = decode_result(pickle.loads(pickle.dumps(encode_result(result))))  # jako rourou
     assert copied.measurements == result.measurements
     assert copied.measurements[2].text == "Rozteč os: 15.00 mm"
+
+
+@pytest.mark.parametrize(("s", "h", "xj"), [(6, 3.5, 40), (8, 2, -60)])
+def test_pipe_example_wall_thickness_follows_parameters(examples_dir, s, h, xj):
+    result = rebuild(Document.load(examples_dir / "trubka.json"), {"s": s, "h": h, "xj": xj})
+    assert result.ok, result.first_error and result.first_error.message
+    assert [m.name for m in result.measurements] == [
+        "Jmenovitá tloušťka stěny", "Zbytková tloušťka pod jamkou", "Vnější průměr"]
+    assert [m.value.value for m in result.measurements] == pytest.approx([s, s - h, 114.3])
+    r, inner = 114.3 / 2, 114.3 / 2 - s
+    # jamka Ø20 s plochým dnem h pod vrcholem trubky (rovina se dotýká trubky nahoře)
+    pit = integrate(lambda y: 20 * math.sqrt(1 - (2 * y / 20) ** 2)
+                    * (math.sqrt(r * r - y * y) - (r - h)), -10, 10)
+    assert result.part.volume == pytest.approx(math.pi * (r * r - inner * inner) * 300 - pit,
+                                               rel=1e-6)
+
+
+def integrate(f, a, b, n=4000):
+    step = (b - a) / n
+    return sum(f(a + (i + 0.5) * step) for i in range(n)) * step

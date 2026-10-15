@@ -52,3 +52,12 @@ def test_cli_bad_override(examples_dir, capsys):
     code = main(["build", str(examples_dir / "priruba.json"), "--set", "neexistuje=1"])
     assert code == 2
     assert "nemá parametr" in capsys.readouterr().err
+
+
+def test_cli_prints_saved_measurements(examples_dir, tmp_path, capsys):
+    code = main(["build", str(examples_dir / "trubka.json"), "-o", str(tmp_path),
+                 "--set", "h=4", "--format", "step"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert ("Měření:\n  Jmenovitá tloušťka stěny: 6.00 mm\n"
+            "  Zbytková tloušťka pod jamkou: 2.00 mm\n  Vnější průměr: 114.30 mm") in out

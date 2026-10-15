@@ -16,7 +16,7 @@ Příklad souboru::
       ],
       "measurements": [
         {"id": "m1", "name": "Tloušťka desky", "kind": "thickness",
-         "a": {"face": {"at": [0, 0, 18], "normal": [0, 0, 1], "type": "plane"}}}
+         "a": {"face": {"at": [60, 0, 18], "normal": [0, 0, 1], "type": "plane"}}}
       ]
     }
 """

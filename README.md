@@ -27,8 +27,8 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 | Otáčení | levé tlačítko + táhnout |
 | Posun | prostřední nebo pravé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
-| Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku |
-| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere |
+| Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku a **změří se** (panel *Měření* vpravo) |
+| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere – u dvou věcí se změří vzdálenost a úhel |
 | Co s výběrem | pravé tlačítko (bez tažení): Zaoblit, Srazit, Skica na ploše, Skořepina… |
 | Zrušit výběr | `Esc` |
 | Celý díl | dvojklik nebo `F` |
@@ -147,6 +147,32 @@ a případně zadej *Vlastní průměr*. Tabulky a zdroje jsou v
 [src/skodacad/holes.py](src/skodacad/holes.py) (normy samotné jsou placené; hodnoty jsou
 ověřené porovnáním více zdrojů – u průchozí díry M16 jeden zdroj uvádí 18 místo 17,5).
 
+### Měření
+
+Ukázka: *Soubor → Otevřít ukázku → trubka* (trubka s korozní jamkou a uloženými měřeními
+tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo v panelu **Měření**.
+
+| Vybráno | Co se změří |
+|---|---|
+| jedna plocha | **tloušťka stěny v místě kliknutí** (jako ultrazvukový tloušťkoměr: kolmo do materiálu až k protější ploše), u válce a koule průměr, obsah plochy |
+| jedna hrana | délka, u kružnice průměr, u oblouku poloměr |
+| dvě rovnoběžné plochy | jejich kolmá vzdálenost (tloušťka desky, šířka drážky) |
+| dvě díry (válce nebo jejich hrany) | **rozteč os**, u hran i vzdálenost středů |
+| díra a plocha | vzdálenost osy díry od plochy (je-li s ní rovnoběžná) |
+| dvě plochy / hrany pod úhlem | úhel mezi nimi (sražení 45°, šikmá hrana a plocha …) |
+| vždy u dvou věcí | nejkratší vzdálenost |
+
+* Vybraný řádek se ve 3D ukáže jako **zelená čára** s hodnotou (odkud kam se měřilo).
+  Hlavní hodnota dvou věcí je i dole ve stavovém řádku.
+* **Uložit do modelu** (nebo pravé tlačítko → *Uložit měření do modelu*) uloží vybraný řádek
+  do souboru. Uložené měření se **přepočítá při každé změně** modelu – změníš tloušťku
+  stěny a hned vidíš novou zbytkovou tloušťku. Přejmenovat (i dvojklikem) a smazat jde pod
+  seznamem *Uložená měření*, Zpět/Znovu funguje i tady.
+* Uložené měření si plochy a hrany pamatuje **významem**, ne číslem: plochu bodem, směrem,
+  druhem a poloměrem (díra se najde, i když se posune), hranu jako zaoblení. Když plocha
+  zmizí, měření se zbarví červeně a napíše proč.
+* Měří se vždy jedna nebo dvě věci; u víc vybraných se nic nezměří.
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
@@ -201,6 +227,15 @@ Vlastnosti dílu:
 Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```
 
+Model s uloženými měřeními je vypíše taky (`skodacad build examples/trubka.json --set h=4`):
+
+```
+Měření:
+  Jmenovitá tloušťka stěny: 6.00 mm
+  Zbytková tloušťka pod jamkou: 2.00 mm
+  Vnější průměr: 114.30 mm
+```
+
 | Formát | K čemu |
 |---|---|
 | `step` | přesná geometrie pro jiné CAD programy (Inventor, Solid Edge, Fusion …) |
@@ -213,11 +248,12 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 8,
+  "version": 9,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
-  "features": [ ... ]
+  "features": [ ... ],
+  "measurements": [ ... ]
 }
 ```
 
@@ -319,6 +355,26 @@ Hrany se vybírají **významem, ne číslem** – výběr tak platí i po změn
 Výběr kliknutím ve 3D vytváří tyto popisy sám: zkusí nejjednodušší, který vybere přesně
 kliknuté hrany. `near` (nejbližší k bodu) použije jen tam, kde nic jiného nestačí – třeba jedna
 ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se načtou dál.
+
+### Uložená měření (`measurements`)
+
+```json
+{"id": "m1", "name": "Tloušťka desky", "kind": "thickness",
+ "a": {"face": {"at": [60, 0, 18], "normal": [0, 0, 1], "type": "plane"}}}
+{"id": "m2", "name": "Rozteč os", "kind": "parallel",
+ "a": {"edge": {"face": "top", "radius": 9, "near": [37.83, 37.83, 18]}},
+ "b": {"edge": {"face": "top", "radius": 9, "near": [-37.83, 37.83, 18]}}}
+```
+
+* **`kind`** – co se měří: `thickness` (tloušťka stěny v bodě `at`), `parallel` (kolmá
+  vzdálenost rovnoběžných ploch/hran, rozteč os), `distance` (nejkratší vzdálenost),
+  `angle` (úhel), `centers` (vzdálenost středů), `diameter`, `radius`, `length`, `area`.
+* **`a`**, **`b`** – plocha `{"face": {"at", "normal", "type", "radius"}}` (nejbližší
+  plocha toho druhu k bodu `at`, rovina přednostně se stejným směrem, válec se stejným
+  poloměrem) nebo hrana `{"edge": …}` popsaná jako u zaoblení. Druhou věc má jen měření
+  dvou věcí.
+* Hodnota se do souboru neukládá – spočítá se při každém přepočtu (okno, příkazová řádka).
+  Soubory verze 1–8 (bez měření) se načtou dál.
 
 ### Materiály
 

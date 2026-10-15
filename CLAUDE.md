@@ -47,6 +47,10 @@
 - (15. 10. 2026, schváleno) **Skica na šikmé a zakřivené ploše** – `plane` může být
   `{"at", "normal"}` (`selectors.face_plane_at`): šikmá plocha nese skicu přímo, zakřivená
   tečnou rovinou v místě kliknutí. Obtočení skici kolem válce zatím ne. Formát verze 8.
+- (15. 10. 2026, schváleno) **Měření ve 3D** – `measure.py`: měří se samo při výběru (panel
+  *Měření*, čára s hodnotou ve 3D), tloušťka stěny v bodě paprskem kolmo do materiálu (jako UT
+  tloušťkoměr). Měření jde uložit do modelu (`measurements`, plochy a hrany významem) a
+  přepočítá se s každou změnou. Formát verze 9.
 
 ## Architektura (`src/skodacad/`)
 
@@ -70,8 +74,9 @@
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
+| `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
-| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu |
+| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panel Měření |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
@@ -200,6 +205,25 @@
 - Objem drážky z plošek se od přesné šroubovice liší řádově o desetiny procenta; testy
   ho porovnávají s Pappovou větou s tolerancí, ne přesně.
 
+## Známé pasti (měření)
+
+- Tloušťka stěny = paprsek (`IntCurvesFace_ShapeIntersector`) z bodu proti normále plochy;
+  první průsečík dál než 1e-4 je protější stěna. `Face.normal_at` už počítá s orientací
+  plochy (u díry míří do díry, ven z materiálu) – neotáčet.
+- Uložená plocha se hledá `selectors.find_face` s `type`/`radius`: rovina přednostně mezi
+  plochami se **stejnou normálou** (posunutá plocha po změně tloušťky je daleko od `at`),
+  válec mezi stejným poloměrem (posunutá díra). Bez `type` (rovina skici v8) jako dřív:
+  nejbližší plocha + kontrola směru 60°.
+- Bod `at`, který po změně parametru už na ploše neleží (posunutá jamka), nahradí
+  `measure.inner_point` – bod uvnitř plochy co nejdál od hran (střed plochy může být v díře).
+- Hodnota uloženého měření se do JSON neukládá. `BuildResult.measurements` (`SavedResult`,
+  jen čísla a texty) se počítá na konci `rebuild` – tedy i v pomocném procesu – a přenáší se
+  obyčejně (pickle).
+- Popisek ve 3D (`AIS_TextLabel`) chce `TCollection_ExtendedString(text, True)` (UTF-8 –
+  jinak se rozbije „°“) a `SetFont("Arial")`, jinak OCCT kreslí patkovým písmem.
+- Self-test okna musí otevřít ukázku přes `MainWindow.open_model` (ne jen `show_part`) –
+  měření i výběr jdou přes `ModelSession`, bez výsledku přepočtu se nic nezměří.
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -251,5 +275,7 @@
   zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
 - [x] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [x] šikmé a zakřivené plochy
   pro skicu (tečná rovina).
-- [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
+- [ ] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
+  měření; formát verze 9), [ ] řezy modelem, [ ] sweep/loft, [ ] normalizované díly,
+  [ ] NDT – mapa tloušťky stěny.
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.
