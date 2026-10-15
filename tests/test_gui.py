@@ -9,22 +9,40 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
-from PySide6.QtCore import Signal  # noqa: E402
+from PySide6.QtCore import QPoint, Signal  # noqa: E402
 
-from skodacad.gui.main_window import MainWindow  # noqa: E402
+from conftest import edge_at, face_at  # noqa: E402
+from skodacad.gui.main_window import HELP_HINT, MainWindow  # noqa: E402
 from skodacad.inspection import number  # noqa: E402
 
 
 class FakeViewer(QtWidgets.QWidget):
-    selection_changed = Signal(str)
+    selection_changed = Signal(list)
+    context_menu_requested = Signal(QPoint)
 
     def __init__(self):
         super().__init__()
         self.parts = []
         self.views = []
+        self.highlighted = []
+        self.picked_point = None
 
     def show_part(self, part, fit=False):
         self.parts.append((part, fit))
+        self.picked_point = None
+        self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
+
+    def highlight(self, shapes):
+        self.highlighted = list(shapes)
+
+    def clear_selection(self):
+        self.picked_point = None
+        self.selection_changed.emit([])
+
+    def click(self, shapes, point=None):
+        """Jako by uživatel klikl (s Ctrl) na tyto plochy/hrany."""
+        self.picked_point = point
+        self.selection_changed.emit([shape.wrapped for shape in shapes])
 
     def fit_all(self):
         self.views.append("fit")
@@ -113,10 +131,14 @@ def test_examples_menu_opens_template(window, examples_dir):
 
 
 def test_selection_shows_in_status_bar(window):
-    window.viewer.selection_changed.emit("Plocha – rovinná")
-    assert window.statusBar().currentMessage() == "Plocha – rovinná"
-    window.viewer.selection_changed.emit("")
-    assert "otáčení" in window.statusBar().currentMessage()
+    part = window.session.result.part
+    window.viewer.click([face_at(part, 60, 0, 18)])
+    assert window.statusBar().currentMessage().startswith("Plocha – rovinná")
+    assert "skica na ploše" in window.statusBar().currentMessage()
+    window.viewer.click([edge_at(part, 82.5, 0, 0), edge_at(part, 0, 32, 0)])
+    assert window.statusBar().currentMessage().startswith("Vybráno: 2 hrany")
+    window.viewer.click([])
+    assert window.statusBar().currentMessage() == HELP_HINT
 
 
 # --- tlačítka a položky menu -----------------------------------------------------------
@@ -147,6 +169,9 @@ def no_dialogs(monkeypatch):
         monkeypatch.setattr(QMessageBox, name, lambda *a, n=name, **k: shown.append(n))
     monkeypatch.setattr(QMessageBox, "question",
                         lambda *a, **k: QMessageBox.StandardButton.Discard)
+    # Skicář (a další vlastní dialogy) jde přes MainWindow._exec_dialog → „Zrušit“.
+    monkeypatch.setattr(MainWindow, "_exec_dialog",
+                        lambda self, dialog: shown.append(type(dialog).__name__) or 0)
     return shown
 
 
@@ -391,3 +416,98 @@ def test_example_material_is_shown(window):
     window.session.dirty = False
     action(window, "krabicka").trigger()
     assert window.material_combo.currentData() == "PETG"
+
+
+# --- výběr ve 3D → prvky ---------------------------------------------------------------
+
+
+def shown_part(w):
+    return w.session.result.part
+
+
+def test_fillet_from_clicked_edge(empty_window):
+    w = empty_window
+    build_box(w)
+    fillet = action(w, "Zaoblit vybrané hrany")
+    assert not fillet.isEnabled()  # nic nevybráno
+    w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
+    assert fillet.isEnabled()
+    fillet.trigger()
+    assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
+    assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
+    loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
+    assert len(w.viewer.highlighted) == 1  # zvýrazněná zaoblená hrana
+    assert not fillet.isEnabled()  # díl se překreslil, výběr zmizel
+    set_text(form_field(w, "radius"), "4")  # poloměr dál jde měnit ve formuláři
+    loss = (4 ** 2 - math.pi * 4 ** 2 / 4) * 10
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
+
+
+def test_add_clicked_edges_to_selected_fillet(empty_window):
+    w = empty_window
+    build_box(w)
+    w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
+    action(w, "Srazit vybrané hrany").trigger()
+    w.viewer.click([edge_at(shown_part(w), -20, 15, 5), edge_at(shown_part(w), -20, -15, 5)])
+    add = action(w, "Přidat vybrané hrany do: Sražení „Sražení 1“")
+    assert add.isEnabled()
+    add.trigger()
+    edges = w.session.feature("chamfer1")["edges"]
+    assert edges == [{"between": ["front", "right"]}, {"face": "left", "parallel": "Z"}]
+    assert "hrany na levé ploše, rovnoběžné s osou Z" in form_field(w, "edges").text()
+    assert len(w.viewer.highlighted) == 3
+    w.viewer.click([edge_at(shown_part(w), 0, 15, 0)])
+    action(w, "Nahradit hrany vybraného prvku výběrem").trigger()
+    assert w.session.feature("chamfer1")["edges"] == {"between": ["bottom", "back"]}
+
+
+def test_sketch_on_clicked_face(empty_window):
+    w = empty_window
+    build_box(w)
+    sketch = action(w, "Skica na vybrané ploše")
+    w.viewer.click([face_at(shown_part(w), 0, -15, 5)], point=(8, -15, 4))
+    sketch.trigger()
+    feature = w.session.feature("sketch2")
+    assert feature["plane"] == "front"
+    assert feature["elements"][0]["center"] == [8, 4]  # na přední ploše: x a výška z
+    assert form_field(w, "plane").currentData() == "front"
+
+
+def test_curved_face_does_not_offer_sketch(window, no_dialogs, slot_errors):
+    part = shown_part(window)
+    bore = next(face for face in part.faces() if face.geom_type.name == "CYLINDER")
+    window.viewer.click([bore])
+    assert not action(window, "Skica na vybrané ploše").isEnabled()
+    assert not action(window, "Skořepina – otevřít vybrané plochy").isEnabled()
+    assert "skica na ploše" not in window.statusBar().currentMessage()
+    # Kdyby se akce přesto spustila, objeví se česká hláška a model zůstane beze změny.
+    before = len(window.session.document.features)
+    window.add_from_selection("sketch")
+    assert no_dialogs == ["warning"]
+    assert len(window.session.document.features) == before
+    assert slot_errors == []
+
+
+def test_selecting_feature_in_tree_highlights_its_edges(window):
+    chamfer = next(i for i in range(window.tree.topLevelItemCount())
+                   if "Sražení" in window.tree.topLevelItem(i).text(0))
+    window.tree.setCurrentItem(window.tree.topLevelItem(chamfer))
+    assert window.viewer.highlighted
+    window.tree.setCurrentItem(None)
+    assert window.viewer.highlighted == []
+
+
+def test_context_menu_offers_selection_actions(window, monkeypatch):
+    shown = []  # nabídka by v testu čekala na kliknutí – jen si zapamatujeme její položky
+    monkeypatch.setattr(window, "_exec_menu", lambda menu, position: shown.append(
+        [(item.text(), item.isEnabled()) for item in menu.actions() if item.text()]))
+    window.viewer.context_menu_requested.emit(QPoint(10, 10))
+    assert shown[-1][0] == ("Nic není vybrané – klikni na hranu nebo plochu", False)
+    window.viewer.click([edge_at(shown_part(window), 82.5, 0, 0)])
+    window.viewer.context_menu_requested.emit(QPoint(10, 10))
+    items = dict(shown[-1])
+    assert items["Zaoblit vybrané hrany"] and items["Srazit vybrané hrany"]
+    assert not items["Skica na vybrané ploše"]
+    action(window, "Zrušit výběr ve 3D").trigger()
+    assert not action(window, "Zaoblit vybrané hrany").isEnabled()

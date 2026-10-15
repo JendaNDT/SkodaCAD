@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from build123d import Vector
 
 from skodacad import Document
 
@@ -34,3 +35,15 @@ def box_features(width: Any = 20, depth: Any = 30, height: Any = 40) -> list[dic
 @pytest.fixture
 def examples_dir() -> Path:
     return EXAMPLES
+
+
+def edge_at(part: Any, x: float, y: float, z: float) -> Any:
+    """Hrana dílu nejblíž bodu – v testech místo kliknutí myší."""
+    point = Vector(x, y, z)
+    return min(part.edges(), key=lambda edge: edge.distance_to(point))
+
+
+def face_at(part: Any, x: float, y: float, z: float) -> Any:
+    """Plocha dílu nejblíž bodu – v testech místo kliknutí myší."""
+    point = Vector(x, y, z)
+    return min(part.faces(), key=lambda face: face.distance_to(point))

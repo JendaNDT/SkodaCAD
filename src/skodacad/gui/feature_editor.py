@@ -41,14 +41,18 @@ from skodacad.schema import (
     Field,
     new_shape,
 )
+from skodacad.selectors import describe_edges
 from skodacad.session import format_parameter_value, parse_parameter_text
 
 MISSING = object()  # pole je prázdné a nepovinné → klíč se z prvku odebere
+# Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit). Dodává hlavní okno.
+ProfileEditor = Callable[[dict[str, Any]], dict[str, Any] | None]
 _BAD_STYLE = "border: 2px solid #c0392b; background: #fdecea;"
 
 EDGE_FACE_CHOICES = (("", "všechny plochy"), *FACE_CHOICES)
 EDGE_TYPE_CHOICES = (("", "všechny"), ("line", "úsečky"), ("circle", "kružnice a oblouky"))
 EDGE_AXIS_CHOICES = (("", "libovolně"), ("X", "s osou X"), ("Y", "s osou Y"), ("Z", "s osou Z"))
+_FORM_EDGE_KEYS = {"face", "type", "parallel", "radius"}  # co umí formulář; zbytek = výběr z 3D
 
 
 class InvalidValue(ValueError):
@@ -111,10 +115,12 @@ class FieldsForm(QWidget):
 
     def __init__(self, fields: tuple[Field, ...], data: dict[str, Any],
                  sketches: list[tuple[str, str]] | None = None,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None,
+                 profile_editor: ProfileEditor | None = None) -> None:
         super().__init__(parent)
         self._data = copy.deepcopy(data)
         self._sketches = sketches or []
+        self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         layout = QFormLayout(self)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
@@ -215,6 +221,8 @@ class FieldsForm(QWidget):
         return holder, read
 
     def _build_edges(self, field: Field, value: Any):
+        if isinstance(value, list) or (isinstance(value, dict) and set(value) - _FORM_EDGE_KEYS):
+            return self._build_picked_edges(value)
         spec = value if isinstance(value, dict) else {}
         holder = QWidget()
         form = QFormLayout(holder)
@@ -247,6 +255,47 @@ class FieldsForm(QWidget):
             return result or "all"
 
         return holder, read
+
+    def _build_picked_edges(self, value: Any):
+        """Výběr kliknutím ve 3D (hrana mezi plochami, nejbližší k bodu …) – jen ukázat."""
+        label = QLabel(f"<b>Vybráno ve 3D:</b> {describe_edges(value)}<br>"
+                       "<span style='color:#666'>Další hrany: vyber je ve 3D (Ctrl+klik) → "
+                       "pravé tlačítko → Přidat vybrané hrany. Hrany prvku jsou ve 3D "
+                       "zvýrazněné růžově.</span>")
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        kept = copy.deepcopy(value)
+        return label, lambda: copy.deepcopy(kept)
+
+    def _build_profile(self, field: Field, value: Any):
+        """Obrys z čar: souhrn (body, čáry, vazby) a tlačítko do skicáře."""
+        holder = QWidget()
+        row = QVBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        label = QLabel(_profile_summary(self._data))
+        label.setWordWrap(True)
+        row.addWidget(label)
+        button = QPushButton("Upravit ve skicáři…")
+        button.setObjectName("open_sketcher")
+        button.setEnabled(self._profile_editor is not None)
+        row.addWidget(button)
+        kept = [copy.deepcopy(value)]
+
+        def open_sketcher() -> None:
+            result = self._profile_editor(copy.deepcopy(self._data))
+            if result is None:
+                return
+            new = copy.deepcopy(self._data)
+            new.update({key: copy.deepcopy(result[key])
+                        for key in ("points", "segments", "constraints")})
+            kept[0] = copy.deepcopy(result["segments"])
+            label.setText(_profile_summary(new))
+            if new != self._data:
+                self._data = new
+                self.edited.emit(copy.deepcopy(new))
+
+        button.clicked.connect(lambda _checked=False: open_sketcher())
+        return holder, lambda: copy.deepcopy(kept[0])
 
     def _build_point(self, field: Field, value: Any):
         holder = QWidget()
@@ -297,7 +346,7 @@ class FieldsForm(QWidget):
         return edit, read
 
     def _build_shapes(self, field: Field, value: Any):
-        editor = ShapesEditor(value or [])
+        editor = ShapesEditor(value or [], profile_editor=self._profile_editor)
         editor.edited.connect(self._commit)
         editor.invalid.connect(self.invalid)
         return editor, editor.elements
@@ -330,6 +379,12 @@ class FieldsForm(QWidget):
             self.edited.emit(copy.deepcopy(new))
 
 
+def _profile_summary(data: dict[str, Any]) -> str:
+    counts = (len(data.get("points") or {}), len(data.get("segments") or {}),
+              len(data.get("constraints") or []))
+    return f"{counts[0]} bodů, {counts[1]} čar, {counts[2]} vazeb a kót"
+
+
 def shape_label(element: dict[str, Any]) -> str:
     schema = SHAPE_SCHEMAS.get(element.get("shape"))
     label = schema.label if schema else str(element.get("shape"))
@@ -342,9 +397,11 @@ class ShapesEditor(QWidget):
     edited = Signal()
     invalid = Signal(str)
 
-    def __init__(self, elements: list[dict[str, Any]], parent: QWidget | None = None) -> None:
+    def __init__(self, elements: list[dict[str, Any]], parent: QWidget | None = None,
+                 profile_editor: ProfileEditor | None = None) -> None:
         super().__init__(parent)
         self._elements = copy.deepcopy(elements)
+        self._profile_editor = profile_editor
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(QLabel("Tvary ve skice (otvor = tvar s režimem „odečíst“):"))
@@ -415,6 +472,7 @@ class ShapesEditor(QWidget):
     def _show_selected(self, row: int) -> None:
         if self._form is not None:
             self._detail.removeWidget(self._form)
+            self._form.hide()  # smaže se až později – do té doby nesmí překrývat nový formulář
             self._form.deleteLater()
             self._form = None
         if not 0 <= row < len(self._elements):
@@ -422,7 +480,8 @@ class ShapesEditor(QWidget):
         schema = SHAPE_SCHEMAS.get(self._elements[row].get("shape"))
         if schema is None:
             return
-        self._form = FieldsForm(schema.fields, self._elements[row])
+        self._form = FieldsForm(schema.fields, self._elements[row],
+                                profile_editor=self._profile_editor)
         self._form.setObjectName("shape_form")
         self._form.edited.connect(lambda data, r=row: self._shape_edited(r, data))
         self._form.invalid.connect(self.invalid)
@@ -442,8 +501,10 @@ class FeatureEditor(QWidget):
     changed = Signal(str, dict)  # id prvku, nový obsah prvku
     invalid = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None,
+                 profile_editor: ProfileEditor | None = None) -> None:
         super().__init__(parent)
+        self._profile_editor = profile_editor
         self._layout = QVBoxLayout(self)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.title = QLabel()
@@ -459,6 +520,7 @@ class FeatureEditor(QWidget):
         """Ukáže formulář prvku; ``sketches`` = skici před ním jako (id, popis)."""
         if self.form is not None:
             self._layout.removeWidget(self.form)
+            self.form.hide()  # smaže se až později – do té doby nesmí překrývat nový formulář
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None
@@ -472,7 +534,8 @@ class FeatureEditor(QWidget):
             return
         self.title.setText(f"<b>{schema.label}</b> <span style='color:#777'>({feature['id']})"
                            f"</span><br><span style='color:#555'>{schema.help}</span>")
-        self.form = FieldsForm(schema.fields, feature, sketches)
+        self.form = FieldsForm(schema.fields, feature, sketches,
+                               profile_editor=self._profile_editor)
         self.form.setObjectName("feature_form")
         self.form.edited.connect(lambda data: self.changed.emit(self.feature_id, data))
         self.form.invalid.connect(self.invalid)

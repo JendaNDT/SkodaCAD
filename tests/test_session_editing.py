@@ -192,3 +192,20 @@ def test_flange_from_scratch_matches_formula(session):
     session.update_feature("extrude1", extrude)
     assert session.result.ok
     assert session.properties.volume_mm3 == pytest.approx(math.pi / 4 * (165**2 - 62**2) * 18)
+
+
+def test_profile_point_names_are_not_parameters(session):
+    from skodacad.schema import new_shape
+
+    session.add_parameter("A", "5")  # stejné jméno jako bod obrysu
+    session.add_parameter("vyska", "30")
+    sketch = session.add_feature("sketch")
+    feature = session.feature(sketch)
+    profile = new_shape("profile")
+    profile["constraints"][-1]["value"] = "vyska"
+    feature["elements"] = [profile]
+    session.update_feature(sketch, feature)
+    with pytest.raises(DocumentError, match="používá"):
+        session.delete_parameter("vyska")
+    session.delete_parameter("A")
+    assert "A" not in session.document.parameters

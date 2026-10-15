@@ -15,24 +15,44 @@ from __future__ import annotations
 import copy
 import re
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from skodacad.document import Document, DocumentError
 from skodacad.export import export
-from skodacad.expressions import ExpressionError, referenced_names, resolve_parameters
+from skodacad.expressions import (
+    ExpressionError,
+    evaluate,
+    referenced_names,
+    resolve_parameters,
+)
 from skodacad.features import describe
+from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
+from skodacad.picking import (
+    edge_selector,
+    face_direction,
+    face_reference,
+    map_edges,
+    open_face_name,
+    split_shapes,
+)
 from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
+from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
+from skodacad.solver import SolveError, solve
 
 _NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _UNDO_LIMIT = 100
 # Klíče, jejichž hodnoty nejsou výrazy (názvy, volby, odkazy) – při hledání použití parametru
 # se přeskočí, aby se např. parametr „top“ nespletl s plochou „top“.
 _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "direction", "axis",
-                        "shape", "mode", "face", "parallel", "open_faces", "through_all"}
+                        "shape", "mode", "face", "between", "parallel", "open_faces",
+                        "through_all"}
+# Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
+SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell")
 
 
 def parse_parameter_text(text: str) -> int | float | str:
@@ -185,13 +205,19 @@ class ModelSession:
         """Kopie prvku (úpravy jdou jen přes ``update_feature``)."""
         return copy.deepcopy(self._require().features[self.feature_index(feature_id)])
 
-    def add_feature(self, feature_type: str, after_id: str | None = None) -> str:
-        """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec)."""
+    def add_feature(self, feature_type: str, after_id: str | None = None,
+                    values: dict[str, Any] | None = None) -> str:
+        """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec).
+
+        ``values`` přepíše výchozí hodnoty (např. skica rovnou s nakresleným obrysem) –
+        pořád jde o jeden krok pro Zpět."""
         if feature_type not in FEATURE_SCHEMAS:
             raise DocumentError(f"Neznámý typ prvku „{feature_type}“.")
         features = self._require().features
         index = self.feature_index(after_id) + 1 if after_id else len(features)
         feature = new_feature(feature_type, features, index)
+        feature.update(copy.deepcopy({k: v for k, v in (values or {}).items()
+                                      if k not in ("id", "type")}))
         self._change(lambda doc: doc.features.insert(index, feature))
         return feature["id"]
 
@@ -223,6 +249,162 @@ class ModelSession:
             doc.features.insert(target, doc.features.pop(index))
 
         return self._change(mutate)
+
+    # --- skicář ----------------------------------------------------------------------
+
+    def solve_profile(self, profile: dict[str, Any]) -> ProfileSolution:
+        """Vyřeší obrys skicáře s aktuálními parametry. Nikdy nevyhodí výjimku – chybu
+        vrátí česky v ``message`` (a čísla vadných vazeb ve ``failed``)."""
+        params = self.result.parameters if self.result else {}
+        try:
+            solved = solve(profile, lambda value: evaluate(value, params))
+        except SolveError as exc:
+            return ProfileSolution({}, -1, str(exc), exc.failed)
+        except ExpressionError as exc:
+            return ProfileSolution({}, -1, f"Hodnota kóty: {exc}", [])
+        return ProfileSolution(solved.points, solved.dof)
+
+    # --- výběr ve 3D ---------------------------------------------------------------
+
+    def selection_info(self, shapes: list[Any]) -> SelectionInfo:
+        """Co je vybrané kliknutím ve 3D (počty a český popis pro stavový řádek)."""
+        faces, edges = split_shapes(shapes)
+        if len(faces) + len(edges) == 1:
+            try:
+                text = describe_shape((faces or edges)[0].wrapped)
+            except Exception:  # noqa: BLE001 – popis je jen informace navíc
+                text = "Vybraný prvek"
+        else:
+            counts = [_count(len(faces), "plocha", "plochy", "ploch"),
+                      _count(len(edges), "hrana", "hrany", "hran")]
+            text = "Vybráno: " + ", ".join(c for c in counts if c) if faces or edges else ""
+        return SelectionInfo(len(faces), len(edges), text, sum(map(_is_flat, faces)))
+
+    def add_from_selection(self, feature_type: str, shapes: list[Any],
+                           point: Any = None) -> str:
+        """Nový prvek z výběru ve 3D: zaoblení/sražení hran, skica na ploše, skořepina.
+
+        Prvek se přidá na konec stromu – tam, kde je díl zobrazený. ``point`` je místo
+        kliknutí [x, y, z] (skica tam dostane kružnici). Vrátí id nového prvku.
+        """
+        document = self._require()
+        part = self._final_part()
+        feature = new_feature(feature_type, document.features)
+        self._fill_from_selection(feature, part, shapes, point, replace=True, new=True)
+        self._change(lambda doc: doc.features.append(feature))
+        return feature["id"]
+
+    def apply_selection(self, feature_id: str, shapes: list[Any],
+                        replace: bool = False) -> BuildResult:
+        """Převezme výběr ve 3D do existujícího prvku.
+
+        Zaoblení/sražení vybrané hrany přidá ke svým (``replace`` = místo svých),
+        skica se přesune na vybranou plochu, skořepina vybrané plochy otevře.
+        """
+        feature = self.feature(feature_id)
+        if feature["type"] not in SELECTION_FEATURES:
+            raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
+        part = self.result.parts_before.get(feature_id) if self.result else None
+        if part is None:
+            raise DocumentError(f"{describe(feature)} se zatím nepočítá (je za chybou "
+                                "nebo před ním není těleso) – výběr nejde převzít.")
+        self._fill_from_selection(feature, part, shapes, None, replace=replace, new=False)
+        return self.update_feature(feature_id, feature)
+
+    def feature_highlight(self, feature_id: str) -> list[Any]:
+        """Tvary (OCCT), které má okno zvýraznit u vybraného prvku: hrany zaoblení,
+        otevřené plochy skořepiny, plochy skici. Při jakékoli potíži prázdný seznam."""
+        if self.result is None or self.document is None:
+            return []
+        try:
+            feature = self.document.features[self.feature_index(feature_id)]
+            kind = feature["type"]
+            part = self.result.parts_before.get(feature_id)
+            if kind in ("fillet", "chamfer") and part is not None:
+                edges = select_edges(part, feature.get("edges", "all"), self._evaluate)
+                return [edge.wrapped for edge in edges]
+            if kind == "shell" and part is not None:
+                return [face.wrapped for name in feature.get("open_faces", [])
+                        for face in select_faces(part, name)]
+            sketch_id = feature["id"] if kind == "sketch" else feature.get("sketch")
+            if sketch_id in self.result.sketches:
+                plane, sketch = self.result.sketches[sketch_id]
+                return [face.wrapped for face in (plane * sketch).faces()]
+        except Exception:  # noqa: BLE001 – zvýraznění je jen pomůcka, nesmí nic shodit
+            return []
+        return []
+
+    def _final_part(self) -> Any:
+        result = self.result
+        if result is None or result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
+        if result.first_error is not None:
+            raise DocumentError(f"Model má chybu v prvku {result.first_error.label} – nejdřív "
+                                "ji oprav, pak přidávej prvky z výběru.")
+        return result.part
+
+    def _evaluate(self, value: Any) -> float:
+        return evaluate(value, self.result.parameters if self.result else {})
+
+    def _fill_from_selection(self, feature: dict[str, Any], part: Any, shapes: list[Any],
+                             point: Any, replace: bool, new: bool) -> None:
+        """Doplní do prvku výběr z 3D. ``part`` je díl, na kterém prvek vybírá.
+
+        Nový prvek (``new``) leží na konci stromu, kde je zobrazený díl – kliknuté hrany
+        patří přímo jemu. U existujícího se hledají v dílu před prvkem (``map_edges``).
+        """
+        faces, edges = split_shapes(shapes)
+        kind = feature["type"]
+        try:
+            if kind in ("fillet", "chamfer"):
+                if not edges:
+                    raise DocumentError("Vyber ve 3D aspoň jednu hranu (Ctrl+klik přidá další).")
+                if new:
+                    feature["edges"] = edge_selector(part, edges)
+                elif replace:
+                    feature["edges"] = edge_selector(part, map_edges(edges, part))
+                else:
+                    feature["edges"] = self._added_edges(feature["edges"], part, edges)
+            elif kind == "sketch":
+                if len(faces) != 1:
+                    raise DocumentError("Vyber ve 3D právě jednu rovinnou plochu.")
+                reference = face_reference(part, faces[0], point if new else None)
+                feature["plane"] = reference.plane
+                feature.pop("offset", None)
+                if reference.offset:
+                    feature["offset"] = reference.offset
+                if new:
+                    feature["elements"][0]["center"] = list(reference.point)
+            elif kind == "shell":
+                if not faces:
+                    raise DocumentError("Vyber ve 3D plochy, které má skořepina otevřít.")
+                names = [] if replace else list(feature.get("open_faces", []))
+                for face in faces:
+                    name = open_face_name(part, face)
+                    if name not in names:
+                        names.append(name)
+                feature["open_faces"] = names
+            else:
+                raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
+        except SelectionError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def _added_edges(self, current: Any, part: Any, picked: list[Any]) -> Any:
+        """Stávající výběr hran + nově vybrané (kliknuté ve zobrazeném dílu)."""
+        mapped = map_edges(picked, part)
+        try:
+            existing = select_edges(part, current, self._evaluate)
+        except (SelectionError, ExpressionError):
+            existing = []
+        new = [edge for edge in mapped if edge not in existing]
+        if not new:
+            raise DocumentError(f"Vybrané hrany už prvek obsahuje ({describe_edges(current)}).")
+        if not existing:
+            return edge_selector(part, mapped)
+        added = edge_selector(part, new)
+        current_items = current if isinstance(current, list) else [current]
+        added_items = added if isinstance(added, list) else [added]
+        return [*current_items, *added_items]
 
     # --- Zpět / Znovu --------------------------------------------------------------
 
@@ -284,8 +466,51 @@ class ModelSession:
         return f"{star}{self.document.name} ({filename}) – ŠkodaCAD"
 
 
+@dataclass
+class ProfileSolution:
+    points: dict[str, tuple[float, float]]  # vyřešené polohy ({} při chybě)
+    dof: int  # kolik rozměrů chybí (0 = plně určeno, -1 = chyba)
+    message: str = ""  # česká chyba, "" = v pořádku
+    failed: list[int] = field(default_factory=list)  # čísla vazeb, které si odporují
+
+    @property
+    def ok(self) -> bool:
+        return not self.message
+
+
+@dataclass(frozen=True)
+class SelectionInfo:
+    faces: int
+    edges: int
+    text: str  # český popis, "" = nic nevybráno
+    flat_faces: int = 0  # rovinné plochy kolmé k ose X/Y/Z – jen na nich jde skica a skořepina
+
+
+def _is_flat(face: Any) -> bool:
+    try:
+        face_direction(face)
+    except SelectionError:
+        return False
+    return True
+
+
+def _count(n: int, one: str, few: str, many: str) -> str:
+    if n == 0:
+        return ""
+    return f"{n} {one if n == 1 else few if n < 5 else many}"
+
+
 def _uses_name(value: Any, name: str) -> bool:
     """Používá prvek (nebo jeho část) parametr ``name`` v nějakém výrazu?"""
+    if isinstance(value, dict) and value.get("shape") == "profile":
+        # V obrysu jsou výrazy jen v souřadnicích bodů a hodnotách kót; jinde jsou jména
+        # bodů a čar („A“, „s1“), která se nesmí splést s parametrem stejného jména.
+        coordinates = list((value.get("points") or {}).values())
+        dimensions = [c.get("value") for c in value.get("constraints") or []
+                      if isinstance(c, dict)]
+        rest = {k: v for k, v in value.items()
+                if k not in ("shape", "points", "segments", "constraints")}
+        return any(_uses_name(part, name) for part in (coordinates, dimensions, rest))
     if isinstance(value, dict):
         return any(_uses_name(v, name) for k, v in value.items() if k not in _NOT_EXPRESSION_KEYS)
     if isinstance(value, list):

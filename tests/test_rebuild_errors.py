@@ -83,3 +83,11 @@ def test_sketch_on_face_without_part():
 def test_bad_parameter_is_document_error():
     with pytest.raises(DocumentError, match="Parametr „a“"):
         rebuild(make_doc(box_features("a"), parameters={"a": "b * 2"}))
+
+
+def test_part_before_each_feature_is_kept():
+    features = [*box_features(), {"id": "f", "type": "fillet", "edges": "all", "radius": 2}]
+    result = rebuild(make_doc(features))
+    assert result.parts_before["s"] is None
+    assert result.parts_before["f"].volume == pytest.approx(20 * 30 * 40)
+    assert result.part.volume < 20 * 30 * 40

@@ -6,15 +6,17 @@ Okno nikdy nemodeluje samo – všechno jde přes ``ModelSession`` (jádro).
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QCloseEvent, QColor, QKeySequence
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QDockWidget,
     QFileDialog,
     QFormLayout,
@@ -37,16 +39,27 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.features import describe
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
+from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
-from skodacad.session import ModelSession, format_parameter_value
+from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 
 log = logging.getLogger(__name__)
 
 HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé: posun  ·  Kolečko: zoom  ·  "
-             "Klik: výběr plochy/hrany  ·  Dvojklik: celý díl")
+             "Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  Pravý klik: co s výběrem  ·  "
+             "Dvojklik: celý díl")
+
+# Nový prvek z výběru ve 3D: typ → text akce.
+SELECTION_ACTIONS = {
+    "fillet": "Zaoblit vybrané hrany",
+    "chamfer": "Srazit vybrané hrany",
+    "sketch": "Skica na vybrané ploše",
+    "shell": "Skořepina – otevřít vybrané plochy",
+}
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·"}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888")}
@@ -69,13 +82,15 @@ class MainWindow(QMainWindow):
         self.user_dir = user_dir or Path.home()
         self._param_fields: dict[str, QLineEdit] = {}
         self._selected_id: str | None = None
+        self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
 
             viewer_factory = OccViewer
         self.viewer = viewer_factory()
-        self.viewer.selection_changed.connect(self._show_selection)
+        self.viewer.selection_changed.connect(self._selection_changed)
+        self.viewer.context_menu_requested.connect(self._show_context_menu)
         self.setCentralWidget(self.viewer)
 
         self._create_actions()
@@ -113,6 +128,10 @@ class MainWindow(QMainWindow):
             key: self._action(schema.label, lambda k=key: self.add_feature(k))
             for key, schema in FEATURE_SCHEMAS.items()
         }
+        self.profile_sketch_action = self._action("Skica – nakreslit obrys…",
+                                                  self.add_profile_sketch)
+        self.profile_sketch_action.setToolTip(
+            "Skicář: obrys z úseček a oblouků s vazbami a kótami")
         self.delete_feature_action = self._action("Smazat prvek", self.delete_feature, "Delete")
         self.move_up_action = self._action("Posunout nahoru", lambda: self.move_feature(-1))
         self.move_down_action = self._action("Posunout dolů", lambda: self.move_feature(+1))
@@ -126,6 +145,16 @@ class MainWindow(QMainWindow):
             action.setIconText(short)
             action.setToolTip(action.text())
         self.fit_action = self._action("Celý díl", lambda: self.viewer.fit_all(), "F")
+        self.selection_actions = {
+            key: self._action(text, lambda k=key: self.add_from_selection(k))
+            for key, text in SELECTION_ACTIONS.items()
+        }
+        self.add_to_feature_action = self._action("Přidat výběr do vybraného prvku",
+                                                  self.apply_selection)
+        self.replace_in_feature_action = self._action(
+            "Nahradit hrany vybraného prvku výběrem", lambda: self.apply_selection(replace=True))
+        self.clear_selection_action = self._action("Zrušit výběr ve 3D",
+                                                   lambda: self.viewer.clear_selection(), "Esc")
 
     # --- stavba okna ---------------------------------------------------------------
 
@@ -177,6 +206,8 @@ class MainWindow(QMainWindow):
         add_menu = QMenu(self.add_feature_button)
         for action in self.add_feature_actions.values():
             add_menu.addAction(action)
+            if action is self.add_feature_actions["sketch"]:
+                add_menu.addAction(self.profile_sketch_action)
         self.add_feature_button.setMenu(add_menu)
         tree_buttons.addWidget(self.add_feature_button)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
@@ -201,7 +232,7 @@ class MainWindow(QMainWindow):
                                          Qt.DockWidgetArea.LeftDockWidgetArea)
 
     def _build_editor_panel(self) -> None:
-        self.feature_editor = FeatureEditor()
+        self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
         self.feature_editor.changed.connect(self._feature_edited)
         self.feature_editor.invalid.connect(
             lambda message: self.statusBar().showMessage(message, 10000))
@@ -261,6 +292,8 @@ class MainWindow(QMainWindow):
         add_menu = edit_menu.addMenu("Přidat prvek")
         for action in self.add_feature_actions.values():
             add_menu.addAction(action)
+            if action is self.add_feature_actions["sketch"]:
+                add_menu.addAction(self.profile_sketch_action)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
             edit_menu.addAction(action)
         edit_menu.addSeparator()
@@ -272,6 +305,8 @@ class MainWindow(QMainWindow):
         model_menu.addAction(self.rebuild_action)
         toolbar.addAction(self.rebuild_action)
         toolbar.addSeparator()
+        selection_menu = model_menu.addMenu("Z výběru ve 3D")
+        self._fill_selection_menu(selection_menu)
 
         view_menu = bar.addMenu("&Zobrazení")
         view_menu.addAction(self.fit_action)
@@ -285,6 +320,15 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Nápověda")
         help_menu.addAction(self._action("Ovládání", self.show_controls))
         help_menu.addAction(self._action("O aplikaci", self.show_about))
+
+    def _fill_selection_menu(self, menu: QMenu) -> None:
+        for action in self.selection_actions.values():
+            menu.addAction(action)
+        menu.addSeparator()
+        menu.addAction(self.add_to_feature_action)
+        menu.addAction(self.replace_in_feature_action)
+        menu.addSeparator()
+        menu.addAction(self.clear_selection_action)
 
     # --- práce se souborem -------------------------------------------------------
 
@@ -399,6 +443,61 @@ class MainWindow(QMainWindow):
             self._selected_id = new_id[0]
             self._reload_all()
 
+    def edit_profile(self, profile: dict) -> dict | None:
+        """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit)."""
+        dialog = SketcherDialog(profile, self.session.solve_profile, self)
+        try:
+            if self._exec_dialog(dialog) == QDialog.DialogCode.Accepted:
+                return dialog.result_profile()
+            return None
+        finally:
+            dialog.deleteLater()  # jinak by po každém otevření zůstalo skryté okno v paměti
+
+    def _exec_dialog(self, dialog: QDialog) -> int:
+        return dialog.exec()  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
+
+    def add_profile_sketch(self) -> None:
+        """Nová skica s obrysem nakresleným ve skicáři (jeden krok pro Zpět)."""
+        if self.session.document is None:
+            self.session.new_document()
+            self._reload_all()
+        profile = self.edit_profile(empty_profile())
+        if profile is None:
+            return
+        if not profile["segments"]:
+            self.statusBar().showMessage("Skicář byl prázdný – skica nevznikla.", 10000)
+            return
+        new_id: list[str] = []
+        if self._apply(lambda: new_id.append(self.session.add_feature(
+                "sketch", after_id=self._selected_id, values={"elements": [profile]})),
+                structural=False):
+            self._selected_id = new_id[0]
+            self._reload_all()
+            self.statusBar().showMessage(
+                "Skica s obrysem přidána – teď ji vysuň (Přidat prvek → Vysunutí).", 10000)
+
+    def add_from_selection(self, feature_type: str) -> None:
+        """Nový prvek z výběru ve 3D (zaoblení kliknutých hran, skica na ploše …)."""
+        picked, point = list(self._picked), getattr(self.viewer, "picked_point", None)
+        new_id: list[str] = []
+        if self._apply(lambda: new_id.append(
+                self.session.add_from_selection(feature_type, picked, point)),
+                structural=False):
+            self._selected_id = new_id[0]
+            self._reload_all()
+            self.statusBar().showMessage(
+                f"Přidáno: {describe(self.session.feature(new_id[0]))} – hodnoty uprav vpravo.",
+                10000)
+
+    def apply_selection(self, replace: bool = False) -> None:
+        """Výběr ve 3D do prvku vybraného ve stromu (hrany zaoblení, rovina skici …)."""
+        if self._selected_id is None:
+            return
+        picked = list(self._picked)
+        if self._apply(lambda: self.session.apply_selection(self._selected_id, picked, replace),
+                       structural=False):
+            self._load_editor()
+
     def delete_feature(self) -> None:
         if self._selected_id is None:
             return
@@ -506,6 +605,7 @@ class MainWindow(QMainWindow):
         self._load_editor()
 
     def _refresh_all(self, fit: bool = False) -> None:
+        self._picked = []  # díl se kreslí znovu → starý výběr ve 3D už neplatí
         self._refresh_title()
         self._refresh_tree()
         self._refresh_properties()
@@ -514,6 +614,12 @@ class MainWindow(QMainWindow):
         # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
         self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
         self._had_part = part is not None
+        self._update_highlight()
+
+    def _update_highlight(self) -> None:
+        """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …)."""
+        shapes = self.session.feature_highlight(self._selected_id) if self._selected_id else []
+        self.viewer.highlight(shapes)
 
     def _refresh_title(self) -> None:
         self.setWindowTitle(self.session.title)
@@ -574,11 +680,36 @@ class MainWindow(QMainWindow):
             action.setEnabled(has_document)
         self.delete_parameter_action.setEnabled(
             has_document and bool(self.session.document.parameters))
+        self._refresh_selection_actions()
+
+    def _refresh_selection_actions(self) -> None:
+        info = self.session.selection_info(self._picked)
+        has_part = self.session.result is not None and self.session.result.part is not None
+        flat = info.faces > 0 and info.flat_faces == info.faces
+        needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,
+                 "sketch": info.faces == 1 and flat, "shell": flat}
+        for key, action in self.selection_actions.items():
+            action.setEnabled(has_part and needs[key])
+        document = self.session.document
+        feature = next((copy.deepcopy(f) for f in document.features
+                        if f["id"] == self._selected_id), None) if document else None
+        kind = feature["type"] if feature else None
+        texts = {"fillet": "Přidat vybrané hrany do: ", "chamfer": "Přidat vybrané hrany do: ",
+                 "sketch": "Přesunout na vybranou plochu: ",
+                 "shell": "Otevřít vybrané plochy v: "}
+        if kind in SELECTION_FEATURES:
+            self.add_to_feature_action.setText(texts[kind] + describe(feature))
+        else:
+            self.add_to_feature_action.setText("Přidat výběr do vybraného prvku")
+        self.add_to_feature_action.setEnabled(kind in SELECTION_FEATURES and needs[kind])
+        self.replace_in_feature_action.setEnabled(kind in ("fillet", "chamfer") and info.edges > 0)
+        self.clear_selection_action.setEnabled(bool(self._picked))
 
     def _tree_selection_changed(self, current: QTreeWidgetItem | None, _previous=None) -> None:
         self._selected_id = current.data(0, _FEATURE_ID) if current is not None else None
         self._refresh_actions()
         self._load_editor()
+        self._update_highlight()
 
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
@@ -609,11 +740,36 @@ class MainWindow(QMainWindow):
             lines.append(f"Pozor: {props.solids} samostatná tělesa")
         self.props_label.setText("\n".join(lines))
 
-    def _show_selection(self, description: str) -> None:
-        if description:
-            self.statusBar().showMessage(description)
-        else:
+    def _selection_changed(self, shapes: list) -> None:
+        """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, akce povolit."""
+        self._picked = list(shapes)
+        self._refresh_selection_actions()
+        info = self.session.selection_info(self._picked)
+        if not info.text:
             self.statusBar().showMessage(HELP_HINT)
+            return
+        hints = []
+        if info.edges:
+            hints.append("pravým tlačítkem zaoblit nebo srazit")
+        if info.faces == 1 and info.flat_faces == 1:
+            hints.append("pravým tlačítkem skica na ploše")
+        hints.append("Ctrl+klik přidá další")
+        self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))
+
+    def _show_context_menu(self, position: QPoint | None = None) -> None:
+        """Pravý klik do 3D: co jde s výběrem udělat."""
+        menu = QMenu(self)
+        if not self._picked:
+            title = menu.addAction("Nic není vybrané – klikni na hranu nebo plochu")
+            title.setEnabled(False)
+            menu.addSeparator()
+        self._fill_selection_menu(menu)
+        menu.addSeparator()
+        menu.addAction(self.fit_action)
+        self._exec_menu(menu, position if position is not None else QCursor.pos())
+
+    def _exec_menu(self, menu: QMenu, position: QPoint) -> None:
+        menu.exec(position)  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
 
     # --- dialogy a pomocné ---------------------------------------------------------
 

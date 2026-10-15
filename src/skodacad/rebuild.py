@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from build123d import Part
+from build123d import Part, Plane, Sketch
 
 from skodacad.document import Document, DocumentError
 from skodacad.expressions import ExpressionError, resolve_parameters
@@ -34,6 +34,10 @@ class BuildResult:
     part: Part | None
     parameters: dict[str, float]
     statuses: list[FeatureStatus] = field(default_factory=list)
+    # Díl těsně před každým spočítaným prvkem (id → Part nebo None) – na něm prvek vybíral
+    # hrany a plochy. Okno podle toho zvýrazní, co prvek zasahuje.
+    parts_before: dict[str, Part | None] = field(default_factory=dict)
+    sketches: dict[str, tuple[Plane, Sketch]] = field(default_factory=dict)  # id → umístění
 
     @property
     def ok(self) -> bool:
@@ -66,6 +70,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
             )
             continue
 
+        result.parts_before[feature["id"]] = ctx.part
         message = _run_feature(ctx, feature)
         if message is None:
             result.statuses.append(FeatureStatus(feature["id"], feature["type"], label, "ok"))
@@ -76,6 +81,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
             )
 
     result.part = ctx.part
+    result.sketches = ctx.sketches
     return result
 
 

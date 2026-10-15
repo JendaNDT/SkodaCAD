@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from skodacad import Document, DocumentError
@@ -55,3 +57,12 @@ def test_material_lookup_ignores_accents_and_case():
     assert density_g_cm3("Hliník") == density_g_cm3("hlinik") == 2.70
     assert density_g_cm3("PETG") == 1.27
     assert density_g_cm3("neznámý") is None
+
+
+def test_version_1_files_still_load_and_save_as_current(tmp_path):
+    from skodacad.document import VERSION
+
+    document = Document.from_dict({"format": "skodacad", "version": 1, "features": []})
+    path = tmp_path / "stary.json"
+    document.save(path)
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == VERSION == 3

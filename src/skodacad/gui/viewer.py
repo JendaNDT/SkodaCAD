@@ -4,7 +4,11 @@ Tohle je jediné místo v GUI, které smí sahat na OCCT – a jen kvůli kresle
 Modelování jde vždy přes jádro (``ModelSession``).
 
 Ovládání: levé tlačítko táhnout = otáčení, prostřední nebo pravé = posun,
-kolečko = zoom ke kurzoru, klik = výběr plochy/hrany, dvojklik = celý díl.
+kolečko = zoom ke kurzoru, klik = výběr plochy/hrany (s Ctrl nebo Shift přidat/ubrat),
+pravý klik = nabídka akcí s výběrem, dvojklik = celý díl.
+
+Prohlížeč jen hlásí, co je vybrané (tvary OCCT, signál ``selection_changed``);
+co s výběrem udělat, řeší okno přes ``ModelSession``.
 """
 
 from __future__ import annotations
@@ -14,14 +18,25 @@ import logging
 import sys
 from typing import Any
 
-from OCP.AIS import AIS_InteractiveContext, AIS_SelectionScheme_Replace, AIS_Shaded, AIS_Shape
+from OCP.AIS import (
+    AIS_InteractiveContext,
+    AIS_SelectionScheme_Replace,
+    AIS_SelectionScheme_XOR,
+    AIS_Shaded,
+    AIS_Shape,
+)
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_GFM_VER,
     Aspect_TOL_SOLID,
     Aspect_TOTP_LEFT_LOWER,
 )
-from OCP.Graphic3d import Graphic3d_MaterialAspect, Graphic3d_NameOfMaterial_Plastified
+from OCP.BRep import BRep_Builder
+from OCP.Graphic3d import (
+    Graphic3d_MaterialAspect,
+    Graphic3d_NameOfMaterial_Plastified,
+    Graphic3d_ZLayerId_Topmost,
+)
 from OCP.OpenGl import OpenGl_GraphicDriver
 from OCP.Prs3d import (
     Prs3d_LineAspect,
@@ -30,6 +45,7 @@ from OCP.Prs3d import (
 )
 from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+from OCP.TopoDS import TopoDS_Compound
 from OCP.V3d import (
     V3d_Viewer,
     V3d_XnegYposZpos,
@@ -44,8 +60,6 @@ from OCP.V3d import (
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
-
-from skodacad.inspection import describe_shape
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +135,8 @@ class _NativeSurface(QWidget):
 class OccViewer(QWidget):
     """3D prohlížeč dílu. Když se OpenGL nepodaří spustit, ukáže místo pádu zprávu."""
 
-    selection_changed = Signal(str)  # popis vybrané plochy/hrany, "" = nic nevybráno
+    selection_changed = Signal(list)  # vybrané plochy a hrany (TopoDS), [] = nic
+    context_menu_requested = Signal(QPoint)  # pravý klik bez tažení, globální souřadnice
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -143,6 +158,8 @@ class OccViewer(QWidget):
         self._context = None
         self._window = None
         self._ais: AIS_Shape | None = None
+        self._highlight: AIS_Shape | None = None
+        self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self._pending: tuple[Any, bool] | None = None
         self._press: QPoint | None = None
         self._last: QPoint | None = None
@@ -164,6 +181,7 @@ class OccViewer(QWidget):
         if self._ais is not None:
             context.Remove(self._ais, False)
             self._ais = None
+        self._remove_highlight()
         if part is not None:
             ais = AIS_Shape(part.wrapped)
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -181,8 +199,58 @@ class OccViewer(QWidget):
         if fit:
             self._sync_size()
             self._view.FitAll(0.08, False)
-        self.selection_changed.emit("")
+        self.picked_point = None
+        self.selection_changed.emit([])
         self._view.Redraw()
+
+    def selected_shapes(self) -> list[Any]:
+        """Vybrané plochy a hrany jako tvary OCCT."""
+        if not self.ready:
+            return []
+        shapes = []
+        context = self._context
+        context.InitSelected()
+        while context.MoreSelected():
+            if context.HasSelectedShape():
+                shapes.append(context.SelectedShape())
+            context.NextSelected()
+        return shapes
+
+    def clear_selection(self) -> None:
+        if self.ready:
+            self._context.ClearSelected(False)
+            self._view.Redraw()
+        self.picked_point = None
+        self.selection_changed.emit([])
+
+    def highlight(self, shapes: list[Any]) -> None:
+        """Zvýrazní tvary (hrany/plochy, které používá vybraný prvek); [] = nic.
+
+        Kreslí se navrch (vidět i skrz díl) a kliknout na ně nejde.
+        """
+        if not self.ready:
+            return
+        self._remove_highlight()
+        if shapes:
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            for shape in shapes:
+                builder.Add(compound, shape)
+            ais = AIS_Shape(compound)
+            ais.SetColor(_rgb(0.90, 0.20, 0.55))
+            ais.SetWidth(4.0)
+            ais.SetTransparency(0.45)
+            self._context.Display(ais, False)
+            self._context.Deactivate(ais)
+            self._context.SetZLayer(ais, Graphic3d_ZLayerId_Topmost)
+            self._highlight = ais
+        self._view.Redraw()
+
+    def _remove_highlight(self) -> None:
+        if self._highlight is not None:
+            self._context.Remove(self._highlight, False)
+            self._highlight = None
 
     def fit_all(self) -> None:
         if self.ready:
@@ -327,25 +395,52 @@ class OccViewer(QWidget):
     def _mouse_release(self, event: QMouseEvent) -> None:
         if not self.ready:
             return
-        if event.button() == Qt.MouseButton.LeftButton and not self._dragging:
-            self._select_at(*self._pixels(event.position()))
+        if not self._dragging:
+            x, y = self._pixels(event.position())
+            if event.button() == Qt.MouseButton.LeftButton:
+                modifiers = event.modifiers()
+                toggle = bool(modifiers & (Qt.KeyboardModifier.ControlModifier
+                                           | Qt.KeyboardModifier.ShiftModifier))
+                self._select_at(x, y, toggle)
+            elif event.button() == Qt.MouseButton.RightButton:
+                self._select_for_menu(x, y)
+                self.context_menu_requested.emit(event.globalPosition().toPoint())
         self._press = None
         self._dragging = False
 
-    def _select_at(self, x: int, y: int) -> None:
+    def _select_at(self, x: int, y: int, toggle: bool = False) -> None:
+        """Klik: nahradí výběr tím pod kurzorem; s Ctrl/Shift ho přidá nebo ubere."""
         context = self._context
         context.MoveTo(x, y, self._view, False)
-        context.SelectDetected(AIS_SelectionScheme_Replace)
+        self._remember_point()
+        if toggle:
+            if context.HasDetected():
+                context.SelectDetected(AIS_SelectionScheme_XOR)
+        else:
+            context.SelectDetected(AIS_SelectionScheme_Replace)
         context.UpdateCurrentViewer()
-        description = ""
-        context.InitSelected()
-        if context.MoreSelected() and context.HasSelectedShape():
-            try:
-                description = describe_shape(context.SelectedShape())
-            except Exception:  # noqa: BLE001 – popis je jen informace navíc
-                log.exception("Popis vybraného prvku selhal")
-                description = "Vybraný prvek"
-        self.selection_changed.emit(description)
+        self.selection_changed.emit(self.selected_shapes())
+
+    def _select_for_menu(self, x: int, y: int) -> None:
+        """Pravý klik na nevybraný prvek ho vybere (jako běžně v programech), na vybraný
+        nechá výběr, jak je – nabídka pak pracuje s ním."""
+        context = self._context
+        context.MoveTo(x, y, self._view, False)
+        if not context.HasDetected() or not context.HasDetectedShape():
+            return
+        detected = context.DetectedShape()
+        if any(detected.IsSame(shape) for shape in self.selected_shapes()):
+            self._remember_point()
+            return
+        self._select_at(x, y)
+
+    def _remember_point(self) -> None:
+        selector = self._context.MainSelector()
+        if selector.NbPicked() > 0:
+            point = selector.PickedPoint(1)
+            self.picked_point = (point.X(), point.Y(), point.Z())
+        else:
+            self.picked_point = None
 
     def _wheel(self, event: QWheelEvent) -> None:
         if not self.ready:

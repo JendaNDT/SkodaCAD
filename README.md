@@ -28,6 +28,9 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 | Posun | prostřední nebo pravé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
 | Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku |
+| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere |
+| Co s výběrem | pravé tlačítko (bez tažení): Zaoblit, Srazit, Skica na ploše, Skořepina… |
+| Zrušit výběr | `Esc` |
 | Celý díl | dvojklik nebo `F` |
 | Pohledy | `0` izometrie, `1` zepředu, `3` zprava, `7` shora (s `Ctrl` opačná strana) |
 | Změna parametru | přepiš hodnotu vlevo a stiskni Enter (číslo, `12,5` i výraz `D/2 + 5`) |
@@ -45,10 +48,38 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
 3. **Přidat prvek → Vysunutí**: ze skici vznikne těleso, vpravo nastav vzdálenost.
 4. Díra nebo výstupek: další **Skica** se sama položí na horní plochu dílu (kružnice Ø10),
    pak **Vysunutí** s operací *odebrat materiál* a případně *Řez skrz celý díl*.
-5. **Zaoblení / Sražení**: hrany se vybírají popisem („na horní ploše“, „rovnoběžné s osou Z“,
-   „poloměr 9“) – výběr tak platí i po změně rozměrů.
-6. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
+5. **Zaoblení / Sražení kliknutím**: klikni ve 3D na hranu (další s `Ctrl`), pravé tlačítko →
+   *Zaoblit vybrané hrany*. Program si hranu nezapamatuje číslem, ale významem („hrana mezi
+   přední a pravou plochou“, „kružnice R3 na horní ploše“) – výběr tak platí i po změně
+   rozměrů. Hrany vybraného zaoblení svítí ve 3D růžově; další přidáš přes pravé tlačítko →
+   *Přidat vybrané hrany do…*. Hrany jde vybrat i ručně ve formuláři (na ploše, rovnoběžné…).
+6. **Skica na ploše kliknutím**: klikni na rovinnou plochu (i dno kapsy nebo schod), pravé
+   tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne v místě kliknutí.
+7. **Skicář (obrys z čar s vazbami)**: *Přidat prvek → Skica – nakreslit obrys…* (nebo u tvaru
+   „Obrys z čar“ tlačítko *Upravit ve skicáři…*). Viz [Skicář](#skicář) níže.
+8. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
    pole (např. `sirka` nebo `sirka/2 - 5`).
+
+### Skicář
+
+1. Nástroj **Úsečka** (`L`): klikej body obrysu. Klik na existující bod čáry napojí, klik do
+   počátku (zelený kroužek) obrys k počátku připne. Skoro vodorovná/svislá čára dostane vazbu
+   sama. Konec řetězu: `Esc` nebo pravé tlačítko. **Oblouk** (`A`): začátek, konec a bod,
+   kudy má vést.
+2. Nástroj **Výběr** (`S`): klikni na čáru nebo bod (`Ctrl` = přidat další) a přidej vazbu
+   tlačítkem vlevo – *Vodorovně, Svisle, Rovnoběžně, Kolmo, Tečně, Stejně velké, Na bodě/čáře,
+   Uprostřed, Pevný bod*.
+3. **Kóta…** (`D`): úsečka = délka, oblouk = poloměr, dva body nebo bod a čára = vzdálenost,
+   dvě úsečky = úhel. Hodnota může být číslo i výraz s parametrem (`sirka`, `D/2`) – obrys se
+   pak mění s parametrem.
+4. Dole vpravo je vidět, kolik rozměrů **zbývá určit** (modrý obrys jde ještě táhnout myší),
+   nebo **✓ plně určeno** (černý obrys). Vazby, které si odporují, jsou **červeně** – smaž je
+   (*Smazat vazbu*) nebo dej *Zpět* (`Ctrl+Z`).
+5. **Pomocná čára** (`G`) se účastní vazeb, ale není součástí obrysu (např. osa souměrnosti).
+6. **Hotovo** uloží obrys do modelu (jako jeden krok pro Zpět v hlavním okně). Obrys pak vysuň
+   nebo orotuj; s režimem *odečíst* je z něj otvor.
+
+Ukázka: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
 se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
@@ -90,7 +121,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 1,
+  "version": 3,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -132,9 +163,34 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `regular_polygon` | `sides`, `diameter` (opsaný) – např. šestihran |
 | `slot` | `length` (rozteč středů), `width` – drážka |
 | `polygon` | `points` – seznam bodů `[[x, y], …]` |
+| `profile` | obrys z úseček a oblouků s vazbami – kreslí se ve skicáři, viz níže |
 
 Všechny tvary mají navíc `center` (`[x, y]`), `angle` a `mode` (`add` = přidat, `subtract` = odečíst,
 tak vzniká např. otvor v kruhu).
+
+### Obrys s vazbami (`profile`)
+
+```json
+{"shape": "profile",
+ "points": {"A": [0, 0], "B": [40, 0], "C": [40, 20], "M": [40, 10], "D": [0, 20]},
+ "segments": {"s1": {"type": "line", "start": "A", "end": "B"},
+              "s2": {"type": "arc", "start": "B", "end": "C", "center": "M"},
+              "s3": {"type": "line", "start": "C", "end": "D"},
+              "s4": {"type": "line", "start": "D", "end": "A"}},
+ "constraints": [{"type": "coincident", "point": "A", "on": "origin"},
+                 {"type": "horizontal", "segment": "s1"},
+                 {"type": "length", "segment": "s1", "value": "sirka"},
+                 {"type": "radius", "segment": "s2", "value": 10},
+                 {"type": "tangent", "segments": ["s1", "s2"]}]}
+```
+
+* `points` jsou přibližné polohy – přesné spočítá řešič vazeb (SolveSpace) při každém přepočtu.
+* Oblouk vede **proti směru hodinových ručiček** od `start` do `end`; `"construction": true`
+  = pomocná čára. Bod `origin` je počátek skici.
+* Vazby: `fix` (point), `coincident` (point + on: bod/čára/origin), `horizontal`/`vertical`
+  (segment, nebo points), `parallel`, `perpendicular`, `tangent`, `equal` (segments),
+  `midpoint` (point + segment); kóty s `value` (číslo nebo výraz): `length` (segment),
+  `distance` (points, nebo point + segment), `radius` (segment), `angle` (segments, °).
 
 ### Výběr hran (`edges`)
 
@@ -145,7 +201,14 @@ Hrany se vybírají **významem, ne číslem** – výběr tak platí i po změn
 "edges": {"face": "top"}                                  // hrany horní plochy
 "edges": {"face": "top", "type": "circle", "radius": "D/2"} // jen vnější kružnice nahoře
 "edges": {"parallel": "Z"}                                // svislé hrany
+"edges": {"between": ["front", "right"]}                  // hrana mezi přední a pravou plochou
+"edges": {"face": "top", "radius": 3, "near": [20, 0, 10]} // z děr R3 nahoře ta nejbližší k bodu
+"edges": [{"face": "top"}, {"parallel": "Z"}]             // seznam = všechny dohromady
 ```
+
+Výběr kliknutím ve 3D vytváří tyto popisy sám: zkusí nejjednodušší, který vybere přesně
+kliknuté hrany. `near` (nejbližší k bodu) použije jen tam, kde nic jiného nestačí – třeba jedna
+ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se načtou dál.
 
 ### Materiály
 

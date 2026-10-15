@@ -1,0 +1,46 @@
+{
+  "format": "skodacad",
+  "version": 3,
+  "name": "Páka",
+  "description": "Ukázka skicáře s vazbami: obrys ze dvou oblouků spojených tečnami. L = rozteč děr, R a r = poloměry konců, d1 a d2 = průměry děr, t = tloušťka. Změň L nebo R – obrys se sám přepočítá.",
+  "units": "mm",
+  "material": "hlinik",
+  "parameters": {"L": 80, "R": 20, "r": 10, "d1": 20, "d2": 8, "t": 8},
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys páky",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "profile",
+          "points": {
+            "O1": [0, 0], "O2": [80, 0],
+            "P1": [-2, 20], "P2": [80, 10], "P3": [80, -10], "P4": [-2, -20]
+          },
+          "segments": {
+            "horni": {"type": "line", "start": "P1", "end": "P2"},
+            "maly": {"type": "arc", "start": "P3", "end": "P2", "center": "O2"},
+            "dolni": {"type": "line", "start": "P3", "end": "P4"},
+            "velky": {"type": "arc", "start": "P1", "end": "P4", "center": "O1"}
+          },
+          "constraints": [
+            {"type": "coincident", "point": "O1", "on": "origin"},
+            {"type": "horizontal", "points": ["O1", "O2"]},
+            {"type": "distance", "points": ["O1", "O2"], "value": "L"},
+            {"type": "radius", "segment": "velky", "value": "R"},
+            {"type": "radius", "segment": "maly", "value": "r"},
+            {"type": "tangent", "segments": ["velky", "horni"]},
+            {"type": "tangent", "segments": ["maly", "horni"]},
+            {"type": "tangent", "segments": ["velky", "dolni"]},
+            {"type": "tangent", "segments": ["maly", "dolni"]}
+          ]
+        },
+        {"shape": "circle", "diameter": "d1", "mode": "subtract"},
+        {"shape": "circle", "diameter": "d2", "center": ["L", 0], "mode": "subtract"}
+      ]
+    },
+    {"id": "deska", "type": "extrude", "name": "Deska", "sketch": "obrys", "distance": "t"}
+  ]
+}

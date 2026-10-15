@@ -176,6 +176,7 @@ def _self_test_window(lines: list[str], part) -> bool:
     if viewer.ready:
         image = user_dir() / "self-test-3d.png"
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))})")
+        ok = _self_test_pick(window, part, lines)
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -183,9 +184,46 @@ def _self_test_window(lines: list[str], part) -> bool:
         ok = False
         lines.append(f"✕ 3D prohlížeč: {viewer.failed_stage or 'nespuštěn'}: "
                      f"{viewer.error or 'okno se nezobrazilo'}")
+    ok = _self_test_sketcher(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_sketcher(window, lines: list[str]) -> bool:
+    """Skicář: výchozí obrys (obdélník s kótami) musí řešič plně určit."""
+    from skodacad.gui.sketcher import SketcherDialog
+    from skodacad.schema import new_shape
+
+    try:
+        dialog = SketcherDialog(new_shape("profile"), window.session.solve_profile, window)
+        solution = dialog.solution
+        dialog.deleteLater()
+    except Exception as exc:  # noqa: BLE001 – zpráva do self-testu místo pádu
+        lines.append(f"✕ Skicář: {type(exc).__name__}: {exc}")
+        return False
+    if solution is None or not solution.ok or solution.dof != 0:
+        detail = solution.message if solution is not None else "nic se nespočítalo"
+        lines.append(f"✕ Skicář: obrys se nevyřešil ({detail})")
+        return False
+    lines.append("✓ Skicář a řešič vazeb (SolveSpace): OK")
+    return True
+
+
+def _self_test_pick(window, part, lines: list[str]) -> bool:
+    """Klik doprostřed nejdelší hrany dílu musí něco vybrat (hranu nebo plochu u ní)."""
+    viewer = window.viewer
+    edge = max(part.edges(), key=lambda e: e.length)
+    middle = edge.position_at(0.5)
+    x, y = viewer._view.Convert(float(middle.X), float(middle.Y), float(middle.Z))
+    viewer._select_at(x, y)
+    QApplication.processEvents()
+    picked = viewer.selected_shapes()
+    if not picked:
+        lines.append(f"✕ Výběr kliknutím: na hraně dílu (pixel {x}, {y}) se nic nevybralo")
+        return False
+    lines.append(f"✓ Výběr kliknutím: OK ({window.session.selection_info(picked).text})")
+    return True
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from typing import Any
 from build123d import (
     Axis,
     Circle,
+    Line,
     Part,
     Plane,
     PolarLocations,
@@ -26,9 +27,11 @@ from build123d import (
     Rot,
     Sketch,
     SlotCenterToCenter,
+    ThreePointArc,
     chamfer,
     extrude,
     fillet,
+    make_face,
     offset,
     revolve,
 )
@@ -41,6 +44,7 @@ from skodacad.selectors import (
     select_edges,
     select_faces,
 )
+from skodacad.solver import SolveError, arc_midpoint, outline, solve
 
 
 class FeatureError(ValueError):
@@ -201,10 +205,34 @@ def _element(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
             raise FeatureError("Mnohoúhelník potřebuje aspoň 3 body v „points“.")
         points = [_point(ctx, point, "Bod mnohoúhelníku") for point in raw_points]
         return Sketch() + place * Polygon(*points, align=None)
+    if shape == "profile":
+        return Sketch() + place * _profile_face(ctx, element)
     raise FeatureError(
         f"Neznámý tvar „{shape}“, povolené: rectangle, circle, circle_pattern, "
-        "regular_polygon, slot, polygon."
+        "regular_polygon, slot, polygon, profile."
     )
+
+
+def _profile_face(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
+    """Obrys z úseček a oblouků: vyřešit vazby, seřadit do smyčky a udělat z něj plochu."""
+    try:
+        solved = solve(element, ctx.num)
+        loop = outline(element, solved.points)
+    except SolveError as exc:
+        raise FeatureError(f"Obrys: {exc}") from None
+    edges = []
+    for kind, start, end, *center in loop:
+        if kind == "line":
+            edges.append(Line(start, end))
+        else:
+            edges.append(ThreePointArc(start, arc_midpoint(start, end, center[0]), end))
+    try:
+        face = make_face(edges)
+    except Exception:  # noqa: BLE001 – chyby jádra převádíme na lidskou zprávu
+        face = None
+    if face is None or not face.is_valid or face.area <= 1e-9:
+        raise FeatureError("Obrys se kříží sám se sebou nebo nemá plochu – uprav body či vazby.")
+    return face
 
 
 @feature("sketch", "Skica")

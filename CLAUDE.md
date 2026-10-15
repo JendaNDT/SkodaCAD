@@ -26,6 +26,9 @@
   jako vydání „nejnovejsi“ (odkaz ke stažení je v README). Repozitář je veřejný.
 - Podklady jsou v `docs/` (tři výzkumy; `VYZKUM_3D_CAD.md` a `zprava-hluboky-vyzkum.md` jsou
   stejný text).
+- (15. 10. 2026, schváleno) **Řešič vazeb skici: `slvs==3.2`** – oficiální řešič SolveSpace
+  (GPL, kola pro Windows i Linux, Python 3.11–3.13). Formát modelu verze 3 přidal tvar
+  skici `profile`.
 
 ## Architektura (`src/skodacad/`)
 
@@ -34,6 +37,9 @@
 | `document.py` | načtení/uložení JSON, kontrola struktury, `DocumentError` |
 | `expressions.py` | bezpečné výrazy s parametry (vlastní AST, žádné `eval`) |
 | `selectors.py` | sémantický výběr ploch a hran (ochrana proti topological naming problem) |
+| `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
+| `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřená smyčka |
+| `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")` |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped` |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -45,7 +51,8 @@
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
-| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení) |
+| `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
+| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
 
 ## Pravidla
@@ -68,7 +75,9 @@
 10. Každá úprava modelu z okna jde přes metodu `ModelSession` (→ `_change`), aby fungovalo
     Zpět/Znovu a neplatná úprava model nepoškodila.
 11. Testy okna s dialogem (`QInputDialog`, `QMessageBox`, `QFileDialog`) musí dialog nahradit
-    (fixture `no_dialogs`), jinak test čeká navždy. Testy okna pouštěj s `timeout`.
+    (fixture `no_dialogs`), jinak test čeká navždy. Totéž místní nabídka: `QMenu.exec` jde
+    přes `MainWindow._exec_menu` a vlastní dialogy (skicář) přes `MainWindow._exec_dialog`,
+    test je nahradí. Testy okna pouštěj s `timeout`.
 
 ## Příkazy
 
@@ -96,6 +105,25 @@
   místo `k`. Akce zakládej jen přes `MainWindow._action` (volá slot bez argumentů) a každou
   novou akci pokryj testem, který ji opravdu stiskne (`tests/test_gui.py`).
 
+## Známé pasti (výběr kliknutím)
+
+- Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
+  (`BuildResult.parts_before`). Hrany se proto do něj přenášejí geometricky (`map_edges`),
+  ne totožností. Nový prvek z výběru jde vždy na konec stromu.
+- Popis z kliknutí se vždy ověří `select_edges` – musí vybrat přesně kliknuté hrany.
+- Po každém překreslení dílu je starý výběr neplatný (okno ho maže v `_refresh_all`).
+
+## Známé pasti (řešič vazeb slvs)
+
+- Při nesmyslném volání (špatný druh nebo pořadí argumentů) slvs **shodí celý proces**
+  (`FatalError` → abort), nevyhodí výjimku. Do slvs se proto smí jen přes `solver.py`, který
+  vše nejdřív zkontroluje. Test `test_every_constraint_kind_in_both_orders_does_not_crash`
+  zkouší každou vazbu v obou pořadích v samostatném procesu – novou vazbu do něj přidej.
+- `slvs.tangent` chce **oblouk jako první** (úsečka napřed = pád). Obal pořadí otáčí.
+- Kružnice/oblouk potřebují 3D normálu (`add_normal_3d`), ne `add_normal_2d`.
+- Vodorovně + svisle na jedné čáře není „spor“ – řešič ji smrskne do bodu. Skicář to hlásí.
+- Řešič je globální stav (`clear_sketch`) – volat jen z jednoho vlákna.
+
 ## Známé pasti (sestavení pro Windows)
 
 - `actions/upload-artifact` bez `include-hidden-files: true` vynechá složky s tečkou
@@ -119,13 +147,15 @@
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
-- [ ] **Fáze 1** – skicář s vazbami (řešič SolveSpace, balík `python-solvespace`), díry se
-  závity podle strojnických tabulek, pole a zrcadlení.
+- [ ] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
+  [ ] kružnice a vazby mezi obrysem a dalšími tvary, [ ] díry se závity podle strojnických
+  tabulek, [ ] pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
 - [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun
   prvků, parametry, název a materiál, Zpět/Znovu.
-- [ ] **Fáze 2c** – převod kliknutí na hranu/plochu na sémantický výběr (např. „zaobli tuhle
-  hranu“, „skicuj na téhle ploše“), přepočet na pozadí u pomalých modelů.
+- [x] **Fáze 2c** – výběr hran a ploch kliknutím ve 3D → sémantický popis (`picking.py`),
+  zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
+- [ ] **Fáze 2d** – přepočet na pozadí u pomalých modelů, šikmé a zakřivené plochy pro skicu.
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.
