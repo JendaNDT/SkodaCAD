@@ -161,3 +161,119 @@ def test_plate_example_follows_parameters(examples_dir, overrides):
                + 2 * removed_volume(hole_shape("countersink", "M5", through_all=True), t)
                + 2 * removed_volume(hole_shape("clearance", "M4", "fine", through_all=True), t))
     assert result.part.volume == pytest.approx(plate - removed, rel=1e-6)
+
+
+# --- vymodelovaný závit pro 3D tisk -----------------------------------------------------
+
+
+def test_iso_68_internal_thread_profile():
+    from skodacad.holes import iso_internal_thread
+
+    m6 = iso_internal_thread("M6", clearance=0)
+    assert 2 * m6.inner_radius == pytest.approx(4.917, abs=1e-3)  # D1 = D − 1,0825·P
+    assert 2 * m6.outer_radius == pytest.approx(6.0)
+    assert (m6.inner_width, m6.outer_width) == pytest.approx((0.75, 0.125))
+    m10 = iso_internal_thread("M10")  # s výchozí vůlí 0,2 mm na průměru
+    assert 2 * m10.inner_radius == pytest.approx(8.376 + 0.2, abs=1e-3)
+    assert 2 * m10.outer_radius == pytest.approx(10.2)
+    # Boky drážky svírají 60°: zúžení o 2·tan 30° na každý mm hloubky.
+    depth = m10.outer_radius - m10.inner_radius
+    narrowing = (m10.inner_width - m10.outer_width) / depth
+    assert narrowing == pytest.approx(2 * math.tan(math.radians(30)))
+
+
+def hexagon_screw_volume(section, pitch, turns):
+    """Přesný objem šroubového tažení rovinného mnohoúhelníku (Pappova věta): plocha ×
+    dráha těžiště za otáčku × počet otáček. Spočítáno nezávisle na jádru (vzorec pro
+    plochu a těžiště mnohoúhelníku v rovině r–z)."""
+    area = cx = 0.0
+    for (r1, z1), (r2, z2) in zip(section, section[1:] + section[:1], strict=True):
+        cross = r1 * z2 - r2 * z1
+        area += cross / 2
+        cx += (r1 + r2) * cross / 6
+    return abs(area) * 2 * math.pi * abs(cx / area) * turns
+
+
+@pytest.mark.parametrize(("steps", "tolerance"), [(16, 0.03), (64, 0.003)])
+def test_faceted_groove_converges_to_exact_screw_volume(steps, tolerance):
+    from skodacad.holes import iso_internal_thread
+    from skodacad.threads import groove_section, thread_groove
+
+    profile = iso_internal_thread("M10")
+    groove = thread_groove(profile, 0.0, 3 * profile.pitch, steps=steps)
+    assert groove.is_valid
+    exact = hexagon_screw_volume(groove_section(profile), profile.pitch, 3)
+    # Plošky se od šroubovice odchylují nepatrně; s jemnějším dělením se objem blíží přesné
+    # hodnotě podle Pappovy věty.
+    assert abs(groove.volume - exact) / exact < tolerance
+
+
+def test_steps_per_turn_keep_sag_under_limit():
+    from skodacad.threads import MAX_SAG, steps_per_turn
+
+    for radius in (1.0, 3.1, 8.0, 15.1):
+        steps = steps_per_turn(radius)
+        sag = radius * (1 - math.cos(math.pi / steps))
+        assert sag <= MAX_SAG or steps == 48, radius
+
+
+def test_modeled_thread_through_plate_volume():
+    """Závit M10 skrz desku 20 mm: jádro Ø D1 + šroubová drážka (Pappus) minus plošky."""
+    from skodacad.holes import iso_internal_thread
+
+    part = drilled({"kind": "tapped", "size": "M10", "through_all": True,
+                    "modeled_thread": True})
+    profile = iso_internal_thread("M10")
+    core = math.pi * profile.inner_radius ** 2 * 20
+    groove = profile.area * 2 * math.pi * profile.centroid_radius / profile.pitch * 20
+    error = (BOX - part.volume - (core + groove)) / (core + groove)
+    assert abs(error) < 0.015  # plošky jsou nejvýš 0,05 mm od přesné šroubovice
+    # Vymodelovaný závit ubere víc než vyznačený (vrták Ø8,5) a míň než válec Ø10,2.
+    assert cylinder(8.5, 20) < BOX - part.volume < cylinder(10.2, 20)
+
+
+def test_modeled_thread_blind_hole_and_clearance():
+    from skodacad.holes import iso_internal_thread
+
+    removed = []
+    for clearance in (0.0, 0.4):
+        part = drilled({"kind": "tapped", "size": "M12", "depth": 12, "modeled_thread": True,
+                        "print_clearance": clearance})
+        profile = iso_internal_thread("M12", clearance)
+        expected = (math.pi * profile.inner_radius ** 2 * 12
+                    + profile.volume_per_length() * 12)
+        # Drážka končí kousek nad dnem a plošky nejsou přesná šroubovice → tolerance 5 %.
+        assert BOX - part.volume == pytest.approx(expected, rel=0.05)
+        assert not part.is_inside(Vector(0, 0, 10))  # díra s plochým dnem 12 mm
+        assert part.is_inside(Vector(0, 0, 7.5))
+        removed.append(BOX - part.volume)
+    assert removed[1] > removed[0]  # větší vůle = víc odebraného materiálu
+
+
+def test_modeled_thread_exports_for_printing(tmp_path):
+    from skodacad.export import export
+
+    part = drilled({"kind": "tapped", "size": "M10", "depth": 10, "modeled_thread": True,
+                    "positions": [[-15, 0], [15, 0]]})
+    path = tmp_path / "zavit.stl"
+    export(part, path)
+    assert path.stat().st_size > 100_000  # šroubovice = hodně trojúhelníků
+
+
+@pytest.mark.parametrize(("hole", "message"), [
+    ({"kind": "clearance", "size": "M6", "modeled_thread": True}, "jen u závitové díry"),
+    ({"kind": "tapped", "size": "M6", "modeled_thread": True, "print_clearance": 3},
+     "mimo rozsah"),
+    ({"kind": "tapped", "size": "M6", "modeled_thread": True, "depth": 8, "thread_depth": 10},
+     "se nevejde"),
+])
+def test_modeled_thread_errors(hole, message):
+    features = [*box_features(60, 40, 20), {"id": "h", "type": "hole", "plane": "top", **hole}]
+    error = rebuild(make_doc(features)).first_error
+    assert error is not None and message in error.message
+
+
+def test_modeled_thread_label():
+    hole = {"id": "h", "type": "hole", "name": "Závit", "kind": "tapped", "size": "M8",
+            "modeled_thread": True}
+    assert describe(hole) == "Díra „Závit“ – M8 závit (vymodelovaný)"

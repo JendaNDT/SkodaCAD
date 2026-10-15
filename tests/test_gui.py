@@ -529,3 +529,19 @@ def test_hole_from_clicked_face_and_size_change(empty_window):
     kind = form_field(w, "kind")
     kind.setCurrentIndex(kind.findData("countersink"))  # M3 zápustná, skrz? hloubka 6
     assert "zápustné" in selected_text(w)
+
+
+def test_modeled_thread_checkbox(empty_window):
+    w = empty_window
+    build_box(w)
+    w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
+    action(w, "Díra na vybrané ploše").trigger()
+    size = form_field(w, "size")
+    size.setCurrentIndex(size.findData("M12"))  # velké stoupání = málo závitů = rychlý test
+    before = w.session.properties.volume_mm3
+    form_field(w, "modeled_thread").setChecked(True)
+    hole = w.session.feature("hole1")
+    assert hole["modeled_thread"] is True
+    assert selected_text(w).endswith("M12 závit (vymodelovaný)")
+    assert w.session.result.ok
+    assert w.session.properties.volume_mm3 < before  # drážka závitu ubrala materiál

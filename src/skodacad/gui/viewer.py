@@ -32,6 +32,7 @@ from OCP.Aspect import (
     Aspect_TOTP_LEFT_LOWER,
 )
 from OCP.BRep import BRep_Builder
+from OCP.GeomAbs import GeomAbs_C1
 from OCP.Graphic3d import (
     Graphic3d_MaterialAspect,
     Graphic3d_NameOfMaterial_Plastified,
@@ -191,6 +192,9 @@ class OccViewer(QWidget):
             drawer.SetFaceBoundaryAspect(
                 Prs3d_LineAspect(_rgb(0.10, 0.10, 0.12), Aspect_TOL_SOLID, 1.2)
             )
+            # Nekreslit hrany plošek vymodelovaného závitu (označené C2 v threads.py);
+            # ostré i tečné hrany (zaoblení, G1/C1) zůstanou vidět.
+            drawer.SetFaceBoundaryUpperContinuity(GeomAbs_C1)
             context.Display(ais, False)
             context.Deactivate(ais)  # celé těleso ne, jen plochy a hrany
             context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_FACE))

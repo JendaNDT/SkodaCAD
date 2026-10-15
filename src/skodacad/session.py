@@ -50,7 +50,7 @@ _UNDO_LIMIT = 100
 # se přeskočí, aby se např. parametr „top“ nespletl s plochou „top“.
 _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "direction", "axis",
                         "shape", "mode", "face", "between", "parallel", "open_faces",
-                        "through_all", "kind", "size", "fit"}
+                        "through_all", "kind", "size", "fit", "modeled_thread"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
 SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole")
 

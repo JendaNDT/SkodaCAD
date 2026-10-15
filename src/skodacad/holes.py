@@ -1,7 +1,9 @@
 """Díry podle strojnických tabulek: závitové, průchozí, zahloubení, díry pro 3D tisk.
 
-Závit je jen **vyznačený** (jako v běžných CAD): díra má průměr vrtáku pod závit
-a prvek nese údaj „M6, hloubka závitu 9“. Skutečná šroubovice se nemodeluje.
+Závit je ve výchozím stavu jen **vyznačený** (jako v běžných CAD): díra má průměr vrtáku
+pod závit a prvek nese údaj „M6, hloubka závitu 9“. Pro 3D tisk jde závit i **vymodelovat**
+(``modeled_thread``): šroubovicová drážka se základním profilem ISO 68-1 (úhel 60°,
+malý průměr D1 = D − 1,0825·P) a vůlí pro tisk, která celý profil posune ven.
 
 Zdroje tabulek (ověřeno 15. 10. 2026 porovnáním více zdrojů; normy samotné jsou placené):
 
@@ -65,6 +67,7 @@ KINDS = {
     "plastic": "3D tisk – šroub přímo do plastu",
 }
 DRILL_POINT_ANGLE = 118.0  # špička vrtáku u slepé vrtané díry
+PRINT_CLEARANCE = 0.2  # výchozí vůle vymodelovaného závitu pro tisk (na průměru)
 
 
 class HoleError(ValueError):
@@ -81,7 +84,42 @@ class HoleShape:
     counterbore: tuple[float, float] | None = None  # (průměr, hloubka)
     countersink: float | None = None  # průměr kuželového zahloubení 90° na povrchu
     thread: str | None = None  # vyznačený závit, např. „M6“
-    thread_depth: float | None = None
+    thread_depth: float | None = None  # u vymodelovaného závitu None = po celé délce díry
+    modeled: ThreadProfile | None = None  # vymodelovaný závit (šroubovice) pro 3D tisk
+
+
+@dataclass(frozen=True)
+class ThreadProfile:
+    """Drážka vnitřního závitu v řezu osou (lichoběžník), ISO 68-1 + vůle pro tisk."""
+
+    pitch: float
+    inner_radius: float  # poloměr malého průměru D1 (+ vůle)
+    outer_radius: float  # poloměr velkého průměru D (+ vůle)
+    inner_width: float  # šířka drážky na malém průměru (3/4 P)
+    outer_width: float  # šířka drážky na velkém průměru (1/8 P)
+
+    @property
+    def area(self) -> float:
+        return (self.inner_width + self.outer_width) / 2 * (self.outer_radius - self.inner_radius)
+
+    @property
+    def centroid_radius(self) -> float:
+        a, b = self.inner_width, self.outer_width  # těžiště lichoběžníku od širší strany
+        height = self.outer_radius - self.inner_radius
+        return self.inner_radius + height * (a + 2 * b) / (3 * (a + b))
+
+    def volume_per_length(self) -> float:
+        """Objem drážky na 1 mm délky závitu (šroubový pohyb zachovává objem – Pappus)."""
+        return self.area * 2 * math.pi * self.centroid_radius / self.pitch
+
+
+def iso_internal_thread(size: str, clearance: float = PRINT_CLEARANCE) -> ThreadProfile:
+    """Základní profil vnitřního metrického závitu ISO 68-1 posunutý o vůli pro tisk."""
+    pitch = PITCH[size]
+    major = nominal(size)
+    minor = major - 5 / 4 * math.sqrt(3) / 2 * pitch  # D1 = D − 2·(5/8)·H, H = √3/2·P
+    return ThreadProfile(pitch, (minor + clearance) / 2, (major + clearance) / 2,
+                         0.75 * pitch, 0.125 * pitch)
 
 
 def nominal(size: str) -> float:
@@ -97,8 +135,12 @@ def _check_size(size: str, table: dict, what: str) -> None:
 
 def hole_shape(kind: str, size: str, fit: str = "medium", depth: float | None = None,
                through_all: bool = False, thread_depth: float | None = None,
-               diameter: float | None = None) -> HoleShape:
-    """Rozměry díry podle tabulek. ``diameter`` přepíše hlavní průměr z tabulky."""
+               diameter: float | None = None, modeled_thread: bool = False,
+               print_clearance: float | None = None) -> HoleShape:
+    """Rozměry díry podle tabulek. ``diameter`` přepíše hlavní průměr z tabulky.
+
+    ``modeled_thread`` (jen závitová díra) = skutečná šroubovice pro 3D tisk s vůlí
+    ``print_clearance`` (na průměru, výchozí 0,2 mm), díra má ploché dno."""
     if kind not in KINDS:
         raise HoleError(f"Neznámý druh díry „{kind}“, povolené: {', '.join(KINDS)}.")
     if size not in PITCH:
@@ -112,6 +154,10 @@ def hole_shape(kind: str, size: str, fit: str = "medium", depth: float | None = 
         raise HoleError(f"Hloubka díry musí být kladná (je {depth:g} mm).")
     blind_depth = None if through_all else (depth if depth is not None else 2 * d)
 
+    if modeled_thread:
+        if kind != "tapped":
+            raise HoleError("Vymodelovaný závit jde jen u závitové díry.")
+        return _modeled_thread(size, blind_depth, thread_depth, print_clearance)
     if kind == "tapped":
         main = diameter or TAP_DRILL[size]
         default_thread = 1.5 * d if blind_depth is None else min(1.5 * d, blind_depth)
@@ -148,6 +194,22 @@ def hole_shape(kind: str, size: str, fit: str = "medium", depth: float | None = 
     return HoleShape(diameter or TAP_DRILL[size], blind_depth, False)
 
 
+def _modeled_thread(size: str, blind_depth: float | None, thread_depth: float | None,
+                    clearance: float | None) -> HoleShape:
+    clearance = PRINT_CLEARANCE if clearance is None else clearance
+    if not 0 <= clearance <= 1:
+        raise HoleError(f"Vůle závitu pro tisk {clearance:g} mm je mimo rozsah 0–1 mm.")
+    if thread_depth is not None and thread_depth <= 0:
+        raise HoleError(f"Hloubka závitu musí být kladná (je {thread_depth:g} mm).")
+    if blind_depth is not None and thread_depth is not None and thread_depth > blind_depth:
+        raise HoleError(f"Závit hloubky {thread_depth:g} mm se nevejde do díry hloubky "
+                        f"{blind_depth:g} mm – prohlub díru nebo zkrať závit.")
+    profile = iso_internal_thread(size, clearance)
+    length = thread_depth if thread_depth is not None else blind_depth
+    return HoleShape(2 * profile.inner_radius, blind_depth, False, thread=size,
+                     thread_depth=length, modeled=profile)
+
+
 def point_height(diameter: float) -> float:
     """Výška kuželové špičky vrtáku 118°."""
     return (diameter / 2) / math.tan(math.radians(DRILL_POINT_ANGLE / 2))
@@ -167,6 +229,9 @@ def removed_volume(shape: HoleShape, through_length: float | None = None) -> flo
         big = shape.countersink / 2
         h = big - r  # 90° → výška = rozdíl poloměrů
         volume += math.pi * h / 3 * (big * big + big * r + r * r) - math.pi * r * r * h
+    if shape.modeled:
+        thread_length = shape.thread_depth if shape.thread_depth is not None else length
+        volume += shape.modeled.volume_per_length() * thread_length
     return volume
 
 
@@ -175,6 +240,8 @@ def summary(kind: str, size: str, count: int, shape: HoleShape | None = None) ->
     text = {"tapped": f"{size} závit", "clearance": f"průchozí pro {size}",
             "counterbore": f"{size} imbus zahloubení", "countersink": f"{size} zápustné",
             "insert": f"{size} zálisná matice", "plastic": f"{size} do plastu"}.get(kind, size)
+    if shape is not None and shape.modeled is not None:
+        text += " vymodelovaný"
     if shape is not None and shape.thread_depth is not None:
         text += f" hl. {shape.thread_depth:g}"
     return f"{text}, {count}×" if count > 1 else text

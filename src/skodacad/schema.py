@@ -131,7 +131,14 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                   help="Bez hodnoty: 2× průměr závitu (zálisná matice 2× průměr + 1)."),
             Field("through_all", "Skrz celý díl", "bool", required=False),
             Field("thread_depth", "Hloubka závitu [mm]", "number", required=False,
-                  help="Jen závitová díra. Bez hodnoty: 1,5× průměr závitu."),
+                  help="Jen závitová díra. Bez hodnoty: 1,5× průměr závitu "
+                       "(vymodelovaný závit po celé hloubce díry)."),
+            Field("modeled_thread", "Vymodelovat závit (3D tisk)", "bool", required=False,
+                  help="Skutečná šroubovice podle ISO 68-1 místo vyznačeného závitu – pro "
+                       "tisk doporučeno od M6. Přepočet trvá déle."),
+            Field("print_clearance", "Vůle závitu pro tisk [mm]", "number", required=False,
+                  help="Jen vymodelovaný závit: o kolik je závit větší než šroub "
+                       "(na průměru). Bez hodnoty 0,2 mm."),
             Field("diameter", "Vlastní průměr [mm]", "number", required=False,
                   help="Přepíše průměr z tabulky (např. podle zkušebního tisku)."),
         ), "Díra podle strojnických tabulek – závit je jen vyznačený."),
