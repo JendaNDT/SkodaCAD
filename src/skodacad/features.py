@@ -45,6 +45,8 @@ from skodacad.expressions import evaluate
 from skodacad.holes import KINDS as HOLE_KINDS
 from skodacad.holes import HoleError, HoleShape, hole_shape, point_height
 from skodacad.holes import summary as hole_summary
+from skodacad.projection import ProjectionError
+from skodacad.projection import refresh as refresh_references
 from skodacad.selectors import (
     BASE_PLANES,
     FACE_DIRECTIONS,
@@ -174,13 +176,18 @@ def _resolve_plane(ctx: BuildContext, feature: dict[str, Any]) -> Plane:
     return plane.offset(offset_value) if offset_value else plane
 
 
+def sketch_plane(part: Part | None, feature: dict[str, Any], params: dict[str, float]) -> Plane:
+    """Rovina skici ``feature`` na dílu ``part`` (pro skicář – promítnutí hran dílu)."""
+    return _resolve_plane(BuildContext(params=params, part=part), feature)
+
+
 def _point(ctx: BuildContext, value: Any, what: str) -> tuple[float, float]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise FeatureError(f"{what} musí být dvojice souřadnic [x, y].")
     return ctx.num(value[0]), ctx.num(value[1])
 
 
-def _element(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
+def _element(ctx: BuildContext, element: dict[str, Any], plane: Plane | None = None) -> Sketch:
     shape = required(element, "shape")
     x, y = _point(ctx, element.get("center", [0, 0]), "„center“")
     angle = ctx.num(element.get("angle", 0))
@@ -225,18 +232,25 @@ def _element(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
         points = [_point(ctx, point, "Bod mnohoúhelníku") for point in raw_points]
         return Sketch() + place * Polygon(*points, align=None)
     if shape == "profile":
-        return Sketch() + place * _profile_face(ctx, element)
+        return Sketch() + place * _profile_face(ctx, element, plane, (x, y, angle))
     raise FeatureError(
         f"Neznámý tvar „{shape}“, povolené: rectangle, circle, circle_pattern, "
         "regular_polygon, slot, polygon, profile."
     )
 
 
-def _profile_face(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
+def _profile_face(ctx: BuildContext, element: dict[str, Any], plane: Plane | None = None,
+                  place: tuple[float, float, float] | None = None) -> Sketch:
     """Obrys z úseček, oblouků a kružnic: vyřešit vazby, seřadit do smyček a udělat plochu.
 
     Smyčka uvnitř jiné smyčky je díra, smyčka uvnitř díry zase materiál (jako v běžných
-    CAD). Smyčky se nesmí křížit."""
+    CAD). Smyčky se nesmí křížit. S rovinou ``plane`` se promítnuté hrany spočítají znovu
+    z dílu před skicou (díl se mohl změnit)."""
+    if plane is not None and element.get("references"):
+        try:
+            element = refresh_references(element, ctx.part, plane, place, ctx.num)
+        except ProjectionError as exc:
+            raise FeatureError(str(exc)) from None
     try:
         solved = solve(element, ctx.num)
         found = loops(element, solved.points, solved.radii)
@@ -305,7 +319,7 @@ def build_sketch(ctx: BuildContext, feature: dict[str, Any]) -> None:
         if not isinstance(element, dict):
             raise FeatureError("Každý tvar ve skice musí být objekt.")
         mode = _choice(element, "mode", ("add", "subtract"), "add")
-        shape = _element(ctx, element)
+        shape = _element(ctx, element, plane)
         if mode == "add":
             sketch = shape if sketch is None else sketch + shape
         elif sketch is None:

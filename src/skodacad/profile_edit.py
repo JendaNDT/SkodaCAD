@@ -7,11 +7,12 @@ Obrys je obyčejný slovník jako v JSON modelu (viz ``solver.py``).
 
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Iterable
 from typing import Any
 
-from skodacad.solver import CONSTRAINT_LABELS, ORIGIN, ROUND
+from skodacad.solver import CONSTRAINT_LABELS, ORIGIN, REFERENCE_POINTS, ROUND
 
 # Vazba podle výběru: druh → co musí být vybrané (popis do hlášky).
 NEEDS = {
@@ -47,21 +48,64 @@ def next_name(taken: Iterable[str], prefix: str) -> str:
     return f"{prefix}{number}"
 
 
+def references_of(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Promítnuté hrany dílu v obrysu (jméno → odkaz, viz ``projection.py``)."""
+    return profile.get("references") or {}
+
+
+def reference_point_names(profile: dict[str, Any]) -> list[str]:
+    return [f"{name}.{key}" for name, ref in references_of(profile).items()
+            for key in REFERENCE_POINTS.get(ref.get("kind"), ())]
+
+
 def _names(profile: dict[str, Any]) -> set[str]:
-    return {ORIGIN, *profile["points"], *profile["segments"]}
+    return {ORIGIN, *profile["points"], *profile["segments"], *references_of(profile),
+            *reference_point_names(profile)}
+
+
+def _reference_point(profile: dict[str, Any], name: str) -> tuple[float, float] | None:
+    base, _, key = str(name).rpartition(".")
+    ref = references_of(profile).get(base)
+    if ref is None or key not in REFERENCE_POINTS.get(ref.get("kind"), ()):
+        return None
+    x, y = ref["center"] if key == "center" else ref["points"][0 if key == "start" else 1]
+    return float(x), float(y)
+
+
+def is_fixed(profile: dict[str, Any], name: str) -> bool:
+    """Počátek, promítnutá hrana nebo její bod – řešič s nimi nehýbe."""
+    return (name == ORIGIN or name in references_of(profile)
+            or _reference_point(profile, name) is not None)
+
+
+def segment_view(profile: dict[str, Any], name: str) -> dict[str, Any] | None:
+    """Čára obrysu, nebo promítnutá hrana jako čára (body „r1.start“, „r1.center“ …)."""
+    if name in profile["segments"]:
+        return profile["segments"][name]
+    ref = references_of(profile).get(name)
+    if ref is None:
+        return None
+    view: dict[str, Any] = {"type": ref["kind"], "reference": True}
+    view.update({key: f"{name}.{key}" for key in REFERENCE_POINTS[ref["kind"]]})
+    if "radius" in ref:
+        view["radius"] = ref["radius"]
+    return view
 
 
 def kind_of(profile: dict[str, Any], name: str) -> str | None:
-    """„point“, „line“, „arc“, „circle“ nebo None."""
-    if name == ORIGIN or name in profile["points"]:
+    """„point“, „line“, „arc“, „circle“ nebo None (i pro promítnuté hrany a jejich body)."""
+    if name == ORIGIN or name in profile["points"] or _reference_point(profile, name):
         return "point"
-    segment = profile["segments"].get(name)
+    segment = segment_view(profile, name)
     return segment["type"] if segment else None
 
 
 def point_xy(profile: dict[str, Any], name: str) -> tuple[float, float]:
     if name == ORIGIN:
         return 0.0, 0.0
+    fixed = _reference_point(profile, name)
+    if fixed is not None:
+        return fixed
     x, y = profile["points"][name]
     return float(x), float(y)
 
@@ -98,6 +142,52 @@ def add_circle(profile: dict[str, Any], center: str, radius: float) -> str:
     profile["segments"][name] = {"type": "circle", "center": center,
                                  "radius": round(radius, 4)}
     return name
+
+
+def add_reference(profile: dict[str, Any], reference: dict[str, Any]) -> str:
+    """Přidá promítnutou hranu; stejná hrana (stejný popis) se nepřidá dvakrát."""
+    refs = profile.setdefault("references", {})
+    for name, existing in refs.items():
+        if existing.get("edge") == reference.get("edge"):
+            return name
+    name = next_name(_names(profile), "r")
+    refs[name] = copy.deepcopy(reference)
+    return name
+
+
+def convert_references(profile: dict[str, Any], names: Iterable[str]) -> list[str]:
+    """„Převzít do obrysu“: z promítnutých hran udělá skutečné čáry obrysu navázané na díl
+    (body leží na bodech promítnutých hran, kružnice má stejný průměr). Navazující hrany
+    sdílejí body, takže z obrysu plochy vznikne uzavřená smyčka."""
+    refs = references_of(profile)
+    chosen = [name for name in names if name in refs]
+    if not chosen:
+        raise EditError("Vyber promítnuté hrany (fialové), které se mají převzít do obrysu.")
+    made: dict[tuple[float, float], str] = {}
+
+    def point_for(ref_point: str) -> str:
+        x, y = point_xy(profile, ref_point)
+        key = (round(x, 4), round(y, 4))
+        if key not in made:
+            made[key] = add_point(profile, x, y)
+            profile["constraints"].append({"type": "coincident", "point": made[key],
+                                           "on": ref_point})
+        return made[key]
+
+    created = []
+    for name in chosen:
+        ref = refs[name]
+        if ref["kind"] == "line":
+            created.append(add_line(profile, point_for(f"{name}.start"),
+                                    point_for(f"{name}.end")))
+        elif ref["kind"] == "arc":
+            created.append(add_arc(profile, point_for(f"{name}.start"), point_for(f"{name}.end"),
+                                   point_for(f"{name}.center")))
+        else:
+            circle = add_circle(profile, point_for(f"{name}.center"), float(ref["radius"]))
+            profile["constraints"].append({"type": "equal", "segments": [circle, name]})
+            created.append(circle)
+    return created
 
 
 def arc_through(start: tuple, end: tuple, through: tuple) -> tuple[tuple[float, float], bool]:
@@ -153,8 +243,19 @@ def references(constraint: dict[str, Any]) -> list[str]:
 
 def remove(profile: dict[str, Any], names: Iterable[str]) -> None:
     """Smaže body a čáry (s bodem i čáry, které ho používají) a vazby, které na ně odkazují.
-    Body, které po smazání čar zůstanou nepoužité, zmizí také."""
+    Body, které po smazání čar zůstanou nepoužité, zmizí také. Bod promítnuté hrany smaže
+    celou promítnutou hranu."""
     names = set(names) - {ORIGIN}
+    refs = references_of(profile)
+    dropped = {name for name in names if name in refs}
+    dropped |= {name.rpartition(".")[0] for name in names if _reference_point(profile, name)}
+    gone_refs = set()
+    for name in dropped:
+        kind = refs.pop(name)["kind"]
+        gone_refs |= {name, *(f"{name}.{key}" for key in REFERENCE_POINTS[kind])}
+    if gone_refs:
+        profile["constraints"] = [c for c in profile["constraints"]
+                                  if not set(references(c)) & gone_refs]
     points, segments = profile["points"], profile["segments"]
     removed_segments = {name for name in names if name in segments}
     removed_segments |= {name for name, s in segments.items()
@@ -185,6 +286,9 @@ def constraints_for(profile: dict[str, Any], kind: str, selection: list[str]) ->
     kinds = [kind_of(profile, name) for name in selection]
     if None in kinds:
         raise EditError("Vybraný prvek už v obrysu není.")
+    if selection and all(is_fixed(profile, name) for name in selection):
+        raise EditError("Vyber aspoň jeden prvek obrysu – počátek a promítnuté hrany jsou "
+                        "pevné, vazba mezi nimi nic neurčí.")
     lines = [n for n, k in zip(selection, kinds, strict=True) if k == "line"]
     rounds = [n for n, k in zip(selection, kinds, strict=True) if k in ROUND]
     points = [n for n, k in zip(selection, kinds, strict=True) if k == "point"]
@@ -220,7 +324,7 @@ def constraints_for(profile: dict[str, Any], kind: str, selection: list[str]) ->
         if sorted(kinds) == ["line", "point"]:
             return [{"type": "midpoint", "point": points[0], "segment": lines[0]}]
     elif kind == "fix":
-        movable = [name for name in points if name != ORIGIN]
+        movable = [name for name in points if not is_fixed(profile, name)]
         if movable and len(movable) == len(selection):
             return [{"type": "fix", "point": name} for name in movable]
     elif kind == "dimension":
@@ -251,7 +355,8 @@ def _dimension(profile: dict, selection: list[str], kinds: list[str]) -> dict | 
 def measure(profile: dict[str, Any], constraint: dict[str, Any]) -> float:
     """Současná hodnota kóty (pro předvyplnění), zaokrouhlená na setiny."""
     kind = constraint["type"]
-    segments = profile["segments"]
+    segments = {name: segment_view(profile, name)
+                for name in (*profile["segments"], *references_of(profile))}
 
     def xy(name: str) -> tuple[float, float]:
         return point_xy(profile, name)
