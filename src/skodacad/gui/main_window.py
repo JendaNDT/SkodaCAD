@@ -641,8 +641,9 @@ class MainWindow(QMainWindow):
     def _refresh_selection_actions(self) -> None:
         info = self.session.selection_info(self._picked)
         has_part = self.session.result is not None and self.session.result.part is not None
+        flat = info.faces > 0 and info.flat_faces == info.faces
         needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,
-                 "sketch": info.faces == 1, "shell": info.faces > 0}
+                 "sketch": info.faces == 1 and flat, "shell": flat}
         for key, action in self.selection_actions.items():
             action.setEnabled(has_part and needs[key])
         document = self.session.document
@@ -706,7 +707,7 @@ class MainWindow(QMainWindow):
         hints = []
         if info.edges:
             hints.append("pravým tlačítkem zaoblit nebo srazit")
-        if info.faces == 1:
+        if info.faces == 1 and info.flat_faces == 1:
             hints.append("pravým tlačítkem skica na ploše")
         hints.append("Ctrl+klik přidá další")
         self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))

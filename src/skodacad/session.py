@@ -32,6 +32,7 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.picking import (
     edge_selector,
+    face_direction,
     face_reference,
     map_edges,
     open_face_name,
@@ -256,7 +257,7 @@ class ModelSession:
             counts = [_count(len(faces), "plocha", "plochy", "ploch"),
                       _count(len(edges), "hrana", "hrany", "hran")]
             text = "Vybráno: " + ", ".join(c for c in counts if c) if faces or edges else ""
-        return SelectionInfo(len(faces), len(edges), text)
+        return SelectionInfo(len(faces), len(edges), text, sum(map(_is_flat, faces)))
 
     def add_from_selection(self, feature_type: str, shapes: list[Any],
                            point: Any = None) -> str:
@@ -449,6 +450,15 @@ class SelectionInfo:
     faces: int
     edges: int
     text: str  # český popis, "" = nic nevybráno
+    flat_faces: int = 0  # rovinné plochy kolmé k ose X/Y/Z – jen na nich jde skica a skořepina
+
+
+def _is_flat(face: Any) -> bool:
+    try:
+        face_direction(face)
+    except SelectionError:
+        return False
+    return True
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

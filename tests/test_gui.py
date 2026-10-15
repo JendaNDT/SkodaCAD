@@ -471,12 +471,16 @@ def test_sketch_on_clicked_face(empty_window):
     assert form_field(w, "plane").currentData() == "front"
 
 
-def test_clicked_curved_face_explains_why_not(window, no_dialogs, slot_errors):
+def test_curved_face_does_not_offer_sketch(window, no_dialogs, slot_errors):
     part = shown_part(window)
     bore = next(face for face in part.faces() if face.geom_type.name == "CYLINDER")
-    before = len(window.session.document.features)
     window.viewer.click([bore])
-    action(window, "Skica na vybrané ploše").trigger()
+    assert not action(window, "Skica na vybrané ploše").isEnabled()
+    assert not action(window, "Skořepina – otevřít vybrané plochy").isEnabled()
+    assert "skica na ploše" not in window.statusBar().currentMessage()
+    # Kdyby se akce přesto spustila, objeví se česká hláška a model zůstane beze změny.
+    before = len(window.session.document.features)
+    window.add_from_selection("sketch")
     assert no_dialogs == ["warning"]
     assert len(window.session.document.features) == before
     assert slot_errors == []

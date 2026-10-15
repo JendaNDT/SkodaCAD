@@ -155,6 +155,7 @@ def test_selection_info_text(session):
         click_face(session, 0, 0, 10) + click_face(session, 0, 0, 0)
         + click_edges(session, (20, -15, 5), (-20, 15, 5), (0, 15, 0)))
     assert several.text == "Vybráno: 2 plochy, 3 hrany"
+    assert several.flat_faces == 2
 
 
 def test_feature_highlight_shows_what_feature_uses(session):
