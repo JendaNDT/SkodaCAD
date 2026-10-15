@@ -28,6 +28,9 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 | Posun | prostřední nebo pravé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
 | Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku |
+| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere |
+| Co s výběrem | pravé tlačítko (bez tažení): Zaoblit, Srazit, Skica na ploše, Skořepina… |
+| Zrušit výběr | `Esc` |
 | Celý díl | dvojklik nebo `F` |
 | Pohledy | `0` izometrie, `1` zepředu, `3` zprava, `7` shora (s `Ctrl` opačná strana) |
 | Změna parametru | přepiš hodnotu vlevo a stiskni Enter (číslo, `12,5` i výraz `D/2 + 5`) |
@@ -45,9 +48,14 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
 3. **Přidat prvek → Vysunutí**: ze skici vznikne těleso, vpravo nastav vzdálenost.
 4. Díra nebo výstupek: další **Skica** se sama položí na horní plochu dílu (kružnice Ø10),
    pak **Vysunutí** s operací *odebrat materiál* a případně *Řez skrz celý díl*.
-5. **Zaoblení / Sražení**: hrany se vybírají popisem („na horní ploše“, „rovnoběžné s osou Z“,
-   „poloměr 9“) – výběr tak platí i po změně rozměrů.
-6. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
+5. **Zaoblení / Sražení kliknutím**: klikni ve 3D na hranu (další s `Ctrl`), pravé tlačítko →
+   *Zaoblit vybrané hrany*. Program si hranu nezapamatuje číslem, ale významem („hrana mezi
+   přední a pravou plochou“, „kružnice R3 na horní ploše“) – výběr tak platí i po změně
+   rozměrů. Hrany vybraného zaoblení svítí ve 3D růžově; další přidáš přes pravé tlačítko →
+   *Přidat vybrané hrany do…*. Hrany jde vybrat i ručně ve formuláři (na ploše, rovnoběžné…).
+6. **Skica na ploše kliknutím**: klikni na rovinnou plochu (i dno kapsy nebo schod), pravé
+   tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne v místě kliknutí.
+7. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
    pole (např. `sirka` nebo `sirka/2 - 5`).
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
@@ -90,7 +98,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 1,
+  "version": 2,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -145,7 +153,14 @@ Hrany se vybírají **významem, ne číslem** – výběr tak platí i po změn
 "edges": {"face": "top"}                                  // hrany horní plochy
 "edges": {"face": "top", "type": "circle", "radius": "D/2"} // jen vnější kružnice nahoře
 "edges": {"parallel": "Z"}                                // svislé hrany
+"edges": {"between": ["front", "right"]}                  // hrana mezi přední a pravou plochou
+"edges": {"face": "top", "radius": 3, "near": [20, 0, 10]} // z děr R3 nahoře ta nejbližší k bodu
+"edges": [{"face": "top"}, {"parallel": "Z"}]             // seznam = všechny dohromady
 ```
+
+Výběr kliknutím ve 3D vytváří tyto popisy sám: zkusí nejjednodušší, který vybere přesně
+kliknuté hrany. `near` (nejbližší k bodu) použije jen tam, kde nic jiného nestačí – třeba jedna
+ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se načtou dál.
 
 ### Materiály
 

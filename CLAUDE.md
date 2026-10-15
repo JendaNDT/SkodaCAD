@@ -34,6 +34,7 @@
 | `document.py` | načtení/uložení JSON, kontrola struktury, `DocumentError` |
 | `expressions.py` | bezpečné výrazy s parametry (vlastní AST, žádné `eval`) |
 | `selectors.py` | sémantický výběr ploch a hran (ochrana proti topological naming problem) |
+| `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")` |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped` |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -45,7 +46,7 @@
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
-| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení) |
+| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
 
 ## Pravidla
@@ -97,6 +98,14 @@
   místo `k`. Akce zakládej jen přes `MainWindow._action` (volá slot bez argumentů) a každou
   novou akci pokryj testem, který ji opravdu stiskne (`tests/test_gui.py`).
 
+## Známé pasti (výběr kliknutím)
+
+- Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
+  (`BuildResult.parts_before`). Hrany se proto do něj přenášejí geometricky (`map_edges`),
+  ne totožností. Nový prvek z výběru jde vždy na konec stromu.
+- Popis z kliknutí se vždy ověří `select_edges` – musí vybrat přesně kliknuté hrany.
+- Po každém překreslení dílu je starý výběr neplatný (okno ho maže v `_refresh_all`).
+
 ## Známé pasti (sestavení pro Windows)
 
 - `actions/upload-artifact` bez `include-hidden-files: true` vynechá složky s tečkou
@@ -126,7 +135,8 @@
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
 - [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun
   prvků, parametry, název a materiál, Zpět/Znovu.
-- [ ] **Fáze 2c** – převod kliknutí na hranu/plochu na sémantický výběr (např. „zaobli tuhle
-  hranu“, „skicuj na téhle ploše“), přepočet na pozadí u pomalých modelů.
+- [x] **Fáze 2c** – výběr hran a ploch kliknutím ve 3D → sémantický popis (`picking.py`),
+  zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
+- [ ] **Fáze 2d** – přepočet na pozadí u pomalých modelů, šikmé a zakřivené plochy pro skicu.
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.
