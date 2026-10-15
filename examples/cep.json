@@ -1,0 +1,23 @@
+{
+  "format": "skodacad",
+  "version": 8,
+  "name": "Čep s drážkou pro pero",
+  "description": "Ukázka skici a díry na zakřivené ploše: příčná díra pro závlačku a drážka pro pero leží na rovině, která se válce dotýká nahoře (tečná rovina, osa X skici míří podél čepu). Když změníš průměr D, díra i drážka jdou s povrchem. D = průměr, L = délka, b × t1 × lp = drážka pro pero 6 × 3,5 × 25 (DIN 6885 pro Ø 17–22).",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"D": 20, "L": 80, "b": 6, "t1": 3.5, "lp": 25, "x_pera": -15, "x_diry": 32},
+  "features": [
+    {"id": "prurez", "type": "sketch", "name": "Průřez čepu", "plane": "YZ",
+     "elements": [{"shape": "circle", "diameter": "D"}]},
+    {"id": "cep", "type": "extrude", "name": "Čep", "sketch": "prurez", "distance": "L",
+     "direction": "both"},
+    {"id": "zavlacka", "type": "hole", "name": "Díra pro závlačku", "kind": "clearance",
+     "size": "M4", "plane": {"at": [0, 0, 10], "normal": [0, 0, 1]},
+     "positions": [["x_diry", 0]], "through_all": true},
+    {"id": "pero_skica", "type": "sketch", "name": "Drážka pro pero",
+     "plane": {"at": [0, 0, 10], "normal": [0, 0, 1]},
+     "elements": [{"shape": "slot", "length": "lp - b", "width": "b", "center": ["x_pera", 0]}]},
+    {"id": "pero", "type": "extrude", "name": "Drážka pro pero", "sketch": "pero_skica",
+     "operation": "cut", "distance": "t1"}
+  ]
+}

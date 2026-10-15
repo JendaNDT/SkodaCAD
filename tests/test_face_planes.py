@@ -124,3 +124,20 @@ def test_missing_face_and_bad_spec_are_czech():
     assert "potřebuje existující díl" in result.first_error.message
     assert describe_plane(CHAMFER) == "plocha vybraná ve 3D (u bodu 0; -10; 15)"
     assert describe_plane("top") == "horní plocha dílu"
+
+
+@pytest.mark.parametrize("diameter", [20, 22])
+def test_pin_example_follows_diameter(examples_dir, diameter):
+    from skodacad import Document
+
+    result = rebuild(Document.load(examples_dir / "cep.json"), {"D": diameter})
+    assert result.ok, result.first_error and result.first_error.message
+    r = diameter / 2
+    hole = integrate(lambda y: 2 * math.sqrt(2.25**2 - y * y) * 2 * math.sqrt(r * r - y * y),
+                     -2.25, 2.25)  # průchozí M4 Ø4,5 napříč čepem
+    keyway = integrate(lambda y: (19 + 2 * math.sqrt(9 - y * y))
+                       * (math.sqrt(r * r - y * y) - (r - 3.5)), -3, 3)  # pero 6 × 3,5 × 25
+    assert result.part.volume == pytest.approx(math.pi * r * r * 80 - hole - keyway, rel=1e-4)
+    bottom = [f for f in result.part.faces() if f.geom_type.name == "PLANE"
+              and f.normal_at().Z == pytest.approx(1)]
+    assert [tuple(f.center()) for f in bottom] == [pytest.approx((-15, 0, r - 3.5))]

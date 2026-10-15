@@ -61,9 +61,14 @@ z výběru ve 3D počkají, až bude model spočítaný.
    přední a pravou plochou“, „kružnice R3 na horní ploše“) – výběr tak platí i po změně
    rozměrů. Hrany vybraného zaoblení svítí ve 3D růžově; další přidáš přes pravé tlačítko →
    *Přidat vybrané hrany do…*. Hrany jde vybrat i ručně ve formuláři (na ploše, rovnoběžné…).
-6. **Skica na ploše kliknutím**: klikni na rovinnou plochu (i dno kapsy nebo schod), pravé
-   tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne v místě kliknutí.
-7. **Díra podle tabulek kliknutím**: klikni na rovinnou plochu tam, kde má díra být, pravé
+6. **Skica na ploše kliknutím**: klikni na plochu (i dno kapsy, schod, **šikmou** plochu
+   sražení nebo **válec**), pravé tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne
+   v místě kliknutí. Na zakřivené ploše (válec, kužel, koule) leží skica na rovině, která se
+   plochy v místě kliknutí dotýká (**tečná rovina**) – tak vznikne třeba drážka pro pero nebo
+   plocha na hřídeli. U šikmé a zakřivené plochy je počátek skici v místě kliknutí a osa X
+   míří podél osy válce (jinak vodorovně po ploše).
+7. **Díra podle tabulek kliknutím**: klikni na plochu (i šikmou nebo válcovou – příčná díra do
+   hřídele) tam, kde má díra být, pravé
    tlačítko → *Díra na vybrané ploše*. Vpravo vyber druh (závitová, průchozí, zahloubení,
    3D tisk) a velikost M2–M30. Další díru stejného prvku přidáš kliknutím na plochu a
    *Přidat díru v místě kliknutí*. Viz [Díry](#díry-podle-strojnických-tabulek).
@@ -208,7 +213,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 7,
+  "version": 8,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -238,6 +243,10 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).
+  Šikmá či zakřivená plocha: `{"at": [x, y, z], "normal": [nx, ny, nz]}` – plocha nejbližší
+  bodu `at` (směr `normal` rozhodne na hraně); rovinná plocha nese skicu přímo, zakřivená
+  tečnou rovinou v tom bodě. Počátek skici je v bodě `at`, osa X podél osy válce/kužele,
+  jinak vodorovně po ploše. Ukázka: *cep* (příčná díra a drážka pro pero na čepu).
 * **`operation`** – `new` (první těleso), `add` (přidat materiál), `cut` (odebrat).
 * **`direction`** – `normal` (ven z roviny), `reverse` (opačně), `both` (symetricky, `distance` je
   celková tloušťka). Řez (`cut`) jde ve výchozím stavu do materiálu.
