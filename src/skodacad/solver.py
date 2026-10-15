@@ -26,6 +26,9 @@ Formát (v JSON modelu je to jeden tvar v ``elements`` skici)::
   (rozměr se určuje vazbou „diameter“ nebo „radius“).
 * obrys může mít víc uzavřených smyček – smyčka uvnitř jiné je díra (kružnice uvnitř
   obdélníku = otvor), smyčka uvnitř díry je zase materiál.
+* ``references`` – hrany dílu promítnuté do skici (viz ``projection.py``). Jsou pevné
+  jako počátek; vazby na ně odkazují jménem („r1“) a jejich body „r1.start“, „r1.end“,
+  „r1.center“. Do obrysu (smyček) se nepočítají.
 * ``construction`` – pomocná čára: účastní se vazeb, ale není součástí obrysu.
 * bod ``origin`` je vždy počátek skici [0, 0] a nehýbe se.
 
@@ -46,6 +49,9 @@ import slvs
 ORIGIN = "origin"
 SEGMENT_TYPES = ("line", "arc", "circle")
 ROUND = ("arc", "circle")  # čáry se středem a poloměrem
+# Body promítnuté hrany podle jejího tvaru (jméno bodu = „r1.start“ …).
+REFERENCE_POINTS = {"line": ("start", "end"), "circle": ("center",),
+                    "arc": ("start", "end", "center")}
 
 # Druh vazby → český název (pro chybové hlášky a okno).
 CONSTRAINT_LABELS = {
@@ -118,6 +124,9 @@ def _points(profile: dict[str, Any], evaluate: Callable[[Any], float]) -> dict[s
     for name, value in raw.items():
         if name == ORIGIN:
             raise SolveError("Bod se nesmí jmenovat „origin“ – to je počátek skici.")
+        if "." in str(name):
+            raise SolveError(f"Jméno bodu „{name}“ nesmí obsahovat tečku (ta je vyhrazená "
+                             "pro body promítnutých hran).")
         if not isinstance(value, list | tuple) or len(value) != 2:
             raise SolveError(f"Bod „{name}“ musí mít souřadnice [x, y].")
         points[name] = (evaluate(value[0]), evaluate(value[1]))
@@ -148,6 +157,39 @@ def _segments(profile: dict[str, Any], points: dict[str, tuple]) -> dict[str, di
     return raw
 
 
+def _references(profile: dict[str, Any], points: dict, segments: dict) -> tuple[dict, dict]:
+    """Promítnuté hrany → pevné body a čáry (řešič s nimi nehýbe, jako s počátkem)."""
+    raw = profile.get("references") or {}
+    if not isinstance(raw, dict):
+        raise SolveError("„references“ musí být objekt {jméno: promítnutá hrana}.")
+    ref_points: dict[str, tuple[float, float]] = {}
+    ref_segments: dict[str, dict[str, Any]] = {}
+    for name, ref in raw.items():
+        if name in points or name in segments or name == ORIGIN or "." in str(name):
+            raise SolveError(f"Promítnutá hrana „{name}“ má stejné jméno jako jiný prvek "
+                             "obrysu (nebo tečku ve jméně).")
+        kind = ref.get("kind") if isinstance(ref, dict) else None
+        if kind not in REFERENCE_POINTS:
+            raise SolveError(f"Promítnutá hrana „{name}“ nemá platný tvar („kind“: line, "
+                             "circle nebo arc).")
+        segment: dict[str, Any] = {"type": kind, "reference": True}
+        try:
+            if kind != "circle":
+                for key, (x, y) in zip(("start", "end"), ref["points"], strict=True):
+                    ref_points[f"{name}.{key}"] = (float(x), float(y))
+            if kind != "line":
+                x, y = ref["center"]
+                ref_points[f"{name}.center"] = (float(x), float(y))
+                segment["radius"] = float(ref["radius"])
+                if segment["radius"] <= 0:
+                    raise ValueError
+        except (KeyError, TypeError, ValueError):
+            raise SolveError(f"Promítnutá hrana „{name}“ má chybné souřadnice.") from None
+        segment.update({key: f"{name}.{key}" for key in REFERENCE_POINTS[kind]})
+        ref_segments[name] = segment
+    return ref_points, ref_segments
+
+
 def _kind(name: Any, points: dict, segments: dict) -> str | None:
     if name == ORIGIN or name in points:
         return "point"
@@ -162,8 +204,10 @@ def _shared_point(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return bool({a["start"], a["end"]} & {b["start"], b["end"]})
 
 
-def _check_constraint(index: int, c: Any, points: dict, segments: dict) -> None:
-    """Každá vazba musí odkazovat na správné druhy bodů a čar – jinak by slvs spadl."""
+def _check_constraint(index: int, c: Any, points: dict, segments: dict,
+                      fixed: frozenset = frozenset()) -> None:
+    """Každá vazba musí odkazovat na správné druhy bodů a čar – jinak by slvs spadl.
+    ``fixed`` = jména pevných prvků (promítnuté hrany a jejich body)."""
     where = constraint_text(index, c)
     if not isinstance(c, dict) or c.get("type") not in CONSTRAINT_LABELS:
         known = ", ".join(CONSTRAINT_LABELS)
@@ -182,6 +226,12 @@ def _check_constraint(index: int, c: Any, points: dict, segments: dict) -> None:
         return items
 
     kind = c["type"]
+    refs = [c[key] for key in ("point", "on", "segment") if key in c]
+    refs += [item for key in ("points", "segments") if isinstance(c.get(key), list)
+             for item in c[key]]
+    if refs and all(ref == ORIGIN or ref in fixed for ref in refs):
+        raise SolveError(f"{where}: spojuje jen pevné prvky (počátek, promítnuté hrany) – nic "
+                         "neurčí. Vyber aspoň jeden prvek obrysu.", [index])
     if kind in DIMENSIONS and "value" not in c:
         raise SolveError(f"{where}: chybí hodnota („value“).", [index])
     if kind == "fix":
@@ -249,11 +299,14 @@ def solve(profile: dict[str, Any], evaluate: Callable[[Any], float]) -> SolveRes
     """Vyřeší obrys. Při chybě vyvolá ``SolveError`` s českou zprávou."""
     points = _points(profile, evaluate)
     segments = _segments(profile, points)
+    ref_points, ref_segments = _references(profile, points, segments)
     constraints = profile.get("constraints", [])
     if not isinstance(constraints, list):
         raise SolveError("„constraints“ musí být seznam vazeb.")
+    fixed = frozenset(ref_points) | frozenset(ref_segments)
     for index, constraint in enumerate(constraints):
-        _check_constraint(index, constraint, points, segments)
+        _check_constraint(index, constraint, {**points, **ref_points},
+                          {**segments, **ref_segments}, fixed)
     values = {}
     for index, constraint in enumerate(constraints):
         if constraint["type"] in DIMENSIONS:
@@ -265,32 +318,38 @@ def solve(profile: dict[str, Any], evaluate: Callable[[Any], float]) -> SolveRes
 
     slvs.clear_sketch()
     try:
-        return _solve(points, segments, constraints, values)
+        return _solve(points, segments, ref_points, ref_segments, constraints, values)
     finally:
         slvs.clear_sketch()
 
 
-def _solve(points: dict, segments: dict, constraints: list, values: dict) -> SolveResult:
+def _solve(points: dict, segments: dict, ref_points: dict, ref_segments: dict,
+           constraints: list, values: dict) -> SolveResult:
     wp = slvs.add_base_2d(_BASE_GROUP)
     normal = slvs.add_normal_3d(_BASE_GROUP, *slvs.make_quaternion(1, 0, 0, 0, 1, 0))
     entities = {ORIGIN: slvs.add_point_2d(_BASE_GROUP, 0.0, 0.0, wp)}
+    for name, (x, y) in ref_points.items():  # promítnuté hrany jsou pevné jako počátek
+        entities[name] = slvs.add_point_2d(_BASE_GROUP, float(x), float(y), wp)
     for name, (x, y) in points.items():
         entities[name] = slvs.add_point_2d(_GROUP, float(x), float(y), wp)
-    radii = {}  # kružnice → entita poloměru (její hodnotu řešič mění)
-    for name, segment in segments.items():
-        if segment["type"] == "line":
-            entities[name] = slvs.add_line_2d(_GROUP, entities[segment["start"]],
+    radii = {}  # kružnice obrysu → entita poloměru (její hodnotu řešič mění)
+    for group, shapes in ((_BASE_GROUP, ref_segments), (_GROUP, segments)):
+        for name, segment in shapes.items():
+            if segment["type"] == "line":
+                entities[name] = slvs.add_line_2d(group, entities[segment["start"]],
+                                                  entities[segment["end"]], wp)
+            elif segment["type"] == "arc":
+                entities[name] = slvs.add_arc(group, normal, entities[segment["center"]],
+                                              entities[segment["start"]],
                                               entities[segment["end"]], wp)
-        elif segment["type"] == "arc":
-            entities[name] = slvs.add_arc(_GROUP, normal, entities[segment["center"]],
-                                          entities[segment["start"]], entities[segment["end"]],
-                                          wp)
-        else:
-            radii[name] = slvs.add_distance(_GROUP, float(segment["radius"]), wp)
-            entities[name] = slvs.add_circle(_GROUP, normal, entities[segment["center"]],
-                                             radii[name], wp)
+            else:
+                radius = slvs.add_distance(group, float(segment["radius"]), wp)
+                entities[name] = slvs.add_circle(group, normal, entities[segment["center"]],
+                                                 radius, wp)
+                if group == _GROUP:
+                    radii[name] = radius
 
-    shape = _Shape(points, segments, entities, wp)
+    shape = _Shape({**points, **ref_points}, {**segments, **ref_segments}, entities, wp)
     owners: dict[int, int] = {}  # číslo vazby v řešiči → index vazby v obrysu
     for index, c in enumerate(constraints):
         for made in _add_constraint(c, shape, values.get(index)):

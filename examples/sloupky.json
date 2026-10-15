@@ -1,0 +1,285 @@
+{
+  "format": "skodacad",
+  "version": 7,
+  "name": "Deska se sloupky",
+  "description": "Ukázka promítnutí hran: na desce jsou 4 díry pro šrouby M3 a nad každou distanční sloupek pro plošný spoj. Sloupky jsou ve skice navázané na promítnuté díry (soustředně, stejný průměr díry) – když změníš rozteč děr, sloupky jdou s nimi. A × B = deska, rx × ry = rozteč děr, h = výška sloupků.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {
+    "A": 100,
+    "B": 70,
+    "t": 3,
+    "rx": 80,
+    "ry": 50,
+    "h": 6,
+    "d_sloupku": 7
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys desky",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "A",
+          "height": "B",
+          "corner_radius": 5
+        }
+      ]
+    },
+    {
+      "id": "deska",
+      "type": "extrude",
+      "name": "Deska",
+      "sketch": "obrys",
+      "distance": "t"
+    },
+    {
+      "id": "diry",
+      "type": "hole",
+      "name": "Díry pro šrouby",
+      "kind": "clearance",
+      "size": "M3",
+      "plane": "top",
+      "through_all": true,
+      "positions": [
+        [
+          "rx/2",
+          "ry/2"
+        ],
+        [
+          "-rx/2",
+          "ry/2"
+        ],
+        [
+          "-rx/2",
+          "-ry/2"
+        ],
+        [
+          "rx/2",
+          "-ry/2"
+        ]
+      ]
+    },
+    {
+      "id": "sloupky_skica",
+      "type": "sketch",
+      "name": "Sloupky (promítnuté díry)",
+      "plane": "top",
+      "elements": [
+        {
+          "shape": "profile",
+          "points": {
+            "P1": [
+              40.0,
+              25.0
+            ],
+            "P2": [
+              -40.0,
+              25.0
+            ],
+            "P3": [
+              40.0,
+              -25.0
+            ],
+            "P4": [
+              -40.0,
+              -25.0
+            ]
+          },
+          "segments": {
+            "k1": {
+              "type": "circle",
+              "center": "P1",
+              "radius": 3.5
+            },
+            "k2": {
+              "type": "circle",
+              "center": "P1",
+              "radius": 1.7
+            },
+            "k3": {
+              "type": "circle",
+              "center": "P2",
+              "radius": 3.5
+            },
+            "k4": {
+              "type": "circle",
+              "center": "P2",
+              "radius": 1.7
+            },
+            "k5": {
+              "type": "circle",
+              "center": "P3",
+              "radius": 3.5
+            },
+            "k6": {
+              "type": "circle",
+              "center": "P3",
+              "radius": 1.7
+            },
+            "k7": {
+              "type": "circle",
+              "center": "P4",
+              "radius": 3.5
+            },
+            "k8": {
+              "type": "circle",
+              "center": "P4",
+              "radius": 1.7
+            }
+          },
+          "constraints": [
+            {
+              "type": "coincident",
+              "point": "P1",
+              "on": "r1.center"
+            },
+            {
+              "type": "diameter",
+              "segment": "k1",
+              "value": "d_sloupku"
+            },
+            {
+              "type": "equal",
+              "segments": [
+                "k2",
+                "r1"
+              ]
+            },
+            {
+              "type": "coincident",
+              "point": "P2",
+              "on": "r2.center"
+            },
+            {
+              "type": "diameter",
+              "segment": "k3",
+              "value": "d_sloupku"
+            },
+            {
+              "type": "equal",
+              "segments": [
+                "k4",
+                "r2"
+              ]
+            },
+            {
+              "type": "coincident",
+              "point": "P3",
+              "on": "r3.center"
+            },
+            {
+              "type": "diameter",
+              "segment": "k5",
+              "value": "d_sloupku"
+            },
+            {
+              "type": "equal",
+              "segments": [
+                "k6",
+                "r3"
+              ]
+            },
+            {
+              "type": "coincident",
+              "point": "P4",
+              "on": "r4.center"
+            },
+            {
+              "type": "diameter",
+              "segment": "k7",
+              "value": "d_sloupku"
+            },
+            {
+              "type": "equal",
+              "segments": [
+                "k8",
+                "r4"
+              ]
+            }
+          ],
+          "references": {
+            "r1": {
+              "edge": {
+                "face": "top",
+                "radius": 1.7,
+                "near": [
+                  38.3,
+                  25,
+                  3
+                ]
+              },
+              "kind": "circle",
+              "center": [
+                40.0,
+                25.0
+              ],
+              "radius": 1.7
+            },
+            "r2": {
+              "edge": {
+                "face": "top",
+                "radius": 1.7,
+                "near": [
+                  -41.7,
+                  25,
+                  3
+                ]
+              },
+              "kind": "circle",
+              "center": [
+                -40.0,
+                25.0
+              ],
+              "radius": 1.7
+            },
+            "r3": {
+              "edge": {
+                "face": "top",
+                "radius": 1.7,
+                "near": [
+                  38.3,
+                  -25,
+                  3
+                ]
+              },
+              "kind": "circle",
+              "center": [
+                40.0,
+                -25.0
+              ],
+              "radius": 1.7
+            },
+            "r4": {
+              "edge": {
+                "face": "top",
+                "radius": 1.7,
+                "near": [
+                  -41.7,
+                  -25,
+                  3
+                ]
+              },
+              "kind": "circle",
+              "center": [
+                -40.0,
+                -25.0
+              ],
+              "radius": 1.7
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sloupky",
+      "type": "extrude",
+      "name": "Sloupky",
+      "sketch": "sloupky_skica",
+      "distance": "h"
+    }
+  ]
+}

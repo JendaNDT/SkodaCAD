@@ -160,6 +160,11 @@ def test_every_constraint_kind_in_both_orders_does_not_crash():
                        "l3": {"type": "line", "start": "D", "end": "A"},
                        "k1": {"type": "circle", "center": "K", "radius": 3},
                        "k2": {"type": "circle", "center": "L", "radius": 2}},
+          "references": {
+              "r1": {"edge": {}, "kind": "line", "points": [[-5, -3], [35, -3]]},
+              "r2": {"edge": {}, "kind": "circle", "center": [10, 20], "radius": 3},
+              "r3": {"edge": {}, "kind": "arc", "points": [[29, 20], [25, 24]],
+                     "center": [25, 20], "radius": 4}},
           "constraints": []}
         kinds = [
           {"type": "fix", "point": "A"},
@@ -198,6 +203,28 @@ def test_every_constraint_kind_in_both_orders_does_not_crash():
           {"type": "diameter", "segment": "a1", "value": 12},
           {"type": "distance", "point": "K", "segment": "l1", "value": 6},
           {"type": "horizontal", "points": ["K", "L"]},
+          # vazby k promítnutým (pevným) hranám dílu
+          {"type": "coincident", "point": "P", "on": "r1"},
+          {"type": "coincident", "point": "P", "on": "r2"},
+          {"type": "coincident", "point": "P", "on": "r3"},
+          {"type": "coincident", "point": "A", "on": "r1.start"},
+          {"type": "tangent", "segments": ["l1", "r2"]},
+          {"type": "tangent", "segments": ["k1", "r1"]},
+          {"type": "tangent", "segments": ["a1", "r3"]},
+          {"type": "tangent", "segments": ["k2", "r2"]},
+          {"type": "equal", "segments": ["k1", "r2"]},
+          {"type": "equal", "segments": ["r3", "k2"]},
+          {"type": "equal", "segments": ["l2", "r1"]},
+          {"type": "concentric", "segments": ["k1", "r2"]},
+          {"type": "concentric", "segments": ["r3", "k2"]},
+          {"type": "symmetric", "points": ["P", "Q"], "segment": "r1"},
+          {"type": "midpoint", "point": "P", "segment": "r1"},
+          {"type": "distance", "point": "K", "segment": "r1", "value": 8},
+          {"type": "distance", "points": ["K", "r2.center"], "value": 6},
+          {"type": "parallel", "segments": ["l2", "r1"]},
+          {"type": "perpendicular", "segments": ["l3", "r1"]},
+          {"type": "angle", "segments": ["l1", "r1"], "value": 10},
+          {"type": "horizontal", "points": ["K", "r3.center"]},
         ]
         seen = set()
         for constraint in kinds:

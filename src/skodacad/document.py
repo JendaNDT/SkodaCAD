@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 6,
+      "version": 7,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -29,10 +29,10 @@ FORMAT = "skodacad"
 # Verze 2 přidala do výběru hran klíče „between“, „near“ a seznam výběrů (výběr kliknutím),
 # verze 3 tvar skici „profile“ (obrys z úseček a oblouků s vazbami), verze 4 prvek „hole“
 # (díry podle strojnických tabulek), verze 5 prvky „pattern“ (pole) a „mirror“ (zrcadlení),
-# verze 6 kružnice, víc smyček (díry) a nové vazby v obrysu „profile“.
-# Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 6
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6)
+# verze 6 kružnice, víc smyček (díry) a nové vazby v obrysu „profile“, verze 7 promítnuté
+# hrany dílu v obrysu („references“). Starší verze jsou podmnožinou – načtou se beze změny.
+VERSION = 7
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7)
 
 
 class DocumentError(ValueError):

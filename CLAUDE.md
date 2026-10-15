@@ -41,6 +41,9 @@
 - (15. 10. 2026, schváleno) **Přepočet na pozadí v pomocném procesu** (`worker.py`), ne ve
   vlákně – OCCT drží zámek Pythonu (GIL) a okno by stálo. Nová změna rozpočítaný přepočet
   hned zruší (záložní proces je připravený), *Zastavit* vrátí poslední spočítaný stav.
+- (15. 10. 2026, schváleno) **Promítnutí hran dílu do skici** – `projection.py`, obrys má
+  `references` (hrana popsaná významem + poslední promítnutý tvar), ve skicáři šedé hrany
+  dílu, nástroj Promítnout a Převzít do obrysu. Formát verze 7.
 
 ## Architektura (`src/skodacad/`)
 
@@ -51,7 +54,8 @@
 | `selectors.py` | sémantický výběr ploch a hran (ochrana proti topological naming problem) |
 | `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
 | `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřené smyčky (i kružnice) |
-| `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
+| `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty, promítnuté hrany, převzetí do obrysu) |
+| `projection.py` | promítnutí hran dílu do roviny skici, kandidáti pro skicář, obnova odkazů z dílu |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; pole a zrcadlení |
@@ -155,6 +159,20 @@
   znaménko bere z polohy bodu, jinak bod přeskočí na druhou stranu.
 - Nové kružnicové vazby: `distance` ani `midpoint` s kružnicí slvs neumí (pád) – kontrola
   v `_check_constraint` je nepustí.
+
+## Známé pasti (promítnutí hran)
+
+- Promítnutá hrana je v řešiči **pevná** (skupina 1 jako počátek). Vazba jen mezi pevnými
+  prvky (počátek, promítnuté hrany, jejich body) by nic neurčila → `solver` ji odmítne.
+- Odkaz drží hranu **významem** (`picking.edge_selector`, často `near`), nikdy indexem.
+  Tvar a souřadnice v JSON jsou jen poslední stav – `projection.refresh` je při každém
+  přepočtu spočítá znovu z dílu **před skicou** (`ctx.part`, v okně `parts_before`).
+- Skicu kreslí skicář v souřadnicích obrysu – promítnutí počítá s rovinou skici i s
+  posunem/natočením obrysu (`center`, `angle`).
+- Oblouk po promítnutí vede vždy proti směru hodin (jako v řešiči) – `project_edge` podle
+  bodu uprostřed hrany případně prohodí konce.
+- Body promítnutých hran se jmenují `r1.start` … – tečka je proto ve jménech bodů obrysu
+  zakázaná.
 
 ## Známé pasti (vymodelovaný závit)
 

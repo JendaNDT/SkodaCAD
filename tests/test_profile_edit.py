@@ -96,7 +96,7 @@ def test_rounded_end_with_tangent_arc(session):
     ("concentric", ["s1", "s2"], "dva oblouky nebo kružnice"),
     ("symmetric", ["P1", "s1"], "dva body a úsečku"),
     ("midpoint", ["P1", "P2"], "bod a úsečku"),
-    ("fix", ["origin"], "bodů"),
+    ("fix", ["origin"], "pevné"),
     ("dimension", ["P1", "s1", "s2"], "úsečku"),
     ("equal", ["neni", "s1"], "už v obrysu není"),
 ])

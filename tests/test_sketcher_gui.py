@@ -407,3 +407,107 @@ def test_hole_from_sketcher_is_cut_in_the_part(window, monkeypatch, answers):
     window.profile_sketch_action.trigger()
     window.add_feature_actions["extrude"].trigger()
     assert window.session.properties.volume_mm3 == pytest.approx((40 * 30 - math.pi * 25) * 10)
+
+
+# --- promítnutí hran dílu ---------------------------------------------------------------
+
+
+def part_with_hole(window):
+    """Kvádr 40 × 30 × 10 (střed v počátku) s dírou Ø6 skrz v [hx, 3]."""
+    session = window.session
+    session.add_parameter("hx", "5")
+    session.add_feature("sketch")
+    session.add_feature("extrude")
+    session.add_feature("sketch", values={"elements": [
+        {"shape": "circle", "diameter": 6, "center": ["hx", 3]}]})
+    session.add_feature("extrude", values={"operation": "cut", "through_all": True})
+    window._selected_id = "extrude2"
+    window._reload_all()
+    assert session.result.ok
+
+
+def test_boss_around_projected_hole_follows_hole(window, monkeypatch, answers):
+    part_with_hole(window)
+
+    def draw(self, dialog):
+        assert dialog.tool_actions["project"].isEnabled()
+        assert len(dialog.candidate_polylines()) == 5  # 4 hrany horní plochy a díra
+        dialog.set_tool("project")
+        dialog.click(5 + 3, 3)  # na obvod díry
+        assert dialog.selection == ["r1"] and dialog.profile["references"]["r1"]["kind"] == \
+            "circle"
+        dialog.set_tool("circle")
+        dialog.click(5, 3)  # střed na středu promítnuté díry → nový bod „na bodě“ r1.center
+        dialog.click(11, 3)
+        assert {"type": "coincident", "point": "P1", "on": "r1.center"} in \
+            dialog.profile["constraints"]
+        dialog.set_tool("select")
+        dialog.select(["k1"])
+        answers.append("12")
+        dialog.add_dimension()
+        assert dialog.solution.dof == 0
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(type(window), "_exec_dialog", draw)
+    window.profile_sketch_action.trigger()
+    window.add_feature_actions["extrude"].trigger()
+    session = window.session
+    assert session.result.ok
+    expected = 40 * 30 * 10 - math.pi * 9 * 10 + math.pi * 36 * 10
+    assert session.properties.volume_mm3 == pytest.approx(expected)
+    session.set_parameter("hx", "-8")  # díra se posune – výstupek jde s ní
+    assert session.properties.volume_mm3 == pytest.approx(expected)
+    from build123d import Axis
+
+    top = session.result.part.faces().sort_by(Axis.Z)[-1]
+    assert (top.center().X, top.center().Y) == pytest.approx((-8, 3))
+
+
+def test_convert_projected_outline_into_profile(window, monkeypatch):
+    part_with_hole(window)
+
+    def draw(self, dialog):
+        dialog.set_tool("project")
+        for x, y in ((0, -15), (20, 0), (0, 15), (-20, 0)):  # čtyři hrany horní plochy
+            dialog.click(x, y)
+        assert sorted(dialog.profile["references"]) == ["r1", "r2", "r3", "r4"]
+        dialog.set_tool("select")
+        dialog.select(["r1", "r2", "r3", "r4"])
+        dialog.convert_action.trigger()
+        assert len(dialog.profile["segments"]) == 4 and dialog.solution.dof == 0
+        assert "plně určený" in dialog.status.text()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(type(window), "_exec_dialog", draw)
+    window.profile_sketch_action.trigger()
+    window.add_feature_actions["extrude"].trigger()
+    assert window.session.properties.volume_mm3 == pytest.approx(
+        40 * 30 * 10 - math.pi * 9 * 10 + 40 * 30 * 10)
+
+
+def test_projection_tool_is_off_without_part(window, monkeypatch):
+    seen = {}
+
+    def draw(self, dialog):
+        seen["enabled"] = dialog.tool_actions["project"].isEnabled()
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(type(window), "_exec_dialog", draw)
+    window.profile_sketch_action.trigger()
+    assert seen == {"enabled": False}
+
+
+def test_reference_points_snap_and_cannot_be_dragged(sketcher):
+    from skodacad.profile_edit import add_reference
+
+    add_reference(sketcher.profile, {"edge": {"face": "top"}, "kind": "line",
+                                     "points": [[0, 0], [30, 0]]})
+    sketcher.set_tool("select")
+    sketcher.click(30, 0)
+    assert sketcher.selection == ["r1.end"]
+    sketcher.press(30, 0)
+    sketcher.move(35, 5)
+    sketcher.release(35, 5)
+    assert sketcher.profile["references"]["r1"]["points"][1] == [30, 0]  # pevný bod
+    sketcher.delete_action.trigger()  # smazání bodu smaže celou promítnutou hranu
+    assert not sketcher.profile["references"]
