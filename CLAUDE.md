@@ -35,6 +35,9 @@
 - (15. 10. 2026, schváleno) **Pole a zrcadlení** – prvky `pattern` (kruhové, lineární,
   mřížka) a `mirror` (vybrané prvky nebo celý díl), formát verze 5. Opakují vybrané prvky,
   ne celé těleso; zrcadlení bez vybraných prvků zrcadlí celý díl.
+- (15. 10. 2026, schváleno) **Kružnice a vazby mezi tvary ve skicáři** – čára `circle`, víc
+  smyček v jednom obrysu (vnořená = díra), vazby `concentric`, `symmetric`, kóta `diameter`,
+  tečnost ke kružnici přes skrytý bod dotyku. Formát verze 6.
 
 ## Architektura (`src/skodacad/`)
 
@@ -44,7 +47,7 @@
 | `expressions.py` | bezpečné výrazy s parametry (vlastní AST, žádné `eval`) |
 | `selectors.py` | sémantický výběr ploch a hran (ochrana proti topological naming problem) |
 | `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
-| `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřená smyčka |
+| `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřené smyčky (i kružnice) |
 | `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
@@ -142,6 +145,12 @@
 - Kružnice/oblouk potřebují 3D normálu (`add_normal_3d`), ne `add_normal_2d`.
 - Vodorovně + svisle na jedné čáře není „spor“ – řešič ji smrskne do bodu. Skicář to hlásí.
 - Řešič je globální stav (`clear_sketch`) – volat jen z jednoho vlákna.
+- Kružnice se dotknout neumí (`tangent` s kružnicí = pád) – tečnost bez společného bodu
+  dělá `solver._touch` skrytým bodem dotyku (na obou křivkách + kolmo / na spojnici středů).
+- Vzdálenost bodu od čáry má v slvs **znaménko** (kladná = vpravo od směru čáry). Obal
+  znaménko bere z polohy bodu, jinak bod přeskočí na druhou stranu.
+- Nové kružnicové vazby: `distance` ani `midpoint` s kružnicí slvs neumí (pád) – kontrola
+  v `_check_constraint` je nepustí.
 
 ## Známé pasti (vymodelovaný závit)
 
@@ -177,8 +186,8 @@
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
-- [ ] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
-  [ ] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
+- [x] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
+  [x] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
   tabulek (vyznačený závit; [x] vymodelovaný závit pro 3D tisk), [x] pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
