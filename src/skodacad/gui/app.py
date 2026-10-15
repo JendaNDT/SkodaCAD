@@ -224,7 +224,8 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
         image = user_dir() / "self-test-3d.png"
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
                      f"OpenGL: {viewer.graphics_info()})")
-        ok = _self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
+        ok = (_self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
+              and _self_test_map(window, lines))
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -305,12 +306,31 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial"):  # to, co kreslí měření
+    for variant in ("line", "point", "ball", "label", "arial", "map"):  # měření a mapa
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)
         done.append(variant)
     lines.append(f"✓ Kreslení značek měření: OK ({', '.join(done)})")
+    return True
+
+
+def _self_test_map(window, lines: _Report) -> bool:
+    """Mapa tloušťky stěny celé ukázky: výpočet i nakreslení desítek tisíc barevných bodů."""
+    lines.stream.write("  … mapa tloušťky\n")
+    lines.stream.flush()
+    window.thickness_map_action.trigger()
+    QApplication.processEvents()
+    found = window.session.thickness_map
+    if found is None:
+        error = window.session.result.map_error if window.session.result else "?"
+        lines.append(f"✕ Mapa tloušťky: nespočítala se ({error})")
+        return False
+    image = user_dir() / "self-test-mapa.png"
+    lines.append(f"✓ Mapa tloušťky: OK (nejtenčí {found.minimum:.2f} mm, {len(found.values)} "
+                 f"bodů za {found.seconds:.1f} s, snímek {image}: "
+                 f"{window.viewer.dump(str(image))})")
+    window.thickness_map_action.trigger()  # vypnout
     return True
 
 

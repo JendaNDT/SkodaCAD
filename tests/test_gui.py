@@ -26,12 +26,14 @@ class FakeViewer(QtWidgets.QWidget):
         self.views = []
         self.highlighted = []
         self.measurement = []  # čáry měření (od, do, popisek)
+        self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.picked_point = None
 
     def show_part(self, part, fit=False):
         self.parts.append((part, fit))
         self.picked_point = None
         self.measurement = []
+        self.thickness_map = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -39,6 +41,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def show_measurement(self, lines):
         self.measurement = list(lines)
+
+    def show_thickness_map(self, nodes, triangles, colors, marker=None):
+        self.thickness_map = (len(nodes), len(triangles), list(colors), marker)
+
+    def hide_thickness_map(self):
+        self.thickness_map = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -242,6 +250,8 @@ def test_every_action_runs_without_error(window, slot_errors, no_dialogs):
 
     actions = [a for a in window.findChildren(QAction) if a.text() and a.text() != "Konec"]
     assert len(actions) >= 15
+    # Zapnutá mapa tloušťky by se počítala znovu s každou další změnou – stisknout až nakonec.
+    actions.sort(key=lambda a: a is window.thickness_map_action)
     for item in actions:
         item.trigger()
     assert slot_errors == []
@@ -711,3 +721,46 @@ def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
     assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm"  # mezi stěnami děr Ø18
     w.viewer.click(list(part.faces())[:3])
     assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()
+
+
+# --- mapa tloušťky stěny ------------------------------------------------------------------
+
+
+def test_thickness_map_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    w = window  # příruba: deska 18 mm s dírami
+    assert w.viewer.thickness_map is None and not w.export_map_action.isEnabled()
+    assert "Zapni mapu" in w.map_summary.text()
+    action(w, "Mapa tloušťky stěny").trigger()
+    nodes, triangles, colors, (point, label) = w.viewer.thickness_map
+    assert nodes > 1000 and triangles > 1000 and len(colors) == nodes
+    found = w.session.thickness_map
+    assert label == f"min {number(found.minimum)} mm"
+    assert "Nejčastější tloušťka: 18.00 mm" in w.map_summary.text()
+    assert w.map_scale_label.text().endswith("18.00 mm a víc")
+    # klik na mapu = přesná tloušťka v bodě i ve stavovém řádku
+    w.viewer.click([face_at(shown_part(w), 60, 0, 18)], point=(60, 0, 18))
+    assert "Tloušťka stěny: 18.00 mm" in w.statusBar().currentMessage()
+
+    set_text(w.map_fields["limit"], "20")  # minimum nad tloušťkou desky → skoro vše pod ním
+    assert w.session.document.thickness_map == {"limit": 20}
+    assert "Pod minimem 20.00 mm" in w.map_summary.text()
+    set_text(w.map_fields["step"], "nic")
+    assert "c0392b" in w.map_fields["step"].styleSheet()  # neplatné číslo → červeně
+    assert w.session.document.thickness_map == {"limit": 20}
+    set_text(w.map_fields["step"], "8")
+    assert w.session.thickness_map.step == 8 and w.map_fields["step"].styleSheet() == ""
+    action(w, "Zpět").trigger()
+    assert w.map_fields["step"].text() == "" and w.session.thickness_map.step != 8
+
+    target = tmp_path / "mapa.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    action(w, "Export bodů mapy do CSV…").trigger()
+    assert target.read_text(encoding="utf-8-sig").startswith("x [mm];y [mm];z [mm]")
+
+    action(w, "Mapa tloušťky stěny").trigger()  # vypnout
+    assert w.viewer.thickness_map is None and not w.session.map_visible
+    edit(w, "t", "20")
+    assert w.session.thickness_map is None  # vypnutá mapa se nepočítá
+    assert slot_errors == []

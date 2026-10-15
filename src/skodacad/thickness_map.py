@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +83,11 @@ class MapSettings:
 
 @dataclass(frozen=True)
 class ThicknessMap:
-    """Spočítaná mapa: trojúhelníky povrchu a tloušťka v jejich těžištích."""
+    """Spočítaná mapa: trojúhelníky povrchu a tloušťka v jejich těžištích.
+
+    Souhrnné hodnoty (minimum, nejčastější tloušťka …) se počítají jednou a pamatují
+    (``cached_property``) – barvení desítek tisíc uzlů by je jinak počítalo znovu a znovu.
+    """
 
     nodes: list[Point]
     triangles: list[tuple[int, int, int]]  # indexy do ``nodes`` (od 0), vně proti hodinám
@@ -95,25 +100,25 @@ class ThicknessMap:
 
     # --- souhrn ---------------------------------------------------------------------
 
-    @property
+    @cached_property
     def measured(self) -> list[float]:
         return [v for v in self.values if v is not None]
 
-    @property
+    @cached_property
     def minimum(self) -> float | None:
         return min(self.measured, default=None)
 
-    @property
+    @cached_property
     def maximum(self) -> float | None:
         return max(self.measured, default=None)
 
-    @property
+    @cached_property
     def thinnest(self) -> Point | None:
         """Kde je stěna nejtenčí (těžiště trojúhelníku s nejmenší tloušťkou)."""
         found = [(v, c) for v, c in zip(self.values, self.centers, strict=True) if v is not None]
         return min(found)[1] if found else None
 
-    @property
+    @cached_property
     def nominal(self) -> float | None:
         """Nejčastější tloušťka (medián vážený plochou) – u trubky či plechu jmenovitá stěna."""
         pairs = sorted((v, a) for v, a in zip(self.values, self.areas, strict=True)
@@ -125,11 +130,11 @@ class ThicknessMap:
                 return value
         return None
 
-    @property
+    @cached_property
     def total_area(self) -> float:
         return sum(self.areas)
 
-    @property
+    @cached_property
     def area_below(self) -> float:
         """Plocha [mm²], kde je stěna tenčí než minimální dovolená tloušťka."""
         limit = self.settings.limit
@@ -138,7 +143,7 @@ class ThicknessMap:
         return sum(a for v, a in zip(self.values, self.areas, strict=True)
                    if v is not None and v < limit)
 
-    @property
+    @cached_property
     def scale(self) -> tuple[float, float]:
         """Rozsah barevné škály (od – do) v mm."""
         low = self.minimum if self.minimum is not None else 0.0
@@ -152,6 +157,7 @@ class ThicknessMap:
 
     def node_colors(self) -> list[Color]:
         """Barva v každém uzlu (průměr tloušťky okolních trojúhelníků) – plynulá mapa."""
+        low, high = self.scale
         sums = [0.0] * len(self.nodes)
         counts = [0] * len(self.nodes)
         for triangle, value in zip(self.triangles, self.values, strict=True):
@@ -160,7 +166,9 @@ class ThicknessMap:
             for index in triangle:
                 sums[index] += value
                 counts[index] += 1
-        return [self.color(s / c if c else None) for s, c in zip(sums, counts, strict=True)]
+        limit = self.settings.limit
+        return [color_for(s / c if c else None, low, high, limit)
+                for s, c in zip(sums, counts, strict=True)]
 
     def summary(self) -> list[str]:
         """Souhrn česky (panel v okně, příkazová řádka)."""

@@ -228,6 +228,17 @@
   použitý druh značky zvlášť a do zprávy píše ovladač OpenGL – nový druh kreslení přidej i tam.
 - Zpráva self-testu se zapisuje průběžně a `faulthandler` k ní při pádu připíše zásobník
   Pythonu – v logu GitHubu je pak vidět řádek, kde proces spadl.
+- Mapa tloušťky (`AIS_Triangulation` s barvou v uzlech) se kreslí jen v režimu 0
+  (`SetDisplayMode(0)`, okno má výchozí 1 = nic se nenakreslí) a **bez osvětlení**
+  (`Graphic3d_TypeOfShadingModel_Unlit`) – jinak OCCT přimíchá výchozí materiál mosaz a
+  modrá vyjde olivově. Barva uzlu je `R + G<<8 + B<<16` (`HArray1_int`, bez alfa – int32).
+- Díl se pod mapou kreslí drátově (`AIS_WireFrame`, izočáry vypnuté) a zvýraznění výběru
+  jen obtahuje – plochy jde dál vybírat kliknutím a měřit, ale barvy mapy zůstanou vidět.
+- `ThicknessMap` počítá souhrn (`scale`, `nominal` …) přes `cached_property` – barvení
+  uzlů ho volá pro každý uzel a bez paměti by řadilo všechny body pořád dokola (minuty).
+- Paprsek tloušťky platí jen při „koncovém echu“ (`measure.RayCaster`): první protější stěna
+  musí být k paprsku natočená do 60°. Jinak (okraj jamky, drážky) by vyšlo nesmyslně malé
+  číslo – místo zůstane šedé („nejde změřit“), měření v bodě to řekne česky.
 - Self-test okna musí otevřít ukázku přes `MainWindow.open_model` (ne jen `show_part`) –
   měření i výběr jdou přes `ModelSession`, bez výsledku přepočtu se nic nezměří.
 

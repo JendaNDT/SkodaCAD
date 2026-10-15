@@ -25,6 +25,8 @@ from OCP.AIS import (
     AIS_Shaded,
     AIS_Shape,
     AIS_TextLabel,
+    AIS_Triangulation,
+    AIS_WireFrame,
 )
 from OCP.Aspect import (
     Aspect_DisplayConnection,
@@ -43,9 +45,11 @@ from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
     Graphic3d_MaterialAspect,
     Graphic3d_NameOfMaterial_Plastified,
+    Graphic3d_TypeOfShadingModel_Unlit,
     Graphic3d_ZLayerId_Topmost,
 )
 from OCP.OpenGl import OpenGl_GraphicDriver
+from OCP.Poly import Poly_Triangle, Poly_Triangulation
 from OCP.Prs3d import (
     Prs3d_LineAspect,
     Prs3d_PointAspect,
@@ -89,6 +93,14 @@ _DRAG_THRESHOLD = 3  # pixely; menší pohyb myši je pořád „klik“
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
     return Quantity_Color(r, g, b, Quantity_TOC_RGB)
+
+
+def _unlit(shown: Any) -> None:
+    """Barvy bez osvětlení a materiálu – přesně jako v legendě (jinak OCCT přimíchá
+    výchozí materiál „mosaz“ a modrá vyjde olivově)."""
+    drawer = shown.Attributes()
+    drawer.SetupOwnShadingAspect()
+    drawer.ShadingAspect().Aspect().SetShadingModel(Graphic3d_TypeOfShadingModel_Unlit)
 
 
 def _as_capsule(handle: int) -> Any:
@@ -170,6 +182,7 @@ class OccViewer(QWidget):
         self._ais: AIS_Shape | None = None
         self._highlight: AIS_Shape | None = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
+        self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self._pending: tuple[Any, bool] | None = None
         self._press: QPoint | None = None
@@ -194,6 +207,7 @@ class OccViewer(QWidget):
             self._ais = None
         self._remove_highlight()
         self._remove_measurement()
+        self._remove_map()
         if part is not None:
             ais = AIS_Shape(part.wrapped)
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -206,6 +220,8 @@ class OccViewer(QWidget):
             # Nekreslit hrany plošek vymodelovaného závitu (označené C2 v threads.py);
             # ostré i tečné hrany (zaoblení, G1/C1) zůstanou vidět.
             drawer.SetFaceBoundaryUpperContinuity(GeomAbs_C1)
+            drawer.UIsoAspect().SetNumber(0)  # drátěný režim (pod mapou tloušťky) bez izočar
+            drawer.VIsoAspect().SetNumber(0)
             context.Display(ais, False)
             context.Deactivate(ais)  # celé těleso ne, jen plochy a hrany
             context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_FACE))
@@ -270,35 +286,9 @@ class OccViewer(QWidget):
         if not self.ready:
             return
         self._remove_measurement()
-        color = _rgb(0.0, 0.55, 0.25)
         for start, end, text in lines:
-            begin, finish = gp_Pnt(*start), gp_Pnt(*end)
-            compound = TopoDS_Compound()
-            builder = BRep_Builder()
-            builder.MakeCompound(compound)
-            if begin.Distance(finish) > 1e-6:
-                builder.Add(compound, BRepBuilderAPI_MakeEdge(begin, finish).Edge())
-            for point in (begin, finish):
-                builder.Add(compound, BRepBuilderAPI_MakeVertex(point).Vertex())
-            line = AIS_Shape(compound)
-            line.SetColor(color)
-            line.SetWidth(3.0)
-            line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 2.0))
-            label = AIS_TextLabel()
-            label.SetText(TCollection_ExtendedString(text, True))
-            label.SetPosition(gp_Pnt((begin.X() + finish.X()) / 2, (begin.Y() + finish.Y()) / 2,
-                                     (begin.Z() + finish.Z()) / 2))
-            label.SetColor(_rgb(0.0, 0.22, 0.07))
-            # Jen prostý text: podklad (Aspect_TODT_SUBTITLE) shodí základní ovladač Windows
-            # bez grafické karty (GDI Generic, OpenGL 1.1) – ověřuje to self-test.
-            label.SetHeight(17)
-            label.SetFont("Arial")  # bezpatkové písmo (bez něj OCCT bere patkové)
-            label.SetFontAspect(Font_FA_Bold)  # tučně – čitelné i na šedém dílu
-            for shown in (line, label):
-                self._context.Display(shown, False)
-                self._context.Deactivate(shown)
-                self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
-                self._measure_objects.append(shown)
+            self._measure_objects += self._marker_objects(start, end, text,
+                                                          _rgb(0.0, 0.22, 0.07))
         self._view.Redraw()
 
     def graphics_info(self) -> str:
@@ -333,6 +323,29 @@ class OccViewer(QWidget):
             builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(0, 0, 0)).Vertex())
         shown: Any = AIS_Shape(compound)
         shown.SetColor(color)
+        if variant == "map":  # barevná síť (mapa tloušťky) a díl jen hranami
+            mesh = Poly_Triangulation(3, 1, False)
+            for i, point in enumerate(((0, 0, 0), (10, 0, 0), (0, 10, 0)), start=1):
+                mesh.SetNode(i, gp_Pnt(*point))
+            mesh.SetTriangle(1, Poly_Triangle(1, 2, 3))
+            from OCP.OCP.collections import HArray1_int
+
+            packed = HArray1_int(1, 3)
+            for i, value in enumerate((0x0000FF, 0x00FF00, 0xFF0000), start=1):
+                packed.SetValue(i, value)
+            shown = AIS_Triangulation(mesh)
+            shown.SetColors(packed)
+            shown.SetDisplayMode(0)
+            _unlit(shown)
+            self._context.Display(shown, False)
+            if self._ais is not None:
+                self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
+            self._view.Redraw()
+            self._context.Remove(shown, False)
+            if self._ais is not None:
+                self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
+            self._view.Redraw()
+            return
         if variant in ("point", "ball"):
             marker = Aspect_TOM_BALL if variant == "ball" else Aspect_TOM_POINT
             shown.Attributes().SetPointAspect(Prs3d_PointAspect(marker, color, 2.0))
@@ -349,6 +362,89 @@ class OccViewer(QWidget):
         self._view.Redraw()
         self._context.Remove(shown, False)
         self._view.Redraw()
+
+    def show_thickness_map(self, nodes: list, triangles: list, colors: list,
+                           marker: tuple[Any, str] | None = None) -> None:
+        """Barevná mapa tloušťky stěny přes díl. Díl se ukáže jen obrysem hran, ale plochy jde
+        dál vybírat kliknutím (měření v bodě). ``marker`` = (bod, popisek) nejtenčího místa."""
+        if not self.ready:
+            return
+        self._remove_map()
+        mesh = Poly_Triangulation(len(nodes), len(triangles), False)
+        for i, (x, y, z) in enumerate(nodes, start=1):
+            mesh.SetNode(i, gp_Pnt(x, y, z))
+        for i, (a, b, c) in enumerate(triangles, start=1):
+            mesh.SetTriangle(i, Poly_Triangle(a + 1, b + 1, c + 1))
+        from OCP.OCP.collections import HArray1_int
+
+        packed = HArray1_int(1, max(1, len(nodes)))
+        for i, (r, g, b) in enumerate(colors, start=1):  # barva uzlu: R + G<<8 + B<<16
+            packed.SetValue(i, int(r * 255) | int(g * 255) << 8 | int(b * 255) << 16)
+        colored = AIS_Triangulation(mesh)
+        colored.SetColors(packed)
+        colored.SetDisplayMode(0)  # AIS_Triangulation kreslí jen režim 0 (okno má výchozí 1)
+        _unlit(colored)
+        self._context.Display(colored, False)
+        self._context.Deactivate(colored)
+        self._map_objects.append(colored)
+        if marker is not None:
+            point, text = marker
+            self._map_objects += self._marker_objects(point, point, text, _rgb(0.55, 0.0, 0.55))
+        if self._ais is not None:
+            self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
+        self._highlight_fill(False)  # výběr jen obtáhnout, ať nezakryje barvy mapy
+        self._view.Redraw()
+
+    def hide_thickness_map(self) -> None:
+        if not self.ready:
+            return
+        self._remove_map()
+        self._view.Redraw()
+
+    def _remove_map(self) -> None:
+        if not self._map_objects:
+            return
+        for shown in self._map_objects:
+            self._context.Remove(shown, False)
+        self._map_objects = []
+        if self._ais is not None:
+            self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
+        self._highlight_fill(True)
+
+    def _highlight_fill(self, fill: bool) -> None:
+        for kind in (Prs3d_TypeOfHighlight_LocalSelected, Prs3d_TypeOfHighlight_LocalDynamic):
+            self._context.HighlightStyle(kind).SetDisplayMode(1 if fill else 0)
+
+    def _marker_objects(self, start: Any, end: Any, text: str, color: Any) -> list[Any]:
+        """Čára (nebo jen bod) s kuličkami na koncích a popiskem – navrch dílu."""
+        begin, finish = gp_Pnt(*start), gp_Pnt(*end)
+        compound = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(compound)
+        if begin.Distance(finish) > 1e-6:
+            builder.Add(compound, BRepBuilderAPI_MakeEdge(begin, finish).Edge())
+        for point in (begin, finish):
+            builder.Add(compound, BRepBuilderAPI_MakeVertex(point).Vertex())
+        line = AIS_Shape(compound)
+        line.SetColor(color)
+        line.SetWidth(3.0)
+        line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 2.0))
+        label = AIS_TextLabel()
+        label.SetText(TCollection_ExtendedString(text, True))
+        label.SetPosition(gp_Pnt((begin.X() + finish.X()) / 2, (begin.Y() + finish.Y()) / 2,
+                                 (begin.Z() + finish.Z()) / 2))
+        label.SetColor(color)
+        # Jen prostý text: podklad (Aspect_TODT_SUBTITLE) shodí základní ovladač Windows
+        # bez grafické karty (GDI Generic, OpenGL 1.1) – ověřuje to self-test.
+        label.SetHeight(17)
+        label.SetFont("Arial")  # bezpatkové písmo (bez něj OCCT bere patkové)
+        label.SetFontAspect(Font_FA_Bold)  # tučně – čitelné i na šedém dílu
+        shown = [line, label]
+        for item in shown:
+            self._context.Display(item, False)
+            self._context.Deactivate(item)
+            self._context.SetZLayer(item, Graphic3d_ZLayerId_Topmost)
+        return shown
 
     def _remove_measurement(self) -> None:
         for shown in self._measure_objects:

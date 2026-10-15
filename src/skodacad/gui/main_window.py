@@ -51,6 +51,7 @@ from skodacad.measure import SavedResult, Value, format_value
 from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
+from skodacad.thickness_map import BELOW_LIMIT, NO_MATERIAL, SCALE, ThicknessMap
 
 if TYPE_CHECKING:
     from skodacad.worker import BackgroundRebuilder
@@ -88,6 +89,11 @@ EXPORT_FORMATS = [
 ]
 
 
+def _swatch(color: tuple[float, float, float]) -> str:
+    r, g, b = (int(c * 255) for c in color)
+    return f'<span style="color: rgb({r}, {g}, {b});">■</span>'
+
+
 class MainWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
                  examples_dir: Path | None = None, user_dir: Path | None = None,
@@ -104,6 +110,7 @@ class MainWindow(QMainWindow):
         self._selected_id: str | None = None
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
         self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
+        self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -118,12 +125,15 @@ class MainWindow(QMainWindow):
         self._build_side_panel()
         self._build_editor_panel()
         self._build_measure_panel()
+        self._build_map_panel()
         self._build_menus()
         self.resize(1400, 860)
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
                          Qt.Orientation.Horizontal)
         self.resizeDocks([self.editor_dock, self.measure_dock], [420, 400],
                          Qt.Orientation.Vertical)
+        self.tabifyDockWidget(self.measure_dock, self.map_dock)
+        self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -194,6 +204,14 @@ class MainWindow(QMainWindow):
                                                       self.rename_measurement)
         self.delete_measurement_action = self._action("Smazat měření",
                                                       self.delete_measurement)
+        self.thickness_map_action = self._action("Mapa tloušťky stěny",
+                                                 self.toggle_thickness_map, "M")
+        self.thickness_map_action.setCheckable(True)
+        self.thickness_map_action.setToolTip("Obarví celý díl podle tloušťky stěny (NDT) – "
+                                             "červeně nejtenčí místa")
+        self.export_map_action = self._action("Export bodů mapy do CSV…", self.export_map)
+        self.export_map_action.setIconText("Export CSV…")
+        self.export_map_action.setEnabled(False)
         for action, short in ((self.save_measurement_action, "Uložit do modelu"),
                               (self.rename_measurement_action, "Přejmenovat…"),
                               (self.delete_measurement_action, "Smazat")):
@@ -318,6 +336,50 @@ class MainWindow(QMainWindow):
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _build_map_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        top = QHBoxLayout()
+        top.addWidget(self._tool_button(self.thickness_map_action))
+        top.addWidget(self._tool_button(self.export_map_action))
+        top.addStretch()
+        layout.addLayout(top)
+        form = QFormLayout()
+        self.map_fields: dict[str, QLineEdit] = {}
+        for key, label, hint in (
+                ("limit", "Minimální tloušťka [mm]", "bez hranice"),
+                ("step", "Krok bodů [mm]", "automaticky"),
+                ("scale_max", "Horní mez škály [mm]", "nejčastější tloušťka")):
+            field = QLineEdit()
+            field.setObjectName(f"map_{key}")
+            field.setPlaceholderText(hint)
+            field.editingFinished.connect(lambda k=key: self._map_field_edited(k))
+            self.map_fields[key] = field
+            form.addRow(label, field)
+        layout.addLayout(form)
+        self.map_legend = QLabel()
+        self.map_legend.setObjectName("map_legend")
+        self.map_legend.setMinimumHeight(18)
+        stops = ", ".join(f"stop:{t} rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})"
+                          for t, (r, g, b) in SCALE)
+        self.map_legend.setStyleSheet("border: 1px solid #777; background: qlineargradient("
+                                      f"x1:0, y1:0, x2:1, y2:0, {stops});")
+        layout.addWidget(self.map_legend)
+        self.map_scale_label = QLabel()
+        layout.addWidget(self.map_scale_label)
+        swatches = QLabel(f"{_swatch(BELOW_LIMIT)} pod minimem &nbsp; {_swatch(NO_MATERIAL)} "
+                          "nejde změřit (u okraje jamky či hrany)")
+        swatches.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(swatches)
+        self.map_summary = QLabel()
+        self.map_summary.setObjectName("map_summary")
+        self.map_summary.setWordWrap(True)
+        self.map_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.map_summary)
+        layout.addStretch()
+        self.map_dock = self._add_dock("Mapa tloušťky", "map_dock", panel,
+                                       Qt.DockWidgetArea.RightDockWidgetArea)
+
     def _add_dock(self, title: str, name: str, content: QWidget,
                   area: Qt.DockWidgetArea) -> QDockWidget:
         scroll = QScrollArea()
@@ -383,7 +445,11 @@ class MainWindow(QMainWindow):
         model_menu = bar.addMenu("&Model")
         model_menu.addAction(self.rebuild_action)
         model_menu.addAction(self.stop_action)
+        model_menu.addSeparator()
+        model_menu.addAction(self.thickness_map_action)
+        model_menu.addAction(self.export_map_action)
         toolbar.addAction(self.rebuild_action)
+        toolbar.addAction(self.thickness_map_action)
         toolbar.addSeparator()
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
         self._fill_selection_menu(selection_menu)
@@ -710,6 +776,7 @@ class MainWindow(QMainWindow):
         self._refresh_progress()
         self._update_highlight()
         self._refresh_saved_measurements()
+        self._refresh_thickness_map()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -755,6 +822,8 @@ class MainWindow(QMainWindow):
     def stop_rebuild(self) -> None:
         if self.session.cancel():
             self._pending_shown = False
+            if self.session.map_visible and self.session.thickness_map is None:
+                self.session.map_visible = False  # nedopočítaná mapa se vypne
             self._reload_all()
             self.statusBar().showMessage("Přepočet zastaven – model je zpět v posledním "
                                          "spočítaném stavu (Znovu změnu vrátí).", 10000)
@@ -915,7 +984,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(HELP_HINT)
             return
         text = info.text
-        if info.faces + info.edges == 2 and self._measured:
+        if self._measured and (info.faces + info.edges == 2 or self.session.map_visible):
             text += f"  ·  {self._measured[0].text}"  # hlavní hodnota měření
         hints = []
         if info.edges:
@@ -1066,6 +1135,96 @@ class MainWindow(QMainWindow):
         self._busy(lambda: self.session.remove_measurement(measurement_id))
         self._show_measure_line(None)
         self._refresh_all()
+
+    # --- mapa tloušťky stěny -------------------------------------------------------------
+
+    def toggle_thickness_map(self) -> None:
+        """Zapne/vypne barevnou mapu tloušťky stěny (počítá se na pozadí)."""
+        visible = self.thickness_map_action.isChecked()
+        if self.session.document is None:
+            self.thickness_map_action.setChecked(False)
+            return
+        if visible:
+            self.map_dock.raise_()
+        self._busy(lambda: self.session.show_thickness_map(visible))
+        self._refresh_all()
+
+    def _map_field_edited(self, key: str) -> None:
+        field = self.map_fields[key]
+        document = self.session.document
+        if document is None:
+            return
+        saved = (document.thickness_map or {}).get(key)
+        if field.text().strip() == ("" if saved is None else format_parameter_value(saved)):
+            field.setStyleSheet("")
+            return  # beze změny
+        try:
+            self._busy(lambda: self.session.set_map_setting(key, field.text()))
+        except DocumentError as exc:
+            field.setStyleSheet(_INVALID_STYLE)
+            field.setToolTip(str(exc))
+            self.statusBar().showMessage(f"Mapa tloušťky: {exc}", 10000)
+            return
+        field.setStyleSheet("")
+        field.setToolTip("")
+        self._refresh_all()
+
+    def _refresh_thickness_map(self) -> None:
+        """Mapa ve 3D a panel: nastavení z modelu, legenda, souhrn."""
+        session = self.session
+        found = session.thickness_map if session.map_visible else None
+        if found is not self._shown_map:
+            if found is None:
+                self.viewer.hide_thickness_map()
+            else:
+                x, y, z = found.thinnest or (0.0, 0.0, 0.0)
+                marker = ((x, y, z), f"min {number(found.minimum)} mm") \
+                    if found.thinnest is not None else None
+                self.viewer.show_thickness_map(found.nodes, found.triangles,
+                                               found.node_colors(), marker)
+            self._shown_map = found
+        settings = session.map_settings if session.document is not None else None
+        for key, field in self.map_fields.items():
+            field.setEnabled(session.document is not None)
+            if field.hasFocus() or settings is None:
+                continue
+            value = getattr(settings, key)
+            text = "" if value is None else format_parameter_value(
+                int(value) if float(value).is_integer() else value)
+            if field.text() != text:
+                field.setText(text)
+        self.thickness_map_action.setChecked(session.map_visible)
+        self.export_map_action.setEnabled(found is not None and not session.computing)
+        if found is not None:
+            low, high = found.scale
+            self.map_scale_label.setText(f"{number(low)} mm  ←  tenčí   ·   tlustší  →  "
+                                         f"{number(high)} mm a víc")
+            self.map_summary.setText("\n".join(found.summary()))
+        elif session.map_visible and session.computing:
+            self.map_scale_label.setText("")
+            self.map_summary.setText("⏳ Počítám mapu tloušťky stěny…")
+        elif session.map_visible and session.result is not None and session.result.map_error:
+            self.map_scale_label.setText("")
+            self.map_summary.setText(f"✕ {session.result.map_error}")
+        else:
+            self.map_scale_label.setText("")
+            self.map_summary.setText("Zapni mapu tlačítkem nahoře (nebo klávesou M): díl se "
+                                     "obarví podle tloušťky stěny. Kliknutím na místo ve 3D "
+                                     "změříš přesnou tloušťku (panel Měření).")
+
+    def export_map(self) -> None:
+        """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""
+        default = self.user_dir / f"{self.session.document.name or 'mapa'}-tloustka.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Export bodů mapy tloušťky", str(default),
+                                              "CSV pro Excel (*.csv)")
+        if not path:
+            return
+        try:
+            written = self.session.export_thickness_map(path)
+        except (DocumentError, OSError) as exc:
+            self._error("Export mapy se nepovedl", str(exc))
+            return
+        self.statusBar().showMessage(f"Body mapy uložené: {written}", 8000)
 
     def _show_context_menu(self, position: QPoint | None = None) -> None:
         """Pravý klik do 3D: co jde s výběrem udělat."""
