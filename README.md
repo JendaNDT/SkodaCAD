@@ -87,9 +87,17 @@ Ukázka: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys
 
 ### Díry podle strojnických tabulek
 
-Ukázka: *Soubor → Otevřít ukázku → deska*. Závit je jen **vyznačený** (jako v běžných CAD):
-díra má průměr vrtáku pod závit a u prvku je zapsáno „M8 závit, hl. 12“. Do STEP/STL jde
-jen díra, ne závit.
+Ukázka: *Soubor → Otevřít ukázku → deska*. Závit je ve výchozím stavu jen **vyznačený**
+(jako v běžných CAD): díra má průměr vrtáku pod závit a u prvku je zapsáno „M8 závit,
+hl. 12“. Do STEP/STL jde jen díra, ne závit.
+
+**Vymodelovaný závit pro 3D tisk:** u závitové díry zaškrtni *Vymodelovat závit (3D tisk)*.
+Vznikne skutečná šroubovice se základním profilem ISO 68-1 (úhel 60°, malý průměr
+D1 = D − 1,0825·P) zvětšená o *vůli pro tisk* (výchozí 0,2 mm na průměru – když šroub
+nejde zašroubovat, zvětši ji). Díra má ploché dno, závit vede po celé hloubce. Závit je
+složený z drobných plošek (nejvýš 0,05 mm od přesného tvaru – pod rozlišením tiskárny),
+protože s hladkou šroubovicí jádro OCCT neumí spolehlivě řezat. Přepočet trvá pár sekund
+(M3 nejdéle – nejvíc závitů); pro tisk doporučeno od M6.
 
 | Druh (`kind`) | Co vznikne | Tabulka | Velikosti |
 |---|---|---|---|
@@ -170,7 +178,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
-| `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr) |
+| `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).

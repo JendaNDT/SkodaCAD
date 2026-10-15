@@ -44,6 +44,7 @@
 | `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřená smyčka |
 | `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
+| `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")` |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped` |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -128,6 +129,17 @@
 - Vodorovně + svisle na jedné čáře není „spor“ – řešič ji smrskne do bodu. Skicář to hlásí.
 - Řešič je globální stav (`clear_sketch`) – volat jen z jednoho vlákna.
 
+## Známé pasti (vymodelovaný závit)
+
+- Tažení profilu po šroubovici (`sweep` + `Helix`) i plochy napnuté mezi šroubovicemi dávají
+  platná tělesa, ale **booleovské operace s nimi jsou v OCCT 8 nespolehlivé** (řez se tiše
+  neprovede nebo vrátí nesmysl, různě podle velikosti). Proto `threads.py` skládá drážku
+  z rovinných plošek se sdílenými hranami a řeže ji až po vyvrtání jádra.
+- Hrany plošek jsou označené C2 (`_mark_facet_edges`) a prohlížeč kreslí jen hrany do C1
+  (`SetFaceBoundaryUpperContinuity`) – jinak by byl závit posetý čarami trojúhelníků.
+- Objem drážky z plošek se od přesné šroubovice liší řádově o desetiny procenta; testy
+  ho porovnávají s Pappovou větou s tolerancí, ne přesně.
+
 ## Známé pasti (sestavení pro Windows)
 
 - `actions/upload-artifact` bez `include-hidden-files: true` vynechá složky s tečkou
@@ -153,7 +165,7 @@
   zaoblení, sražení, skořepina, exporty, testy.
 - [ ] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
   [ ] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
-  tabulek (vyznačený závit; [ ] modelovaný závit pro 3D tisk), [ ] pole a zrcadlení.
+  tabulek (vyznačený závit; [x] vymodelovaný závit pro 3D tisk), [ ] pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
 - [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun
