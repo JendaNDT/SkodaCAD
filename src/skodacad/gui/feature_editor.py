@@ -122,13 +122,15 @@ class FieldsForm(QWidget):
     def __init__(self, fields: tuple[Field, ...], data: dict[str, Any],
                  sketches: list[tuple[str, str]] | None = None,
                  parent: QWidget | None = None,
-                 profile_editor: ProfileEditor | None = None) -> None:
+                 profile_editor: ProfileEditor | None = None,
+                 features: list[tuple[str, str]] | None = None) -> None:
         super().__init__(parent)
         self._data = copy.deepcopy(data)
         self._sketches = sketches or []
+        self._features = features or []  # dřívější prvky, které jde opakovat (id, popis)
         self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
-        layout = QFormLayout(self)
+        self._layout = layout = QFormLayout(self)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for field in fields:
             widget, read = self._build(field, self._data.get(field.key))
@@ -140,6 +142,7 @@ class FieldsForm(QWidget):
             else:
                 layout.addRow(field.label, widget)
             self._rows.append((field, widget, read))
+        self._update_visibility()
 
     @property
     def data(self) -> dict[str, Any]:
@@ -147,6 +150,17 @@ class FieldsForm(QWidget):
 
     def widget(self, key: str) -> QWidget:
         return next(widget for field, widget, _ in self._rows if field.key == key)
+
+    def is_shown(self, key: str) -> bool:
+        """Je pole vidět? (Některá pole patří jen k jedné volbě, např. k druhu pole.)"""
+        return self._layout.isRowVisible(self.widget(key))
+
+    def _update_visibility(self) -> None:
+        defaults = {field.key: field.default for field, _, _ in self._rows}
+        for field, widget, _ in self._rows:
+            if field.when:
+                key, value = field.when
+                self._layout.setRowVisible(widget, self._data.get(key, defaults.get(key)) == value)
 
     # --- stavba polí -----------------------------------------------------------------
 
@@ -303,13 +317,17 @@ class FieldsForm(QWidget):
         button.clicked.connect(lambda _checked=False: open_sketcher())
         return holder, lambda: copy.deepcopy(kept[0])
 
-    def _build_point(self, field: Field, value: Any):
+    def _build_point3(self, field: Field, value: Any):
+        return self._build_point(field, value, ("x", "y", "z"))
+
+    def _build_point(self, field: Field, value: Any, axes: tuple[str, ...] = ("x", "y")):
         holder = QWidget()
         row = QHBoxLayout(holder)
         row.setContentsMargins(0, 0, 0, 0)
-        point = value if isinstance(value, list | tuple) and len(value) == 2 else [None, None]
+        valid = isinstance(value, list | tuple) and len(value) == len(axes)
+        point = value if valid else [None] * len(axes)
         edits = []
-        for axis, coordinate in zip(("x", "y"), point, strict=True):
+        for axis, coordinate in zip(axes, point, strict=True):
             edit = QLineEdit(_number_text(coordinate))
             edit.setObjectName(f"point_{axis}")
             edit.setPlaceholderText(f"{axis} = 0")
@@ -352,6 +370,40 @@ class FieldsForm(QWidget):
 
         return edit, read
 
+    def _build_features(self, field: Field, value: Any):
+        """Zaškrtávací seznam dřívějších prvků, které přidávají či ubírají materiál."""
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        selected = [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+        choices = list(self._features)
+        known = {key for key, _ in choices}
+        choices += [(key, f"{key} (není před tímto prvkem)") for key in selected
+                    if key not in known]
+        boxes: dict[str, QCheckBox] = {}
+        for key, label in choices:
+            box = QCheckBox(label)
+            box.setObjectName(f"feature_{key}")
+            box.setChecked(key in selected)
+            box.toggled.connect(self._commit)
+            column.addWidget(box)
+            boxes[key] = box
+        if not choices:
+            note = QLabel("Před tímto prvkem není nic k opakování – přidej nejdřív díru, "
+                          "výřez nebo výstupek.")
+            note.setWordWrap(True)
+            column.addWidget(note)
+
+        def read() -> Any:
+            checked = [key for key, box in boxes.items() if box.isChecked()]
+            if checked:
+                return checked
+            if field.required:
+                raise InvalidValue(f"{field.label}: zaškrtni aspoň jeden prvek.")
+            return MISSING
+
+        return holder, read
+
     def _build_shapes(self, field: Field, value: Any):
         editor = ShapesEditor(value or [], profile_editor=self._profile_editor)
         editor.edited.connect(self._commit)
@@ -383,6 +435,7 @@ class FieldsForm(QWidget):
             return
         if new != self._data:
             self._data = new
+            self._update_visibility()
             self.edited.emit(copy.deepcopy(new))
 
 
@@ -523,8 +576,10 @@ class FeatureEditor(QWidget):
         self.show_feature(None)
 
     def show_feature(self, feature: dict[str, Any] | None,
-                     sketches: list[tuple[str, str]] | None = None) -> None:
-        """Ukáže formulář prvku; ``sketches`` = skici před ním jako (id, popis)."""
+                     sketches: list[tuple[str, str]] | None = None,
+                     features: list[tuple[str, str]] | None = None) -> None:
+        """Ukáže formulář prvku; ``sketches`` = skici před ním jako (id, popis),
+        ``features`` = prvky před ním, které jde opakovat v poli a zrcadlit."""
         if self.form is not None:
             self._layout.removeWidget(self.form)
             self.form.hide()  # smaže se až později – do té doby nesmí překrývat nový formulář
@@ -542,7 +597,7 @@ class FeatureEditor(QWidget):
         self.title.setText(f"<b>{schema.label}</b> <span style='color:#777'>({feature['id']})"
                            f"</span><br><span style='color:#555'>{schema.help}</span>")
         self.form = FieldsForm(schema.fields, feature, sketches,
-                               profile_editor=self._profile_editor)
+                               profile_editor=self._profile_editor, features=features)
         self.form.setObjectName("feature_form")
         self.form.edited.connect(lambda data: self.changed.emit(self.feature_id, data))
         self.form.invalid.connect(self.invalid)

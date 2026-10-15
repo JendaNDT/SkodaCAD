@@ -19,6 +19,7 @@ from build123d import (
     Cone,
     Cylinder,
     Line,
+    Location,
     Part,
     Plane,
     PolarLocations,
@@ -59,6 +60,10 @@ class FeatureError(ValueError):
     """Prvek nejde spočítat (zpráva je česky pro uživatele)."""
 
 
+# Operace jednoho prvku: těleso a jestli materiál přidal („add“), nebo ubral („cut“).
+Operation = tuple[Part, str]
+
+
 @dataclass
 class BuildContext:
     """Stav během přepočtu modelu."""
@@ -66,6 +71,10 @@ class BuildContext:
     params: dict[str, float]
     part: Part | None = None
     sketches: dict[str, tuple[Plane, Sketch]] = field(default_factory=dict)
+    # Co který spočítaný prvek s dílem udělal (id → operace v pořadí). Pole a zrcadlení
+    # podle toho opakují prvky – stejné těleso přidají/odeberou na jiném místě.
+    operations: dict[str, list[Operation]] = field(default_factory=dict)
+    recording: list[Operation] | None = None  # operace právě počítaného prvku
 
     def num(self, value: Any) -> float:
         return evaluate(value, self.params)
@@ -87,8 +96,11 @@ class BuildContext:
             raise FeatureError(f"Skica „{sketch_id}“ neexistuje nebo je v modelu až později.")
         return self.sketches[sketch_id]
 
-    def apply(self, solid: Part, operation: str, label: str) -> None:
-        """Přidá nebo odebere těleso ``solid`` z dílu podle ``operation``."""
+    def apply(self, solid: Part, operation: str, label: str,
+              empty_cut: str = "zkontroluj rovinu skici, směr („direction“) a hloubku") -> None:
+        """Přidá nebo odebere těleso ``solid`` z dílu podle ``operation``.
+
+        ``empty_cut`` je rada pro uživatele, když řez nic neodebere."""
         if operation == "new":
             if self.part is not None:
                 raise FeatureError(
@@ -101,10 +113,7 @@ class BuildContext:
             part = self.require_part(label)
             result = part - solid
             if abs(part.volume - result.volume) < 1e-9 * max(1.0, part.volume):
-                raise FeatureError(
-                    f"{label}: řez neodebral žádný materiál – zkontroluj rovinu skici, "
-                    "směr („direction“) a hloubku."
-                )
+                raise FeatureError(f"{label}: řez neodebral žádný materiál – {empty_cut}.")
             if result.volume < 1e-9 * max(1.0, part.volume):
                 raise FeatureError(
                     f"{label}: řez by odebral celý díl – zmenši skicu nebo hloubku řezu."
@@ -112,6 +121,8 @@ class BuildContext:
             self.part = result
         else:
             raise FeatureError(f"Neznámá operace „{operation}“, povolené: new, add, cut.")
+        if self.recording is not None:
+            self.recording.append((solid, "cut" if operation == "cut" else "add"))
 
 
 @dataclass(frozen=True)
@@ -452,6 +463,123 @@ def _depth_through(part: Part, plane: Plane) -> float:
     return max(reach, 0.0) + 1.0
 
 
+# --- Pole a zrcadlení ----------------------------------------------------------------
+
+# Prvky, které přidávají nebo ubírají materiál – jen ty jde opakovat v poli a zrcadlit.
+REPEATABLE_FEATURES = ("extrude", "revolve", "hole", "pattern", "mirror")
+PATTERN_KINDS = ("circular", "linear")
+MAX_COPIES = 500
+_AXES = {"X": Vector(1, 0, 0), "Y": Vector(0, 1, 0), "Z": Vector(0, 0, 1)}
+
+
+def _whole_count(ctx: BuildContext, feature: dict[str, Any], key: str, label: str,
+                 default: int | None = None) -> int:
+    value = ctx.num(feature[key]) if key in feature else default
+    if value is None:
+        raise FeatureError(f"Chybí povinná hodnota „{key}“ ({label.lower()}).")
+    if value < 1 or value != int(value):
+        raise FeatureError(f"{label} musí být celé kladné číslo (je {value:g}).")
+    return int(value)
+
+
+def _source_operations(ctx: BuildContext, feature: dict[str, Any],
+                       label: str) -> list[Operation]:
+    """Operace prvků, které má pole/zrcadlení opakovat – v pořadí, jak vznikly v modelu."""
+    ids = feature.get("features")
+    if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+        raise FeatureError(f"{label}: vyber prvky, které se mají opakovat (např. díru nebo "
+                           "výřez) – „features“: [\"dira1\"].")
+    for feature_id in ids:
+        if feature_id not in ctx.operations:
+            raise FeatureError(f"{label}: prvek „{feature_id}“ neexistuje nebo je ve stromu až "
+                               "za tímto prvkem (případně má chybu).")
+        if not ctx.operations[feature_id]:
+            raise FeatureError(
+                f"{label}: prvek „{feature_id}“ sám nepřidává ani neubírá materiál (skica, "
+                "zaoblení, sražení, skořepina). Opakovat jde vysunutí, rotace, díry, pole a "
+                "zrcadlení – zaoblení dej do stromu až za tento prvek.")
+    wanted = set(ids)
+    return [op for feature_id, ops in ctx.operations.items() if feature_id in wanted
+            for op in ops]
+
+
+def _repeat(ctx: BuildContext, operations: list[Operation],
+            transforms: list[Callable[[Part], Part]], label: str, empty_cut: str) -> None:
+    """Každou operaci zopakuje na všech kopiích (kopie jedné operace najednou)."""
+    for solid, mode in operations:
+        copies = [transform(solid) for transform in transforms]
+        ctx.apply(copies[0] if len(copies) == 1 else Part() + copies, mode, label, empty_cut)
+
+
+def _pattern_transforms(ctx: BuildContext,
+                        feature: dict[str, Any]) -> list[Callable[[Part], Part]]:
+    kind = _choice(feature, "kind", PATTERN_KINDS, "circular")
+    if kind == "circular":
+        count = _whole_count(ctx, feature, "count", "Počet kopií")
+        axis_name = _choice(feature, "axis", tuple(_AXES), "Z")
+        raw = feature.get("center", [0, 0, 0])
+        if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+            raise FeatureError("Bod na ose („center“) musí být trojice souřadnic [x, y, z].")
+        axis = Axis(tuple(ctx.num(v) for v in raw), tuple(_AXES[axis_name]))
+        angle = ctx.num(feature.get("angle", 360))
+        if not 0 < angle <= 360:
+            raise FeatureError(f"Celkový úhel pole musí být v rozsahu (0, 360] stupňů "
+                               f"(je {angle:g}).")
+        if count < 2:
+            raise FeatureError("Pole potřebuje aspoň 2 kusy (počet je včetně původního).")
+        # Celý kruh: kopie rovnoměrně dokola. Výseč: první a poslední kus na krajích úhlu.
+        step = angle / count if abs(angle - 360) < 1e-9 else angle / (count - 1)
+        angles = [step * k for k in range(1, count)]
+        return [lambda s, a=a: s.rotate(axis, a) for a in angles]
+
+    directions = [(_choice(feature, "direction", tuple(_AXES), "X"), "count", "spacing", "")]
+    if feature.get("direction2") is not None:
+        directions.append((_choice(feature, "direction2", tuple(_AXES), "Y"), "count2",
+                           "spacing2", " ve druhém směru"))
+        if directions[1][0] == directions[0][0]:
+            raise FeatureError("Druhý směr mřížky musí být jiný než první.")
+    steps = [[Vector()]]
+    for axis_name, count_key, spacing_key, where in directions:
+        count = _whole_count(ctx, feature, count_key, f"Počet kusů{where}")
+        spacing = ctx.num(required(feature, spacing_key)) if count > 1 else 0.0
+        if count > 1 and abs(spacing) < 1e-9:
+            raise FeatureError(f"Rozteč{where} nesmí být 0 – kopie by ležely na sobě.")
+        steps.append([_AXES[axis_name] * (spacing * k) for k in range(count)])
+    offsets = [a + b for a in steps[1] for b in (steps[2] if len(steps) > 2 else [Vector()])]
+    offsets = offsets[1:]  # první je původní prvek
+    if not offsets:
+        raise FeatureError("Pole potřebuje aspoň 2 kusy (počet je včetně původního).")
+    return [lambda s, v=v: s.moved(Location(v)) for v in offsets]
+
+
+@feature("pattern", "Pole")
+def build_pattern(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    ctx.require_part("Pole")
+    transforms = _pattern_transforms(ctx, feature)
+    if len(transforms) + 1 > MAX_COPIES:
+        raise FeatureError(f"Pole má {len(transforms) + 1} kusů – víc než {MAX_COPIES} by se "
+                           "počítalo velmi dlouho. Zmenši počet.")
+    operations = _source_operations(ctx, feature, "Pole")
+    _repeat(ctx, operations, transforms, "Pole",
+            "kopie leží mimo díl, zkontroluj osu, směr, rozteč a počet")
+
+
+@feature("mirror", "Zrcadlení")
+def build_mirror(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    part = ctx.require_part("Zrcadlení")
+    plane = _resolve_plane(ctx, feature)
+    if feature.get("features"):
+        operations = _source_operations(ctx, feature, "Zrcadlení")
+        _repeat(ctx, operations, [lambda s: s.mirror(plane)], "Zrcadlení",
+                "zrcadlený prvek leží mimo díl nebo na stejném místě, zkontroluj rovinu")
+        return
+    mirrored = part.mirror(plane)  # celý díl: druhá polovina souměrného dílu
+    if abs((part + mirrored).volume - part.volume) < 1e-6 * max(1.0, part.volume):
+        raise FeatureError("Zrcadlení celého dílu nic nepřidalo – díl je podle této roviny už "
+                           "souměrný. Zvol jinou rovinu nebo ji posuň.")
+    ctx.apply(mirrored, "add", "Zrcadlení")
+
+
 def describe(feature: dict[str, Any]) -> str:
     """Krátký popis prvku pro výpis stromu."""
     label = FEATURE_TYPES[feature["type"]].label_cz if feature["type"] in FEATURE_TYPES else "?"
@@ -462,4 +590,18 @@ def describe(feature: dict[str, Any]) -> str:
         text += f" – {hole_summary(feature.get('kind', 'tapped'), feature['size'], count)}"
         if feature.get("modeled_thread"):
             text += " (vymodelovaný)"
+    elif feature["type"] == "pattern":
+        count = _plain(feature.get("count", "?"))
+        if feature.get("kind", "circular") == "circular":
+            text += f" – {count}× dokola"
+        elif feature.get("direction2") is not None:
+            text += f" – mřížka {count} × {_plain(feature.get('count2', '?'))}"
+        else:
+            text += f" – {count}× v řadě"
+    elif feature["type"] == "mirror" and not feature.get("features"):
+        text += " – celý díl"
     return text
+
+
+def _plain(value: Any) -> str:
+    return f"{value:g}" if isinstance(value, (int, float)) else str(value)

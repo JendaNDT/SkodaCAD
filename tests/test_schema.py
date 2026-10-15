@@ -101,3 +101,37 @@ def test_new_feature_ids_are_unique_and_index_aware():
     inserted = new_feature("extrude", features, index=1)  # vložení hned za první skicu
     assert inserted["sketch"] == "sketch1"
     assert inserted["id"] == "extrude2"
+
+
+def test_new_pattern_and_mirror_repeat_the_feature_before_them():
+    features = []
+    add(features, "sketch")
+    add(features, "extrude")
+    hole = add(features, "hole", positions=[[-10, 5]], through_all=True)
+    one = 40 * 30 * 10 - build(features).part.volume
+    pattern = add(features, "pattern")
+    assert pattern["features"] == [hole["id"]] and pattern["kind"] == "linear"
+    assert build(features).part.volume == pytest.approx(40 * 30 * 10 - 3 * one)
+    mirror = add(features, "mirror")
+    assert mirror["features"] == [pattern["id"]] and mirror["plane"] == "YZ"
+    # kopie v x = 0 a 10 by podle YZ padly na díry v 0 a −10 → chyba „na stejném místě“
+    assert "na stejném místě" in rebuild(make_doc(features)).first_error.message
+    mirror["plane"] = "XZ"  # podle XZ vzniknou 2 nové díry v y = −5
+    assert build(features).part.volume == pytest.approx(40 * 30 * 10 - 5 * one)
+
+
+def test_new_mirror_without_feature_doubles_whole_part():
+    features = []
+    add(features, "sketch")
+    add(features, "extrude")
+    mirror = add(features, "mirror")
+    assert "features" not in mirror and mirror["plane"] == "right"
+    assert build(features).part.volume == pytest.approx(2 * 40 * 30 * 10)
+
+
+def test_pattern_fields_shown_by_kind_exist():
+    fields = {f.key: f for f in FEATURE_SCHEMAS["pattern"].fields}
+    for field in fields.values():
+        if field.when:
+            key, value = field.when
+            assert value in {k for k, _ in fields[key].choices}

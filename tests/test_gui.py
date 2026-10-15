@@ -545,3 +545,50 @@ def test_modeled_thread_checkbox(empty_window):
     assert selected_text(w).endswith("M12 závit (vymodelovaný)")
     assert w.session.result.ok
     assert w.session.properties.volume_mm3 < before  # drážka závitu ubrala materiál
+
+
+def test_pattern_and_mirror_from_tree(empty_window):
+    w = empty_window
+    build_box(w)  # kvádr 40 × 30 × 10
+    action(w, "Díra").trigger()
+    positions = form_field(w, "positions")
+    positions.setPlainText("-10; 5")
+    positions.editingFinished.emit()
+    one = 40 * 30 * 10 - w.session.properties.volume_mm3
+    action(w, "Pole").trigger()  # vybraná je díra → pole ji rovnou opakuje
+    assert selected_text(w) == "✓  Pole „Pole 1“ – 3× v řadě"
+    form = w.feature_editor.form
+    assert form.widget("features").findChild(QtWidgets.QCheckBox, "feature_hole1").isChecked()
+    assert form.is_shown("spacing") and not form.is_shown("axis")
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
+
+    kind = form_field(w, "kind")
+    kind.setCurrentIndex(kind.findData("circular"))  # 3× dokola kolem osy Z
+    assert form.is_shown("axis") and form.is_shown("center") and not form.is_shown("spacing")
+    assert w.session.feature("pattern1")["kind"] == "circular"
+    assert selected_text(w) == "✓  Pole „Pole 1“ – 3× dokola"
+    set_text(form_field(w, "center").findChild(QtWidgets.QLineEdit, "point_z"), "4")
+    assert w.session.feature("pattern1")["center"] == [0, 0, 4]
+    assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
+
+    action(w, "Zrcadlení").trigger()  # zrcadlí pole podle YZ
+    assert w.session.feature("mirror1")["features"] == ["pattern1"]
+    box = form_field(w, "features").findChild(QtWidgets.QCheckBox, "feature_pattern1")
+    box.setChecked(False)  # nic nezaškrtnuto → zrcadlí se celý díl
+    assert "features" not in w.session.feature("mirror1")
+    plane = form_field(w, "plane")
+    plane.setCurrentIndex(plane.findData("right"))
+    assert selected_text(w) == "✓  Zrcadlení „Zrcadlení 1“ – celý díl"
+    assert w.session.properties.volume_mm3 == pytest.approx(2 * (40 * 30 * 10 - 3 * one))
+
+
+def test_pattern_needs_a_checked_feature(empty_window):
+    w = empty_window
+    build_box(w)
+    action(w, "Pole").trigger()  # před ním je jen základní těleso → nic zaškrtnuté
+    assert w.session.result.first_error.id == "pattern1"
+    assert "vyber prvky" in w.session.result.first_error.message
+    form = form_field(w, "features")
+    form.findChild(QtWidgets.QCheckBox, "feature_extrude1").setChecked(True)
+    form.findChild(QtWidgets.QCheckBox, "feature_extrude1").setChecked(False)
+    assert "zaškrtni aspoň jeden prvek" in w.statusBar().currentMessage()

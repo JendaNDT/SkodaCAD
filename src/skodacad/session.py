@@ -50,7 +50,8 @@ _UNDO_LIMIT = 100
 # se přeskočí, aby se např. parametr „top“ nespletl s plochou „top“.
 _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "direction", "axis",
                         "shape", "mode", "face", "between", "parallel", "open_faces",
-                        "through_all", "kind", "size", "fit", "modeled_thread"}
+                        "through_all", "kind", "size", "fit", "modeled_thread", "features",
+                        "direction2"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
 SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole")
 
@@ -232,7 +233,8 @@ class ModelSession:
     def delete_feature(self, feature_id: str) -> BuildResult:
         index = self.feature_index(feature_id)
         document = self._require()
-        users = [describe(f) for f in document.features if f.get("sketch") == feature_id]
+        users = [describe(f) for f in document.features
+                 if f.get("sketch") == feature_id or feature_id in (f.get("features") or [])]
         if users:
             raise DocumentError(f"{describe(document.features[index])} používá "
                                 f"{', '.join(users)}. Smaž nebo uprav nejdřív ty prvky.")
