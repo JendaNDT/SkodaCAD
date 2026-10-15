@@ -13,8 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from build123d import (
+    Align,
     Axis,
     Circle,
+    Cone,
+    Cylinder,
     Line,
     Part,
     Plane,
@@ -37,6 +40,9 @@ from build123d import (
 )
 
 from skodacad.expressions import evaluate
+from skodacad.holes import KINDS as HOLE_KINDS
+from skodacad.holes import HoleError, HoleShape, hole_shape, point_height
+from skodacad.holes import summary as hole_summary
 from skodacad.selectors import (
     BASE_PLANES,
     FACE_DIRECTIONS,
@@ -362,8 +368,63 @@ def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
         ) from None
 
 
+# --- Díry --------------------------------------------------------------------------
+
+_TOP = (Align.CENTER, Align.CENTER, Align.MAX)  # horní podstava v z = 0, těleso jde do −Z
+
+
+def _hole_tool(shape: HoleShape, length: float) -> Part:
+    """Těleso, které se z dílu odebere: osa Z, povrch v z = 0, díra míří do −Z."""
+    radius = shape.diameter / 2
+    tool = Cylinder(radius, length, align=_TOP)
+    if shape.point:
+        tool += Pos(0, 0, -length) * Cone(0, radius, point_height(shape.diameter), align=_TOP)
+    if shape.counterbore:
+        big, deep = shape.counterbore
+        tool += Cylinder(big / 2, deep, align=_TOP)
+    if shape.countersink:
+        big = shape.countersink / 2
+        tool += Cone(radius, big, big - radius, align=_TOP)
+    return tool
+
+
+@feature("hole", "Díra")
+def build_hole(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    part = ctx.require_part("Díra")
+    plane = _resolve_plane(ctx, feature)
+    kind = _choice(feature, "kind", tuple(HOLE_KINDS), "tapped")
+    positions = feature.get("positions", [[0, 0]])
+    if not isinstance(positions, list) or not positions:
+        raise FeatureError("Díra potřebuje aspoň jednu polohu v „positions“, např. [[0, 0]].")
+    points = [_point(ctx, point, "Poloha díry") for point in positions]
+
+    def optional(key: str) -> float | None:
+        return ctx.num(feature[key]) if key in feature else None
+
+    through_all = bool(feature.get("through_all", False))
+    try:
+        shape = hole_shape(kind, str(required(feature, "size")), feature.get("fit", "medium"),
+                           depth=optional("depth"), through_all=through_all,
+                           thread_depth=optional("thread_depth"),
+                           diameter=optional("diameter"))
+    except HoleError as exc:
+        raise FeatureError(str(exc)) from None
+    if shape.diameter <= 0:
+        raise FeatureError("Průměr díry musí být větší než 0.")
+    length = shape.depth
+    if length is None:  # skrz celý díl
+        length = part.bounding_box().diagonal + (part.center() - plane.origin).length
+    tool = _hole_tool(shape, length)
+    tools = [plane * Pos(x, y) * tool for x, y in points]
+    ctx.apply(tools[0] if len(tools) == 1 else Part() + tools, "cut", "Díra")
+
+
 def describe(feature: dict[str, Any]) -> str:
     """Krátký popis prvku pro výpis stromu."""
     label = FEATURE_TYPES[feature["type"]].label_cz if feature["type"] in FEATURE_TYPES else "?"
     name = feature.get("name")
-    return f"{label} „{name}“" if name else f"{label} {feature['id']}"
+    text = f"{label} „{name}“" if name else f"{label} {feature['id']}"
+    if feature["type"] == "hole" and isinstance(feature.get("size"), str):
+        count = len(feature.get("positions") or [None])
+        text += f" – {hole_summary(feature.get('kind', 'tapped'), feature['size'], count)}"
+    return text

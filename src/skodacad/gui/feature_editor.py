@@ -339,8 +339,9 @@ class FieldsForm(QWidget):
                 if len(parts) != 2:
                     raise InvalidValue(f"Řádek {number_}: napiš bod jako  x; y")
                 points.append([parse_number(part, coordinate) for part in parts])
-            if len(points) < 3:
-                raise InvalidValue("Mnohoúhelník potřebuje aspoň 3 body.")
+            if len(points) < field.min_count:
+                raise InvalidValue(f"{field.label}: potřeba aspoň {field.min_count} "
+                                   f"{'bod' if field.min_count == 1 else 'body'}.")
             return points
 
         return edit, read
