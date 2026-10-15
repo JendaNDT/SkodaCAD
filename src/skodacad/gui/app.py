@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import logging
 import os
 import sys
@@ -126,9 +127,37 @@ def _screenshot(window, path: Path) -> None:
     log.info("Snímek okna uložen do %s", path)
 
 
+class _Report(list):
+    """Řádky zprávy self-testu – každý se hned zapíše do souboru, aby po pádu procesu
+    (pád v knihovně OCCT nebo OpenGL) bylo vidět, kam test došel."""
+
+    def __init__(self, stream) -> None:
+        super().__init__()
+        self.stream = stream
+
+    def append(self, line: str) -> None:
+        super().append(line)
+        self.stream.write(line + "\n")
+        self.stream.flush()
+        log.info("Self-test: %s", line)
+
+    def __iadd__(self, lines):
+        for line in lines:
+            self.append(line)
+        return self
+
+
 def run_self_test(report_path: Path) -> int:
     """Kontrola sestavené aplikace: jádro, exporty, ukázky a 3D prohlížeč."""
-    lines: list[str] = []
+    with open(report_path, "w", encoding="utf-8") as stream:
+        faulthandler.enable(stream, all_threads=True)  # pád procesu → kde se to stalo
+        try:
+            return _run_self_test(_Report(stream))
+        finally:
+            faulthandler.disable()
+
+
+def _run_self_test(lines: _Report) -> int:
     ok = True
     try:
         import build123d
@@ -171,8 +200,6 @@ def run_self_test(report_path: Path) -> int:
         lines.append("✕ Neočekávaná chyba:\n" + traceback.format_exc())
 
     lines.append("VÝSLEDEK: OK" if ok else "VÝSLEDEK: CHYBA")
-    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    log.info("Self-test: %s", "OK" if ok else "CHYBA")
     return 0 if ok else 1
 
 
