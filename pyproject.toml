@@ -9,7 +9,8 @@ description = "Osobní parametrický 3D CAD postavený na build123d / Open CASCA
 readme = "README.md"
 requires-python = ">=3.11"
 # Verze jádra je zamčená, aby AI negenerovala kód pro jiné API (viz CLAUDE.md).
-dependencies = ["build123d==0.13.0"]
+# slvs = řešič vazeb skici ze SolveSpace (GPL, pro osobní použití v pořádku).
+dependencies = ["build123d==0.13.0", "slvs==3.2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]

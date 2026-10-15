@@ -15,11 +15,13 @@ Druhy polí (``Field.kind``):
 * ``point`` – bod [x, y]
 * ``points`` – seznam bodů [[x, y], …]
 * ``shapes`` – seznam tvarů skici
+* ``profile`` – obrys z úseček a oblouků s vazbami (upravuje se ve skicáři)
 * ``text`` – obyčejný text
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -157,8 +159,31 @@ SHAPE_SCHEMAS: dict[str, Schema] = {
             Field("points", "Body", "points"),
             *_COMMON_SHAPE_FIELDS,
         )),
+        Schema("profile", "Obrys z čar (s vazbami)", (
+            Field("segments", "Obrys", "profile"),
+            *_COMMON_SHAPE_FIELDS,
+        ), "Úsečky a oblouky, vazby a kóty – upravuje se ve skicáři."),
     )
 }
+
+
+def _rectangle_profile(width: float, height: float) -> dict[str, Any]:
+    """Obdélníkový obrys s rohem v počátku, plně určený vazbami – výchozí bod pro skicář."""
+    points = {"A": [0, 0], "B": [width, 0], "C": [width, height], "D": [0, height]}
+    names = list(points)
+    segments = {f"s{i + 1}": {"type": "line", "start": names[i], "end": names[(i + 1) % 4]}
+                for i in range(4)}
+    constraints = [
+        {"type": "coincident", "point": "A", "on": "origin"},
+        {"type": "horizontal", "segment": "s1"},
+        {"type": "vertical", "segment": "s2"},
+        {"type": "horizontal", "segment": "s3"},
+        {"type": "vertical", "segment": "s4"},
+        {"type": "length", "segment": "s1", "value": width},
+        {"type": "length", "segment": "s2", "value": height},
+    ]
+    return {"shape": "profile", "points": points, "segments": segments,
+            "constraints": constraints}
 
 # Výchozí tvary pro nové skici a nově přidané tvary.
 SHAPE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -169,11 +194,12 @@ SHAPE_DEFAULTS: dict[str, dict[str, Any]] = {
     "regular_polygon": {"shape": "regular_polygon", "sides": 6, "diameter": 20},
     "slot": {"shape": "slot", "length": 20, "width": 6},
     "polygon": {"shape": "polygon", "points": [[0, 0], [30, 0], [0, 20]]},
+    "profile": _rectangle_profile(40, 30),
 }
 
 
 def new_shape(shape_type: str) -> dict[str, Any]:
-    return dict(SHAPE_DEFAULTS[shape_type])
+    return copy.deepcopy(SHAPE_DEFAULTS[shape_type])
 
 
 def new_feature(feature_type: str, existing: list[dict[str, Any]],

@@ -65,4 +65,4 @@ def test_version_1_files_still_load_and_save_as_current(tmp_path):
     document = Document.from_dict({"format": "skodacad", "version": 1, "features": []})
     path = tmp_path / "stary.json"
     document.save(path)
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == VERSION == 2
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == VERSION == 3

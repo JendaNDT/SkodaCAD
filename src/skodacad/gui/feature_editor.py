@@ -263,6 +263,16 @@ class FieldsForm(QWidget):
         kept = copy.deepcopy(value)
         return label, lambda: copy.deepcopy(kept)
 
+    def _build_profile(self, field: Field, value: Any):
+        """Obrys z čar: souhrn (body, čáry, vazby). Upravuje se ve skicáři."""
+        data = self._data
+        counts = (len(data.get("points") or {}), len(data.get("segments") or {}),
+                  len(data.get("constraints") or []))
+        label = QLabel(f"{counts[0]} bodů, {counts[1]} čar, {counts[2]} vazeb")
+        label.setWordWrap(True)
+        kept = copy.deepcopy(value)
+        return label, lambda: copy.deepcopy(kept)
+
     def _build_point(self, field: Field, value: Any):
         holder = QWidget()
         row = QHBoxLayout(holder)

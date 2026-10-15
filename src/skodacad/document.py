@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 2,
+      "version": 3,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -26,10 +26,11 @@ from pathlib import Path
 from typing import Any
 
 FORMAT = "skodacad"
-# Verze 2 přidala do výběru hran klíče „between“, „near“ a seznam výběrů (výběr kliknutím).
-# Verze 1 je její podmnožina, takže se načte beze změny.
-VERSION = 2
-SUPPORTED_VERSIONS = (1, 2)
+# Verze 2 přidala do výběru hran klíče „between“, „near“ a seznam výběrů (výběr kliknutím),
+# verze 3 tvar skici „profile“ (obrys z úseček a oblouků s vazbami). Starší verze jsou
+# podmnožinou, takže se načtou beze změny.
+VERSION = 3
+SUPPORTED_VERSIONS = (1, 2, 3)
 
 
 class DocumentError(ValueError):

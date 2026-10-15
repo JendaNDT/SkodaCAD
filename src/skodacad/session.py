@@ -469,6 +469,15 @@ def _count(n: int, one: str, few: str, many: str) -> str:
 
 def _uses_name(value: Any, name: str) -> bool:
     """Používá prvek (nebo jeho část) parametr ``name`` v nějakém výrazu?"""
+    if isinstance(value, dict) and value.get("shape") == "profile":
+        # V obrysu jsou výrazy jen v souřadnicích bodů a hodnotách kót; jinde jsou jména
+        # bodů a čar („A“, „s1“), která se nesmí splést s parametrem stejného jména.
+        coordinates = list((value.get("points") or {}).values())
+        dimensions = [c.get("value") for c in value.get("constraints") or []
+                      if isinstance(c, dict)]
+        rest = {k: v for k, v in value.items()
+                if k not in ("shape", "points", "segments", "constraints")}
+        return any(_uses_name(part, name) for part in (coordinates, dimensions, rest))
     if isinstance(value, dict):
         return any(_uses_name(v, name) for k, v in value.items() if k not in _NOT_EXPRESSION_KEYS)
     if isinstance(value, list):
