@@ -254,7 +254,8 @@ def test_keyboard_shortcuts_switch_tools(sketcher):
     sketcher.activateWindow()  # zkratky fungují jen v aktivním okně (ve Windows je)
     QTest.qWaitForWindowActive(sketcher, 2000)
     sketcher.canvas.setFocus()
-    for key, tool in ((Qt.Key.Key_S, "select"), (Qt.Key.Key_A, "arc"), (Qt.Key.Key_L, "line")):
+    for key, tool in ((Qt.Key.Key_S, "select"), (Qt.Key.Key_A, "arc"), (Qt.Key.Key_R, "circle"),
+                      (Qt.Key.Key_L, "line")):
         QTest.keyClick(sketcher.canvas, key)
         assert sketcher.tool == tool
     sketcher.hide()
@@ -283,3 +284,126 @@ def test_mouse_clicks_draw_and_select(sketcher):
                      at(7.5, 10))
     assert sketcher.selection == ["s1", "s3"]
     sketcher.hide()
+
+
+# --- kružnice a vazby mezi tvary --------------------------------------------------------
+
+
+def dimensioned_rectangle(d, answers, width="40", height="30"):
+    draw_rectangle(d)
+    answers += [width, height]
+    d.set_tool("select")
+    d.click(20, 0.2)
+    d.add_dimension()
+    d.click(float(width), 15)
+    d.add_dimension()
+    assert d.solution.dof == 0
+
+
+def test_circle_hole_with_diameter_and_position(sketcher, answers):
+    dimensioned_rectangle(sketcher, answers)
+    sketcher.set_tool("circle")
+    sketcher.click(12, 10)  # střed
+    sketcher.click(16, 10)  # bod na obvodu → poloměr 4
+    profile = sketcher.result_profile()
+    circle = profile["segments"]["k1"]
+    assert circle["type"] == "circle" and circle["radius"] == pytest.approx(4)
+    sketcher.set_tool("select")
+    sketcher.click(12 + 4 / math.sqrt(2), 10 + 4 / math.sqrt(2))  # klik na obvod
+    assert sketcher.selection == ["k1"]
+    answers.append("10")
+    sketcher.add_dimension()  # u kružnice průměr
+    assert sketcher.profile["constraints"][-1] == {"type": "diameter", "segment": "k1",
+                                                   "value": 10}
+    assert sketcher.profile["segments"]["k1"]["radius"] == pytest.approx(5)
+    center = sketcher.profile["segments"]["k1"]["center"]
+    for line, value in (("s1", "12"), ("s4", "15")):  # vzdálenost středu od hran
+        sketcher.select([center, line])
+        answers.append(value)
+        sketcher.add_dimension()
+    assert sketcher.solution.dof == 0
+    assert sketcher.profile["points"][center] == pytest.approx([15, 12])
+    labels = [sketcher.dimension_label(c)[1] for c in sketcher.profile["constraints"]
+              if c["type"] == "diameter"]
+    assert labels == ["Ø10"]
+
+
+def test_tangent_line_and_circle_from_buttons(sketcher, answers):
+    dimensioned_rectangle(sketcher, answers)
+    sketcher.set_tool("circle")
+    sketcher.click(20, 8)
+    sketcher.click(25, 8)
+    sketcher.set_tool("select")
+    sketcher.select(["s1", "k1"])
+    sketcher.constraint_actions["tangent"].trigger()  # kružnice se dotkne spodní hrany
+    center = sketcher.profile["segments"]["k1"]["center"]
+    radius = sketcher.profile["segments"]["k1"]["radius"]
+    assert sketcher.profile["points"][center][1] == pytest.approx(radius)
+    sketcher.set_tool("circle")
+    sketcher.click(30, 20)
+    sketcher.click(32, 20)
+    sketcher.set_tool("select")
+    sketcher.select(["k1", "k2"])
+    sketcher.constraint_actions["equal"].trigger()
+    assert sketcher.profile["segments"]["k2"]["radius"] == pytest.approx(
+        sketcher.profile["segments"]["k1"]["radius"])
+    sketcher.select(["k1", "k2"])
+    sketcher.constraint_actions["concentric"].trigger()
+    assert "už mají společný střed" not in sketcher.status.text()
+    assert sketcher.solution.ok
+
+
+def test_symmetric_and_concentric_buttons_need_right_selection(sketcher):
+    draw_rectangle(sketcher)
+    sketcher.set_tool("select")
+    sketcher.select(["s1"])
+    sketcher.constraint_actions["concentric"].trigger()
+    assert "dva oblouky nebo kružnice" in sketcher.status.text()
+    sketcher.select(["P1", "P3", "s1"])
+    sketcher.constraint_actions["symmetric"].trigger()
+    assert sketcher.profile["constraints"][-1] == {"type": "symmetric",
+                                                   "points": ["P1", "P3"], "segment": "s1"}
+
+
+def test_drag_circle_changes_radius(sketcher):
+    sketcher.set_tool("circle")
+    sketcher.click(0, 0)  # střed v počátku
+    sketcher.click(5, 0)
+    sketcher.set_tool("select")
+    sketcher.press(0, 5)  # obvod nahoře
+    sketcher.move(0, 9)
+    sketcher.release(0, 9)
+    assert sketcher.profile["segments"]["k1"]["radius"] == pytest.approx(9)
+    sketcher.undo()
+    assert sketcher.profile["segments"]["k1"]["radius"] == pytest.approx(5)
+
+
+def test_circle_center_on_point_and_rim_on_point(sketcher):
+    draw_rectangle(sketcher)
+    sketcher.set_tool("circle")
+    sketcher.click(0, 0)  # střed na rohu P1
+    sketcher.click(40, 0)  # obvod na rohu P2 → bod na kružnici
+    circle = sketcher.profile["segments"]["k1"]
+    assert circle["center"] == "P1"
+    assert {"type": "coincident", "point": "P2", "on": "k1"} in sketcher.profile["constraints"]
+    assert "se navzájem kříží" in sketcher.status.text()  # kružnice přetíná obdélník
+    sketcher.undo()
+    assert "kříží" not in sketcher.status.text()
+
+
+def test_hole_from_sketcher_is_cut_in_the_part(window, monkeypatch, answers):
+    def draw(self, dialog):
+        dimensioned_rectangle(dialog, answers, "40", "30")
+        dialog.set_tool("circle")
+        dialog.click(20, 15)
+        dialog.click(24, 15)
+        dialog.set_tool("select")
+        dialog.select(["k1"])
+        answers.append("10")
+        dialog.add_dimension()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(type(window), "_exec_dialog", draw)
+    window.profile_sketch_action.trigger()
+    window.add_feature_actions["extrude"].trigger()
+    assert window.session.properties.volume_mm3 == pytest.approx((40 * 30 - math.pi * 25) * 10)

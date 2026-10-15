@@ -69,13 +69,14 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
 1. Nástroj **Úsečka** (`L`): klikej body obrysu. Klik na existující bod čáry napojí, klik do
    počátku (zelený kroužek) obrys k počátku připne. Skoro vodorovná/svislá čára dostane vazbu
    sama. Konec řetězu: `Esc` nebo pravé tlačítko. **Oblouk** (`A`): začátek, konec a bod,
-   kudy má vést.
+   kudy má vést. **Kružnice** (`R`): střed a bod na obvodu – střed na existujícím bodě (třeba
+   středu oblouku) ji udělá soustřednou, obvod na existujícím bodě ho na kružnici připne.
 2. Nástroj **Výběr** (`S`): klikni na čáru nebo bod (`Ctrl` = přidat další) a přidej vazbu
    tlačítkem vlevo – *Vodorovně, Svisle, Rovnoběžně, Kolmo, Tečně, Stejně velké, Na bodě/čáře,
-   Uprostřed, Pevný bod*.
-3. **Kóta…** (`D`): úsečka = délka, oblouk = poloměr, dva body nebo bod a čára = vzdálenost,
-   dvě úsečky = úhel. Hodnota může být číslo i výraz s parametrem (`sirka`, `D/2`) – obrys se
-   pak mění s parametrem.
+   Uprostřed, Soustředně, Souměrně, Pevný bod*. Tažením obvodu kružnice měníš její velikost.
+3. **Kóta…** (`D`): úsečka = délka, oblouk = poloměr, kružnice = průměr (Ø), dva body nebo
+   bod a čára = vzdálenost, dvě úsečky = úhel. Hodnota může být číslo i výraz s parametrem
+   (`sirka`, `D/2`) – obrys se pak mění s parametrem.
 4. Dole vpravo je vidět, kolik rozměrů **zbývá určit** (modrý obrys jde ještě táhnout myší),
    nebo **✓ plně určeno** (černý obrys). Vazby, které si odporují, jsou **červeně** – smaž je
    (*Smazat vazbu*) nebo dej *Zpět* (`Ctrl+Z`).
@@ -83,7 +84,15 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
 6. **Hotovo** uloží obrys do modelu (jako jeden krok pro Zpět v hlavním okně). Obrys pak vysuň
    nebo orotuj; s režimem *odečíst* je z něj otvor.
 
-Ukázka: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
+**Díry a vazby mezi tvary:** jeden obrys smí mít víc uzavřených smyček. Smyčka (nebo kružnice)
+uvnitř jiné je **díra**, smyčka uvnitř díry je zase materiál. Díky tomu jde díru navázat na
+obrys: *Soustředně* s obloukem, *Tečně* (kružnice se dotkne čáry, oblouku nebo jiné
+kružnice), *Souměrně* podle osy, *Stejně velké* (i kružnice s obloukem), *Na bodě/čáře* (bod
+na obvodu) nebo kótou vzdálenosti středu od hrany. Smyčky se nesmí křížit – skicář to hned
+hlásí červeně.
+
+Ukázky: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
+*prilozka* – příložka s pěti otvory navázanými na obrys; změň `L` nebo `B` a otvory jdou s ní.
 
 ### Díry podle strojnických tabulek
 
@@ -113,6 +122,32 @@ U 3D tisku se zdroje liší o desetiny mm a záleží na tiskárně – vytiskni
 a případně zadej *Vlastní průměr*. Tabulky a zdroje jsou v
 [src/skodacad/holes.py](src/skodacad/holes.py) (normy samotné jsou placené; hodnoty jsou
 ověřené porovnáním více zdrojů – u průchozí díry M16 jeden zdroj uvádí 18 místo 17,5).
+
+### Pole a zrcadlení
+
+Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
+výstupek, žebro …), **zrcadlení** je převrátí podle roviny. Kopie nejsou samostatné – když
+změníš původní prvek (průměr díry, rozměr výstupku), přepočítají se s ním.
+
+1. Ve stromu vyber prvek, který chceš opakovat (třeba díru).
+2. *Přidat prvek → Pole* (nebo *Zrcadlení*) – nový prvek se vloží za vybraný a rovnou ho
+   opakuje. V panelu *Úprava prvku* jde zaškrtnout i víc prvků najednou.
+3. Zvol druh pole a vyplň hodnoty:
+
+| Druh | Hodnoty | Příklad |
+|---|---|---|
+| **kruhové** – dokola | počet kusů, osa (X/Y/Z), bod na ose, celkový úhel | 6 děr dokola na přírubě |
+| **lineární** – v řadě | počet kusů, směr (X/Y/Z), rozteč (záporná = opačně) | 5 žeber v řadě |
+| **mřížka** | k lineárnímu navíc druhý směr, počet a rozteč | 4 × 3 větrací otvory |
+
+* Počet kusů je **včetně původního** (6 = původní + 5 kopií).
+* Celkový úhel 360° (výchozí) rozloží kusy rovnoměrně dokola; menší úhel dá první a poslední
+  kus na kraje úhlu (4 kusy na 90° = po 30°).
+* **Zrcadlení celého dílu:** když u zrcadlení nic nezaškrtneš, zrcadlí se celý díl – stačí
+  namodelovat polovinu souměrného dílu. Rovina může být i plocha dílu (např. *pravá
+  plocha* díl zdvojí).
+* Opakovat jde vysunutí, rotace, díry, pole a zrcadlení. Zaoblení, sražení a skořepina se
+  opakovat nedají – dej je do stromu až za pole.
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
 se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
@@ -154,7 +189,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 4,
+  "version": 6,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -179,6 +214,8 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
+| `pattern` | pole – opakuje prvky | `features` (`["dira1"]`), `kind` (`circular`/`linear`), `count` (včetně původního); kruhové: `axis`, `center` (`[x, y, z]`), `angle` (výchozí 360); lineární: `direction` (`X`/`Y`/`Z`), `spacing`, pro mřížku `direction2`, `count2`, `spacing2` |
+| `mirror` | zrcadlení | `plane`, `offset`, `features` (bez nich se zrcadlí celý díl) |
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).
@@ -221,10 +258,16 @@ tak vzniká např. otvor v kruhu).
 * `points` jsou přibližné polohy – přesné spočítá řešič vazeb (SolveSpace) při každém přepočtu.
 * Oblouk vede **proti směru hodinových ručiček** od `start` do `end`; `"construction": true`
   = pomocná čára. Bod `origin` je počátek skici.
-* Vazby: `fix` (point), `coincident` (point + on: bod/čára/origin), `horizontal`/`vertical`
-  (segment, nebo points), `parallel`, `perpendicular`, `tangent`, `equal` (segments),
-  `midpoint` (point + segment); kóty s `value` (číslo nebo výraz): `length` (segment),
-  `distance` (points, nebo point + segment), `radius` (segment), `angle` (segments, °).
+* Kružnice: `{"type": "circle", "center": "K", "radius": 5}` – `radius` je přibližný, přesný
+  určí vazby (po vyřešení se uloží). Víc smyček v jednom obrysu = vnořené jsou díry.
+* Vazby: `fix` (point), `coincident` (point + on: bod/čára/oblouk/kružnice/origin),
+  `horizontal`/`vertical` (segment, nebo points), `parallel`, `perpendicular`, `tangent`,
+  `equal`, `concentric` (segments), `midpoint` (point + segment), `symmetric` (points +
+  segment = osa); kóty s `value` (číslo nebo výraz): `length` (segment), `distance` (points,
+  nebo point + segment), `radius`, `diameter` (segment – oblouk či kružnice), `angle`
+  (segments, °).
+* `tangent` u čar se společným koncovým bodem řeší přímo SolveSpace, jinak (kružnice, oblouk
+  bez společného bodu) přes skrytý bod dotyku.
 
 ### Výběr hran (`edges`)
 

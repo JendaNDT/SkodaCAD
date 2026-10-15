@@ -8,6 +8,7 @@ import pytest
 from skodacad.profile_edit import (
     EditError,
     add_arc,
+    add_circle,
     add_line,
     add_point,
     arc_through,
@@ -91,7 +92,9 @@ def test_rounded_end_with_tangent_arc(session):
 @pytest.mark.parametrize(("kind", "selection", "message"), [
     ("horizontal", ["s1", "s2"], "jednu úsečku nebo dva body"),
     ("parallel", ["s1"], "dvě úsečky"),
-    ("tangent", ["s1", "s2"], "oblouk"),
+    ("tangent", ["s1", "s2"], "oblouk nebo kružnice"),
+    ("concentric", ["s1", "s2"], "dva oblouky nebo kružnice"),
+    ("symmetric", ["P1", "s1"], "dva body a úsečku"),
     ("midpoint", ["P1", "P2"], "bod a úsečku"),
     ("fix", ["origin"], "bodů"),
     ("dimension", ["P1", "s1", "s2"], "úsečku"),
@@ -154,3 +157,57 @@ def test_add_feature_with_values_is_one_undo_step(session):
     session.undo()
     assert session.document.features == []
     assert math.isclose(len(session.document.features), 0)
+
+
+def plate_with_hole():
+    """Trojúhelník a v něm kružnice se středem K."""
+    profile, points, lines = triangle()
+    center = add_point(profile, 12, 8)
+    circle = add_circle(profile, center, 3.2)
+    return profile, points, lines, center, circle
+
+
+def test_circle_hole_dimensioned_by_selection(session):
+    profile, (a, b, c), (s1, s2, s3), k, circle = plate_with_hole()
+    assert circle == "k1" and profile["segments"][circle] == {
+        "type": "circle", "center": k, "radius": 3.2}
+    [diameter] = constraints_for(profile, "dimension", [circle])
+    assert diameter == {"type": "diameter", "segment": circle, "value": 6.4}
+    diameter["value"] = 8
+    profile["constraints"] += [diameter, *constraints_for(profile, "coincident", [a, "origin"])]
+    solution = session.solve_profile(profile)
+    assert solution.ok and solution.radii[circle] == pytest.approx(4)
+
+
+def test_circle_constraints_by_selection():
+    profile, (a, b, c), (s1, s2, s3), k, circle = plate_with_hole()
+    other = add_circle(profile, add_point(profile, 30, 5), 2)
+    assert constraints_for(profile, "tangent", [s1, circle]) == [
+        {"type": "tangent", "segments": [s1, circle]}]
+    assert constraints_for(profile, "equal", [circle, other]) == [
+        {"type": "equal", "segments": [circle, other]}]
+    assert constraints_for(profile, "concentric", [circle, other]) == [
+        {"type": "concentric", "segments": [circle, other]}]
+    assert constraints_for(profile, "coincident", [c, circle]) == [
+        {"type": "coincident", "point": c, "on": circle}]
+    assert constraints_for(profile, "symmetric", [k, s3, a]) == [
+        {"type": "symmetric", "points": [k, a], "segment": s3}]
+    with pytest.raises(EditError, match="Stejně velké: vyber dvě úsečky"):
+        constraints_for(profile, "equal", [s1, circle])
+
+
+def test_remove_circle_center_removes_circle():
+    profile, _, _, k, circle = plate_with_hole()
+    profile["constraints"].append({"type": "diameter", "segment": circle, "value": 6})
+    remove(profile, [k])
+    assert circle not in profile["segments"] and k not in profile["points"]
+    assert profile["constraints"] == []
+    profile, _, _, k, circle = plate_with_hole()
+    remove(profile, [circle])  # smazání kružnice vezme i její nepoužitý střed
+    assert k not in profile["points"]
+
+
+def test_add_circle_needs_radius():
+    profile = empty_profile()
+    with pytest.raises(EditError, match="poloměr"):
+        add_circle(profile, add_point(profile, 0, 0), 0)

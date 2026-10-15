@@ -13,6 +13,8 @@ Druhy polí (``Field.kind``):
 * ``faces`` – seznam pojmenovaných ploch dílu (horní, spodní …)
 * ``edges`` – sémantický výběr hran (viz ``selectors.select_edges``)
 * ``point`` – bod [x, y]
+* ``point3`` – bod v prostoru [x, y, z]
+* ``features`` – seznam dřívějších prvků, které přidávají či ubírají materiál (pole, zrcadlení)
 * ``points`` – seznam bodů [[x, y], …]
 * ``shapes`` – seznam tvarů skici
 * ``profile`` – obrys z úseček a oblouků s vazbami (upravuje se ve skicáři)
@@ -25,6 +27,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any
 
+from skodacad.features import REPEATABLE_FEATURES
 from skodacad.holes import FITS, KINDS, SIZES
 from skodacad.selectors import FACE_NAMES_CZ
 
@@ -55,6 +58,8 @@ FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.it
 HOLE_KIND_CHOICES = tuple(KINDS.items())
 HOLE_SIZE_CHOICES = tuple((size, size) for size in SIZES)
 HOLE_FIT_CHOICES = tuple(zip(FITS, ("jemná", "střední", "hrubá"), strict=True))
+PATTERN_KIND_CHOICES = (("circular", "kruhové – dokola kolem osy"),
+                        ("linear", "lineární – v řadě nebo mřížka"))
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,7 @@ class Field:
     help: str = ""
     default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
     min_count: int = 1  # u „points“: nejmenší počet bodů
+    when: tuple[str, str] = ()  # pole se ukáže, jen když má jiné pole tuto hodnotu
 
 
 @dataclass(frozen=True)
@@ -147,6 +153,44 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("thickness", "Tloušťka stěny [mm]", "number"),
             Field("open_faces", "Otevřené plochy", "faces", required=False),
         ), "Vydlabe díl na danou tloušťku stěny."),
+        Schema("pattern", "Pole", (
+            _NAME,
+            Field("features", "Opakované prvky", "features",
+                  help="Prvky, které se zopakují (díra, výřez, výstupek …)."),
+            Field("kind", "Druh pole", "choice", choices=PATTERN_KIND_CHOICES,
+                  default="circular"),
+            Field("count", "Počet kusů", "number",
+                  help="Včetně původního prvku (6 = původní + 5 kopií)."),
+            Field("axis", "Osa", "choice", required=False, choices=AXIS_CHOICES, default="Z",
+                  when=("kind", "circular")),
+            Field("center", "Bod na ose", "point3", required=False,
+                  help="Kterým bodem [x, y, z] osa prochází. Bez hodnoty počátek.",
+                  when=("kind", "circular")),
+            Field("angle", "Celkový úhel [°]", "number", required=False,
+                  help="Bez hodnoty 360° = rovnoměrně dokola. Menší úhel: první a poslední "
+                       "kus leží na krajích úhlu.", when=("kind", "circular")),
+            Field("direction", "Směr", "choice", required=False, choices=AXIS_CHOICES,
+                  default="X", when=("kind", "linear")),
+            Field("spacing", "Rozteč [mm]", "number", required=False,
+                  help="Vzdálenost sousedních kusů. Záporná = opačným směrem.",
+                  when=("kind", "linear")),
+            Field("direction2", "Druhý směr (mřížka)", "choice", required=False,
+                  choices=AXIS_CHOICES, help="Bez volby jen jedna řada.",
+                  when=("kind", "linear")),
+            Field("count2", "Počet ve druhém směru", "number", required=False,
+                  when=("kind", "linear")),
+            Field("spacing2", "Rozteč ve druhém směru [mm]", "number", required=False,
+                  when=("kind", "linear")),
+        ), "Zopakuje vybrané prvky dokola, v řadě nebo v mřížce. Kopie se přepočítají "
+           "s původním prvkem."),
+        Schema("mirror", "Zrcadlení", (
+            _NAME,
+            Field("features", "Zrcadlené prvky", "features", required=False,
+                  help="Nic nezaškrtnuto = zrcadlí se celý díl."),
+            Field("plane", "Rovina zrcadlení", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+        ), "Zrcadlí vybrané prvky podle roviny. Bez vybraných prvků zrcadlí celý díl "
+           "(namodeluješ polovinu, druhou dopočítá)."),
     )
 }
 
@@ -278,4 +322,14 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     elif feature_type == "hole":
         feature.update(kind="tapped", size="M6", plane="top" if has_solid else "XY",
                        positions=[[0, 0]])
+    elif feature_type in ("pattern", "mirror"):
+        # Opakuje se prvek těsně před novým (ten vybraný ve stromu), ne ale základní těleso.
+        repeatable = [f["id"] for f in before if f.get("type") in REPEATABLE_FEATURES]
+        source = repeatable[1:][-1:]
+        if feature_type == "pattern":
+            feature.update(features=source, kind="linear", count=3, direction="X", spacing=10)
+        elif source:
+            feature.update(features=source, plane="YZ")
+        else:
+            feature["plane"] = "right"  # celý díl k sobě – funguje na každém dílu
     return feature

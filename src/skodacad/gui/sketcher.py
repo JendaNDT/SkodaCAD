@@ -1,4 +1,4 @@
-"""Skicář: 2D editor obrysu z úseček a oblouků s vazbami a kótami.
+"""Skicář: 2D editor obrysu z úseček, oblouků a kružnic s vazbami a kótami.
 
 Okno nic nepočítá samo – kreslení a vazby jdou přes ``skodacad.profile_edit``
 (úpravy slovníku obrysu) a řešení přes ``ModelSession.solve_profile``. Po každé
@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 
 from skodacad import profile_edit as edit
 from skodacad.profile_edit import EditError
-from skodacad.solver import DIMENSIONS, ORIGIN, SolveError, arc_midpoint, constraint_text, outline
+from skodacad.solver import DIMENSIONS, ORIGIN, SolveError, arc_midpoint, constraint_text, loops
 
 SNAP_PIXELS = 10  # klik blíž než tolik pixelů k bodu = ten bod
 HIT_PIXELS = 7  # klik blíž než tolik pixelů k čáře = ta čára
@@ -62,7 +62,8 @@ COLOR_TEXT = QColor("#666666")
 
 # Vazba → značka u čáry na kreslicí ploše.
 GLYPHS = {"horizontal": "H", "vertical": "V", "parallel": "∥", "perpendicular": "⊥",
-          "tangent": "T", "equal": "=", "midpoint": "½", "fix": "⚓", "coincident": "●"}
+          "tangent": "T", "equal": "=", "midpoint": "½", "fix": "⚓", "coincident": "●",
+          "concentric": "◎", "symmetric": "⇔"}
 
 TOOL_HELP = {
     "select": "Klik = vybrat (Ctrl+klik přidá), tažením posuneš bod. Pak tlačítkem vlevo "
@@ -70,6 +71,8 @@ TOOL_HELP = {
     "line": "Klikej body obrysu jeden po druhém. Klik na existující bod = napojení. "
             "Esc nebo pravé tlačítko = konec čáry.",
     "arc": "Oblouk: klikni začátek, konec a pak bod, kudy má oblouk vést.",
+    "circle": "Kružnice: klikni střed a pak bod na obvodu. Střed na existujícím bodě (třeba "
+              "středu oblouku) = soustředně. Kružnice uvnitř obrysu je díra.",
 }
 
 
@@ -242,6 +245,11 @@ class SketchCanvas(QWidget):
         if dialog.tool == "line" and dialog.chain_start:
             start = edit.point_xy(dialog.profile, dialog.chain_start)
             painter.drawLine(self.to_screen(*start), self.to_screen(*hover))
+        elif dialog.tool == "circle" and dialog.arc_points:
+            center = edit.point_xy(dialog.profile, dialog.arc_points[0])
+            radius = math.dist(center, hover)
+            painter.drawEllipse(self.to_screen(*center), radius * self.scale,
+                                radius * self.scale)
         elif dialog.tool == "arc" and len(dialog.arc_points) == 1:
             start = edit.point_xy(dialog.profile, dialog.arc_points[0])
             painter.drawLine(self.to_screen(*start), self.to_screen(*hover))
@@ -288,15 +296,20 @@ class SketchCanvas(QWidget):
 
 
     def _label_offset(self, constraint: dict[str, Any]) -> QPointF:
-        """Popisek kóty délky kousek vedle čáry (ne přes ni): nad vodorovnou, vpravo od
-        svislé. Ostatní kóty o kousek nahoru."""
-        if constraint["type"] != "length":
+        """Popisek kóty délky (i vzdálenosti dvou bodů) kousek vedle čáry, ne přes ni: nad
+        vodorovnou, vpravo od svislé. Ostatní kóty o kousek nahoru."""
+        profile = self.dialog.profile
+        if constraint["type"] == "length":
+            segment = profile["segments"].get(constraint["segment"])
+            ends = (segment["start"], segment["end"]) if segment else None
+        elif constraint["type"] == "distance" and "points" in constraint:
+            ends = tuple(constraint["points"])
+        else:
+            ends = None
+        if ends is None or not all(e == ORIGIN or e in profile["points"] for e in ends):
             return QPointF(0, -13)
-        segment = self.dialog.profile["segments"].get(constraint["segment"])
-        if segment is None:
-            return QPointF(0, -13)
-        a = self.to_screen(*edit.point_xy(self.dialog.profile, segment["start"]))
-        b = self.to_screen(*edit.point_xy(self.dialog.profile, segment["end"]))
+        a = self.to_screen(*edit.point_xy(profile, ends[0]))
+        b = self.to_screen(*edit.point_xy(profile, ends[1]))
         dx, dy = b.x() - a.x(), b.y() - a.y()
         length = math.hypot(dx, dy) or 1.0
         nx, ny = -dy / length, dx / length
@@ -333,7 +346,7 @@ class SketcherDialog(QDialog):
     def __init__(self, profile: dict[str, Any], solve: Callable[[dict], Any],
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Skicář – obrys z úseček a oblouků")
+        self.setWindowTitle("Skicář – obrys z úseček, oblouků a kružnic")
         self.resize(1180, 760)
         self.profile = copy.deepcopy(profile)
         for key, empty in (("points", {}), ("segments", {}), ("constraints", [])):
@@ -345,7 +358,7 @@ class SketcherDialog(QDialog):
         self.chain_start: str | None = None
         self.arc_points: list[str] = []
         self.hover: tuple[float, float] | None = None
-        self._drag: str | None = None
+        self._drag: str | None = None  # tažený bod, nebo kružnice (mění se poloměr)
         self._drag_moved = False
         self._history: list[dict[str, Any]] = []
 
@@ -384,6 +397,7 @@ class SketcherDialog(QDialog):
             "select": self._act("Výběr", lambda: self.set_tool("select"), "S"),
             "line": self._act("Úsečka", lambda: self.set_tool("line"), "L"),
             "arc": self._act("Oblouk", lambda: self.set_tool("arc"), "A"),
+            "circle": self._act("Kružnice", lambda: self.set_tool("circle"), "R"),
         }
         for action in self.tool_actions.values():
             action.setCheckable(True)
@@ -398,10 +412,15 @@ class SketcherDialog(QDialog):
             "coincident": self._act("Na bodě/čáře", lambda: self.apply_constraint("coincident"),
                                     "C", "Bod leží na jiném bodě, čáře nebo v počátku"),
             "midpoint": self._act("Uprostřed", lambda: self.apply_constraint("midpoint"), "M"),
+            "concentric": self._act("Soustředně", lambda: self.apply_constraint("concentric"),
+                                    "O", "Dva oblouky nebo kružnice se společným středem"),
+            "symmetric": self._act("Souměrně", lambda: self.apply_constraint("symmetric"), "Y",
+                                   "Dva body souměrně podle vybrané úsečky (osy)"),
             "fix": self._act("Pevný bod", lambda: self.apply_constraint("fix"), "F"),
         }
         self.dimension_action = self._act("Kóta…", self.add_dimension, "D",
-                                          "Délka úsečky, poloměr oblouku, vzdálenost, úhel")
+                                          "Délka úsečky, poloměr oblouku, průměr kružnice, "
+                                          "vzdálenost, úhel")
         self.construction_action = self._act("Pomocná čára", self.toggle_construction, "G",
                                              "Čára jen pro vazby – nebude součástí obrysu")
         self.delete_action = self._act("Smazat", self.delete_selected, "Delete")
@@ -409,7 +428,7 @@ class SketcherDialog(QDialog):
         self.fit_action = self._act("Celý obrys", self.canvas.fit, "0")
 
         tools = QVBoxLayout()
-        tools.addWidget(self._group("Kreslení", list(self.tool_actions.values()), columns=3))
+        tools.addWidget(self._group("Kreslení", list(self.tool_actions.values())))
         tools.addWidget(self._group("Vazby (na vybrané)", list(self.constraint_actions.values())))
         tools.addWidget(self._group("Kóty a úpravy", [self.dimension_action,
                                                        self.construction_action,
@@ -514,13 +533,16 @@ class SketcherDialog(QDialog):
                     self.selection.append(hit)
             elif hit not in self.selection:
                 self.selection = [hit]
-            if hit in self.profile["points"] and not toggle:
+            if not toggle and (hit in self.profile["points"]
+                               or edit.kind_of(self.profile, hit or "") == "circle"):
                 self._drag, self._drag_moved = hit, False
             self.canvas.update()
         elif self.tool == "line":
             self._line_click(x, y)
         elif self.tool == "arc":
             self._arc_click(x, y)
+        elif self.tool == "circle":
+            self._circle_click(x, y)
 
     def move(self, x: float, y: float) -> None:
         self.hover = (x, y)
@@ -528,8 +550,14 @@ class SketcherDialog(QDialog):
             if not self._drag_moved:
                 self._remember()
                 self._drag_moved = True
-            self.profile["points"][self._drag] = [round(x, 4), round(y, 4)]
-            self._resolve(hold=self._drag)
+            if self._drag in self.profile["segments"]:  # obvod kružnice → nový poloměr
+                circle = self.profile["segments"][self._drag]
+                center = edit.point_xy(self.profile, circle["center"])
+                circle["radius"] = round(max(math.dist(center, (x, y)), 1e-3), 4)
+                self._resolve()
+            else:
+                self.profile["points"][self._drag] = [round(x, 4), round(y, 4)]
+                self._resolve(hold=self._drag)
         self.canvas.update()
 
     def release(self, x: float, y: float) -> None:
@@ -685,6 +713,26 @@ class SketcherDialog(QDialog):
         self.arc_points = []
         self._resolve()
 
+    def _circle_click(self, x: float, y: float) -> None:
+        if not self.arc_points:
+            self._remember()
+            self.arc_points.append(self._point_at(x, y))
+            self.canvas.update()
+            return
+        center = self.arc_points[0]
+        target, (tx, ty) = self.snap(x, y)
+        radius = math.dist(edit.point_xy(self.profile, center), (tx, ty))
+        try:
+            circle = edit.add_circle(self.profile, center, radius)
+        except EditError as exc:
+            self._message(str(exc), error=True)
+            return
+        if target is not None and target != center:  # obvod na existujícím bodě
+            self.profile["constraints"].append({"type": "coincident", "point": target,
+                                                "on": circle})
+        self.arc_points = []
+        self._resolve()
+
     # --- výpočet a zobrazení ---------------------------------------------------------
 
     def _remember(self) -> None:
@@ -707,6 +755,8 @@ class SketcherDialog(QDialog):
             if self.solution.ok:
                 for name, (x, y) in self.solution.points.items():
                     profile["points"][name] = [round(x, 6) + 0.0, round(y, 6) + 0.0]
+                for name, radius in self.solution.radii.items():
+                    profile["segments"][name]["radius"] = round(radius, 6) + 0.0
         self._refresh_list()
         self._refresh_status()
         self.canvas.update()
@@ -752,8 +802,10 @@ class SketcherDialog(QDialog):
             self._message(solution.message, error=True)
             return
         try:
-            outline(self.profile, {name: tuple(p) for name, p in self.profile["points"].items()})
+            loops(self.profile, {name: tuple(p) for name, p in self.profile["points"].items()})
             closed = ""
+            if getattr(solution, "warning", ""):
+                closed = f"<br><span style='color:#c0392b'>{solution.warning}</span>"
         except SolveError as exc:
             closed = f"<br><span style='color:#b26a00'>{exc}</span>"
         collapsed = [name for name, segment in self.profile["segments"].items()
@@ -793,6 +845,11 @@ class SketcherDialog(QDialog):
 
     def polyline(self, name: str) -> list[tuple[float, float]]:
         segment = self.profile["segments"][name]
+        if segment["type"] == "circle":
+            cx, cy = edit.point_xy(self.profile, segment["center"])
+            r = float(segment["radius"])
+            angles = [2 * math.pi * i / 72 for i in range(73)]
+            return [(cx + r * math.cos(a), cy + r * math.sin(a)) for a in angles]
         start = edit.point_xy(self.profile, segment["start"])
         end = edit.point_xy(self.profile, segment["end"])
         if segment["type"] == "line":
@@ -801,6 +858,10 @@ class SketcherDialog(QDialog):
 
     def midpoint(self, name: str) -> tuple[float, float]:
         segment = self.profile["segments"][name]
+        if segment["type"] == "circle":  # popisek vpravo nahoře na obvodu
+            cx, cy = edit.point_xy(self.profile, segment["center"])
+            r = float(segment["radius"]) / math.sqrt(2)
+            return cx + r, cy + r
         start = edit.point_xy(self.profile, segment["start"])
         end = edit.point_xy(self.profile, segment["end"])
         if segment["type"] == "line":
@@ -824,7 +885,11 @@ class SketcherDialog(QDialog):
     def dimension_label(self, constraint: dict[str, Any]) -> tuple[tuple | None, str]:
         kind, value = constraint["type"], constraint["value"]
         try:
-            if kind in ("length", "radius"):
+            segment = self.profile["segments"].get(constraint.get("segment"), {})
+            if segment.get("type") == "circle":  # průměr kružnice nad ní
+                cx, cy = edit.point_xy(self.profile, segment["center"])
+                anchor = (cx, cy + float(segment["radius"]))
+            elif kind in ("length", "radius", "diameter"):
                 anchor = self.midpoint(constraint["segment"])
             elif kind == "distance" and "points" in constraint:
                 a, b = (edit.point_xy(self.profile, n) for n in constraint["points"])
@@ -835,7 +900,7 @@ class SketcherDialog(QDialog):
                 anchor = self.midpoint(constraint["segments"][0])
         except KeyError:
             return None, ""
-        prefix = {"radius": "R", "angle": "∠ "}.get(kind, "")
+        prefix = {"radius": "R", "diameter": "Ø", "angle": "∠ "}.get(kind, "")
         suffix = "°" if kind == "angle" else ""
         text = f"{prefix}{value}{suffix}"
         if isinstance(value, str):  # výraz s parametrem: číslo a v závorce výraz („R20 (R)“)

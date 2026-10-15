@@ -191,13 +191,22 @@ def _self_test_window(lines: list[str], part) -> bool:
 
 
 def _self_test_sketcher(window, lines: list[str]) -> bool:
-    """Skicář: výchozí obrys (obdélník s kótami) musí řešič plně určit."""
+    """Skicář: výchozí obrys (obdélník s kótami) musí řešič plně určit a kružnice uvnitř
+    se musí dotknout spodní hrany (tečnost přes skrytý bod dotyku)."""
     from skodacad.gui.sketcher import SketcherDialog
     from skodacad.schema import new_shape
 
     try:
         dialog = SketcherDialog(new_shape("profile"), window.session.solve_profile, window)
         solution = dialog.solution
+        dialog.set_tool("circle")
+        dialog.click(20, 12)
+        dialog.click(24, 12)
+        dialog.select(["s1", "k1"])
+        dialog.apply_constraint("tangent")
+        circle = dialog.profile["segments"].get("k1")
+        touching = (dialog.solution.ok and circle is not None and
+                    abs(dialog.profile["points"][circle["center"]][1] - circle["radius"]) < 1e-6)
         dialog.deleteLater()
     except Exception as exc:  # noqa: BLE001 – zpráva do self-testu místo pádu
         lines.append(f"✕ Skicář: {type(exc).__name__}: {exc}")
@@ -206,7 +215,10 @@ def _self_test_sketcher(window, lines: list[str]) -> bool:
         detail = solution.message if solution is not None else "nic se nespočítalo"
         lines.append(f"✕ Skicář: obrys se nevyřešil ({detail})")
         return False
-    lines.append("✓ Skicář a řešič vazeb (SolveSpace): OK")
+    if not touching:
+        lines.append("✕ Skicář: kružnice se nedotkla hrany (tečnost ke kružnici)")
+        return False
+    lines.append("✓ Skicář a řešič vazeb (SolveSpace): OK (i kružnice a tečnost)")
     return True
 
 

@@ -27,7 +27,7 @@ from skodacad.expressions import (
     referenced_names,
     resolve_parameters,
 )
-from skodacad.features import describe
+from skodacad.features import describe, profile_problem
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.picking import (
@@ -42,7 +42,7 @@ from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
-from skodacad.solver import SolveError, solve
+from skodacad.solver import SolveError, loops, solve
 
 _NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _UNDO_LIMIT = 100
@@ -50,7 +50,8 @@ _UNDO_LIMIT = 100
 # se přeskočí, aby se např. parametr „top“ nespletl s plochou „top“.
 _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "direction", "axis",
                         "shape", "mode", "face", "between", "parallel", "open_faces",
-                        "through_all", "kind", "size", "fit", "modeled_thread"}
+                        "through_all", "kind", "size", "fit", "modeled_thread", "features",
+                        "direction2"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
 SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole")
 
@@ -232,7 +233,8 @@ class ModelSession:
     def delete_feature(self, feature_id: str) -> BuildResult:
         index = self.feature_index(feature_id)
         document = self._require()
-        users = [describe(f) for f in document.features if f.get("sketch") == feature_id]
+        users = [describe(f) for f in document.features
+                 if f.get("sketch") == feature_id or feature_id in (f.get("features") or [])]
         if users:
             raise DocumentError(f"{describe(document.features[index])} používá "
                                 f"{', '.join(users)}. Smaž nebo uprav nejdřív ty prvky.")
@@ -262,7 +264,13 @@ class ModelSession:
             return ProfileSolution({}, -1, str(exc), exc.failed)
         except ExpressionError as exc:
             return ProfileSolution({}, -1, f"Hodnota kóty: {exc}", [])
-        return ProfileSolution(solved.points, solved.dof)
+        try:
+            loops(profile, solved.points, solved.radii)
+        except SolveError:  # neuzavřený obrys hlásí skicář sám
+            warning = ""
+        else:
+            warning = profile_problem(profile, params)
+        return ProfileSolution(solved.points, solved.dof, radii=solved.radii, warning=warning)
 
     # --- výběr ve 3D ---------------------------------------------------------------
 
@@ -498,6 +506,8 @@ class ProfileSolution:
     dof: int  # kolik rozměrů chybí (0 = plně určeno, -1 = chyba)
     message: str = ""  # česká chyba, "" = v pořádku
     failed: list[int] = field(default_factory=list)  # čísla vazeb, které si odporují
+    radii: dict[str, float] = field(default_factory=dict)  # vyřešené poloměry kružnic
+    warning: str = ""  # obrys je vyřešený, ale plocha z něj nejde (smyčky se kříží …)
 
     @property
     def ok(self) -> bool:

@@ -1,4 +1,4 @@
-"""Řešič vazeb skici: obrys z úseček a oblouků (tvar skici ``profile``).
+"""Řešič vazeb skici: obrys z úseček, oblouků a kružnic (tvar skici ``profile``).
 
 Uživatel nakreslí obrys jen přibližně a vazbami řekne, co platí („vodorovně“,
 „tečně“, „délka = sirka“). Řešič SolveSpace (balík ``slvs``) z toho spočítá
@@ -12,7 +12,8 @@ Formát (v JSON modelu je to jeden tvar v ``elements`` skici)::
      "segments": {
         "s1": {"type": "line", "start": "A", "end": "B"},
         "s2": {"type": "arc", "start": "B", "end": "C", "center": "M"},
-        "s3": {"type": "line", "start": "C", "end": "A", "construction": true}},
+        "s3": {"type": "line", "start": "C", "end": "A", "construction": true},
+        "k1": {"type": "circle", "center": "M", "radius": 4}},
      "constraints": [
         {"type": "coincident", "point": "A", "on": "origin"},
         {"type": "horizontal", "segment": "s1"},
@@ -21,6 +22,10 @@ Formát (v JSON modelu je to jeden tvar v ``elements`` skici)::
 
 * ``points`` – přibližné polohy [x, y]; po vyřešení se do nich ukládá výsledek.
 * oblouk vede **proti směru hodinových ručiček** od ``start`` do ``end``.
+* kružnice má střed a přibližný poloměr ``radius``; po vyřešení se do něj ukládá výsledek
+  (rozměr se určuje vazbou „diameter“ nebo „radius“).
+* obrys může mít víc uzavřených smyček – smyčka uvnitř jiné je díra (kružnice uvnitř
+  obdélníku = otvor), smyčka uvnitř díry je zase materiál.
 * ``construction`` – pomocná čára: účastní se vazeb, ale není součástí obrysu.
 * bod ``origin`` je vždy počátek skici [0, 0] a nehýbe se.
 
@@ -39,7 +44,8 @@ from typing import Any
 import slvs
 
 ORIGIN = "origin"
-SEGMENT_TYPES = ("line", "arc")
+SEGMENT_TYPES = ("line", "arc", "circle")
+ROUND = ("arc", "circle")  # čáry se středem a poloměrem
 
 # Druh vazby → český název (pro chybové hlášky a okno).
 CONSTRAINT_LABELS = {
@@ -52,12 +58,15 @@ CONSTRAINT_LABELS = {
     "tangent": "tečně",
     "equal": "stejně velké",
     "midpoint": "bod uprostřed čáry",
+    "concentric": "soustředně",
+    "symmetric": "souměrně podle čáry",
     "length": "délka",
     "distance": "vzdálenost",
     "radius": "poloměr",
+    "diameter": "průměr",
     "angle": "úhel",
 }
-DIMENSIONS = ("length", "distance", "radius", "angle")  # vazby s hodnotou (kóty)
+DIMENSIONS = ("length", "distance", "radius", "diameter", "angle")  # vazby s hodnotou (kóty)
 
 _BASE_GROUP = 1  # pracovní rovina a počátek – řešič s nimi nehýbe
 _GROUP = 2  # body a čáry obrysu
@@ -77,6 +86,7 @@ class SolveResult:
     dof: int  # kolik rozměrů ještě chybí, aby byl obrys plně určený (0 = hotovo)
     redundant: bool = False  # některá vazba je navíc (nic nemění, ale nevadí)
     warnings: list[str] = field(default_factory=list)
+    radii: dict[str, float] = field(default_factory=dict)  # vyřešené poloměry kružnic
 
 
 def constraint_text(index: int, constraint: Any) -> str:
@@ -122,8 +132,14 @@ def _segments(profile: dict[str, Any], points: dict[str, tuple]) -> dict[str, di
         if name in points or name == ORIGIN:
             raise SolveError(f"Čára „{name}“ má stejné jméno jako bod – jména musí být různá.")
         if not isinstance(segment, dict) or segment.get("type") not in SEGMENT_TYPES:
-            raise SolveError(f"Čára „{name}“ musí mít „type“ line (úsečka) nebo arc (oblouk).")
-        keys = ("start", "end", "center") if segment["type"] == "arc" else ("start", "end")
+            raise SolveError(f"Čára „{name}“ musí mít „type“ line (úsečka), arc (oblouk) "
+                             "nebo circle (kružnice).")
+        keys = {"line": ("start", "end"), "arc": ("start", "end", "center"),
+                "circle": ("center",)}[segment["type"]]
+        if segment["type"] == "circle":
+            radius = segment.get("radius")
+            if isinstance(radius, bool) or not isinstance(radius, int | float) or radius <= 0:
+                raise SolveError(f"Kružnice „{name}“ musí mít kladný poloměr („radius“).")
         for key in keys:
             if segment.get(key) not in points:
                 raise SolveError(f"Čára „{name}“: bod „{segment.get(key)}“ ({key}) v obrysu není.")
@@ -141,6 +157,8 @@ def _kind(name: Any, points: dict, segments: dict) -> str | None:
 
 
 def _shared_point(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    if "start" not in a or "start" not in b:  # kružnice nemá koncové body
+        return False
     return bool({a["start"], a["end"]} & {b["start"], b["end"]})
 
 
@@ -158,7 +176,7 @@ def _check_constraint(index: int, c: Any, points: dict, segments: dict) -> None:
             raise SolveError(f"{where}: „{key}“ musí být {count} položky.", [index])
         for item in items:
             if _kind(item, points, segments) not in kinds:
-                what = {"point": "bod", "line": "úsečka", "arc": "oblouk"}
+                what = {"point": "bod", "line": "úsečka", "arc": "oblouk", "circle": "kružnice"}
                 expected = " nebo ".join(what[k] for k in kinds)
                 raise SolveError(f"{where}: „{item}“ není {expected} obrysu.", [index])
         return items
@@ -170,7 +188,7 @@ def _check_constraint(index: int, c: Any, points: dict, segments: dict) -> None:
         need("point", ("point",))
     elif kind == "coincident":
         need("point", ("point",))
-        need("on", ("point", "line", "arc"))
+        need("on", ("point", "line", "arc", "circle"))
         if c["point"] == c["on"]:
             raise SolveError(f"{where}: bod nemůže ležet sám na sobě.", [index])
     elif kind in ("horizontal", "vertical"):
@@ -185,24 +203,35 @@ def _check_constraint(index: int, c: Any, points: dict, segments: dict) -> None:
         if first == second:
             raise SolveError(f"{where}: potřebuje dvě různé úsečky.", [index])
     elif kind == "tangent":
-        first, second = need("segments", ("line", "arc"), 2)
-        if "arc" not in (segments[first]["type"], segments[second]["type"]):
-            raise SolveError(f"{where}: tečnost má smysl jen s obloukem.", [index])
-        if first == second or not _shared_point(segments[first], segments[second]):
-            raise SolveError(f"{where}: tečně jde jen u čar, které na sebe navazují "
-                             "(mají společný koncový bod).", [index])
+        first, second = need("segments", ("line", "arc", "circle"), 2)
+        a, b = segments[first], segments[second]
+        if first == second or (a["type"] == "line" and b["type"] == "line"):
+            raise SolveError(f"{where}: tečnost má smysl jen s obloukem nebo kružnicí.", [index])
+        if a.get("center") is not None and a.get("center") == b.get("center"):
+            raise SolveError(f"{where}: soustředné kružnice se nemůžou dotýkat.", [index])
     elif kind == "equal":
-        first, second = need("segments", ("line", "arc"), 2)
-        if first == second or segments[first]["type"] != segments[second]["type"]:
+        first, second = need("segments", ("line", "arc", "circle"), 2)
+        types = {segments[first]["type"], segments[second]["type"]}
+        if first == second or ("line" in types and len(types) > 1):
             raise SolveError(f"{where}: stejně velké mohou být dvě úsečky (délka) nebo dva "
-                             "oblouky (poloměr).", [index])
+                             "oblouky či kružnice (průměr).", [index])
+    elif kind == "concentric":
+        first, second = need("segments", ROUND, 2)
+        if segments[first]["center"] == segments[second]["center"]:
+            raise SolveError(f"{where}: „{first}“ a „{second}“ už mají společný střed.",
+                             [index])
+    elif kind == "symmetric":
+        first, second = need("points", ("point",), 2)
+        need("segment", ("line",))
+        if first == second:
+            raise SolveError(f"{where}: potřebuje dva různé body.", [index])
     elif kind == "midpoint":
         need("point", ("point",))
         need("segment", ("line",))
     elif kind == "length":
         need("segment", ("line",))
-    elif kind == "radius":
-        need("segment", ("arc",))
+    elif kind in ("radius", "diameter"):
+        need("segment", ROUND)
     elif kind == "distance":
         if "segment" in c:
             need("point", ("point",))
@@ -247,27 +276,36 @@ def _solve(points: dict, segments: dict, constraints: list, values: dict) -> Sol
     entities = {ORIGIN: slvs.add_point_2d(_BASE_GROUP, 0.0, 0.0, wp)}
     for name, (x, y) in points.items():
         entities[name] = slvs.add_point_2d(_GROUP, float(x), float(y), wp)
+    radii = {}  # kružnice → entita poloměru (její hodnotu řešič mění)
     for name, segment in segments.items():
         if segment["type"] == "line":
             entities[name] = slvs.add_line_2d(_GROUP, entities[segment["start"]],
                                               entities[segment["end"]], wp)
-        else:
+        elif segment["type"] == "arc":
             entities[name] = slvs.add_arc(_GROUP, normal, entities[segment["center"]],
                                           entities[segment["start"]], entities[segment["end"]],
                                           wp)
+        else:
+            radii[name] = slvs.add_distance(_GROUP, float(segment["radius"]), wp)
+            entities[name] = slvs.add_circle(_GROUP, normal, entities[segment["center"]],
+                                             radii[name], wp)
 
+    shape = _Shape(points, segments, entities, wp)
     owners: dict[int, int] = {}  # číslo vazby v řešiči → index vazby v obrysu
     for index, c in enumerate(constraints):
-        made = _add_constraint(c, entities, wp, values.get(index), segments)
-        owners[made["h"]] = index
+        for made in _add_constraint(c, shape, values.get(index)):
+            owners[made["h"]] = index
 
     result, failed = slvs.solve_sketch(_GROUP, True)
     code = result["result"]
     if code in (slvs.ResultFlag.OKAY, slvs.ResultFlag.REDUNDANT_OKAY):
         solved = {name: (slvs.get_param_value(entities[name]["param"][0]),
                          slvs.get_param_value(entities[name]["param"][1])) for name in points}
+        solved_radii = {name: abs(slvs.get_param_value(entity["param"][0]))
+                        for name, entity in radii.items()}
         return SolveResult(solved, int(result["dof"]),
-                           redundant=code == slvs.ResultFlag.REDUNDANT_OKAY)
+                           redundant=code == slvs.ResultFlag.REDUNDANT_OKAY,
+                           radii=solved_radii)
     bad = sorted({owners[h] for h in failed if h in owners})
     if code == slvs.ResultFlag.INCONSISTENT:
         listed = ", ".join(constraint_text(i, constraints[i]) for i in bad) or "neznámo které"
@@ -278,60 +316,137 @@ def _solve(points: dict, segments: dict, constraints: list, values: dict) -> Sol
                      "nebo zkontroluj hodnoty kót.", bad)
 
 
-def _add_constraint(c: dict[str, Any], e: dict[str, Any], wp: Any, value: float | None,
-                    segments: dict[str, dict[str, Any]]) -> Any:
+@dataclass
+class _Shape:
+    """Obrys v řešiči: výchozí polohy (pro odhad bodu dotyku) a entity slvs."""
+
+    points: dict[str, tuple[float, float]]
+    segments: dict[str, dict[str, Any]]
+    entities: dict[str, Any]
+    wp: Any
+
+    def xy(self, name: str) -> tuple[float, float]:
+        return (0.0, 0.0) if name == ORIGIN else self.points[name]
+
+    def radius(self, name: str) -> float:
+        segment = self.segments[name]
+        if segment["type"] == "circle":
+            return float(segment["radius"])
+        return math.dist(self.xy(segment["center"]), self.xy(segment["start"]))
+
+
+def _add_constraint(c: dict[str, Any], shape: _Shape, value: float | None) -> list[Any]:
+    """Vazbu převede na jednu či víc vazeb řešiče (všechny ověřené – viz test pádů)."""
     kind = c["type"]
-    g = _GROUP
+    g, e, wp, segments = _GROUP, shape.entities, shape.wp, shape.segments
     if kind == "fix":
-        return slvs.dragged(g, e[c["point"]], wp)
+        return [slvs.dragged(g, e[c["point"]], wp)]
     if kind == "coincident":
-        return slvs.coincident(g, e[c["point"]], e[c["on"]], wp)
+        return [slvs.coincident(g, e[c["point"]], e[c["on"]], wp)]
     if kind in ("horizontal", "vertical"):
         make = slvs.horizontal if kind == "horizontal" else slvs.vertical
         if "segment" in c:
-            return make(g, e[c["segment"]], wp)
+            return [make(g, e[c["segment"]], wp)]
         first, second = c["points"]
-        return make(g, e[first], wp, e[second])
+        return [make(g, e[first], wp, e[second])]
     if kind == "parallel":
-        return slvs.parallel(g, *(e[name] for name in c["segments"]), wp)
+        return [slvs.parallel(g, *(e[name] for name in c["segments"]), wp)]
     if kind == "perpendicular":
-        return slvs.perpendicular(g, *(e[name] for name in c["segments"]), wp)
+        return [slvs.perpendicular(g, *(e[name] for name in c["segments"]), wp)]
     if kind == "tangent":
-        # slvs chce oblouk jako první – úsečka napřed by shodila celý program.
-        first, second = sorted(c["segments"], key=lambda name: segments[name]["type"] != "arc")
-        return slvs.tangent(g, e[first], e[second], wp)
+        first, second = (segments[name] for name in c["segments"])
+        if _shared_point(first, second):
+            # slvs chce oblouk jako první – úsečka napřed by shodila celý program.
+            a, b = sorted(c["segments"], key=lambda name: segments[name]["type"] != "arc")
+            return [slvs.tangent(g, e[a], e[b], wp)]
+        return _touch(shape, *c["segments"])
     if kind == "equal":
-        return slvs.equal(g, *(e[name] for name in c["segments"]), wp)
+        return [slvs.equal(g, *(e[name] for name in c["segments"]), wp)]
     if kind == "midpoint":
-        return slvs.midpoint(g, e[c["point"]], e[c["segment"]], wp)
+        return [slvs.midpoint(g, e[c["point"]], e[c["segment"]], wp)]
+    if kind == "concentric":
+        first, second = (segments[name]["center"] for name in c["segments"])
+        return [slvs.coincident(g, e[first], e[second], wp)]
+    if kind == "symmetric":
+        first, second = c["points"]
+        return [slvs.symmetric(g, e[first], e[second], e[c["segment"]], wp)]
     if kind == "angle":
-        return slvs.angle(g, *(e[name] for name in c["segments"]), float(value), wp)
+        return [slvs.angle(g, *(e[name] for name in c["segments"]), float(value), wp)]
     if kind == "radius":
-        return slvs.diameter(g, e[c["segment"]], 2 * float(value))
+        return [slvs.diameter(g, e[c["segment"]], 2 * float(value))]
+    if kind == "diameter":
+        return [slvs.diameter(g, e[c["segment"]], float(value))]
     if kind == "length":
         line = segments[c["segment"]]
-        return slvs.distance(g, e[line["start"]], e[line["end"]], float(value), wp)
+        return [slvs.distance(g, e[line["start"]], e[line["end"]], float(value), wp)]
     if kind == "distance":
         if "segment" in c:
-            return slvs.distance(g, e[c["point"]], e[c["segment"]], float(value), wp)
+            # Řešič bere vzdálenost od čáry se znaménkem (kladná = vpravo od směru čáry);
+            # znaménko podle současné polohy, jinak by bod přeskočil na druhou stranu.
+            line = segments[c["segment"]]
+            (ax, ay), (bx, by) = shape.xy(line["start"]), shape.xy(line["end"])
+            px, py = shape.xy(c["point"])
+            side = -1.0 if (bx - ax) * (py - ay) - (by - ay) * (px - ax) > 0 else 1.0
+            return [slvs.distance(g, e[c["point"]], e[c["segment"]], side * float(value), wp)]
         first, second = c["points"]
-        return slvs.distance(g, e[first], e[second], float(value), wp)
+        return [slvs.distance(g, e[first], e[second], float(value), wp)]
     raise SolveError(f"Neznámý druh vazby „{kind}“.")  # pojistka – kontrola to už vyloučila
 
 
-# --- obrys jako uzavřená smyčka ---------------------------------------------------------
+def _touch(shape: _Shape, first: str, second: str) -> list[Any]:
+    """Tečnost přes skrytý bod dotyku T (řešič ji přímo umí jen u navazujících čar).
+
+    Úsečka a kružnice: T leží na obou a spojnice střed–T je kolmá na úsečku.
+    Dvě kružnice (oblouky): T leží na obou a na spojnici jejich středů. Dotyk zvenku či
+    zevnitř se vybere podle toho, jak je skica právě nakreslená."""
+    g, e, wp, segments = _GROUP, shape.entities, shape.wp, shape.segments
+    if segments[first]["type"] == "line":
+        first, second = second, first
+    round_a = segments[first]
+    ca = shape.xy(round_a["center"])
+    if segments[second]["type"] == "line":
+        line = segments[second]
+        (ax, ay), (bx, by) = shape.xy(line["start"]), shape.xy(line["end"])
+        length2 = (bx - ax) ** 2 + (by - ay) ** 2 or 1.0
+        t = ((ca[0] - ax) * (bx - ax) + (ca[1] - ay) * (by - ay)) / length2
+        guess = (ax + t * (bx - ax), ay + t * (by - ay))  # pata kolmice ze středu
+    else:
+        cb = shape.xy(segments[second]["center"])
+        ra, rb = shape.radius(first), shape.radius(second)
+        d = math.dist(ca, cb) or 1.0
+        ux, uy = (cb[0] - ca[0]) / d, (cb[1] - ca[1]) / d
+        sign = -1.0 if d <= max(ra, rb) and rb > ra else 1.0  # menší uvnitř větší
+        guess = (ca[0] + sign * ra * ux, ca[1] + sign * ra * uy)
+    point = slvs.add_point_2d(g, float(guess[0]), float(guess[1]), wp)
+    made = [slvs.coincident(g, point, e[first], wp), slvs.coincident(g, point, e[second], wp)]
+    if segments[second]["type"] == "line":
+        radius = slvs.add_line_2d(g, e[round_a["center"]], point, wp)
+        made.append(slvs.perpendicular(g, radius, e[second], wp))
+    else:
+        centers = slvs.add_line_2d(g, e[round_a["center"]], e[segments[second]["center"]], wp)
+        made.append(slvs.coincident(g, point, centers, wp))
+    return made
 
 
-def outline(profile: dict[str, Any], points: dict[str, tuple[float, float]]) -> list[tuple]:
-    """Čáry obrysu (bez pomocných) seřazené do uzavřené smyčky.
+# --- obrys jako uzavřené smyčky ---------------------------------------------------------
 
-    Vrací seznam ``("line", start, end)`` nebo ``("arc", start, end, center)`` se
-    souřadnicemi (oblouk vždy proti směru hodin od start do end). Když obrys není
-    uzavřený, vyvolá ``SolveError`` s vysvětlením.
+
+def loops(profile: dict[str, Any], points: dict[str, tuple[float, float]],
+          radii: dict[str, float] | None = None) -> list[list[tuple]]:
+    """Čáry obrysu (bez pomocných) seřazené do uzavřených smyček.
+
+    Každá smyčka je seznam ``("line", start, end)``, ``("arc", start, end, center)``
+    (oblouk vždy proti směru hodin od start do end) nebo jediné ``("circle", center,
+    radius)``. Poloměry kružnic jsou z ``radii`` (výsledek řešiče), jinak z obrysu.
+    Když obrys není uzavřený, vyvolá ``SolveError`` s vysvětlením.
     """
-    segments = {name: s for name, s in profile["segments"].items() if not s.get("construction")}
-    if not segments:
+    radii = radii or {}
+    real = {name: s for name, s in profile["segments"].items() if not s.get("construction")}
+    if not real:
         raise SolveError("Obrys má jen pomocné čáry – nakresli aspoň jednu skutečnou.")
+    result = [[("circle", points[s["center"]], float(radii.get(name, s["radius"])))]
+              for name, s in real.items() if s["type"] == "circle"]
+    segments = {name: s for name, s in real.items() if s["type"] != "circle"}
     uses: dict[str, list[str]] = {}
     for name, segment in segments.items():
         for key in ("start", "end"):
@@ -342,29 +457,29 @@ def outline(profile: dict[str, Any], points: dict[str, tuple[float, float]]) -> 
             raise SolveError(f"Obrys není uzavřený: v bodě „{point}“ je {problem}. Každý bod "
                              "obrysu musí spojovat právě dvě čáry.")
 
-    first = next(iter(segments))
-    ordered, current, point = [], first, segments[first]["start"]
-    while True:
-        segment = segments[current]
-        forward = segment["start"] == point
-        ordered.append((current, forward))
-        point = segment["end"] if forward else segment["start"]
-        current = next(name for name in uses[point] if name != current)
-        if current == first:
-            break
-    if len(ordered) != len(segments):
-        raise SolveError("Obrys se skládá z několika oddělených smyček – každou nakresli jako "
-                         "samostatný obrys.")
-
-    loop = []
-    for name, forward in ordered:
-        segment = segments[name]
-        start, end = points[segment["start"]], points[segment["end"]]
-        if segment["type"] == "line":
-            loop.append(("line", start, end) if forward else ("line", end, start))
-        else:
-            loop.append(("arc", start, end, points[segment["center"]]))
-    return loop
+    left = dict(segments)
+    while left:
+        first = next(iter(left))
+        ordered, current, point = [], first, segments[first]["start"]
+        while True:
+            segment = segments[current]
+            forward = segment["start"] == point
+            ordered.append((current, forward))
+            left.pop(current)
+            point = segment["end"] if forward else segment["start"]
+            current = next(name for name in uses[point] if name != current)
+            if current == first:
+                break
+        loop = []
+        for name, forward in ordered:
+            segment = segments[name]
+            start, end = points[segment["start"]], points[segment["end"]]
+            if segment["type"] == "line":
+                loop.append(("line", start, end) if forward else ("line", end, start))
+            else:
+                loop.append(("arc", start, end, points[segment["center"]]))
+        result.append(loop)
+    return result
 
 
 def arc_midpoint(start: tuple, end: tuple, center: tuple) -> tuple[float, float]:

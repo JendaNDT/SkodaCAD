@@ -32,6 +32,12 @@
 - (15. 10. 2026, schváleno) **Díry podle tabulek** – prvek `hole`, formát verze 4. Závit je
   jen vyznačený (díra = vrták pod závit). Tabulky v `holes.py` jsou ověřené z více zdrojů
   (normy jsou placené) – u každé změny tabulky uveď zdroj v docstringu.
+- (15. 10. 2026, schváleno) **Pole a zrcadlení** – prvky `pattern` (kruhové, lineární,
+  mřížka) a `mirror` (vybrané prvky nebo celý díl), formát verze 5. Opakují vybrané prvky,
+  ne celé těleso; zrcadlení bez vybraných prvků zrcadlí celý díl.
+- (15. 10. 2026, schváleno) **Kružnice a vazby mezi tvary ve skicáři** – čára `circle`, víc
+  smyček v jednom obrysu (vnořená = díra), vazby `concentric`, `symmetric`, kóta `diameter`,
+  tečnost ke kružnici přes skrytý bod dotyku. Formát verze 6.
 
 ## Architektura (`src/skodacad/`)
 
@@ -41,12 +47,12 @@
 | `expressions.py` | bezpečné výrazy s parametry (vlastní AST, žádné `eval`) |
 | `selectors.py` | sémantický výběr ploch a hran (ochrana proti topological naming problem) |
 | `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
-| `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřená smyčka |
+| `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřené smyčky (i kružnice) |
 | `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
-| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")` |
-| `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped` |
+| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; pole a zrcadlení |
+| `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
 | `cli.py` | příkazová řádka `skodacad build` |
@@ -118,6 +124,17 @@
 - Popis z kliknutí se vždy ověří `select_edges` – musí vybrat přesně kliknuté hrany.
 - Po každém překreslení dílu je starý výběr neplatný (okno ho maže v `_refresh_all`).
 
+## Známé pasti (pole a zrcadlení)
+
+- Pole/zrcadlení neopakuje celé těleso, ale **záznam operací** prvku: každé `ctx.apply`
+  uloží (těleso, přidat/ubrat) do `ctx.operations[id]` a pole totéž zopakuje posunuté.
+  Nový prvek, který přidává či ubírá materiál, proto musí jít přes `ctx.apply` a jeho typ
+  patří do `REPEATABLE_FEATURES`. Zaoblení/sražení/skořepina mění díl jinak – opakovat nejdou.
+- Rovina `XZ` má v build123d normálu **−Y**: posun roviny (`offset`) jde do záporného Y
+  (u skic i u zrcadlení stejně).
+- Kopie, které padnou na stejné místo (díra ve středu otáčení, souměrný prvek), nic
+  neodeberou → chyba „leží mimo díl nebo na stejném místě“ – je to správně.
+
 ## Známé pasti (řešič vazeb slvs)
 
 - Při nesmyslném volání (špatný druh nebo pořadí argumentů) slvs **shodí celý proces**
@@ -128,6 +145,12 @@
 - Kružnice/oblouk potřebují 3D normálu (`add_normal_3d`), ne `add_normal_2d`.
 - Vodorovně + svisle na jedné čáře není „spor“ – řešič ji smrskne do bodu. Skicář to hlásí.
 - Řešič je globální stav (`clear_sketch`) – volat jen z jednoho vlákna.
+- Kružnice se dotknout neumí (`tangent` s kružnicí = pád) – tečnost bez společného bodu
+  dělá `solver._touch` skrytým bodem dotyku (na obou křivkách + kolmo / na spojnici středů).
+- Vzdálenost bodu od čáry má v slvs **znaménko** (kladná = vpravo od směru čáry). Obal
+  znaménko bere z polohy bodu, jinak bod přeskočí na druhou stranu.
+- Nové kružnicové vazby: `distance` ani `midpoint` s kružnicí slvs neumí (pád) – kontrola
+  v `_check_constraint` je nepustí.
 
 ## Známé pasti (vymodelovaný závit)
 
@@ -163,9 +186,9 @@
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
-- [ ] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
-  [ ] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
-  tabulek (vyznačený závit; [x] vymodelovaný závit pro 3D tisk), [ ] pole a zrcadlení.
+- [x] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
+  [x] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
+  tabulek (vyznačený závit; [x] vymodelovaný závit pro 3D tisk), [x] pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
 - [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun

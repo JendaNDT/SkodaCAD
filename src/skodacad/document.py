@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 4,
+      "version": 6,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -28,9 +28,11 @@ from typing import Any
 FORMAT = "skodacad"
 # Verze 2 přidala do výběru hran klíče „between“, „near“ a seznam výběrů (výběr kliknutím),
 # verze 3 tvar skici „profile“ (obrys z úseček a oblouků s vazbami), verze 4 prvek „hole“
-# (díry podle strojnických tabulek). Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 4
-SUPPORTED_VERSIONS = (1, 2, 3, 4)
+# (díry podle strojnických tabulek), verze 5 prvky „pattern“ (pole) a „mirror“ (zrcadlení),
+# verze 6 kružnice, víc smyček (díry) a nové vazby v obrysu „profile“.
+# Starší verze jsou podmnožinou – načtou se beze změny.
+VERSION = 6
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6)
 
 
 class DocumentError(ValueError):

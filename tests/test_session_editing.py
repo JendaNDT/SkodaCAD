@@ -209,3 +209,15 @@ def test_profile_point_names_are_not_parameters(session):
         session.delete_parameter("vyska")
     session.delete_parameter("A")
     assert "A" not in session.document.parameters
+
+
+def test_delete_feature_refuses_feature_used_by_pattern(session):
+    session.add_feature("sketch")
+    session.add_feature("extrude")
+    hole = session.add_feature("hole", values={"positions": [[-10, 0]]})
+    pattern = session.add_feature("pattern")
+    assert session.result.ok
+    with pytest.raises(DocumentError, match="používá Pole"):
+        session.delete_feature(hole)
+    session.delete_feature(pattern)
+    session.delete_feature(hole)
