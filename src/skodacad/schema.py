@@ -163,8 +163,8 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                   help="Včetně původního prvku (6 = původní + 5 kopií)."),
             Field("axis", "Osa", "choice", required=False, choices=AXIS_CHOICES, default="Z",
                   when=("kind", "circular")),
-            Field("center", "Bod na ose [x, y, z]", "point3", required=False,
-                  help="Kterým bodem osa prochází. Bez hodnoty počátek.",
+            Field("center", "Bod na ose", "point3", required=False,
+                  help="Kterým bodem [x, y, z] osa prochází. Bez hodnoty počátek.",
                   when=("kind", "circular")),
             Field("angle", "Celkový úhel [°]", "number", required=False,
                   help="Bez hodnoty 360° = rovnoměrně dokola. Menší úhel: první a poslední "

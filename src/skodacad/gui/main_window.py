@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
-from skodacad.features import REPEATABLE_FEATURES, describe
+from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -722,7 +722,7 @@ class MainWindow(QMainWindow):
         features = self.session.document.features
         index = self.session.feature_index(self._selected_id)
         sketches = [(f["id"], describe(f)) for f in features[:index] if f["type"] == "sketch"]
-        repeatable = [(f["id"], describe(f)) for f in features[:index]
+        repeatable = [(f["id"], short_label(f)) for f in features[:index]
                       if f["type"] in REPEATABLE_FEATURES]
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)

@@ -573,35 +573,45 @@ def build_mirror(ctx: BuildContext, feature: dict[str, Any]) -> None:
         _repeat(ctx, operations, [lambda s: s.mirror(plane)], "Zrcadlení",
                 "zrcadlený prvek leží mimo díl nebo na stejném místě, zkontroluj rovinu")
         return
-    mirrored = part.mirror(plane)  # celý díl: druhá polovina souměrného dílu
-    if abs((part + mirrored).volume - part.volume) < 1e-6 * max(1.0, part.volume):
+    ctx.apply(part.mirror(plane), "add", "Zrcadlení")  # celý díl: druhá polovina dílu
+    if abs(ctx.part.volume - part.volume) < 1e-6 * max(1.0, part.volume):
         raise FeatureError("Zrcadlení celého dílu nic nepřidalo – díl je podle této roviny už "
                            "souměrný. Zvol jinou rovinu nebo ji posuň.")
-    ctx.apply(mirrored, "add", "Zrcadlení")
 
 
-def describe(feature: dict[str, Any]) -> str:
-    """Krátký popis prvku pro výpis stromu."""
+def short_label(feature: dict[str, Any]) -> str:
+    """Druh a název prvku, např. „Díra „Upínání““."""
     label = FEATURE_TYPES[feature["type"]].label_cz if feature["type"] in FEATURE_TYPES else "?"
     name = feature.get("name")
-    text = f"{label} „{name}“" if name else f"{label} {feature['id']}"
+    return f"{label} „{name}“" if name else f"{label} {feature['id']}"
+
+
+def describe(feature: dict[str, Any], params: dict[str, float] | None = None) -> str:
+    """Krátký popis prvku pro výpis stromu. S ``params`` se počty z výrazů vyčíslí."""
+    text = short_label(feature)
     if feature["type"] == "hole" and isinstance(feature.get("size"), str):
         count = len(feature.get("positions") or [None])
         text += f" – {hole_summary(feature.get('kind', 'tapped'), feature['size'], count)}"
         if feature.get("modeled_thread"):
             text += " (vymodelovaný)"
     elif feature["type"] == "pattern":
-        count = _plain(feature.get("count", "?"))
+        count = _plain(feature.get("count", "?"), params)
         if feature.get("kind", "circular") == "circular":
-            text += f" – {count}× dokola"
+            text += f" – dokola, {count} ks"
         elif feature.get("direction2") is not None:
-            text += f" – mřížka {count} × {_plain(feature.get('count2', '?'))}"
+            text += f" – mřížka {count} × {_plain(feature.get('count2', '?'), params)} ks"
         else:
-            text += f" – {count}× v řadě"
+            text += f" – v řadě, {count} ks"
     elif feature["type"] == "mirror" and not feature.get("features"):
         text += " – celý díl"
     return text
 
 
-def _plain(value: Any) -> str:
+def _plain(value: Any, params: dict[str, float] | None = None) -> str:
+    """Číslo k popisu; výraz s parametry vyčíslí (když nejde, nechá text výrazu)."""
+    if isinstance(value, str) and params is not None:
+        try:
+            value = evaluate(value, params)
+        except Exception:  # noqa: BLE001 – popis nesmí nic shodit
+            return value
     return f"{value:g}" if isinstance(value, (int, float)) else str(value)

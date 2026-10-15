@@ -114,6 +114,32 @@ a případně zadej *Vlastní průměr*. Tabulky a zdroje jsou v
 [src/skodacad/holes.py](src/skodacad/holes.py) (normy samotné jsou placené; hodnoty jsou
 ověřené porovnáním více zdrojů – u průchozí díry M16 jeden zdroj uvádí 18 místo 17,5).
 
+### Pole a zrcadlení
+
+Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
+výstupek, žebro …), **zrcadlení** je převrátí podle roviny. Kopie nejsou samostatné – když
+změníš původní prvek (průměr díry, rozměr výstupku), přepočítají se s ním.
+
+1. Ve stromu vyber prvek, který chceš opakovat (třeba díru).
+2. *Přidat prvek → Pole* (nebo *Zrcadlení*) – nový prvek se vloží za vybraný a rovnou ho
+   opakuje. V panelu *Úprava prvku* jde zaškrtnout i víc prvků najednou.
+3. Zvol druh pole a vyplň hodnoty:
+
+| Druh | Hodnoty | Příklad |
+|---|---|---|
+| **kruhové** – dokola | počet kusů, osa (X/Y/Z), bod na ose, celkový úhel | 6 děr dokola na přírubě |
+| **lineární** – v řadě | počet kusů, směr (X/Y/Z), rozteč (záporná = opačně) | 5 žeber v řadě |
+| **mřížka** | k lineárnímu navíc druhý směr, počet a rozteč | 4 × 3 větrací otvory |
+
+* Počet kusů je **včetně původního** (6 = původní + 5 kopií).
+* Celkový úhel 360° (výchozí) rozloží kusy rovnoměrně dokola; menší úhel dá první a poslední
+  kus na kraje úhlu (4 kusy na 90° = po 30°).
+* **Zrcadlení celého dílu:** když u zrcadlení nic nezaškrtneš, zrcadlí se celý díl – stačí
+  namodelovat polovinu souměrného dílu. Rovina může být i plocha dílu (např. *pravá
+  plocha* díl zdvojí).
+* Opakovat jde vysunutí, rotace, díry, pole a zrcadlení. Zaoblení, sražení a skořepina se
+  opakovat nedají – dej je do stromu až za pole.
+
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
 se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
 
@@ -154,7 +180,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 4,
+  "version": 5,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -179,6 +205,8 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
+| `pattern` | pole – opakuje prvky | `features` (`["dira1"]`), `kind` (`circular`/`linear`), `count` (včetně původního); kruhové: `axis`, `center` (`[x, y, z]`), `angle` (výchozí 360); lineární: `direction` (`X`/`Y`/`Z`), `spacing`, pro mřížku `direction2`, `count2`, `spacing2` |
+| `mirror` | zrcadlení | `plane`, `offset`, `features` (bez nich se zrcadlí celý díl) |
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).

@@ -1,10 +1,15 @@
 import pytest
 
+from conftest import EXAMPLES
 from skodacad import Document, rebuild
 from skodacad.cli import main
 from skodacad.export import FORMATS, export
 
-EXAMPLE_NAMES = ["priruba", "krabicka", "hridel"]
+EXAMPLE_NAMES = sorted(path.stem for path in EXAMPLES.glob("*.json"))  # všechny ukázky
+
+
+def test_examples_are_found():
+    assert {"priruba", "krabicka", "hridel", "paka", "deska", "kryt"} <= set(EXAMPLE_NAMES)
 
 
 @pytest.mark.parametrize("name", EXAMPLE_NAMES)

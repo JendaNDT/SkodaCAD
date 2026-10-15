@@ -330,7 +330,7 @@ class FieldsForm(QWidget):
         for axis, coordinate in zip(axes, point, strict=True):
             edit = QLineEdit(_number_text(coordinate))
             edit.setObjectName(f"point_{axis}")
-            edit.setPlaceholderText(f"{axis} = 0")
+            edit.setPlaceholderText("0")
             edit.editingFinished.connect(self._commit)
             row.addWidget(QLabel(axis))
             row.addWidget(edit)

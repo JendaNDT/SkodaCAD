@@ -62,7 +62,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
     failed = False
 
     for feature in document.features:
-        label = describe(feature)
+        label = describe(feature, params)
         if failed:
             result.statuses.append(
                 FeatureStatus(feature["id"], feature["type"], label, "skipped",

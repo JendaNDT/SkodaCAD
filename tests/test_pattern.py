@@ -292,3 +292,16 @@ def test_mirror_errors_are_czech():
     message = error_of(PLATE + pin_hole(x=0) + [
         {"id": "zrc", "type": "mirror", "features": ["dira"], "plane": "YZ"}])
     assert "na stejném místě" in message
+
+
+def test_example_cover_matches_formula(examples_dir):
+    from skodacad import Document
+
+    part = rebuild(Document.load(examples_dir / "kryt.json")).part
+    corners = 4 * (6**2 - math.pi * 6**2 / 4) * 4  # zaoblené rohy R6 ubraly materiál
+    holes = 4 * math.pi * 2.25**2 * 4  # 4× průchozí M4 (Ø4,5)
+    ring = 8 * math.pi * 5**2 * 4  # 8 otvorů Ø10 dokola
+    slots = 6 * (40 * 5 + math.pi * 2.5**2) * 4  # 2 × 3 drážky 40 × 5
+    assert part.volume == pytest.approx(160 * 80 * 4 - corners - holes - ring - slots)
+    assert part.center().X == pytest.approx(0, abs=1e-6)
+    assert len(part.solids()) == 1

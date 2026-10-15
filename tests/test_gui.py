@@ -556,7 +556,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     positions.editingFinished.emit()
     one = 40 * 30 * 10 - w.session.properties.volume_mm3
     action(w, "Pole").trigger()  # vybraná je díra → pole ji rovnou opakuje
-    assert selected_text(w) == "✓  Pole „Pole 1“ – 3× v řadě"
+    assert selected_text(w) == "✓  Pole „Pole 1“ – v řadě, 3 ks"
     form = w.feature_editor.form
     assert form.widget("features").findChild(QtWidgets.QCheckBox, "feature_hole1").isChecked()
     assert form.is_shown("spacing") and not form.is_shown("axis")
@@ -566,7 +566,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     kind.setCurrentIndex(kind.findData("circular"))  # 3× dokola kolem osy Z
     assert form.is_shown("axis") and form.is_shown("center") and not form.is_shown("spacing")
     assert w.session.feature("pattern1")["kind"] == "circular"
-    assert selected_text(w) == "✓  Pole „Pole 1“ – 3× dokola"
+    assert selected_text(w) == "✓  Pole „Pole 1“ – dokola, 3 ks"
     set_text(form_field(w, "center").findChild(QtWidgets.QLineEdit, "point_z"), "4")
     assert w.session.feature("pattern1")["center"] == [0, 0, 4]
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
