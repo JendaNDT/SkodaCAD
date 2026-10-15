@@ -51,6 +51,7 @@ from skodacad.selectors import (
     BASE_PLANES,
     FACE_DIRECTIONS,
     face_plane,
+    face_plane_at,
     select_edges,
     select_faces,
 )
@@ -165,7 +166,9 @@ def _choice(feature: dict[str, Any], key: str, allowed: tuple[str, ...], default
 
 def _resolve_plane(ctx: BuildContext, feature: dict[str, Any]) -> Plane:
     name = feature.get("plane", "XY")
-    if name in BASE_PLANES:
+    if isinstance(name, dict):  # šikmá či zakřivená plocha vybraná ve 3D
+        plane = face_plane_at(ctx.require_part("Skica na ploše dílu"), name)
+    elif name in BASE_PLANES:
         plane = BASE_PLANES[name]
     elif name in FACE_DIRECTIONS:
         plane = face_plane(ctx.require_part(f"Skica na ploše „{name}“"), name)

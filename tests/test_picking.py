@@ -135,11 +135,27 @@ def test_face_reference_for_each_direction(point, expected):
     assert (reference.plane, reference.offset) == expected
 
 
-def test_curved_face_cannot_hold_a_sketch(examples_dir):
+def test_curved_face_gets_tangent_plane_at_click(examples_dir):
+    from skodacad.selectors import face_plane_at
+
     part = build(Document.load(examples_dir / "hridel.json"))
     cylinder = next(face for face in part.faces() if face.geom_type.name == "CYLINDER")
-    with pytest.raises(SelectionError, match="zakřivená"):
-        face_reference(part, cylinder)
+    click = cylinder.position_at(0.3, 0.6)
+    reference = face_reference(part, cylinder, tuple(click))
+    assert set(reference.plane) == {"at", "normal"} and reference.point == (0.0, 0.0)
+    plane = face_plane_at(part, reference.plane)
+    assert tuple(plane.origin) == pytest.approx(tuple(click), abs=1e-3)  # počátek = klik
+    assert tuple(plane.z_dir) == pytest.approx(tuple(cylinder.normal_at(click)), abs=1e-3)
+
+
+def test_inclined_face_gets_its_own_plane():
+    from build123d import Axis, Box, chamfer
+
+    part = chamfer(Box(40, 30, 20).edges().group_by(Axis.Z)[-1].sort_by(Axis.Y)[0], 10)
+    slope = next(f for f in part.faces() if abs(f.normal_at().Y + 0.7071) < 1e-3)
+    reference = face_reference(part, slope, (5, -10, 5))
+    assert reference.plane["at"] == pytest.approx([5, -10, 5])
+    assert reference.plane["normal"] == pytest.approx([0, -0.7071, 0.7071])
 
 
 def test_open_face_only_outer_faces():

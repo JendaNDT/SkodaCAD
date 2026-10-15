@@ -24,6 +24,7 @@ from skodacad.selectors import (
     edge_axis,
     face_edges,
     face_plane,
+    face_plane_at,
     select_edges,
     select_faces,
 )
@@ -37,7 +38,7 @@ _EDGE_TYPE_NAMES = {GeomType.LINE: "line", GeomType.CIRCLE: "circle"}
 class FaceReference:
     """Kde leží rovina skici pro kliknutou plochu."""
 
-    plane: str  # pojmenovaná plocha dílu (top, front …), jejíž směr plocha má
+    plane: Any  # pojmenovaná plocha (top, front …), nebo {"at", "normal"} u šikmé/zakřivené
     offset: float  # posun od ní (0 = přímo ta plocha, záporné = hlouběji v dílu)
     point: tuple[float, float]  # místo kliknutí v souřadnicích skici
 
@@ -248,13 +249,18 @@ def face_direction(face: Face) -> str:
 
 
 def face_reference(part: Part, face: Face, point: Any = None) -> FaceReference:
-    """Rovina skici na kliknuté rovinné ploše.
+    """Rovina skici na kliknuté ploše.
 
     Vnější plocha dílu (nejvyšší, nejpřednější …) dostane přímo své jméno
     (``top``). Plocha uvnitř (dno kapsy, schod) dostane jméno směru a posun
-    od vnější plochy, např. ``top`` s posunem −5.
+    od vnější plochy, např. ``top`` s posunem −5. Šikmá nebo zakřivená plocha dostane
+    ``{"at": místo kliknutí, "normal": směr plochy v něm}`` – skica leží na ní, u
+    zakřivené na rovině, která se jí v místě kliknutí dotýká (počátek skici = místo kliknutí).
     """
-    name = face_direction(face)
+    try:
+        name = face_direction(face)
+    except SelectionError:
+        return _face_reference_at(part, face, point)
     direction = Vector(*FACE_DIRECTIONS[name][0])
     outer = face_plane(part, name)
     offset = _number(face.center().dot(direction) - outer.origin.dot(direction), 4)
@@ -262,6 +268,20 @@ def face_reference(part: Part, face: Face, point: Any = None) -> FaceReference:
     where = Vector(*point) if point is not None else face.center()
     local = plane.to_local_coords(where)
     return FaceReference(name, offset, (_number(local.X, 1), _number(local.Y, 1)))
+
+
+def _face_reference_at(part: Part, face: Face, point: Any) -> FaceReference:
+    from build123d import Vertex
+
+    where = Vector(*point) if point is not None else face.position_at(0.5, 0.5)
+    _, on_face, _ = face.distance_to_with_closest_points(Vertex(where))
+    normal = face.normal_at(on_face)
+    spec = {"at": [_number(v, 4) for v in on_face], "normal": [_number(v, 4) for v in normal]}
+    plane = face_plane_at(part, spec)  # ověřit: najde se plocha znovu?
+    if (plane.origin - on_face).length > 1e-3:
+        raise SelectionError("Tuhle plochu nejde pro skicu jednoznačně určit – klikni kousek "
+                             "dál od hrany.")
+    return FaceReference(spec, 0.0, (0.0, 0.0))
 
 
 def open_face_name(part: Part, face: Face) -> str:

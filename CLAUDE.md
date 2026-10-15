@@ -44,6 +44,9 @@
 - (15. 10. 2026, schváleno) **Promítnutí hran dílu do skici** – `projection.py`, obrys má
   `references` (hrana popsaná významem + poslední promítnutý tvar), ve skicáři šedé hrany
   dílu, nástroj Promítnout a Převzít do obrysu. Formát verze 7.
+- (15. 10. 2026, schváleno) **Skica na šikmé a zakřivené ploše** – `plane` může být
+  `{"at", "normal"}` (`selectors.face_plane_at`): šikmá plocha nese skicu přímo, zakřivená
+  tečnou rovinou v místě kliknutí. Obtočení skici kolem válce zatím ne. Formát verze 8.
 
 ## Architektura (`src/skodacad/`)
 
@@ -160,6 +163,18 @@
 - Nové kružnicové vazby: `distance` ani `midpoint` s kružnicí slvs neumí (pád) – kontrola
   v `_check_constraint` je nepustí.
 
+## Známé pasti (šikmé a zakřivené plochy)
+
+- Plocha pro skicu se pamatuje **bodem a směrem** (`at`, `normal`), ne číslem: najde se
+  plocha nejbližší bodu, na hraně rozhodne směr. Normála, která se od uložené liší o víc
+  než 60°, znamená, že plocha zmizela → česká chyba.
+- Počátek skici na šikmé ploše = bod `at` promítnutý do roviny plochy (ne střed plochy);
+  u zakřivené = nejbližší bod plochy (tečná rovina sleduje změnu průměru).
+- Osa X skici: podél osy válce/kužele (OCCT `Cylinder().Axis()`), jinak `Z × normála`;
+  směr se vždy otočí ke kladným souřadnicím, aby nezávisel na orientaci osy v OCCT.
+- Další díra kliknutím jde jen do stejné roviny – na válci tedy jen podél té přímky, kde
+  se tečná rovina válce dotýká.
+
 ## Známé pasti (promítnutí hran)
 
 - Promítnutá hrana je v řešiči **pevná** (skupina 1 jako počátek). Vazba jen mezi pevnými
@@ -234,7 +249,7 @@
   prvků, parametry, název a materiál, Zpět/Znovu.
 - [x] **Fáze 2c** – výběr hran a ploch kliknutím ve 3D → sémantický popis (`picking.py`),
   zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
-- [ ] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [ ] šikmé a zakřivené plochy
-  pro skicu.
+- [x] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [x] šikmé a zakřivené plochy
+  pro skicu (tečná rovina).
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

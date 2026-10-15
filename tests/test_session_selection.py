@@ -123,7 +123,7 @@ def test_move_existing_sketch_to_clicked_face(session):
 
 @pytest.mark.parametrize(("kind", "pick", "message"), [
     ("fillet", "face", "aspoň jednu hranu"),
-    ("sketch", "edge", "právě jednu rovinnou plochu"),
+    ("sketch", "edge", "právě jednu plochu"),
     ("shell", "edge", "plochy, které má skořepina otevřít"),
 ])
 def test_wrong_selection_explains_what_to_pick(session, kind, pick, message):
