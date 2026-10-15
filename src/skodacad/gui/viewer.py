@@ -32,6 +32,7 @@ from OCP.Aspect import (
     Aspect_TODT_SUBTITLE,
     Aspect_TOL_SOLID,
     Aspect_TOM_BALL,
+    Aspect_TOM_POINT,
     Aspect_TOTP_LEFT_LOWER,
 )
 from OCP.BRep import BRep_Builder
@@ -39,6 +40,7 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVerte
 from OCP.GeomAbs import GeomAbs_C1
 from OCP.gp import gp_Pnt
 from OCP.Graphic3d import (
+    Graphic3d_DiagnosticInfo_Basic,
     Graphic3d_MaterialAspect,
     Graphic3d_NameOfMaterial_Plastified,
     Graphic3d_ZLayerId_Topmost,
@@ -298,6 +300,55 @@ class OccViewer(QWidget):
                 self._measure_objects.append(shown)
         self._view.Redraw()
 
+    def graphics_info(self) -> str:
+        """Grafický ovladač OpenGL (výrobce, zařízení, verze) – pro log a self-test."""
+        if not self.ready:
+            return ""
+        try:
+            from OCP.OCP.collections import (
+                IndexedDataMap_TCollection_AsciiString_TCollection_AsciiString as Info,
+            )
+
+            info = Info()
+            self._view.DiagnosticInformation(info, Graphic3d_DiagnosticInfo_Basic)
+            values = {info.FindKey(i).ToCString(): info.FindFromIndex(i).ToCString()
+                      for i in range(1, info.Extent() + 1)}
+        except Exception as exc:  # noqa: BLE001 – jen informace
+            return f"neznámý ({type(exc).__name__})"
+        return " / ".join(values[key] for key in ("GLvendor", "GLdevice", "GLversion")
+                          if key in values)
+
+    def probe_drawing(self, variant: str) -> None:
+        """Self-test: nakreslí jeden druh značky měření a hned překreslí (při pádu ovladače
+        OpenGL je ve zprávě vidět, na kterém druhu to bylo)."""
+        color = _rgb(0.0, 0.55, 0.25)
+        compound = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(compound)
+        if variant == "line":
+            builder.Add(compound, BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0),
+                                                          gp_Pnt(10, 0, 0)).Edge())
+        else:
+            builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(0, 0, 0)).Vertex())
+        shown: Any = AIS_Shape(compound)
+        shown.SetColor(color)
+        if variant in ("point", "ball"):
+            marker = Aspect_TOM_BALL if variant == "ball" else Aspect_TOM_POINT
+            shown.Attributes().SetPointAspect(Prs3d_PointAspect(marker, color, 2.0))
+        if variant in ("label", "subtitle"):
+            shown = AIS_TextLabel()
+            shown.SetText(TCollection_ExtendedString("12.50 mm 45°", True))
+            shown.SetPosition(gp_Pnt(0, 0, 0))
+            if variant == "subtitle":
+                shown.SetDisplayType(Aspect_TODT_SUBTITLE)
+                shown.SetColorSubTitle(color)
+                shown.SetFont("Arial")
+        self._context.Display(shown, False)
+        self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+        self._view.Redraw()
+        self._context.Remove(shown, False)
+        self._view.Redraw()
+
     def _remove_measurement(self) -> None:
         for shown in self._measure_objects:
             self._context.Remove(shown, False)
@@ -359,7 +410,7 @@ class OccViewer(QWidget):
         self._window, self._view, self._context = window, view, context
         self._style()
         self._sync_size()
-        log.info("3D prohlížeč spuštěn")
+        log.info("3D prohlížeč spuštěn (OpenGL: %s)", self.graphics_info())
         if self._pending is not None:
             part, fit = self._pending
             self._pending = None

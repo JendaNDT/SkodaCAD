@@ -222,8 +222,9 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = True
     if viewer.ready:
         image = user_dir() / "self-test-3d.png"
-        lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))})")
-        ok = _self_test_pick(window, part, lines)
+        lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
+                     f"OpenGL: {viewer.graphics_info()})")
+        ok = _self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -297,6 +298,19 @@ def _self_test_sketcher(window, lines: list[str]) -> bool:
         lines.append("✕ Skicář: kružnice se nedotkla hrany (tečnost ke kružnici)")
         return False
     lines.append("✓ Skicář a řešič vazeb (SolveSpace): OK (i kružnice a tečnost)")
+    return True
+
+
+def _self_test_drawing(viewer, lines: _Report) -> bool:
+    """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
+    OpenGL spadne, poslední řádek ukáže, na čem."""
+    done = []
+    for variant in ("line", "point", "ball", "label", "subtitle"):
+        lines.stream.write(f"  … kreslení „{variant}“\n")
+        lines.stream.flush()
+        viewer.probe_drawing(variant)
+        done.append(variant)
+    lines.append(f"✓ Kreslení značek měření: OK ({', '.join(done)})")
     return True
 
 
