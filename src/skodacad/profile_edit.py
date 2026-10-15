@@ -1,7 +1,7 @@
 """Úpravy obrysu (tvar ``profile``) pro skicář – bez okna, aby šly testovat.
 
 Skicář v okně jen převádí kliknutí na volání těchto funkcí: přidej bod,
-úsečku, oblouk, smaž, přidej vazbu podle výběru, změř aktuální hodnotu kóty.
+úsečku, oblouk, kružnici, smaž, přidej vazbu podle výběru, změř aktuální hodnotu kóty.
 Obrys je obyčejný slovník jako v JSON modelu (viz ``solver.py``).
 """
 
@@ -11,7 +11,7 @@ import math
 from collections.abc import Iterable
 from typing import Any
 
-from skodacad.solver import CONSTRAINT_LABELS, ORIGIN
+from skodacad.solver import CONSTRAINT_LABELS, ORIGIN, ROUND
 
 # Vazba podle výběru: druh → co musí být vybrané (popis do hlášky).
 NEEDS = {
@@ -19,13 +19,15 @@ NEEDS = {
     "vertical": "jednu úsečku nebo dva body",
     "parallel": "dvě úsečky",
     "perpendicular": "dvě úsečky",
-    "tangent": "oblouk a úsečku (nebo dva oblouky), které na sebe navazují",
-    "equal": "dvě úsečky nebo dva oblouky",
-    "coincident": "bod a druhý bod, úsečku nebo oblouk (i počátek)",
+    "tangent": "dvě čáry, z nichž aspoň jedna je oblouk nebo kružnice",
+    "equal": "dvě úsečky, nebo dva oblouky či kružnice",
+    "coincident": "bod a druhý bod, úsečku, oblouk nebo kružnici (i počátek)",
     "midpoint": "bod a úsečku",
+    "concentric": "dva oblouky nebo kružnice",
+    "symmetric": "dva body a úsečku (osu souměrnosti)",
     "fix": "jeden nebo víc bodů",
-    "dimension": "úsečku (délka), oblouk (poloměr), dva body nebo bod a úsečku "
-                 "(vzdálenost), nebo dvě úsečky (úhel)",
+    "dimension": "úsečku (délka), oblouk (poloměr), kružnici (průměr), dva body nebo bod "
+                 "a úsečku (vzdálenost), nebo dvě úsečky (úhel)",
 }
 
 
@@ -50,7 +52,7 @@ def _names(profile: dict[str, Any]) -> set[str]:
 
 
 def kind_of(profile: dict[str, Any], name: str) -> str | None:
-    """„point“, „line“, „arc“ nebo None."""
+    """„point“, „line“, „arc“, „circle“ nebo None."""
     if name == ORIGIN or name in profile["points"]:
         return "point"
     segment = profile["segments"].get(name)
@@ -86,6 +88,15 @@ def add_arc(profile: dict[str, Any], start: str, end: str, center: str) -> str:
         raise EditError("Oblouk potřebuje začátek, konec a střed – tři různé body.")
     name = next_name(_names(profile), "a")
     profile["segments"][name] = {"type": "arc", "start": start, "end": end, "center": center}
+    return name
+
+
+def add_circle(profile: dict[str, Any], center: str, radius: float) -> str:
+    if radius <= 1e-6:
+        raise EditError("Kružnice potřebuje poloměr – druhým kliknutím urči bod na obvodu.")
+    name = next_name(_names(profile), "k")
+    profile["segments"][name] = {"type": "circle", "center": center,
+                                 "radius": round(radius, 4)}
     return name
 
 
@@ -147,7 +158,7 @@ def remove(profile: dict[str, Any], names: Iterable[str]) -> None:
     points, segments = profile["points"], profile["segments"]
     removed_segments = {name for name in names if name in segments}
     removed_segments |= {name for name, s in segments.items()
-                         if names & {s["start"], s["end"], s.get("center")}}
+                         if names & {s.get("start"), s.get("end"), s.get("center")}}
     loose = set()
     for name in removed_segments:
         segment = segments.pop(name)
@@ -175,7 +186,7 @@ def constraints_for(profile: dict[str, Any], kind: str, selection: list[str]) ->
     if None in kinds:
         raise EditError("Vybraný prvek už v obrysu není.")
     lines = [n for n, k in zip(selection, kinds, strict=True) if k == "line"]
-    arcs = [n for n, k in zip(selection, kinds, strict=True) if k == "arc"]
+    rounds = [n for n, k in zip(selection, kinds, strict=True) if k in ROUND]
     points = [n for n, k in zip(selection, kinds, strict=True) if k == "point"]
     problem = EditError(f"{CONSTRAINT_LABELS.get(kind, 'Kóta').capitalize()}: vyber "
                         f"{NEEDS[kind]}.")
@@ -189,14 +200,17 @@ def constraints_for(profile: dict[str, Any], kind: str, selection: list[str]) ->
         if kinds == ["line", "line"]:
             return [{"type": kind, "segments": lines}]
     elif kind == "tangent":
-        if len(selection) == 2 and arcs and not points:
-            first, second = (profile["segments"][name] for name in selection)
-            if not {first["start"], first["end"]} & {second["start"], second["end"]}:
-                raise EditError("Tečně: oblouk a čára musí mít společný koncový bod.")
+        if len(selection) == 2 and rounds and not points:
             return [{"type": "tangent", "segments": list(selection)}]
     elif kind == "equal":
-        if kinds in (["line", "line"], ["arc", "arc"]):
+        if kinds == ["line", "line"] or len(rounds) == len(selection) == 2:
             return [{"type": "equal", "segments": list(selection)}]
+    elif kind == "concentric":
+        if len(rounds) == len(selection) == 2:
+            return [{"type": "concentric", "segments": list(selection)}]
+    elif kind == "symmetric":
+        if len(selection) == 3 and len(points) == 2 and len(lines) == 1:
+            return [{"type": "symmetric", "points": points, "segment": lines[0]}]
     elif kind == "coincident":
         if len(selection) == 2 and kinds[0] == "point":
             return [{"type": "coincident", "point": selection[0], "on": selection[1]}]
@@ -222,6 +236,8 @@ def _dimension(profile: dict, selection: list[str], kinds: list[str]) -> dict | 
         return {"type": "length", "segment": selection[0]}
     if kinds == ["arc"]:
         return {"type": "radius", "segment": selection[0]}
+    if kinds == ["circle"]:
+        return {"type": "diameter", "segment": selection[0]}
     if kinds == ["point", "point"]:
         return {"type": "distance", "points": list(selection)}
     if sorted(kinds) == ["line", "point"]:
@@ -243,9 +259,11 @@ def measure(profile: dict[str, Any], constraint: dict[str, Any]) -> float:
     if kind == "length":
         s = segments[constraint["segment"]]
         value = math.dist(xy(s["start"]), xy(s["end"]))
-    elif kind == "radius":
+    elif kind in ("radius", "diameter"):
         s = segments[constraint["segment"]]
-        value = math.dist(xy(s["center"]), xy(s["start"]))
+        value = s["radius"] if s["type"] == "circle" else math.dist(xy(s["center"]),
+                                                                     xy(s["start"]))
+        value *= 2 if kind == "diameter" else 1
     elif kind == "distance" and "segment" in constraint:
         s = segments[constraint["segment"]]
         (ax, ay), (bx, by), (px, py) = xy(s["start"]), xy(s["end"]), xy(constraint["point"])

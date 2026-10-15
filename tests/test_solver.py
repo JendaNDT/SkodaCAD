@@ -11,7 +11,7 @@ import pytest
 from conftest import make_doc
 from skodacad import rebuild
 from skodacad.schema import SHAPE_DEFAULTS
-from skodacad.solver import CONSTRAINT_LABELS, SolveError, outline, solve
+from skodacad.solver import CONSTRAINT_LABELS, SolveError, loops, solve
 
 
 def rounded(points):
@@ -127,7 +127,7 @@ def test_bad_profiles_explain_in_czech(change, message):
     change(profile)
     with pytest.raises(SolveError, match=message):
         solve(profile, float)
-        outline(profile, solve(profile, float).points)
+        loops(profile, solve(profile, float).points)
 
 
 def test_self_crossing_outline_is_refused():
@@ -143,7 +143,7 @@ def test_construction_line_is_not_part_of_outline():
     profile["segments"]["diag"] = {"type": "line", "start": "A", "end": "C",
                                    "construction": True}
     points = solve(profile, float).points
-    assert len(outline(profile, points)) == 4
+    assert [len(loop) for loop in loops(profile, points)] == [4]
 
 
 def test_every_constraint_kind_in_both_orders_does_not_crash():
@@ -153,11 +153,13 @@ def test_every_constraint_kind_in_both_orders_does_not_crash():
         from skodacad.solver import solve, SolveError
         base = {
           "points": {"A": [0, 0], "B": [30, 1], "C": [30, 12], "M": [31, 6], "D": [0, 11],
-                     "P": [15, 5]},
+                     "P": [15, 5], "Q": [20, 7], "K": [10, 5], "L": [18, 6]},
           "segments": {"l1": {"type": "line", "start": "A", "end": "B"},
                        "a1": {"type": "arc", "start": "B", "end": "C", "center": "M"},
                        "l2": {"type": "line", "start": "C", "end": "D"},
-                       "l3": {"type": "line", "start": "D", "end": "A"}},
+                       "l3": {"type": "line", "start": "D", "end": "A"},
+                       "k1": {"type": "circle", "center": "K", "radius": 3},
+                       "k2": {"type": "circle", "center": "L", "radius": 2}},
           "constraints": []}
         kinds = [
           {"type": "fix", "point": "A"},
@@ -179,6 +181,23 @@ def test_every_constraint_kind_in_both_orders_does_not_crash():
           {"type": "distance", "point": "P", "segment": "l2", "value": 4},
           {"type": "radius", "segment": "a1", "value": 6},
           {"type": "angle", "segments": ["l1", "l3"], "value": 90},
+          # kružnice a vazby mezi tvary
+          {"type": "coincident", "point": "P", "on": "k1"},
+          {"type": "coincident", "point": "K", "on": "origin"},
+          {"type": "tangent", "segments": ["l1", "k1"]},
+          {"type": "tangent", "segments": ["a1", "k2"]},
+          {"type": "tangent", "segments": ["k1", "k2"]},
+          {"type": "tangent", "segments": ["l3", "a1"]},
+          {"type": "equal", "segments": ["k1", "k2"]},
+          {"type": "equal", "segments": ["a1", "k1"]},
+          {"type": "concentric", "segments": ["k1", "a1"]},
+          {"type": "concentric", "segments": ["k1", "k2"]},
+          {"type": "symmetric", "points": ["P", "Q"], "segment": "l2"},
+          {"type": "radius", "segment": "k1", "value": 4},
+          {"type": "diameter", "segment": "k2", "value": 5},
+          {"type": "diameter", "segment": "a1", "value": 12},
+          {"type": "distance", "point": "K", "segment": "l1", "value": 6},
+          {"type": "horizontal", "points": ["K", "L"]},
         ]
         seen = set()
         for constraint in kinds:

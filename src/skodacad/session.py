@@ -264,7 +264,7 @@ class ModelSession:
             return ProfileSolution({}, -1, str(exc), exc.failed)
         except ExpressionError as exc:
             return ProfileSolution({}, -1, f"Hodnota kóty: {exc}", [])
-        return ProfileSolution(solved.points, solved.dof)
+        return ProfileSolution(solved.points, solved.dof, radii=solved.radii)
 
     # --- výběr ve 3D ---------------------------------------------------------------
 
@@ -500,6 +500,7 @@ class ProfileSolution:
     dof: int  # kolik rozměrů chybí (0 = plně určeno, -1 = chyba)
     message: str = ""  # česká chyba, "" = v pořádku
     failed: list[int] = field(default_factory=list)  # čísla vazeb, které si odporují
+    radii: dict[str, float] = field(default_factory=dict)  # vyřešené poloměry kružnic
 
     @property
     def ok(self) -> bool:

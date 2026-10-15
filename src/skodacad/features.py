@@ -52,7 +52,7 @@ from skodacad.selectors import (
     select_edges,
     select_faces,
 )
-from skodacad.solver import SolveError, arc_midpoint, outline, solve
+from skodacad.solver import SolveError, arc_midpoint, loops, solve
 from skodacad.threads import thread_groove
 
 
@@ -233,12 +233,40 @@ def _element(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
 
 
 def _profile_face(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
-    """Obrys z úseček a oblouků: vyřešit vazby, seřadit do smyčky a udělat z něj plochu."""
+    """Obrys z úseček, oblouků a kružnic: vyřešit vazby, seřadit do smyček a udělat plochu.
+
+    Smyčka uvnitř jiné smyčky je díra, smyčka uvnitř díry zase materiál (jako v běžných
+    CAD). Smyčky se nesmí křížit."""
     try:
         solved = solve(element, ctx.num)
-        loop = outline(element, solved.points)
+        found = loops(element, solved.points, solved.radii)
     except SolveError as exc:
         raise FeatureError(f"Obrys: {exc}") from None
+    faces = [_loop_face(loop) for loop in found]
+    order = sorted(range(len(faces)), key=lambda i: -faces[i].area)
+    depth = {}
+    for position, i in enumerate(order):
+        depth[i] = 0
+        for j in order[:position]:  # jen větší smyčky můžou tuhle obsahovat
+            common = (faces[i] & faces[j]).area
+            if common <= 1e-6 * faces[i].area:
+                continue
+            if abs(common - faces[i].area) > 1e-6 * faces[i].area:
+                raise FeatureError("Smyčky obrysu se navzájem kříží – díra musí ležet celá "
+                                   "uvnitř obrysu (nebo celá mimo něj).")
+            depth[i] += 1
+    result = Sketch()
+    for i in sorted(order, key=lambda i: depth[i]):
+        result = result + faces[i] if depth[i] % 2 == 0 else result - faces[i]
+    if result.area <= 1e-9:
+        raise FeatureError("Obrys nemá žádnou plochu – díry ho celý vyplnily.")
+    return result
+
+
+def _loop_face(loop: list[tuple]) -> Sketch:
+    if loop[0][0] == "circle":
+        _, (x, y), radius = loop[0]
+        return Sketch() + Pos(x, y) * Circle(radius)
     edges = []
     for kind, start, end, *center in loop:
         if kind == "line":
@@ -251,7 +279,7 @@ def _profile_face(ctx: BuildContext, element: dict[str, Any]) -> Sketch:
         face = None
     if face is None or not face.is_valid or face.area <= 1e-9:
         raise FeatureError("Obrys se kříží sám se sebou nebo nemá plochu – uprav body či vazby.")
-    return face
+    return Sketch() + face
 
 
 @feature("sketch", "Skica")

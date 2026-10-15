@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 
 from skodacad import profile_edit as edit
 from skodacad.profile_edit import EditError
-from skodacad.solver import DIMENSIONS, ORIGIN, SolveError, arc_midpoint, constraint_text, outline
+from skodacad.solver import DIMENSIONS, ORIGIN, SolveError, arc_midpoint, constraint_text, loops
 
 SNAP_PIXELS = 10  # klik blíž než tolik pixelů k bodu = ten bod
 HIT_PIXELS = 7  # klik blíž než tolik pixelů k čáře = ta čára
@@ -707,6 +707,8 @@ class SketcherDialog(QDialog):
             if self.solution.ok:
                 for name, (x, y) in self.solution.points.items():
                     profile["points"][name] = [round(x, 6) + 0.0, round(y, 6) + 0.0]
+                for name, radius in self.solution.radii.items():
+                    profile["segments"][name]["radius"] = round(radius, 6) + 0.0
         self._refresh_list()
         self._refresh_status()
         self.canvas.update()
@@ -752,7 +754,7 @@ class SketcherDialog(QDialog):
             self._message(solution.message, error=True)
             return
         try:
-            outline(self.profile, {name: tuple(p) for name, p in self.profile["points"].items()})
+            loops(self.profile, {name: tuple(p) for name, p in self.profile["points"].items()})
             closed = ""
         except SolveError as exc:
             closed = f"<br><span style='color:#b26a00'>{exc}</span>"
