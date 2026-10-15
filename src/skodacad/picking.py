@@ -265,9 +265,14 @@ def face_reference(part: Part, face: Face, point: Any = None) -> FaceReference:
 
 
 def open_face_name(part: Part, face: Face) -> str:
-    """Jméno vnější plochy pro skořepinu (otevřená strana) – jinak SelectionError."""
+    """Jméno vnější plochy pro skořepinu (otevřená strana) – jinak SelectionError.
+
+    Porovnává se poloha, ne totožnost: plocha smí pocházet i z pozdějšího stavu dílu.
+    """
     name = face_direction(face)
-    if face not in select_faces(part, name):
+    direction = Vector(*FACE_DIRECTIONS[name][0])
+    outer = max(other.center().dot(direction) for other in select_faces(part, name))
+    if abs(face.center().dot(direction) - outer) > 1e-4:
         raise SelectionError(
             f"Otevřít jde jen vnější plochy dílu – vybraná plocha míří ven jako "
             f"{FACE_NAMES_CZ[name]}, ale není to krajní {FACE_NAMES_CZ[name]} plocha."

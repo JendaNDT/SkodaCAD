@@ -5,7 +5,7 @@ import math
 import pytest
 from build123d import Vector
 
-from conftest import box_features, make_doc
+from conftest import box_features, edge_at, face_at, make_doc
 from skodacad import Document, rebuild
 from skodacad.picking import (
     edge_selector,
@@ -25,17 +25,6 @@ def build(document):
 
 def box(width=20, depth=30, height=40):
     return build(make_doc(box_features(width, depth, height)))
-
-
-def edge_at(part, x, y, z):
-    """Hrana, na které leží bod (jen pro test – okno dostane hranu z kliknutí)."""
-    point = Vector(x, y, z)
-    return min(part.edges(), key=lambda edge: edge.distance_to(point))
-
-
-def face_at(part, x, y, z):
-    point = Vector(x, y, z)
-    return min(part.faces(), key=lambda face: face.distance_to(point))
 
 
 def same_set(found, expected):
