@@ -446,9 +446,12 @@ class MainWindow(QMainWindow):
     def edit_profile(self, profile: dict) -> dict | None:
         """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit)."""
         dialog = SketcherDialog(profile, self.session.solve_profile, self)
-        if self._exec_dialog(dialog) == QDialog.DialogCode.Accepted:
-            return dialog.result_profile()
-        return None
+        try:
+            if self._exec_dialog(dialog) == QDialog.DialogCode.Accepted:
+                return dialog.result_profile()
+            return None
+        finally:
+            dialog.deleteLater()  # jinak by po každém otevření zůstalo skryté okno v paměti
 
     def _exec_dialog(self, dialog: QDialog) -> int:
         return dialog.exec()  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)

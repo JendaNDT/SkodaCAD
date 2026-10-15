@@ -268,9 +268,9 @@ class SketchCanvas(QWidget):
             if kind in DIMENSIONS:
                 anchor, text = dialog.dimension_label(constraint)
                 if anchor is not None:
-                    pos = self.to_screen(*anchor)
+                    pos = self.to_screen(*anchor) + self._label_offset(constraint)
                     painter.setPen(color)
-                    painter.drawText(QRectF(pos.x() - 60, pos.y() - 22, 120, 18),
+                    painter.drawText(QRectF(pos.x() - 60, pos.y() - 9, 120, 18),
                                      Qt.AlignmentFlag.AlignCenter, text)
             elif kind in GLYPHS:
                 for ref in edit.references(constraint):
@@ -285,6 +285,27 @@ class SketchCanvas(QWidget):
             pos = self.to_screen(*edit.point_xy(profile, name))
             label = name + (" " + " ".join(glyphs[name]) if name in glyphs else "")
             painter.drawText(QPointF(pos.x() + 6, pos.y() - 6), label)
+
+
+    def _label_offset(self, constraint: dict[str, Any]) -> QPointF:
+        """Popisek kóty délky kousek vedle čáry (ne přes ni): nad vodorovnou, vpravo od
+        svislé. Ostatní kóty o kousek nahoru."""
+        if constraint["type"] != "length":
+            return QPointF(0, -13)
+        segment = self.dialog.profile["segments"].get(constraint["segment"])
+        if segment is None:
+            return QPointF(0, -13)
+        a = self.to_screen(*edit.point_xy(self.dialog.profile, segment["start"]))
+        b = self.to_screen(*edit.point_xy(self.dialog.profile, segment["end"]))
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        length = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / length, dx / length
+        if abs(ny) < 0.3:  # skoro svislá čára → popisek vpravo
+            nx, ny = abs(nx), ny
+        elif ny > 0:  # jinak nad čáru (na obrazovce y roste dolů)
+            nx, ny = -nx, -ny
+        distance = 13 if abs(ny) >= 0.3 else 30
+        return QPointF(nx * distance, ny * distance)
 
 
 def _arc_points(start: tuple, end: tuple, center: tuple, steps: int = 48) -> list[tuple]:

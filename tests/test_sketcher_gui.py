@@ -245,3 +245,41 @@ def test_edit_profile_from_shape_form(window, monkeypatch, answers):
     window.undo()
     assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
     assert math.isclose(len(window.session.document.features), 2)
+
+
+def test_keyboard_shortcuts_switch_tools(sketcher):
+    from PySide6.QtTest import QTest
+
+    sketcher.show()
+    sketcher.activateWindow()  # zkratky fungují jen v aktivním okně (ve Windows je)
+    QTest.qWaitForWindowActive(sketcher, 2000)
+    sketcher.canvas.setFocus()
+    for key, tool in ((Qt.Key.Key_S, "select"), (Qt.Key.Key_A, "arc"), (Qt.Key.Key_L, "line")):
+        QTest.keyClick(sketcher.canvas, key)
+        assert sketcher.tool == tool
+    sketcher.hide()
+
+
+def test_mouse_clicks_draw_and_select(sketcher):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    sketcher.resize(1100, 700)
+    sketcher.show()
+    canvas = sketcher.canvas
+
+    def at(x, y):
+        point = canvas.to_screen(x, y)
+        return QPoint(round(point.x()), round(point.y()))
+
+    sketcher.set_tool("line")
+    for xy in ((0, 0), (30, 0.3), (15, 20), (0, 0)):
+        QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=at(*xy))
+    assert len(sketcher.profile["segments"]) == 3 and sketcher.chain_start is None
+    sketcher.set_tool("select")
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=at(15, 0.1))
+    assert sketcher.selection == ["s1"]
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
+                     at(7.5, 10))
+    assert sketcher.selection == ["s1", "s3"]
+    sketcher.hide()
