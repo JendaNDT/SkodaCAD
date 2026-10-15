@@ -25,6 +25,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any
 
+from skodacad.holes import FITS, KINDS, SIZES
 from skodacad.selectors import FACE_NAMES_CZ
 
 PLANE_CHOICES = (
@@ -51,6 +52,9 @@ DIRECTION_CHOICES = (
 AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
 FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.items())
+HOLE_KIND_CHOICES = tuple(KINDS.items())
+HOLE_SIZE_CHOICES = tuple((size, size) for size in SIZES)
+HOLE_FIT_CHOICES = tuple(zip(FITS, ("jemná", "střední", "hrubá"), strict=True))
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,7 @@ class Field:
     choices: tuple[tuple[str, str], ...] = ()
     help: str = ""
     default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
+    min_count: int = 1  # u „points“: nejmenší počet bodů
 
 
 @dataclass(frozen=True)
@@ -111,6 +116,32 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("edges", "Hrany", "edges"),
             Field("distance", "Velikost [mm]", "number"),
         ), "Srazí vybrané hrany."),
+        Schema("hole", "Díra", (
+            _NAME,
+            Field("kind", "Druh", "choice", choices=HOLE_KIND_CHOICES, default="tapped"),
+            Field("size", "Velikost", "choice", choices=HOLE_SIZE_CHOICES),
+            Field("fit", "Řada průchozí díry", "choice", required=False,
+                  choices=HOLE_FIT_CHOICES, default="medium",
+                  help="ISO 273 – pro průchozí díry a zahloubení."),
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+            Field("positions", "Středy děr [x; y]", "points",
+                  help="Jeden střed na řádek ve tvaru  x; y  (souřadnice jako ve skice)."),
+            Field("depth", "Hloubka [mm]", "number", required=False,
+                  help="Bez hodnoty: 2× průměr závitu (zálisná matice 2× průměr + 1)."),
+            Field("through_all", "Skrz celý díl", "bool", required=False),
+            Field("thread_depth", "Hloubka závitu [mm]", "number", required=False,
+                  help="Jen závitová díra. Bez hodnoty: 1,5× průměr závitu "
+                       "(vymodelovaný závit po celé hloubce díry)."),
+            Field("modeled_thread", "Vymodelovat závit (3D tisk)", "bool", required=False,
+                  help="Skutečná šroubovice podle ISO 68-1 místo vyznačeného závitu – pro "
+                       "tisk doporučeno od M6. Přepočet trvá déle."),
+            Field("print_clearance", "Vůle závitu pro tisk [mm]", "number", required=False,
+                  help="Jen vymodelovaný závit: o kolik je závit větší než šroub "
+                       "(na průměru). Bez hodnoty 0,2 mm."),
+            Field("diameter", "Vlastní průměr [mm]", "number", required=False,
+                  help="Přepíše průměr z tabulky (např. podle zkušebního tisku)."),
+        ), "Díra podle strojnických tabulek – závit vyznačený, pro 3D tisk i vymodelovaný."),
         Schema("shell", "Skořepina", (
             _NAME,
             Field("thickness", "Tloušťka stěny [mm]", "number"),
@@ -156,7 +187,7 @@ SHAPE_SCHEMAS: dict[str, Schema] = {
             *_COMMON_SHAPE_FIELDS,
         )),
         Schema("polygon", "Mnohoúhelník z bodů", (
-            Field("points", "Body", "points"),
+            Field("points", "Body", "points", min_count=3),
             *_COMMON_SHAPE_FIELDS,
         )),
         Schema("profile", "Obrys z čar (s vazbami)", (
@@ -244,4 +275,7 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         feature.update(edges={"face": "top"}, distance=1)
     elif feature_type == "shell":
         feature.update(thickness=2, open_faces=["top"])
+    elif feature_type == "hole":
+        feature.update(kind="tapped", size="M6", plane="top" if has_solid else "XY",
+                       positions=[[0, 0]])
     return feature

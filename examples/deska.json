@@ -1,0 +1,24 @@
+{
+  "format": "skodacad",
+  "version": 4,
+  "name": "Upínací deska",
+  "description": "Ukázka děr podle strojnických tabulek: 4× zahloubení pro imbus M6 v rozích, 2× závit M8 uprostřed, 2× zápustná hlava M5 a 2× průchozí M4. A = šířka, B = hloubka, t = tloušťka, e = vzdálenost děr od okraje.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"A": 120, "B": 80, "t": 15, "e": 12},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys desky", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "B", "corner_radius": 6}]},
+    {"id": "deska", "type": "extrude", "name": "Deska", "sketch": "obrys", "distance": "t"},
+    {"id": "upinani", "type": "hole", "name": "Upínání", "kind": "counterbore", "size": "M6",
+     "plane": "top", "through_all": true,
+     "positions": [["A/2 - e", "B/2 - e"], ["-A/2 + e", "B/2 - e"],
+                   ["-A/2 + e", "-B/2 + e"], ["A/2 - e", "-B/2 + e"]]},
+    {"id": "zavity", "type": "hole", "name": "Závity", "kind": "tapped", "size": "M8",
+     "plane": "top", "depth": 12, "positions": [[-20, 0], [20, 0]]},
+    {"id": "zapustne", "type": "hole", "name": "Zápustné", "kind": "countersink", "size": "M5",
+     "plane": "top", "through_all": true, "positions": [[0, 25], [0, -25]]},
+    {"id": "pruchozi", "type": "hole", "name": "Průchozí", "kind": "clearance", "size": "M4",
+     "fit": "fine", "plane": "top", "through_all": true, "positions": [[-40, 0], [40, 0]]}
+  ]
+}

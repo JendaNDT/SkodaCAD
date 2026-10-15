@@ -76,7 +76,7 @@ def test_new_features_build_a_part_step_by_step():
     assert build(features).part.is_valid
 
 
-@pytest.mark.parametrize("feature_type", ["fillet", "chamfer", "shell"])
+@pytest.mark.parametrize("feature_type", ["fillet", "chamfer", "shell", "hole"])
 def test_default_finishing_features_build(feature_type):
     features = []
     add(features, "sketch")

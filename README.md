@@ -55,9 +55,13 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
    *Přidat vybrané hrany do…*. Hrany jde vybrat i ručně ve formuláři (na ploše, rovnoběžné…).
 6. **Skica na ploše kliknutím**: klikni na rovinnou plochu (i dno kapsy nebo schod), pravé
    tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne v místě kliknutí.
-7. **Skicář (obrys z čar s vazbami)**: *Přidat prvek → Skica – nakreslit obrys…* (nebo u tvaru
+7. **Díra podle tabulek kliknutím**: klikni na rovinnou plochu tam, kde má díra být, pravé
+   tlačítko → *Díra na vybrané ploše*. Vpravo vyber druh (závitová, průchozí, zahloubení,
+   3D tisk) a velikost M2–M30. Další díru stejného prvku přidáš kliknutím na plochu a
+   *Přidat díru v místě kliknutí*. Viz [Díry](#díry-podle-strojnických-tabulek).
+8. **Skicář (obrys z čar s vazbami)**: *Přidat prvek → Skica – nakreslit obrys…* (nebo u tvaru
    „Obrys z čar“ tlačítko *Upravit ve skicáři…*). Viz [Skicář](#skicář) níže.
-8. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
+9. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
    pole (např. `sirka` nebo `sirka/2 - 5`).
 
 ### Skicář
@@ -80,6 +84,35 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
    nebo orotuj; s režimem *odečíst* je z něj otvor.
 
 Ukázka: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
+
+### Díry podle strojnických tabulek
+
+Ukázka: *Soubor → Otevřít ukázku → deska*. Závit je ve výchozím stavu jen **vyznačený**
+(jako v běžných CAD): díra má průměr vrtáku pod závit a u prvku je zapsáno „M8 závit,
+hl. 12“. Do STEP/STL jde jen díra, ne závit.
+
+**Vymodelovaný závit pro 3D tisk:** u závitové díry zaškrtni *Vymodelovat závit (3D tisk)*.
+Vznikne skutečná šroubovice se základním profilem ISO 68-1 (úhel 60°, malý průměr
+D1 = D − 1,0825·P) zvětšená o *vůli pro tisk* (výchozí 0,2 mm na průměru – když šroub
+nejde zašroubovat, zvětši ji). Díra má ploché dno, závit vede po celé hloubce. Závit je
+složený z drobných plošek (nejvýš 0,05 mm od přesného tvaru – pod rozlišením tiskárny),
+protože s hladkou šroubovicí jádro OCCT neumí spolehlivě řezat. Přepočet trvá pár sekund
+(M3 nejdéle – nejvíc závitů); pro tisk doporučeno od M6.
+
+| Druh (`kind`) | Co vznikne | Tabulka | Velikosti |
+|---|---|---|---|
+| `tapped` – závitová | vrták pod závit, slepá díra končí špičkou vrtáku 118° | ISO 2306 (vrták ≈ d − stoupání ISO 261) | M2–M30 |
+| `clearance` – průchozí | díra pro šroub, řada jemná/střední/hrubá | ISO 273 | M2–M30 |
+| `counterbore` – válcové zahloubení | pro imbus s válcovou hlavou ISO 4762 | DIN 974-1 | M3–M24 |
+| `countersink` – kuželové 90° | pro zápustnou hlavu ISO 10642 | DIN 74 tvar F (Würth) | M3–M12 |
+| `insert` – 3D tisk | díra pro zálisnou (zatavovací) matici, ploché dno | doporučení ruthex/Accu | M2–M6 |
+| `plastic` – 3D tisk | šroub přímo do plastu, ploché dno | vrták pod závit (norma není) | M2–M30 |
+
+Příklad: M6 → vrták Ø5,0; průchozí Ø6,4 / 6,6 / 7,0; zahloubení Ø11 × 6,4; kuželové Ø13,7.
+U 3D tisku se zdroje liší o desetiny mm a záleží na tiskárně – vytiskni zkušební kousek
+a případně zadej *Vlastní průměr*. Tabulky a zdroje jsou v
+[src/skodacad/holes.py](src/skodacad/holes.py) (normy samotné jsou placené; hodnoty jsou
+ověřené porovnáním více zdrojů – u průchozí díry M16 jeden zdroj uvádí 18 místo 17,5).
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
 se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
@@ -121,7 +154,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 3,
+  "version": 4,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -145,6 +178,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
+| `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).

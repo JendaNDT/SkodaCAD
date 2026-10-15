@@ -166,3 +166,18 @@ def test_feature_highlight_shows_what_feature_uses(session):
     shell = session.add_from_selection("shell", click_face(session, 0, 0, 10))
     assert len(session.feature_highlight(shell)) == 1
     assert session.feature_highlight("neni") == []
+
+
+def test_hole_at_clicked_point_and_another_one(session):
+    hole = session.add_from_selection("hole", click_face(session, 5, 5, 10), point=(5, 5, 10))
+    feature = session.feature(hole)
+    assert (feature["plane"], feature["positions"], feature["size"]) == ("top", [[5, 5]], "M6")
+    one = math.pi * 2.5 ** 2 * 10  # výchozí hloubka 12 > tloušťka 10 → díra vyjde ven
+    assert session.properties.volume_mm3 == pytest.approx(BOX - one)
+    assert not part(session).is_inside(Vector(5, 5, 8))
+    # Další díra na stejné ploše kliknutím; na jiné ploše to vysvětlí.
+    session.apply_selection(hole, click_face(session, -12, 0, 10), point=(-12, 0, 10))
+    assert session.feature(hole)["positions"] == [[5, 5], [-12, 0]]
+    assert session.properties.volume_mm3 == pytest.approx(BOX - 2 * one)
+    with pytest.raises(DocumentError, match="jiné ploše"):
+        session.apply_selection(hole, click_face(session, 0, -15, 5), point=(0, -15, 5))

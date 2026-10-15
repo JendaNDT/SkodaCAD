@@ -13,8 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from build123d import (
+    Align,
     Axis,
     Circle,
+    Cone,
+    Cylinder,
     Line,
     Part,
     Plane,
@@ -28,6 +31,7 @@ from build123d import (
     Sketch,
     SlotCenterToCenter,
     ThreePointArc,
+    Vector,
     chamfer,
     extrude,
     fillet,
@@ -37,6 +41,9 @@ from build123d import (
 )
 
 from skodacad.expressions import evaluate
+from skodacad.holes import KINDS as HOLE_KINDS
+from skodacad.holes import HoleError, HoleShape, hole_shape, point_height
+from skodacad.holes import summary as hole_summary
 from skodacad.selectors import (
     BASE_PLANES,
     FACE_DIRECTIONS,
@@ -45,6 +52,7 @@ from skodacad.selectors import (
     select_faces,
 )
 from skodacad.solver import SolveError, arc_midpoint, outline, solve
+from skodacad.threads import thread_groove
 
 
 class FeatureError(ValueError):
@@ -362,8 +370,96 @@ def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
         ) from None
 
 
+# --- Díry --------------------------------------------------------------------------
+
+_TOP = (Align.CENTER, Align.CENTER, Align.MAX)  # horní podstava v z = 0, těleso jde do −Z
+
+
+def _hole_tool(shape: HoleShape, length: float) -> Part:
+    """Těleso, které se z dílu odebere: osa Z, povrch v z = 0, díra míří do −Z."""
+    radius = shape.diameter / 2
+    tool = Cylinder(radius, length, align=_TOP)
+    if shape.point:
+        tool += Pos(0, 0, -length) * Cone(0, radius, point_height(shape.diameter), align=_TOP)
+    if shape.counterbore:
+        big, deep = shape.counterbore
+        tool += Cylinder(big / 2, deep, align=_TOP)
+    if shape.countersink:
+        big = shape.countersink / 2
+        tool += Cone(radius, big, big - radius, align=_TOP)
+    return tool
+
+
+def _thread_tool(shape: HoleShape, length: float) -> Part:
+    """Šroubovicová drážka vymodelovaného závitu (osa Z, povrch v z = 0, do −Z).
+
+    Drážka začíná kousek nad dnem díry (nevyčnívá pod něj) a končí jednu otáčku nad
+    povrchem, aby závit na povrchu čistě vyústil."""
+    profile = shape.modeled
+    thread_length = shape.thread_depth if shape.thread_depth is not None else length
+    z_start = -thread_length + profile.inner_width / 2 + 0.05 * profile.pitch
+    try:
+        return thread_groove(profile, round(z_start, 6), profile.pitch)
+    except Exception:  # noqa: BLE001 – chyby jádra převádíme na lidskou zprávu
+        raise FeatureError("Závit se nepodařilo vymodelovat – zkus jinou velikost nebo "
+                           "hloubku závitu.") from None
+
+
+@feature("hole", "Díra")
+def build_hole(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    part = ctx.require_part("Díra")
+    plane = _resolve_plane(ctx, feature)
+    kind = _choice(feature, "kind", tuple(HOLE_KINDS), "tapped")
+    positions = feature.get("positions", [[0, 0]])
+    if not isinstance(positions, list) or not positions:
+        raise FeatureError("Díra potřebuje aspoň jednu polohu v „positions“, např. [[0, 0]].")
+    points = [_point(ctx, point, "Poloha díry") for point in positions]
+
+    def optional(key: str) -> float | None:
+        return ctx.num(feature[key]) if key in feature else None
+
+    through_all = bool(feature.get("through_all", False))
+    try:
+        shape = hole_shape(kind, str(required(feature, "size")), feature.get("fit", "medium"),
+                           depth=optional("depth"), through_all=through_all,
+                           thread_depth=optional("thread_depth"),
+                           diameter=optional("diameter"),
+                           modeled_thread=bool(feature.get("modeled_thread", False)),
+                           print_clearance=optional("print_clearance"))
+    except HoleError as exc:
+        raise FeatureError(str(exc)) from None
+    if shape.diameter <= 0:
+        raise FeatureError("Průměr díry musí být větší než 0.")
+    length = shape.depth if shape.depth is not None else _depth_through(part, plane)
+    tool = _hole_tool(shape, length)
+    tools = [plane * Pos(x, y) * tool for x, y in points]
+    ctx.apply(tools[0] if len(tools) == 1 else Part() + tools, "cut", "Díra")
+    if shape.modeled:  # drážku až po vyvrtání jádra – spojovat ji s jádrem je nespolehlivé
+        groove = _thread_tool(shape, length)
+        grooves = [plane * Pos(x, y) * groove for x, y in points]
+        ctx.apply(grooves[0] if len(grooves) == 1 else Part() + grooves, "cut", "Závit")
+
+
+def _depth_through(part: Part, plane: Plane) -> float:
+    """Hloubka „skrz celý díl“: jak daleko pod rovinou (proti normále) díl sahá + 1 mm.
+
+    Počítá se z rohů obalového kvádru – díra tak není zbytečně dlouhá (vymodelovaný
+    závit má počet závitů podle délky)."""
+    box = part.bounding_box()
+    corners = [Vector(x, y, z) for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
+               for z in (box.min.Z, box.max.Z)]
+    reach = max((plane.origin - corner).dot(plane.z_dir) for corner in corners)
+    return max(reach, 0.0) + 1.0
+
+
 def describe(feature: dict[str, Any]) -> str:
     """Krátký popis prvku pro výpis stromu."""
     label = FEATURE_TYPES[feature["type"]].label_cz if feature["type"] in FEATURE_TYPES else "?"
     name = feature.get("name")
-    return f"{label} „{name}“" if name else f"{label} {feature['id']}"
+    text = f"{label} „{name}“" if name else f"{label} {feature['id']}"
+    if feature["type"] == "hole" and isinstance(feature.get("size"), str):
+        count = len(feature.get("positions") or [None])
+        text += f" – {hole_summary(feature.get('kind', 'tapped'), feature['size'], count)}"
+        if feature.get("modeled_thread"):
+            text += " (vymodelovaný)"
+    return text

@@ -94,12 +94,18 @@ class _PlainTextEdit(QPlainTextEdit):
 
 def _combo(choices, current: Any, optional: bool, empty_label: str = "(automaticky)") -> QComboBox:
     combo = QComboBox()
+    # Dlouhé popisky (např. „válcové zahloubení pro imbus …“) nesmí roztáhnout panel –
+    # seznam se přizpůsobí šířce panelu, celý text je v rozbalené nabídce a v bublině.
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(12)
+    combo.currentTextChanged.connect(combo.setToolTip)
     if optional:
         combo.addItem(empty_label, None)
     for key, label in choices:
         combo.addItem(label, key)
     index = combo.findData(current) if current is not None else 0
     combo.setCurrentIndex(max(index, 0))
+    combo.setToolTip(combo.currentText())
     return combo
 
 
@@ -339,8 +345,9 @@ class FieldsForm(QWidget):
                 if len(parts) != 2:
                     raise InvalidValue(f"Řádek {number_}: napiš bod jako  x; y")
                 points.append([parse_number(part, coordinate) for part in parts])
-            if len(points) < 3:
-                raise InvalidValue("Mnohoúhelník potřebuje aspoň 3 body.")
+            if len(points) < field.min_count:
+                raise InvalidValue(f"{field.label}: potřeba aspoň {field.min_count} "
+                                   f"{'bod' if field.min_count == 1 else 'body'}.")
             return points
 
         return edit, read
