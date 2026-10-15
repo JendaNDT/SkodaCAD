@@ -10,8 +10,9 @@ import copy
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QProgressBar,
     QScrollArea,
     QToolButton,
     QTreeWidget,
@@ -47,6 +49,9 @@ from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 
+if TYPE_CHECKING:
+    from skodacad.worker import BackgroundRebuilder
+
 log = logging.getLogger(__name__)
 
 HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé: posun  ·  Kolečko: zoom  ·  "
@@ -62,8 +67,10 @@ SELECTION_ACTIONS = {
     "shell": "Skořepina – otevřít vybrané plochy",
 }
 
-_STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·"}
-_STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888")}
+_STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
+_STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888"),
+                  "pending": QColor("#8a8a8a")}
+PENDING_DELAY = 0.25  # s – kratší přepočet se v okně neukazuje (žádné blikání)
 _INVALID_STYLE = "QLineEdit { border: 2px solid #c0392b; background: #fdecea; }"
 _FEATURE_ID = Qt.ItemDataRole.UserRole
 
@@ -76,9 +83,14 @@ EXPORT_FORMATS = [
 
 class MainWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
-                 examples_dir: Path | None = None, user_dir: Path | None = None) -> None:
+                 examples_dir: Path | None = None, user_dir: Path | None = None,
+                 runner: BackgroundRebuilder | None = None) -> None:
         super().__init__()
-        self.session = ModelSession()
+        # S ``runner`` se model přepočítává na pozadí v pomocném procesu (okno je živé).
+        self._runner = runner
+        self.session = ModelSession(runner)
+        self._pending_shown = False  # okno ukazuje „Přepočítávám…“
+        self._shown_result = None  # výsledek, jehož díl je právě v prohlížeči
         self.examples_dir = examples_dir
         self.user_dir = user_dir or Path.home()
         self._param_fields: dict[str, QLineEdit] = {}
@@ -102,8 +114,13 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
                          Qt.Orientation.Horizontal)
         self._had_part = False
+        self._build_progress()
         self._reload_all()
         self.statusBar().showMessage(HELP_HINT)
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll)
+        if runner is not None:
+            self._poll_timer.start(50)
 
     # --- akce (tlačítka a položky menu) ------------------------------------------------
 
@@ -156,6 +173,10 @@ class MainWindow(QMainWindow):
             "Nahradit hrany vybraného prvku výběrem", lambda: self.apply_selection(replace=True))
         self.clear_selection_action = self._action("Zrušit výběr ve 3D",
                                                    lambda: self.viewer.clear_selection(), "Esc")
+        self.stop_action = self._action("Zastavit přepočet", self.stop_rebuild)
+        self.stop_action.setToolTip("Zastaví pomalý přepočet a vrátí model do posledního "
+                                    "spočítaného stavu (Znovu změnu vrátí)")
+        self.stop_action.setEnabled(False)
 
     # --- stavba okna ---------------------------------------------------------------
 
@@ -304,6 +325,7 @@ class MainWindow(QMainWindow):
 
         model_menu = bar.addMenu("&Model")
         model_menu.addAction(self.rebuild_action)
+        model_menu.addAction(self.stop_action)
         toolbar.addAction(self.rebuild_action)
         toolbar.addSeparator()
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
@@ -393,6 +415,10 @@ class MainWindow(QMainWindow):
         return True
 
     def export_dialog(self, fmt: str) -> None:
+        if self.session.computing:
+            self.statusBar().showMessage("Model se ještě přepočítává – export půjde, až bude "
+                                         "hotovo (nebo přepočet zastav).", 10000)
+            return
         if self.session.result is None or self.session.result.part is None:
             self._error("Není co exportovat", "Model zatím nemá žádné těleso.")
             return
@@ -607,16 +633,68 @@ class MainWindow(QMainWindow):
         self._load_editor()
 
     def _refresh_all(self, fit: bool = False) -> None:
-        self._picked = []  # díl se kreslí znovu → starý výběr ve 3D už neplatí
         self._refresh_title()
         self._refresh_tree()
         self._refresh_properties()
+        result = self.session.result
+        if result is not self._shown_result or fit:  # díl se kreslí znovu jen když je nový
+            self._picked = []  # → starý výběr ve 3D už neplatí
+            part = result.part if result else None
+            # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
+            self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
+            self._had_part = part is not None
+            self._shown_result = result
         self._refresh_actions()
-        part = self.session.result.part if self.session.result else None
-        # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
-        self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
-        self._had_part = part is not None
+        self._refresh_progress()
         self._update_highlight()
+
+    # --- přepočet na pozadí ----------------------------------------------------------
+
+    def _build_progress(self) -> None:
+        """Ve stavovém řádku: „Přepočítávám… 3 s“, běžící pruh a tlačítko Zastavit."""
+        self.progress_label = QLabel()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)  # neurčitý průběh (běžící pruh)
+        self.progress_bar.setMaximumWidth(120)
+        self.progress_bar.setMaximumHeight(14)
+        self.stop_button = self._tool_button(self.stop_action)
+        for widget in (self.progress_label, self.progress_bar, self.stop_button):
+            self.statusBar().addPermanentWidget(widget)
+            widget.hide()
+
+    def _poll(self) -> None:
+        """Časovač: převezme hotový přepočet z pozadí, nebo obnoví ukazatel průběhu."""
+        if self.session.poll():
+            self._pending_shown = False
+            self._refresh_all()
+            if self.session.failure:
+                self._error("Přepočet se nepovedl", self.session.failure)
+        elif self.session.computing and not self._pending_shown \
+                and self.session.computing_seconds >= PENDING_DELAY:
+            self._pending_shown = True
+            self._refresh_tree()
+            self._refresh_properties()
+            self._refresh_progress()
+        elif self._pending_shown:
+            self._refresh_progress()
+
+    def _refresh_progress(self) -> None:
+        computing = self.session.computing
+        if not computing:
+            self._pending_shown = False
+        shown = computing and self._pending_shown
+        self.progress_label.setText(
+            f"⏳ Přepočítávám… {self.session.computing_seconds:.0f} s" if shown else "")
+        for widget in (self.progress_label, self.progress_bar, self.stop_button):
+            widget.setVisible(shown)
+        self.stop_action.setEnabled(computing)
+
+    def stop_rebuild(self) -> None:
+        if self.session.cancel():
+            self._pending_shown = False
+            self._reload_all()
+            self.statusBar().showMessage("Přepočet zastaven – model je zpět v posledním "
+                                         "spočítaném stavu (Znovu změnu vrátí).", 10000)
 
     def _update_highlight(self) -> None:
         """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …)."""
@@ -649,21 +727,33 @@ class MainWindow(QMainWindow):
         self.tree.clear()
         result = self.session.result
         document = self.session.document
-        if result is None or document is None:
+        if document is None or (result is None and not self.session.computing):
             self.error_label.hide()
             self.tree.blockSignals(False)
             return
-        for status in result.statuses:
-            item = QTreeWidgetItem([f"{_STATUS_ICONS[status.status]}  {status.label}"])
-            item.setData(0, _FEATURE_ID, status.id)
-            item.setForeground(0, _STATUS_COLORS[status.status])
-            item.setToolTip(0, status.message or status.id)
+        old = {s.id: s for s in result.statuses} if result else {}
+        if self.session.computing:  # strom podle modelu, stavy z posledního přepočtu
+            rows = [(f["id"], describe(f), old[f["id"]].status if f["id"] in old else "pending",
+                     "") for f in document.features]
+            if self._pending_shown:
+                rows = [(key, label, "pending", "Přepočítává se…") for key, label, _, _ in rows]
+        else:
+            rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
+        for key, label, status, message in rows:
+            item = QTreeWidgetItem([f"{_STATUS_ICONS[status]}  {label}"])
+            item.setData(0, _FEATURE_ID, key)
+            item.setForeground(0, _STATUS_COLORS[status])
+            item.setToolTip(0, message or key)
             self.tree.addTopLevelItem(item)
-            if status.id == self._selected_id:
+            if key == self._selected_id:
                 self.tree.setCurrentItem(item)
-        if self._selected_id not in {s.id for s in result.statuses}:
+        if self._selected_id not in {row[0] for row in rows}:
             self._selected_id = None
         self.tree.blockSignals(False)
+        if self.session.computing or result is None:
+            if self._pending_shown:
+                self.error_label.hide()
+            return
         error = result.first_error
         if error is None:
             self.error_label.hide()
@@ -686,7 +776,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_selection_actions(self) -> None:
         info = self.session.selection_info(self._picked)
-        has_part = self.session.result is not None and self.session.result.part is not None
+        has_part = (self.session.result is not None and self.session.result.part is not None
+                    and not self.session.computing)  # výběr jen na hotovém dílu
         flat = info.faces > 0 and info.flat_faces == info.faces
         needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,
                  "sketch": info.faces == 1 and flat, "hole": info.faces == 1 and flat,
@@ -705,8 +796,10 @@ class MainWindow(QMainWindow):
             self.add_to_feature_action.setText(texts[kind] + describe(feature))
         else:
             self.add_to_feature_action.setText("Přidat výběr do vybraného prvku")
-        self.add_to_feature_action.setEnabled(kind in SELECTION_FEATURES and needs[kind])
-        self.replace_in_feature_action.setEnabled(kind in ("fillet", "chamfer") and info.edges > 0)
+        self.add_to_feature_action.setEnabled(has_part and kind in SELECTION_FEATURES
+                                              and needs[kind])
+        self.replace_in_feature_action.setEnabled(has_part and kind in ("fillet", "chamfer")
+                                                  and info.edges > 0)
         self.clear_selection_action.setEnabled(bool(self._picked))
 
     def _tree_selection_changed(self, current: QTreeWidgetItem | None, _previous=None) -> None:
@@ -730,7 +823,7 @@ class MainWindow(QMainWindow):
     def _refresh_properties(self) -> None:
         props = self.session.properties
         if props is None:
-            self.props_label.setText("—")
+            self.props_label.setText("⏳ Přepočítávám…" if self.session.computing else "—")
             return
         sx, sy, sz = props.size_mm
         cx, cy, cz = props.center_of_mass_mm
@@ -745,6 +838,8 @@ class MainWindow(QMainWindow):
         ]
         if props.solids != 1:
             lines.append(f"Pozor: {props.solids} samostatná tělesa")
+        if self._pending_shown:
+            lines.insert(0, "⏳ Přepočítává se – hodnoty jsou z minulého stavu:")
         self.props_label.setText("\n".join(lines))
 
     def _selection_changed(self, shapes: list) -> None:
@@ -818,6 +913,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self._confirm_discard():
+            self._poll_timer.stop()
+            if self._runner is not None:
+                self._runner.close()  # pomocné procesy přepočtu
             event.accept()
         else:
             event.ignore()

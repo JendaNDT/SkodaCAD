@@ -38,6 +38,9 @@
 - (15. 10. 2026, schváleno) **Kružnice a vazby mezi tvary ve skicáři** – čára `circle`, víc
   smyček v jednom obrysu (vnořená = díra), vazby `concentric`, `symmetric`, kóta `diameter`,
   tečnost ke kružnici přes skrytý bod dotyku. Formát verze 6.
+- (15. 10. 2026, schváleno) **Přepočet na pozadí v pomocném procesu** (`worker.py`), ne ve
+  vlákně – OCCT drží zámek Pythonu (GIL) a okno by stálo. Nová změna rozpočítaný přepočet
+  hned zruší (záložní proces je připravený), *Zastavit* vrátí poslední spočítaný stav.
 
 ## Architektura (`src/skodacad/`)
 
@@ -56,7 +59,8 @@
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
 | `cli.py` | příkazová řádka `skodacad build` |
-| `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt) |
+| `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
@@ -163,6 +167,23 @@
 - Objem drážky z plošek se od přesné šroubovice liší řádově o desetiny procenta; testy
   ho porovnávají s Pappovou větou s tolerancí, ne přesně.
 
+## Známé pasti (přepočet na pozadí)
+
+- Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
+  (`multiprocessing`, vždy kontext **spawn** – jako ve Windows).
+- Tvary build123d nejdou přes `pickle` (drží `BRepTools_History`, `gp_Pln`) – výsledek se
+  přenáší přes `worker.encode_result` / `decode_result` (BinTools, řádově ms).
+- Spawn spouští pomocný proces znovu z hlavního skriptu: každý spouštěcí skript musí mít
+  `if __name__ == "__main__":`, jinak pomocný proces otevře další okno a vše se zasekne.
+  V sestaveném exe je navíc nutné `multiprocessing.freeze_support()` jako první příkaz
+  (`packaging/skodacad-gui.py`). Self-test to ve Windows ověřuje na staženém balíčku.
+- `ModelSession` bez `runner` počítá synchronně (testy, CLI) – testy okna s pomocným
+  procesem jsou v `tests/test_background.py` (čekají přes `QTest.qWait`).
+- Během přepočtu je `session.result` ten **předchozí**: strom se skládá z `document`,
+  výběr z 3D a export hlásí „ještě se přepočítává“.
+- Řešič slvs ve skicáři běží v okně, přepočet v pomocném procesu – každý má svůj globální
+  stav, nekříží se.
+
 ## Známé pasti (sestavení pro Windows)
 
 - `actions/upload-artifact` bez `include-hidden-files: true` vynechá složky s tečkou
@@ -195,6 +216,7 @@
   prvků, parametry, název a materiál, Zpět/Znovu.
 - [x] **Fáze 2c** – výběr hran a ploch kliknutím ve 3D → sémantický popis (`picking.py`),
   zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
-- [ ] **Fáze 2d** – přepočet na pozadí u pomalých modelů, šikmé a zakřivené plochy pro skicu.
+- [ ] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [ ] šikmé a zakřivené plochy
+  pro skicu.
 - [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

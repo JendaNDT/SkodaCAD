@@ -34,10 +34,18 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 | Celý díl | dvojklik nebo `F` |
 | Pohledy | `0` izometrie, `1` zepředu, `3` zprava, `7` shora (s `Ctrl` opačná strana) |
 | Změna parametru | přepiš hodnotu vlevo a stiskni Enter (číslo, `12,5` i výraz `D/2 + 5`) |
-| Přepočítat | `F5` |
+| Přepočítat | `F5` (pomalý přepočet jde zastavit tlačítkem dole vpravo) |
 
 Neplatná hodnota parametru se zbarví červeně a model zůstane beze změny. Když některý
 prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
+
+**Přepočet na pozadí:** model se přepočítává v samostatném pomocném procesu, takže okno
+nikdy nezamrzne – ani u pomalých prvků, jako je vymodelovaný závit. Trvá-li přepočet déle,
+strom prvků zešedne (⏳), vlastnosti ukazují hodnoty z minulého stavu a dole běží
+„Přepočítávám… N s“ s tlačítkem **Zastavit přepočet**. Zastavení vrátí model do posledního
+spočítaného stavu (*Znovu* změnu vrátí a zkusí to znovu). Když během výpočtu změníš další
+hodnotu, rozpočítaný přepočet se zahodí a hned se počítá ten nejnovější. Export a prvky
+z výběru ve 3D počkají, až bude model spočítaný.
 
 ### Vlastní díl od nuly
 
