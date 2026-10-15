@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import tempfile
+import time
 import traceback
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -79,13 +80,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.self_test:
         return run_self_test(args.self_test)
 
+    from skodacad.worker import BackgroundRebuilder
+
+    runner = BackgroundRebuilder()  # pomocný proces načítá jádro, zatímco se otevírá okno
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("ŠkodaCAD")
     _install_error_handler(log_path)
 
     from skodacad.gui.main_window import MainWindow
 
-    window = MainWindow(examples_dir=examples_dir(), user_dir=user_dir())
+    window = MainWindow(examples_dir=examples_dir(), user_dir=user_dir(), runner=runner)
     window.show()
 
     def open_initial() -> None:
@@ -96,8 +100,20 @@ def main(argv: list[str] | None = None) -> int:
 
     QTimer.singleShot(0, open_initial)
     if args.screenshot:
-        QTimer.singleShot(2500, lambda: (_screenshot(window, args.screenshot), app.quit()))
-    return app.exec()
+        QTimer.singleShot(2500, lambda: _screenshot_when_done(window, args.screenshot))
+    try:
+        return app.exec()
+    finally:
+        runner.close()
+
+
+def _screenshot_when_done(window, path: Path) -> None:
+    """Snímek, až doběhne přepočet na pozadí (jinak by na něm byl jen „Přepočítávám…“)."""
+    if window.session.computing:
+        QTimer.singleShot(200, lambda: _screenshot_when_done(window, path))
+        return
+    _screenshot(window, path)
+    QApplication.instance().quit()
 
 
 def _screenshot(window, path: Path) -> None:
@@ -149,6 +165,7 @@ def run_self_test(report_path: Path) -> int:
                 last_part = result.part
 
         ok = _self_test_window(lines, last_part) and ok
+        ok = _self_test_background(models, lines) and ok
     except Exception:  # noqa: BLE001 – zpráva musí vzniknout i při nečekané chybě
         ok = False
         lines.append("✕ Neočekávaná chyba:\n" + traceback.format_exc())
@@ -188,6 +205,37 @@ def _self_test_window(lines: list[str], part) -> bool:
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_background(models: list[Path], lines: list[str]) -> bool:
+    """Přepočet na pozadí: pomocný proces se musí spustit (ve Windows je to znovu spuštěný
+    SkodaCAD.exe) a vrátit stejný díl jako přepočet v okně."""
+    from skodacad.document import Document
+    from skodacad.rebuild import rebuild
+    from skodacad.worker import BackgroundRebuilder
+
+    if not models:
+        return True
+    document = Document.load(models[0])
+    runner = BackgroundRebuilder()
+    try:
+        started = time.monotonic()
+        runner.submit(document.to_dict())
+        finished = runner.wait(timeout=180)
+    finally:
+        runner.close()
+    if finished is None or finished.error:
+        detail = finished.error if finished else "nedoběhl do 3 minut"
+        lines.append(f"✕ Přepočet na pozadí (pomocný proces): {detail}")
+        return False
+    expected = rebuild(document).part.volume
+    if abs(finished.result.part.volume - expected) > 1e-6 * expected:
+        lines.append(f"✕ Přepočet na pozadí: objem {finished.result.part.volume:.0f} mm³, "
+                     f"čekáno {expected:.0f} mm³")
+        return False
+    lines.append(f"✓ Přepočet na pozadí (pomocný proces): OK ({models[0].name}, "
+                 f"{time.monotonic() - started:.1f} s i se startem procesu)")
+    return True
 
 
 def _self_test_sketcher(window, lines: list[str]) -> bool:

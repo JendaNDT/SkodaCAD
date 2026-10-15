@@ -131,3 +131,101 @@ def test_selection_waits_for_computed_model(runner):
         session.add_from_selection("fillet", [])
     assert session.wait()
     assert session.failure == ""
+
+
+# --- okno s přepočtem na pozadí ------------------------------------------------------------
+
+
+@pytest.fixture
+def window(runner, examples_dir, tmp_path, monkeypatch):
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    qt = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from PySide6.QtWidgets import QMessageBox
+
+    from skodacad.gui.main_window import MainWindow
+    from test_gui import FakeViewer
+
+    qt.QApplication.instance() or qt.QApplication([])
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path,
+                   runner=runner)
+    yield w
+    w.session.cancel()
+    w.session.dirty = False
+    w._runner = None  # sdílené procesy zavře až fixture „runner“
+    w.close()
+
+
+def settle(w, timeout=60.0):
+    """Nechá běžet okno (časovač převezme výsledek), dokud se model přepočítává."""
+    from PySide6.QtTest import QTest
+
+    end = time.monotonic() + timeout
+    while w.session.computing and time.monotonic() < end:
+        QTest.qWait(50)
+    assert not w.session.computing, "přepočet na pozadí nedoběhl"
+
+
+def tree_texts(w):
+    return [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
+
+
+def test_window_shows_progress_and_then_result(window, examples_dir):
+    from PySide6.QtTest import QTest
+
+    window.open_model(examples_dir / "deska.json", template=True)
+    assert window.session.computing
+    assert len(tree_texts(window)) == len(window.session.document.features)  # strom hned
+    QTest.qWait(400)  # delší než PENDING_DELAY → okno ukáže „Přepočítávám…“
+    if window.session.computing:
+        assert window.progress_label.isVisibleTo(window)
+        assert window.progress_label.text().startswith("⏳ Přepočítávám")
+        assert window.stop_action.isEnabled()
+        assert all(text.startswith("⏳") for text in tree_texts(window))
+        assert not any(a.isEnabled() for a in window.selection_actions.values())
+    settle(window)
+    assert all(text.startswith("✓") for text in tree_texts(window))
+    assert not window.progress_label.isVisibleTo(window)
+    assert not window.stop_action.isEnabled()
+    assert window.session.properties.volume_mm3 == pytest.approx(
+        rebuild(window.session.document).part.volume)
+    assert window.viewer.parts[-1][0] is window.session.result.part
+
+
+def test_stop_button_returns_to_computed_model(window):
+    from PySide6.QtTest import QTest
+
+    window.new_model()
+    window.add_feature_actions["sketch"].trigger()
+    window.add_feature_actions["extrude"].trigger()
+    settle(window)
+    computed = window.session.document
+    window.add_feature_actions["hole"].trigger()  # díra je vybraná ve stromu i ve formuláři
+    settle(window)
+    form = window.feature_editor.form
+    size = form.widget("size")
+    size.setCurrentIndex(size.findData("M5"))
+    form.widget("modeled_thread").setChecked(True)  # vymodelovaný závit = pomalý přepočet
+    assert window.session.computing
+    assert window.tree.currentItem().text(0).endswith("(vymodelovaný)")  # výběr zůstal
+    QTest.qWait(400)
+    window.stop_action.trigger()
+    assert not window.session.computing
+    assert not window.session.document.features[-1].get("modeled_thread")
+    assert window.redo_action.isEnabled()
+    assert "Přepočet zastaven" in window.statusBar().currentMessage()
+    assert len(window.session.document.features) == len(computed.features) + 1
+
+
+def test_feature_added_while_computing_is_in_tree_and_editor(window):
+    window.new_model()
+    window.add_feature_actions["sketch"].trigger()
+    window.add_feature_actions["extrude"].trigger()
+    assert window.session.computing
+    assert [window.tree.topLevelItem(i).data(0, 256) for i in range(2)] == ["sketch1",
+                                                                           "extrude1"]
+    assert window.feature_editor.feature_id == "extrude1"
+    settle(window)
+    assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
