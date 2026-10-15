@@ -55,8 +55,31 @@ prvek nejde spočítat, ve stromu prvků se ukáže ✕ a česky proč.
    *Přidat vybrané hrany do…*. Hrany jde vybrat i ručně ve formuláři (na ploše, rovnoběžné…).
 6. **Skica na ploše kliknutím**: klikni na rovinnou plochu (i dno kapsy nebo schod), pravé
    tlačítko → *Skica na vybrané ploše* – kružnice Ø10 vznikne v místě kliknutí.
-7. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
+7. **Skicář (obrys z čar s vazbami)**: *Přidat prvek → Skica – nakreslit obrys…* (nebo u tvaru
+   „Obrys z čar“ tlačítko *Upravit ve skicáři…*). Viz [Skicář](#skicář) níže.
+8. **+ Parametr** vytvoří pojmenovaný rozměr; jeho název pak můžeš napsat do kteréhokoli
    pole (např. `sirka` nebo `sirka/2 - 5`).
+
+### Skicář
+
+1. Nástroj **Úsečka** (`L`): klikej body obrysu. Klik na existující bod čáry napojí, klik do
+   počátku (zelený kroužek) obrys k počátku připne. Skoro vodorovná/svislá čára dostane vazbu
+   sama. Konec řetězu: `Esc` nebo pravé tlačítko. **Oblouk** (`A`): začátek, konec a bod,
+   kudy má vést.
+2. Nástroj **Výběr** (`S`): klikni na čáru nebo bod (`Ctrl` = přidat další) a přidej vazbu
+   tlačítkem vlevo – *Vodorovně, Svisle, Rovnoběžně, Kolmo, Tečně, Stejně velké, Na bodě/čáře,
+   Uprostřed, Pevný bod*.
+3. **Kóta…** (`D`): úsečka = délka, oblouk = poloměr, dva body nebo bod a čára = vzdálenost,
+   dvě úsečky = úhel. Hodnota může být číslo i výraz s parametrem (`sirka`, `D/2`) – obrys se
+   pak mění s parametrem.
+4. Dole vpravo je vidět, kolik rozměrů **zbývá určit** (modrý obrys jde ještě táhnout myší),
+   nebo **✓ plně určeno** (černý obrys). Vazby, které si odporují, jsou **červeně** – smaž je
+   (*Smazat vazbu*) nebo dej *Zpět* (`Ctrl+Z`).
+5. **Pomocná čára** (`G`) se účastní vazeb, ale není součástí obrysu (např. osa souměrnosti).
+6. **Hotovo** uloží obrys do modelu (jako jeden krok pro Zpět v hlavním okně). Obrys pak vysuň
+   nebo orotuj; s režimem *odečíst* je z něj otvor.
+
+Ukázka: *Soubor → Otevřít ukázku → paka* – změň `L` nebo `R` a obrys páky se přepočítá.
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
 se vloží za vybraný. **Zpět / Znovu**: `Ctrl+Z` / `Ctrl+Y`.
@@ -98,7 +121,7 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 2,
+  "version": 3,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -140,9 +163,34 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `regular_polygon` | `sides`, `diameter` (opsaný) – např. šestihran |
 | `slot` | `length` (rozteč středů), `width` – drážka |
 | `polygon` | `points` – seznam bodů `[[x, y], …]` |
+| `profile` | obrys z úseček a oblouků s vazbami – kreslí se ve skicáři, viz níže |
 
 Všechny tvary mají navíc `center` (`[x, y]`), `angle` a `mode` (`add` = přidat, `subtract` = odečíst,
 tak vzniká např. otvor v kruhu).
+
+### Obrys s vazbami (`profile`)
+
+```json
+{"shape": "profile",
+ "points": {"A": [0, 0], "B": [40, 0], "C": [40, 20], "M": [40, 10], "D": [0, 20]},
+ "segments": {"s1": {"type": "line", "start": "A", "end": "B"},
+              "s2": {"type": "arc", "start": "B", "end": "C", "center": "M"},
+              "s3": {"type": "line", "start": "C", "end": "D"},
+              "s4": {"type": "line", "start": "D", "end": "A"}},
+ "constraints": [{"type": "coincident", "point": "A", "on": "origin"},
+                 {"type": "horizontal", "segment": "s1"},
+                 {"type": "length", "segment": "s1", "value": "sirka"},
+                 {"type": "radius", "segment": "s2", "value": 10},
+                 {"type": "tangent", "segments": ["s1", "s2"]}]}
+```
+
+* `points` jsou přibližné polohy – přesné spočítá řešič vazeb (SolveSpace) při každém přepočtu.
+* Oblouk vede **proti směru hodinových ručiček** od `start` do `end`; `"construction": true`
+  = pomocná čára. Bod `origin` je počátek skici.
+* Vazby: `fix` (point), `coincident` (point + on: bod/čára/origin), `horizontal`/`vertical`
+  (segment, nebo points), `parallel`, `perpendicular`, `tangent`, `equal` (segments),
+  `midpoint` (point + segment); kóty s `value` (číslo nebo výraz): `length` (segment),
+  `distance` (points, nebo point + segment), `radius` (segment), `angle` (segments, °).
 
 ### Výběr hran (`edges`)
 

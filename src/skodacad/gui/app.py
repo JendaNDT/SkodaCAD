@@ -184,9 +184,30 @@ def _self_test_window(lines: list[str], part) -> bool:
         ok = False
         lines.append(f"✕ 3D prohlížeč: {viewer.failed_stage or 'nespuštěn'}: "
                      f"{viewer.error or 'okno se nezobrazilo'}")
+    ok = _self_test_sketcher(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_sketcher(window, lines: list[str]) -> bool:
+    """Skicář: výchozí obrys (obdélník s kótami) musí řešič plně určit."""
+    from skodacad.gui.sketcher import SketcherDialog
+    from skodacad.schema import new_shape
+
+    try:
+        dialog = SketcherDialog(new_shape("profile"), window.session.solve_profile, window)
+        solution = dialog.solution
+        dialog.deleteLater()
+    except Exception as exc:  # noqa: BLE001 – zpráva do self-testu místo pádu
+        lines.append(f"✕ Skicář: {type(exc).__name__}: {exc}")
+        return False
+    if solution is None or not solution.ok or solution.dof != 0:
+        detail = solution.message if solution is not None else "nic se nespočítalo"
+        lines.append(f"✕ Skicář: obrys se nevyřešil ({detail})")
+        return False
+    lines.append("✓ Skicář a řešič vazeb (SolveSpace): OK")
+    return True
 
 
 def _self_test_pick(window, part, lines: list[str]) -> bool:
