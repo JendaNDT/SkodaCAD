@@ -38,6 +38,7 @@ from skodacad.expressions import (
 from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
+from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -465,6 +466,59 @@ class ModelSession:
         except Exception:  # noqa: BLE001 – zvýraznění je jen pomůcka, nesmí nic shodit
             return []
         return []
+
+    # --- měření --------------------------------------------------------------------
+
+    def measure_selection(self, shapes: list[Any], point: Any = None) -> list[Value]:
+        """Co se dá změřit na výběru ve 3D (okno to ukáže hned po kliknutí); jinak []."""
+        if self.result is None or self.result.part is None or self.computing:
+            return []
+        faces, edges = split_shapes(shapes)
+        try:
+            return measure(faces, edges, point, self.result.part)
+        except Exception:  # noqa: BLE001 – měření je jen informace, nesmí shodit okno
+            return []
+
+    @property
+    def measurements(self) -> list[SavedResult]:
+        """Uložená měření spočítaná na posledním dílu."""
+        return list(self.result.measurements) if self.result is not None else []
+
+    def add_measurement(self, shapes: list[Any], kind: str, point: Any = None) -> str:
+        """Uloží měření výběru do modelu (přepočítá se při každé změně). Vrátí jeho id."""
+        document = self._require()
+        self._require_computed("uložení měření")
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není co měřit.")
+        faces, edges = split_shapes(shapes)
+        try:
+            record = new_measurement(self.result.part, faces, edges, kind, point,
+                                     document.measurements)
+        except (MeasureError, SelectionError) as exc:
+            raise DocumentError(str(exc)) from None
+        self._change(lambda doc: doc.measurements.append(record))
+        return record["id"]
+
+    def remove_measurement(self, measurement_id: str) -> BuildResult:
+        self._measurement_index(measurement_id)
+
+        def mutate(doc: Document) -> None:
+            doc.measurements = [m for m in doc.measurements if m.get("id") != measurement_id]
+
+        return self._change(mutate)
+
+    def rename_measurement(self, measurement_id: str, name: str) -> BuildResult:
+        index = self._measurement_index(measurement_id)
+        name = name.strip()
+        if not name:
+            raise DocumentError("Název měření nesmí být prázdný.")
+        return self._change(lambda doc: doc.measurements[index].update(name=name))
+
+    def _measurement_index(self, measurement_id: str) -> int:
+        for index, measurement in enumerate(self._require().measurements):
+            if measurement.get("id") == measurement_id:
+                return index
+        raise DocumentError(f"Měření „{measurement_id}“ v modelu není.")
 
     def _final_part(self) -> Any:
         self._require_computed("přidání prvku z výběru")

@@ -15,6 +15,7 @@ from build123d import Part, Plane, Sketch
 from skodacad.document import Document, DocumentError
 from skodacad.expressions import ExpressionError, resolve_parameters
 from skodacad.features import FEATURE_TYPES, BuildContext, FeatureError, describe
+from skodacad.measure import SavedResult, evaluate
 from skodacad.selectors import SelectionError
 
 Status = Literal["ok", "error", "skipped"]
@@ -38,6 +39,7 @@ class BuildResult:
     # hrany a plochy. Okno podle toho zvýrazní, co prvek zasahuje.
     parts_before: dict[str, Part | None] = field(default_factory=dict)
     sketches: dict[str, tuple[Plane, Sketch]] = field(default_factory=dict)  # id → umístění
+    measurements: list[SavedResult] = field(default_factory=list)  # uložená měření na dílu
 
     @property
     def ok(self) -> bool:
@@ -82,6 +84,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
 
     result.part = ctx.part
     result.sketches = ctx.sketches
+    result.measurements = [evaluate(ctx.part, m) for m in document.measurements]
     return result
 
 

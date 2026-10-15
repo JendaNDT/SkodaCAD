@@ -64,6 +64,7 @@ def encode_result(result: BuildResult) -> dict[str, Any]:
         "sketches": {key: (tuple(plane.origin), tuple(plane.x_dir), tuple(plane.z_dir),
                            _shape_bytes(sketch))
                      for key, (plane, sketch) in result.sketches.items()},
+        "measurements": list(result.measurements),  # jen čísla a texty
     }
 
 
@@ -77,6 +78,7 @@ def decode_result(data: dict[str, Any]) -> BuildResult:
         parts_before={key: _shape_from(raw) for key, raw in data["parts_before"].items()},
         sketches={key: (Plane(origin, x_dir, z_dir), _shape_from(raw))
                   for key, (origin, x_dir, z_dir, raw) in data["sketches"].items()},
+        measurements=data["measurements"],
     )
 
 

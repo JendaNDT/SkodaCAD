@@ -1,6 +1,6 @@
 """Příkazová řádka: ``skodacad build model.json``.
 
-Postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu
+Postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená měření
 a uloží exporty do složky ``out/``.
 """
 
@@ -76,6 +76,10 @@ def _build(args: argparse.Namespace) -> int:
         return 1
 
     _print_properties(result, document.material)
+    if result.measurements:
+        print("Měření:")
+        for measurement in result.measurements:
+            print(f"  {measurement.text}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

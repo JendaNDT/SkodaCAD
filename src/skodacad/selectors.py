@@ -88,32 +88,65 @@ def face_plane_at(part: Part, spec: Any) -> Plane:
     Počátek skici je v místě kliknutí. Osa X skici míří u válce a kužele podél jeho osy,
     jinak vodorovně po ploše (u vodorovné plochy podél osy X dílu).
     """
-    try:
-        at = Vector(*(float(v) for v in spec["at"]))
-        hint = Vector(*(float(v) for v in spec.get("normal", (0, 0, 0))))
-    except (KeyError, TypeError, ValueError):
-        raise SelectionError('Plocha pro skicu musí mít „at“: [x, y, z] (a „normal“).') from None
-    from build123d import Vertex
-
-    found = []
-    for face in part.faces():
-        distance, on_face, _ = face.distance_to_with_closest_points(Vertex(at))
-        found.append((distance, face, on_face))
-    if not found:
-        raise SelectionError("Díl nemá žádné plochy.")
-    nearest = min(distance for distance, _, _ in found)
-    close = [(face, on_face) for distance, face, on_face in found if distance <= nearest + 1e-4]
-    face, on_face = max(close, key=lambda item: item[0].normal_at(item[1]).dot(hint))
+    face, on_face = find_face(part, spec)
+    at = Vector(*spec["at"])
     normal = face.normal_at(on_face)
-    if hint.length > 0 and normal.dot(hint.normalized()) < 0.5:
-        raise SelectionError(f"Plocha pro skicu u bodu [{_short(at)}] už na dílu není (nejbližší "
-                             "plocha míří jinam) – vyber plochu znovu ve 3D.")
     if face.geom_type == GeomType.PLANE:  # šikmá plocha: počátek = bod promítnutý na ni
         origin = at - normal * (at - on_face).dot(normal)
     else:
         origin = on_face
     x_dir = _sketch_x_dir(face, normal)
     return Plane(origin=origin, x_dir=x_dir, z_dir=normal)
+
+
+FACE_TYPES = {"plane": GeomType.PLANE, "cylinder": GeomType.CYLINDER, "cone": GeomType.CONE,
+              "sphere": GeomType.SPHERE, "torus": GeomType.TORUS}
+_ROUND_TYPES = (GeomType.CYLINDER, GeomType.SPHERE)  # plochy s jedním poloměrem
+
+
+def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
+    """Plocha dílu podle bodu a směru → (plocha, nejbližší bod na ní).
+
+    ``spec`` je ``{"at": [x, y, z], "normal": [nx, ny, nz]}``, nepovinně i ``"type"``
+    (``plane``, ``cylinder`` …) a ``"radius"``. Hledá se plocha nejbližší bodu ``at``;
+    na hraně mezi plochami rozhodne směr. S ``type`` se hledá jen mezi plochami toho druhu
+    (a s ``radius`` přednostně mezi stejně velkými) – díra se tak najde, i když se posune.
+    """
+    try:
+        at = Vector(*(float(v) for v in spec["at"]))
+        hint = Vector(*(float(v) for v in spec.get("normal", (0, 0, 0))))
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise SelectionError("Plocha musí mít „at“: [x, y, z] (a „normal“).") from None
+    from build123d import Vertex
+
+    faces = list(part.faces())
+    kind = FACE_TYPES.get(spec.get("type"))
+    if kind is not None:
+        faces = [face for face in faces if face.geom_type == kind]
+        if "radius" in spec and kind in _ROUND_TYPES:
+            radius = float(spec["radius"])
+            same = [face for face in faces if abs(face.radius - radius) < 1e-6 * max(1, radius)]
+            faces = same or faces  # parametr průměr změnil – vezme se nejbližší stejného druhu
+        if kind == GeomType.PLANE and hint.length > 0:  # rovina se pozná hlavně podle směru
+            same = [face for face in faces
+                    if face.normal_at().dot(hint.normalized()) > 1 - 1e-6]
+            faces = same or faces  # posunutá plocha (deska je tlustší) se najde i daleko
+    found = []
+    for face in faces:
+        distance, on_face, _ = face.distance_to_with_closest_points(Vertex(at))
+        found.append((distance, face, on_face))
+    if not found:
+        raise SelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není – vyber ji znovu "
+                             "ve 3D.")
+    nearest = min(distance for distance, _, _ in found)
+    close = [(face, on_face) for distance, face, on_face in found if distance <= nearest + 1e-4]
+    face, on_face = max(close, key=lambda item: item[0].normal_at(item[1]).dot(hint))
+    normal = face.normal_at(on_face)
+    loose = kind in _ROUND_TYPES or kind == GeomType.CONE  # díra pozná se podle druhu a velikosti
+    if hint.length > 0 and not loose and normal.dot(hint.normalized()) < 0.5:
+        raise SelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není (nejbližší plocha "
+                             "míří jinam) – vyber ji znovu ve 3D.")
+    return face, on_face
 
 
 def _sketch_x_dir(face: Face, normal: Vector) -> Vector:
