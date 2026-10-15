@@ -188,22 +188,59 @@ def _pair_values(a: Face | Edge, b: Face | Edge) -> list[Value]:
     return values
 
 
-def wall_thickness(part: Part, face: Face, point: Any) -> Value:
-    """Tloušťka stěny v bodě plochy: od bodu kolmo do materiálu k nejbližší protější ploše."""
-    from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
-    from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+BACK_WALL_COS = 0.5  # protější stěna smí být od kolmice k paprsku natočená nejvýš o 60°
 
+
+class RayCaster:
+    """Paprsky kolmo do materiálu dílu – tloušťka stěny jako u ultrazvukového tloušťkoměru.
+
+    Platí jen protější stěna, která k paprsku stojí zhruba kolmo (odraz se vrátí zpět,
+    „koncové echo“). Paprsek, který nejdřív narazí na stěnu skoro souběžnou s ním (okraj
+    jamky, drážky, ostrá hrana), by dal nesmyslně malé číslo – tam tloušťka není jednoznačná.
+    """
+
+    def __init__(self, part: Part) -> None:
+        from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+
+        self._intersector = IntCurvesFace_ShapeIntersector()
+        self._intersector.Load(part.wrapped, 1e-7)
+
+    def thickness(self, start: Point, inward: Point) -> tuple[float | None, bool]:
+        """(tloušťka, šikmá) – tloušťka None: za plochou není materiál (šikmá False), nebo
+        první protější stěna je skoro souběžná s paprskem (šikmá True)."""
+        from OCP.BRepGProp import BRepGProp_Face
+        from OCP.gp import gp_Dir, gp_Lin, gp_Pnt, gp_Vec
+
+        intersector = self._intersector
+        intersector.Perform(gp_Lin(gp_Pnt(*start), gp_Dir(*inward)), 1e-6, 1e9)
+        hits = [(intersector.WParameter(i), i) for i in range(1, intersector.NbPnt() + 1)]
+        hits = [hit for hit in hits if hit[0] > 1e-4]  # vlastní plochu (w ≈ 0) vynechat
+        if not hits:
+            return None, False
+        depth, index = min(hits)
+        point, normal = gp_Pnt(), gp_Vec()
+        BRepGProp_Face(intersector.Face(index)).Normal(
+            intersector.UParameter(index), intersector.VParameter(index), point, normal)
+        length = normal.Magnitude()
+        if length > 1e-12:
+            facing = (normal.X() * inward[0] + normal.Y() * inward[1]
+                      + normal.Z() * inward[2]) / length
+            if facing < BACK_WALL_COS:
+                return None, True
+        return depth, False
+
+
+def wall_thickness(part: Part, face: Face, point: Any) -> Value:
+    """Tloušťka stěny v bodě plochy: od bodu kolmo do materiálu k protější stěně."""
     start = Vector(*point)
     inward = -face.normal_at(start)
-    intersector = IntCurvesFace_ShapeIntersector()
-    intersector.Load(part.wrapped, 1e-7)
-    intersector.Perform(gp_Lin(gp_Pnt(*start), gp_Dir(*inward)), 1e-6, 1e9)
-    hits = [intersector.WParameter(i) for i in range(1, intersector.NbPnt() + 1)]
-    hits = [w for w in hits if w > 1e-4]
-    if not hits:
+    depth, oblique = RayCaster(part).thickness(_tuple(start), _tuple(inward))
+    if depth is None and oblique:
+        raise MeasureError("Protější stěna tu stojí šikmo (okraj jamky, drážky nebo hrana) – "
+                           "tloušťku nejde jednoznačně změřit, klikni kousek dál od okraje.")
+    if depth is None:
         raise MeasureError("Za plochou v tomhle místě žádný materiál není – tloušťku stěny "
                            "nejde změřit.")
-    depth = min(hits)
     return Value("thickness", "Tloušťka stěny", depth, "mm",
                  (_tuple(start), _tuple(start + inward * depth)))
 
