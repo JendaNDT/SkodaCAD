@@ -8,16 +8,22 @@ aplikace testovat bez okna.
 Každá úprava jde přes ``_change``: zkusí ji na kopii dokumentu, zkontroluje
 ji a teprve pak ji přijme a uloží předchozí stav pro „Zpět“. Neplatná
 úprava vyvolá ``DocumentError`` a model zůstane beze změny.
+
+Okno předá ``runner`` (``worker.BackgroundRebuilder``) – pak se model přepočítává na
+pozadí v pomocném procesu: úprava se přijme hned, ``result`` zůstane do dokončení starý
+(``computing`` je True) a nový výsledek převezme ``poll``. Bez něj (testy, příkazová
+řádka) se přepočítává hned a synchronně.
 """
 
 from __future__ import annotations
 
 import copy
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from skodacad.document import Document, DocumentError
 from skodacad.export import export
@@ -43,6 +49,9 @@ from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
 from skodacad.solver import SolveError, loops, solve
+
+if TYPE_CHECKING:
+    from skodacad.worker import BackgroundRebuilder
 
 _NUMBER = re.compile(r"[+-]?\d+(?:[.,]\d+)?")
 _UNDO_LIMIT = 100
@@ -75,20 +84,25 @@ def format_parameter_value(value: Any) -> str:
 
 
 class ModelSession:
-    def __init__(self) -> None:
+    def __init__(self, runner: BackgroundRebuilder | None = None) -> None:
         self.path: Path | None = None
         self.document: Document | None = None
         self.result: BuildResult | None = None
         self.dirty = False
+        self.failure = ""  # proč se poslední přepočet na pozadí nepovedl ("" = v pořádku)
         self._undo: list[Document] = []
         self._redo: list[Document] = []
+        self._runner = runner
+        self._job: int | None = None  # běžící přepočet na pozadí
+        self._computed: Document | None = None  # model, ke kterému patří ``result``
 
     # --- otevření a přepočet ---------------------------------------------------
 
-    def open(self, path: str | Path) -> BuildResult:
+    def open(self, path: str | Path) -> BuildResult | None:
         document = Document.load(path)
         self.path = Path(path)
         self.document = document
+        self.result = self._computed = None  # výsledek starého modelu už neplatí
         self.dirty = False
         self._undo.clear()
         self._redo.clear()
@@ -97,6 +111,7 @@ class ModelSession:
     def new_document(self, name: str = "Nový díl") -> BuildResult:
         """Prázdný model bez prvků (zatím bez souboru)."""
         self.document = Document(name=name)
+        self.result = self._computed = None
         self.path = None
         self.dirty = False
         self._undo.clear()
@@ -109,11 +124,85 @@ class ModelSession:
         self.path = None
         return result
 
-    def rebuild(self) -> BuildResult:
+    def rebuild(self) -> BuildResult | None:
+        """Přepočítá model. S pomocným procesem jen spustí přepočet na pozadí a vrátí
+        dosavadní výsledek (nový převezme ``poll``)."""
         if self.document is None:
             raise DocumentError("Není otevřený žádný model.")
-        self.result = rebuild(self.document)
+        self.failure = ""
+        if self._runner is None:
+            self.result = rebuild(self.document)
+            self._computed = self.document
+            return self.result
+        self._job = self._runner.submit(self.document.to_dict())
         return self.result
+
+    # --- přepočet na pozadí ----------------------------------------------------------
+
+    @property
+    def computing(self) -> bool:
+        """Běží přepočet na pozadí (``result`` je zatím ten předchozí)?"""
+        return self._job is not None
+
+    @property
+    def computing_seconds(self) -> float:
+        return time.monotonic() - self._runner.started if self.computing else 0.0
+
+    def poll(self) -> bool:
+        """Převezme hotový přepočet z pozadí. True = výsledek (nebo chyba) se změnil."""
+        if self._runner is None or self._job is None:
+            return False
+        finished = self._runner.poll()
+        if finished is None or finished.job != self._job:
+            return False
+        self._job = None
+        if finished.result is not None:
+            self.result = finished.result
+            self._computed = self.document
+        else:
+            self.failure = finished.error
+        return True
+
+    def wait(self, timeout: float = 120.0) -> bool:
+        """Počká na dokončení přepočtu na pozadí. False = nestihl se do ``timeout`` s."""
+        end = time.monotonic() + timeout
+        while self.computing and time.monotonic() < end:
+            if not self.poll():
+                time.sleep(0.02)
+        return not self.computing
+
+    def cancel(self) -> bool:
+        """Zastaví přepočet na pozadí a vrátí model do posledního spočítaného stavu.
+        Zrušenou změnu vrátí „Znovu“. False = nic se nepočítalo."""
+        if self._runner is None or self._job is None:
+            return False
+        self._runner.cancel()
+        self._job = None
+        document, computed = self._require(), self._computed
+        if computed is None:
+            self.failure = ("Přepočet zastaven – model zatím není spočítaný. Uprav ho "
+                            "(třeba menší počet kusů) nebo přepočítej znovu.")
+            return True
+        if document != computed:
+            same = [i for i, old in enumerate(self._undo) if old == computed]
+            if same:
+                del self._undo[same[-1]:]
+            self._redo.append(document)
+            self.document = computed
+            self.dirty = True
+        return True
+
+    def _require_computed(self, what: str) -> None:
+        if self.computing:
+            raise DocumentError(f"Model se ještě přepočítává – {what} půjde, až bude hotovo "
+                                "(nebo přepočet zastav).")
+
+    def _params(self) -> dict[str, float]:
+        """Hodnoty parametrů aktuálního modelu (i když se zrovna přepočítává)."""
+        try:
+            return resolve_parameters(self._require().parameters)
+        except (ExpressionError, DocumentError):
+            return self.result.parameters if self.result else {}
 
     # --- úpravy ------------------------------------------------------------------
 
@@ -257,7 +346,7 @@ class ModelSession:
     def solve_profile(self, profile: dict[str, Any]) -> ProfileSolution:
         """Vyřeší obrys skicáře s aktuálními parametry. Nikdy nevyhodí výjimku – chybu
         vrátí česky v ``message`` (a čísla vadných vazeb ve ``failed``)."""
-        params = self.result.parameters if self.result else {}
+        params = self._params()
         try:
             solved = solve(profile, lambda value: evaluate(value, params))
         except SolveError as exc:
@@ -313,6 +402,7 @@ class ModelSession:
         feature = self.feature(feature_id)
         if feature["type"] not in SELECTION_FEATURES:
             raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
+        self._require_computed("převzetí výběru")
         part = self.result.parts_before.get(feature_id) if self.result else None
         if part is None:
             raise DocumentError(f"{describe(feature)} se zatím nepočítá (je za chybou "
@@ -344,6 +434,7 @@ class ModelSession:
         return []
 
     def _final_part(self) -> Any:
+        self._require_computed("přidání prvku z výběru")
         result = self.result
         if result is None or result.part is None:
             raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
@@ -353,7 +444,7 @@ class ModelSession:
         return result.part
 
     def _evaluate(self, value: Any) -> float:
-        return evaluate(value, self.result.parameters if self.result else {})
+        return evaluate(value, self._params())
 
     def _fill_from_selection(self, feature: dict[str, Any], part: Any, shapes: list[Any],
                              point: Any, replace: bool, new: bool) -> None:
@@ -479,6 +570,7 @@ class ModelSession:
         return target
 
     def export(self, path: str | Path) -> Path:
+        self._require_computed("export")
         if self.result is None or self.result.part is None:
             raise DocumentError("Model zatím nemá žádné těleso, není co exportovat.")
         return export(self.result.part, path)
