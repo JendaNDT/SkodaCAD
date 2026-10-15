@@ -149,7 +149,7 @@ def run_self_test(report_path: Path) -> int:
             models = []
         else:
             models = sorted(folder.glob("*.json"))
-        last_part = None
+        last_model = None
         with tempfile.TemporaryDirectory() as tmp:
             for model in models:
                 session = ModelSession()
@@ -162,9 +162,9 @@ def run_self_test(report_path: Path) -> int:
                     session.export(Path(tmp) / f"{model.stem}.{fmt}")
                 volume = session.properties.volume_mm3
                 lines.append(f"✓ {model.name}: objem {volume:.0f} mm³, export STEP/STL/3MF")
-                last_part = result.part
+                last_model = model
 
-        ok = _self_test_window(lines, last_part) and ok
+        ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
     except Exception:  # noqa: BLE001 – zpráva musí vzniknout i při nečekané chybě
         ok = False
@@ -176,8 +176,9 @@ def run_self_test(report_path: Path) -> int:
     return 0 if ok else 1
 
 
-def _self_test_window(lines: list[str], part) -> bool:
-    """Otevře hlavní okno se skutečným 3D prohlížečem. Selhání OpenGL není chyba aplikace."""
+def _self_test_window(lines: list[str], model: Path | None) -> bool:
+    """Otevře hlavní okno se skutečným 3D prohlížečem a v něm ukázku ``model`` (jako
+    uživatel – přes ModelSession). Selhání OpenGL není chyba aplikace."""
     from skodacad.gui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication(["skodacad-gui"])
@@ -187,7 +188,9 @@ def _self_test_window(lines: list[str], part) -> bool:
     for _ in range(20):
         app.processEvents()
     viewer = window.viewer
-    viewer.show_part(part, fit=True)
+    if model is not None:
+        window.open_model(model, template=True)
+    part = window.session.result.part if window.session.result else None
     app.processEvents()
     ok = True
     if viewer.ready:
@@ -283,6 +286,13 @@ def _self_test_pick(window, part, lines: list[str]) -> bool:
         lines.append(f"✕ Výběr kliknutím: na hraně dílu (pixel {x}, {y}) se nic nevybralo")
         return False
     lines.append(f"✓ Výběr kliknutím: OK ({window.session.selection_info(picked).text})")
+    # Výběr se hned změří (panel Měření) a čára s popiskem se nakreslí do 3D.
+    if window.measure_list.count() == 0:
+        lines.append("✕ Měření: na vybrané hraně/ploše se nic nezměřilo")
+        return False
+    image = user_dir() / "self-test-mereni.png"
+    lines.append(f"✓ Měření: OK ({window.measure_list.item(0).text()}, čára ve 3D: "
+                 f"{bool(viewer._measure_objects)}, snímek {image}: {viewer.dump(str(image))})")
     return True
 
 

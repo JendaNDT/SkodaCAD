@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -45,6 +47,7 @@ from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
+from skodacad.measure import SavedResult, Value, format_value
 from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
@@ -66,6 +69,10 @@ SELECTION_ACTIONS = {
     "hole": "Díra na vybrané ploše",
     "shell": "Skořepina – otevřít vybrané plochy",
 }
+
+MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost a tloušťka stěny "
+                "v místě kliknutí. Ctrl+klik na druhou změří vzdálenost a úhel mezi nimi.")
+_MEASURE_COLOR = QColor("#1b7f3b")
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888"),
@@ -96,6 +103,7 @@ class MainWindow(QMainWindow):
         self._param_fields: dict[str, QLineEdit] = {}
         self._selected_id: str | None = None
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
+        self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -109,10 +117,13 @@ class MainWindow(QMainWindow):
         self._create_actions()
         self._build_side_panel()
         self._build_editor_panel()
+        self._build_measure_panel()
         self._build_menus()
         self.resize(1400, 860)
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
                          Qt.Orientation.Horizontal)
+        self.resizeDocks([self.editor_dock, self.measure_dock], [420, 400],
+                         Qt.Orientation.Vertical)
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -177,6 +188,18 @@ class MainWindow(QMainWindow):
         self.stop_action.setToolTip("Zastaví pomalý přepočet a vrátí model do posledního "
                                     "spočítaného stavu (Znovu změnu vrátí)")
         self.stop_action.setEnabled(False)
+        self.save_measurement_action = self._action("Uložit měření do modelu",
+                                                    self.save_measurement)
+        self.rename_measurement_action = self._action("Přejmenovat měření…",
+                                                      self.rename_measurement)
+        self.delete_measurement_action = self._action("Smazat měření",
+                                                      self.delete_measurement)
+        for action, short in ((self.save_measurement_action, "Uložit do modelu"),
+                              (self.rename_measurement_action, "Přejmenovat…"),
+                              (self.delete_measurement_action, "Smazat")):
+            action.setIconText(short)
+            action.setToolTip(action.text())
+            action.setEnabled(False)
 
     # --- stavba okna ---------------------------------------------------------------
 
@@ -260,6 +283,40 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 10000))
         self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
                                           Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def _build_measure_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        self.measure_hint = QLabel(MEASURE_HINT)
+        self.measure_hint.setWordWrap(True)
+        self.measure_hint.setStyleSheet("color: #555;")
+        layout.addWidget(self.measure_hint)
+        self.measure_list = QListWidget()
+        self.measure_list.setObjectName("measure_list")
+        self.measure_list.setMaximumHeight(96)
+        self.measure_list.currentRowChanged.connect(lambda _row: self._measure_row_changed())
+        layout.addWidget(self.measure_list)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self._tool_button(self.save_measurement_action))
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+        saved_box = QGroupBox("Uložená měření (počítají se při každé změně)")
+        saved_layout = QVBoxLayout(saved_box)
+        self.saved_list = QListWidget()
+        self.saved_list.setObjectName("saved_measurements")
+        self.saved_list.currentRowChanged.connect(lambda _row: self._saved_row_changed())
+        self.saved_list.itemDoubleClicked.connect(lambda _item: self.rename_measurement())
+        saved_buttons = QHBoxLayout()  # nad seznamem, aby byla vidět i na malé obrazovce
+        for action in (self.rename_measurement_action, self.delete_measurement_action):
+            saved_buttons.addWidget(self._tool_button(action))
+        saved_buttons.addStretch()
+        saved_layout.addLayout(saved_buttons)
+        self.saved_list.setMinimumHeight(60)
+        saved_layout.addWidget(self.saved_list)
+        layout.addWidget(saved_box, stretch=1)
+        self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
+                                           Qt.DockWidgetArea.RightDockWidgetArea)
 
     def _add_dock(self, title: str, name: str, content: QWidget,
                   area: Qt.DockWidgetArea) -> QDockWidget:
@@ -351,6 +408,7 @@ class MainWindow(QMainWindow):
         menu.addAction(self.add_to_feature_action)
         menu.addAction(self.replace_in_feature_action)
         menu.addSeparator()
+        menu.addAction(self.save_measurement_action)
         menu.addAction(self.clear_selection_action)
 
     # --- práce se souborem -------------------------------------------------------
@@ -509,7 +567,7 @@ class MainWindow(QMainWindow):
 
     def add_from_selection(self, feature_type: str) -> None:
         """Nový prvek z výběru ve 3D (zaoblení kliknutých hran, skica na ploše …)."""
-        picked, point = list(self._picked), getattr(self.viewer, "picked_point", None)
+        picked, point = list(self._picked), self.viewer.picked_point
         new_id: list[str] = []
         if self._apply(lambda: new_id.append(
                 self.session.add_from_selection(feature_type, picked, point)),
@@ -651,6 +709,7 @@ class MainWindow(QMainWindow):
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
+        self._refresh_saved_measurements()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -847,20 +906,166 @@ class MainWindow(QMainWindow):
         self.props_label.setText("\n".join(lines))
 
     def _selection_changed(self, shapes: list) -> None:
-        """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, akce povolit."""
+        """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, měření, akce povolit."""
         self._picked = list(shapes)
         self._refresh_selection_actions()
+        self._refresh_measure_list()
         info = self.session.selection_info(self._picked)
         if not info.text:
             self.statusBar().showMessage(HELP_HINT)
             return
+        text = info.text
+        if info.faces + info.edges == 2 and self._measured:
+            text += f"  ·  {self._measured[0].text}"  # hlavní hodnota měření
         hints = []
         if info.edges:
             hints.append("pravým tlačítkem zaoblit nebo srazit")
         if info.faces == 1:
             hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
-        self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))
+        self.statusBar().showMessage(f"{text}  ·  " + ", ".join(hints))
+
+    # --- měření ----------------------------------------------------------------------
+
+    def _refresh_measure_list(self) -> None:
+        """Panel Měření: hodnoty pro aktuální výběr ve 3D (první je hned vybraná)."""
+        self._measured = self.session.measure_selection(self._picked, self.viewer.picked_point)
+        self.measure_list.blockSignals(True)
+        self.measure_list.clear()
+        for value in self._measured:
+            self.measure_list.addItem(value.text)
+        self.measure_list.blockSignals(False)
+        info = self.session.selection_info(self._picked)
+        if self._measured:
+            self.measure_hint.setText("Vyber řádek – jeho čára se ukáže ve 3D. Uložené měření "
+                                      "se přepočítá při každé změně modelu.")
+        elif info.faces + info.edges > 2:
+            self.measure_hint.setText("Měřit jde jednu nebo dvě věci – zruš část výběru "
+                                      "(Ctrl+klik vybranou věc odebere).")
+        else:
+            self.measure_hint.setText(MEASURE_HINT)
+        if self._measured:
+            self.measure_list.setCurrentRow(0)  # → čára ve 3D
+        else:
+            self._show_measure_line(None)
+        self._refresh_measure_actions()
+
+    def _measure_row_changed(self) -> None:
+        row = self.measure_list.currentRow()
+        value = self._measured[row] if 0 <= row < len(self._measured) else None
+        if value is not None:
+            self.saved_list.blockSignals(True)
+            self.saved_list.setCurrentRow(-1)
+            self.saved_list.blockSignals(False)
+        self._show_measure_line(value)
+        self._refresh_measure_actions()
+
+    def _saved_row_changed(self) -> None:
+        result = self._current_saved()
+        if result is not None:
+            self.measure_list.blockSignals(True)
+            self.measure_list.setCurrentRow(-1)
+            self.measure_list.blockSignals(False)
+            self._show_measure_line(result.value)
+        self._refresh_measure_actions()
+
+    def _show_measure_line(self, value: Value | None) -> None:
+        lines = []
+        if value is not None and value.points is not None:
+            lines = [(*value.points, format_value(value.value, value.unit))]
+        self.viewer.show_measurement(lines)
+
+    def _refresh_saved_measurements(self) -> None:
+        """Seznam uložených měření s hodnotami z posledního přepočtu."""
+        document = self.session.document
+        records = document.measurements if document is not None else []
+        selected = self._current_saved_id()
+        results = {m.id: m for m in self.session.measurements}
+        self.saved_list.blockSignals(True)
+        self.saved_list.clear()
+        for record in records:
+            result = results.get(record["id"])
+            if self.session.computing or result is None:
+                text = f"⏳ {record.get('name') or record['id']}"
+            else:
+                text = result.text
+            item = QListWidgetItem(text)
+            item.setData(_FEATURE_ID, record["id"])
+            if result is not None and result.value is None:
+                item.setForeground(_STATUS_COLORS["error"])
+                item.setToolTip(result.error)
+            elif result is not None:
+                item.setForeground(_MEASURE_COLOR)
+            self.saved_list.addItem(item)
+            if record["id"] == selected:
+                self.saved_list.setCurrentItem(item)
+        self.saved_list.blockSignals(False)
+        if self._current_saved() is not None and not self._measured:
+            self._show_measure_line(self._current_saved().value)  # díl je nový – čáru znovu
+        self._refresh_measure_actions()
+
+    def _current_saved_id(self) -> str | None:
+        item = self.saved_list.currentItem()
+        return item.data(_FEATURE_ID) if item is not None else None
+
+    def _current_saved(self) -> SavedResult | None:
+        measurement_id = self._current_saved_id()
+        return next((m for m in self.session.measurements if m.id == measurement_id), None)
+
+    def _refresh_measure_actions(self) -> None:
+        row = self.measure_list.currentRow()
+        value = self._measured[row] if 0 <= row < len(self._measured) else None
+        self.save_measurement_action.setEnabled(value is not None and not self.session.computing)
+        self.save_measurement_action.setText(
+            f"Uložit měření do modelu: {value.text}" if value is not None
+            else "Uložit měření do modelu")
+        has_saved = self._current_saved_id() is not None
+        self.rename_measurement_action.setEnabled(has_saved)
+        self.delete_measurement_action.setEnabled(has_saved)
+
+    def save_measurement(self) -> None:
+        """Uloží vybranou hodnotu z panelu Měření do modelu."""
+        row = self.measure_list.currentRow()
+        if not 0 <= row < len(self._measured):
+            return
+        value = self._measured[row]
+        picked, point = list(self._picked), self.viewer.picked_point
+        try:
+            measurement_id = self._busy(
+                lambda: self.session.add_measurement(picked, value.kind, point))
+        except DocumentError as exc:
+            self._error("Měření nejde uložit", str(exc))
+            return
+        self._refresh_all()
+        for i in range(self.saved_list.count()):
+            if self.saved_list.item(i).data(_FEATURE_ID) == measurement_id:
+                self.saved_list.setCurrentRow(i)
+        self.statusBar().showMessage(f"Měření uloženo do modelu: {value.text}", 8000)
+
+    def rename_measurement(self) -> None:
+        measurement_id = self._current_saved_id()
+        if measurement_id is None:
+            return
+        record = next(m for m in self.session.document.measurements
+                      if m["id"] == measurement_id)
+        name, ok = QInputDialog.getText(self, "Přejmenovat měření", "Název měření:",
+                                        text=record.get("name", ""))
+        if not ok:
+            return
+        try:
+            self._busy(lambda: self.session.rename_measurement(measurement_id, name))
+        except DocumentError as exc:
+            self._error("Měření nejde přejmenovat", str(exc))
+            return
+        self._refresh_all()
+
+    def delete_measurement(self) -> None:
+        measurement_id = self._current_saved_id()
+        if measurement_id is None:
+            return
+        self._busy(lambda: self.session.remove_measurement(measurement_id))
+        self._show_measure_line(None)
+        self._refresh_all()
 
     def _show_context_menu(self, position: QPoint | None = None) -> None:
         """Pravý klik do 3D: co jde s výběrem udělat."""

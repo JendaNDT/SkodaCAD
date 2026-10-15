@@ -25,15 +25,20 @@ class FakeViewer(QtWidgets.QWidget):
         self.parts = []
         self.views = []
         self.highlighted = []
+        self.measurement = []  # čáry měření (od, do, popisek)
         self.picked_point = None
 
     def show_part(self, part, fit=False):
         self.parts.append((part, fit))
         self.picked_point = None
+        self.measurement = []
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
         self.highlighted = list(shapes)
+
+    def show_measurement(self, lines):
+        self.measurement = list(lines)
 
     def clear_selection(self):
         self.picked_point = None
@@ -640,3 +645,69 @@ def test_hole_on_shaft_surface_from_click(empty_window):
     w.viewer.click([face_at(shown_part(w), 0, -10, 0)], point=(0, -10, 0))
     w.add_to_feature_action.trigger()  # na boku hřídele je jiná tečná rovina → jen hláška
     assert len(session.feature("hole1")["positions"]) == 2
+
+
+# --- měření -----------------------------------------------------------------------------
+
+
+def measure_rows(w):
+    return [w.measure_list.item(i).text() for i in range(w.measure_list.count())]
+
+
+def saved_rows(w):
+    return [w.saved_list.item(i).text() for i in range(w.saved_list.count())]
+
+
+def test_measuring_on_click_and_saving_into_the_model(window, no_dialogs, slot_errors,
+                                                      monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    w = window
+    assert measure_rows(w) == [] and "Klikni ve 3D" in w.measure_hint.text()
+    assert not w.save_measurement_action.isEnabled()
+    top = face_at(shown_part(w), 60, 0, 18)
+    w.viewer.click([top], point=(60, 0, 18))
+    assert measure_rows(w)[0] == "Tloušťka stěny: 18.00 mm"  # deska příruby t = 18
+    [(start, end, label)] = w.viewer.measurement  # čára od kliknutí skrz desku
+    assert start == pytest.approx((60, 0, 18)) and end == pytest.approx((60, 0, 0))
+    assert label == "18.00 mm"
+    assert w.save_measurement_action.text() == \
+        "Uložit měření do modelu: Tloušťka stěny: 18.00 mm"
+    w.save_measurement_action.trigger()
+    assert saved_rows(w) == ["Tloušťka stěny: 18.00 mm"]
+    assert w.session.document.measurements[0]["kind"] == "thickness"
+    assert w.viewer.measurement  # uložené měření je vybrané a jeho čára vidět
+    edit(w, "t", "20")
+    assert saved_rows(w) == ["Tloušťka stěny: 20.00 mm"]  # přepočítalo se s dílem
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Stěna příruby", True))
+    w.saved_list.setCurrentRow(0)
+    action(w, "Přejmenovat měření…").trigger()
+    assert saved_rows(w) == ["Stěna příruby: 20.00 mm"]
+    w.saved_list.setCurrentRow(0)
+    action(w, "Smazat měření").trigger()
+    assert saved_rows(w) == [] and w.viewer.measurement == []
+    action(w, "Zpět").trigger()
+    assert saved_rows(w) == ["Stěna příruby: 20.00 mm"]
+    assert slot_errors == []
+
+
+def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
+    w = window
+    part = shown_part(w)
+    pitch = 125 / 2 * math.sqrt(2)  # sousední díry na roztečné kružnici k = 125, n = 4
+    corner = 125 / 2 / math.sqrt(2)  # díry jsou pootočené o 45°
+    holes = [face_at(part, sx * corner + sx * 9, corner, 9) for sx in (1, -1)]
+    assert all(h.geom_type.name == "CYLINDER" for h in holes)
+    w.viewer.click(holes)
+    assert measure_rows(w)[0] == f"Rozteč os: {number(pitch)} mm"
+    assert f"Rozteč os: {number(pitch)} mm" in w.statusBar().currentMessage()
+    shown = []
+    monkeypatch.setattr(w, "_exec_menu", lambda menu, position: shown.append(
+        [item.text() for item in menu.actions() if item.isEnabled()]))
+    w.viewer.context_menu_requested.emit(QPoint(10, 10))
+    assert f"Uložit měření do modelu: Rozteč os: {number(pitch)} mm" in shown[-1]
+    w.measure_list.setCurrentRow(len(measure_rows(w)) - 1)  # nejkratší vzdálenost
+    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm"  # mezi stěnami děr Ø18
+    w.viewer.click(list(part.faces())[:3])
+    assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()

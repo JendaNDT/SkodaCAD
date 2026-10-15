@@ -24,15 +24,20 @@ from OCP.AIS import (
     AIS_SelectionScheme_XOR,
     AIS_Shaded,
     AIS_Shape,
+    AIS_TextLabel,
 )
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_GFM_VER,
+    Aspect_TODT_SUBTITLE,
     Aspect_TOL_SOLID,
+    Aspect_TOM_BALL,
     Aspect_TOTP_LEFT_LOWER,
 )
 from OCP.BRep import BRep_Builder
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
 from OCP.GeomAbs import GeomAbs_C1
+from OCP.gp import gp_Pnt
 from OCP.Graphic3d import (
     Graphic3d_MaterialAspect,
     Graphic3d_NameOfMaterial_Plastified,
@@ -41,10 +46,12 @@ from OCP.Graphic3d import (
 from OCP.OpenGl import OpenGl_GraphicDriver
 from OCP.Prs3d import (
     Prs3d_LineAspect,
+    Prs3d_PointAspect,
     Prs3d_TypeOfHighlight_LocalDynamic,
     Prs3d_TypeOfHighlight_LocalSelected,
 )
-from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
+from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_NOC_WHITE, Quantity_TOC_RGB
+from OCP.TCollection import TCollection_ExtendedString
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
 from OCP.TopoDS import TopoDS_Compound
 from OCP.V3d import (
@@ -160,6 +167,7 @@ class OccViewer(QWidget):
         self._window = None
         self._ais: AIS_Shape | None = None
         self._highlight: AIS_Shape | None = None
+        self._measure_objects: list[Any] = []  # čáry a popisky měření
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self._pending: tuple[Any, bool] | None = None
         self._press: QPoint | None = None
@@ -183,6 +191,7 @@ class OccViewer(QWidget):
             context.Remove(self._ais, False)
             self._ais = None
         self._remove_highlight()
+        self._remove_measurement()
         if part is not None:
             ais = AIS_Shape(part.wrapped)
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -250,6 +259,49 @@ class OccViewer(QWidget):
             self._context.SetZLayer(ais, Graphic3d_ZLayerId_Topmost)
             self._highlight = ais
         self._view.Redraw()
+
+    def show_measurement(self, lines: list[tuple[Any, Any, str]]) -> None:
+        """Čáry měření (od bodu k bodu, s popiskem) navrch dílu; [] = žádné.
+
+        Kreslí se přes díl (vidět i skrz něj) a kliknout na ně nejde.
+        """
+        if not self.ready:
+            return
+        self._remove_measurement()
+        color = _rgb(0.0, 0.55, 0.25)
+        for start, end, text in lines:
+            begin, finish = gp_Pnt(*start), gp_Pnt(*end)
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            if begin.Distance(finish) > 1e-6:
+                builder.Add(compound, BRepBuilderAPI_MakeEdge(begin, finish).Edge())
+            for point in (begin, finish):
+                builder.Add(compound, BRepBuilderAPI_MakeVertex(point).Vertex())
+            line = AIS_Shape(compound)
+            line.SetColor(color)
+            line.SetWidth(3.0)
+            line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 2.0))
+            label = AIS_TextLabel()
+            label.SetText(TCollection_ExtendedString(text, True))
+            label.SetPosition(gp_Pnt((begin.X() + finish.X()) / 2, (begin.Y() + finish.Y()) / 2,
+                                     (begin.Z() + finish.Z()) / 2))
+            label.SetColor(Quantity_Color(Quantity_NOC_WHITE))
+            label.SetDisplayType(Aspect_TODT_SUBTITLE)  # bílé písmo na zeleném podkladu
+            label.SetColorSubTitle(color)
+            label.SetHeight(15)
+            label.SetFont("Arial")  # bezpatkové písmo (bez něj OCCT bere patkové)
+            for shown in (line, label):
+                self._context.Display(shown, False)
+                self._context.Deactivate(shown)
+                self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+                self._measure_objects.append(shown)
+        self._view.Redraw()
+
+    def _remove_measurement(self) -> None:
+        for shown in self._measure_objects:
+            self._context.Remove(shown, False)
+        self._measure_objects = []
 
     def _remove_highlight(self) -> None:
         if self._highlight is not None:
