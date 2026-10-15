@@ -29,6 +29,9 @@
 - (15. 10. 2026, schváleno) **Řešič vazeb skici: `slvs==3.2`** – oficiální řešič SolveSpace
   (GPL, kola pro Windows i Linux, Python 3.11–3.13). Formát modelu verze 3 přidal tvar
   skici `profile`.
+- (15. 10. 2026, schváleno) **Díry podle tabulek** – prvek `hole`, formát verze 4. Závit je
+  jen vyznačený (díra = vrták pod závit). Tabulky v `holes.py` jsou ověřené z více zdrojů
+  (normy jsou placené) – u každé změny tabulky uveď zdroj v docstringu.
 
 ## Architektura (`src/skodacad/`)
 
@@ -40,6 +43,7 @@
 | `picking.py` | kliknutí ve 3D → popis významem (`between`, `near` …), plocha → rovina skici |
 | `solver.py` | obal řešiče vazeb slvs: kontrola obrysu a vazeb, řešení, uzavřená smyčka |
 | `profile_edit.py` | úpravy obrysu pro skicář bez okna (kreslení, mazání, vazby z výběru, kóty) |
+| `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")` |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped` |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -148,8 +152,8 @@
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
 - [ ] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
-  [ ] kružnice a vazby mezi obrysem a dalšími tvary, [ ] díry se závity podle strojnických
-  tabulek, [ ] pole a zrcadlení.
+  [ ] kružnice a vazby mezi obrysem a dalšími tvary, [x] díry se závity podle strojnických
+  tabulek (vyznačený závit; [ ] modelovaný závit pro 3D tisk), [ ] pole a zrcadlení.
 - [x] **Fáze 2a** – okno (PySide6 + OCCT prohlížeč): parametry s přepočtem, strom prvků,
   vlastnosti, výběr ploch/hran, export; Windows `.exe` přes GitHub Actions.
 - [x] **Fáze 2b** – nový díl od nuly v okně: přidání, úprava (formulář), smazání a přesun
