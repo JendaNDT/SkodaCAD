@@ -20,12 +20,41 @@ parametry.
 Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 (postup [.github/workflows/windows.yml](.github/workflows/windows.yml)).
 
+## Aplikace pro macOS (Apple Silicon) – zkušební
+
+Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. **Zatím neověřeno na skutečném Macu** –
+sestavuje a testuje ji GitHub na svém Macu, ruční zkouška na MacBooku Air M4 teprve přijde
+(postup a seznam zkoušek v [docs/ndt/08-navrh-macos.md](docs/ndt/08-navrh-macos.md)).
+
+1. Stáhni **[SkodaCAD-macos.zip](https://github.com/JendaNDT/SkodaCAD/releases/download/nejnovejsi-mac/SkodaCAD-macos.zip)**
+   (vydání „nejnovejsi-mac“, označené jako předběžné).
+2. Rozbal ho (dvojklik ve Finderu) a **SkodaCAD** přetáhni do složky *Aplikace*.
+3. Při prvním spuštění macOS napíše, že aplikaci nejde ověřit – není podepsaná certifikátem
+   Apple ani notarizovaná. Otevři *Nastavení systému → Soukromí a zabezpečení*, sjeď dolů
+   a u SkodaCAD klikni na **Přesto otevřít** (od macOS 15 už nefunguje pravý klik → Otevřít).
+   Kdyby to nešlo, v Terminálu: `xattr -dr com.apple.quarantine /Applications/SkodaCAD.app`.
+4. Ovládání je stejné jako ve Windows, jen místo `Ctrl` používej **`Cmd` (⌘)**: `Cmd`+klik
+   přidá plochu do výběru, `Cmd`+`Z` je Zpět. Na trackpadu posouváš pohled **`Shift` + tažením**,
+   zoom dvěma prsty.
+5. Nastavení, log (`skodacad.log`) a výchozí místo pro modely je složka **`SkodaCAD`** ve tvé
+   domovské složce – stejně jako ve Windows.
+6. Kdyby 3D nešlo spustit s grafickou kartou (virtuál, vzdálená plocha), aplikace kreslí
+   softwarově – pomaleji, ale funguje. Kontrolu celé aplikace spustíš v Terminálu:
+   `/Applications/SkodaCAD.app/Contents/MacOS/SkodaCAD --self-test ~/SkodaCAD/self-test.txt`
+   (výsledek je v souboru `self-test.txt`, na konci „VÝSLEDEK: OK“).
+
+AI asistent posílá model společnosti Anthropic **jen** po tvém dotazu v panelu *AI asistent*
+a jen s vloženým API klíčem. Bez klíče (např. při prezentaci) z aplikace nic neodchází.
+
+Mac sestavuje samostatný postup [.github/workflows/macos.yml](.github/workflows/macos.yml);
+sestavení pro Windows se tím nemění.
+
 ### Ovládání
 
 | Akce | Jak |
 |---|---|
 | Otáčení | levé tlačítko + táhnout |
-| Posun | prostřední nebo pravé tlačítko + táhnout |
+| Posun | prostřední nebo pravé tlačítko + táhnout, nebo `Shift` + levé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
 | Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku a **změří se** (panel *Měření* vpravo) |
 | Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere – u dvou věcí se změří vzdálenost a úhel |
@@ -232,6 +261,17 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
 > Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, normové
 > vyhodnocení ani reálnou kontrolu.
 
+**UT je závazně vymezené** ([docs/ndt/04-zavazne-vymezeni-ut.md](docs/ndt/04-zavazne-vymezeni-ut.md),
+má přednost před starším plánem): program posuzuje jen **přístupnost UT sondy** (jde přiložit
+a posouvat bez kolize?) a **geometrické pokrytí** kontrolované oblasti – nikdy prozvučitelnost
+materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okně (skupina
+*Přístupnost UT sondy*) i ve výpisech příkazové řádky je povinné upozornění:
+
+> ŠkodaCAD provádí pouze geometrické posouzení přístupnosti ultrazvukové sondy a pokrytí
+> kontrolované oblasti na základě zjednodušeného modelu ultrazvukového svazku. Nevyhodnocuje
+> fyzikální prozvučitelnost materiálu ani detekovatelnost vad. Výsledky nenahrazují
+> kvalifikovaný NDT postup ani odborné posouzení.
+
 * **Referenční díly:** *Soubor → Otevřít ukázku → NDT – referenční díly* – deska, blok
   s kapsou, deska se žebrem, otvor, trubka, tupý svar V, koutový svar a obtížný přístup.
   Každý má ukázkovou studii; ručně spočítané očekávané výsledky (půlkroky, mezní úhly, vůle
@@ -260,7 +300,8 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
   tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
   jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
-* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Sonda* v panelu NDT nastavíš sondu
+* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Přístupnost UT sondy* v panelu NDT
+  nastavíš sondu
   (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
   dovolená mezera pod sondou a manipulační rezerva; uloží se do studie). Klikni ve 3D na plochu
   a dej **Přiložit sondu sem**: sonda se nakreslí **zeleně** (přiloženo), **oranžově** (málo
@@ -270,8 +311,9 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   souboru se neukládá a po změně dílu se přepočítá.
 * Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
   Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
-  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Tažení sondy myší
-  a paprsek s lomem přijdou v etapách 04–05.
+  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Další etapy UT:
+  geometrický model svazku (lom jen se zadanými předpoklady), tažení sondy myší a *Mapa
+  geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze spolehlivě vyhodnotit).
 
 ### Tažení a přechod
 
@@ -438,6 +480,7 @@ Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:
   Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.
 Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm
   první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.
+  (ŠkodaCAD provádí pouze geometrické posouzení přístupnosti ultrazvukové sondy a pokrytí …)
 ```
 
 `skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako

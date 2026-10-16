@@ -124,11 +124,23 @@ def _unlit(shown: Any) -> None:
 
 
 def _as_capsule(handle: int) -> Any:
-    """Windows HWND jako PyCapsule – tak ho OCP předá do C++ jako ukazatel."""
+    """Windows HWND / macOS NSView jako PyCapsule – tak ho OCP předá do C++ jako ukazatel."""
     new_capsule = ctypes.pythonapi.PyCapsule_New
     new_capsule.restype = ctypes.py_object
     new_capsule.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
     return new_capsule(handle, None, None)
+
+
+def pixel_ratio(platform: str, occ_width: int, qt_width: int, device_ratio: float) -> float:
+    """Kolik pixelů okna OCCT připadá na jeden bod Qt.
+
+    Windows a Linux: ``devicePixelRatioF`` (škálování obrazovky 125–150 %). macOS: poměr
+    skutečné šířky okna OCCT k šířce plochy v Qt – Retina má 2 pixely na bod, ale OCCT v cizím
+    NSView může počítat v bodech i v pixelech, a tak se to nehádá, ale měří.
+    """
+    if platform == "darwin" and occ_width > 0 and qt_width > 0:
+        return occ_width / qt_width
+    return device_ratio
 
 
 class _NativeSurface(QWidget):
@@ -210,6 +222,8 @@ class OccViewer(QWidget):
         self._last: QPoint | None = None
         self._dragging = False
         self._known_size: tuple[int, int] | None = None
+        self.software = False  # macOS bez grafické karty: OpenGL kreslí procesor
+        self._failed: list[Any] = []  # nepovedený pokus o OpenGL – na Macu se neruší dřív než okno
 
     # --- veřejné API ------------------------------------------------------------
 
@@ -343,6 +357,17 @@ class OccViewer(QWidget):
         for shown in self._probe_objects:
             self._context.Remove(shown, False)
         self._probe_objects = []
+
+    def scale_info(self) -> str:
+        """Velikost okna OCCT proti Qt a poměr pro klik myší (diagnostika Retina, 150 %)."""
+        if not self.ready:
+            return ""
+        self._sync_size()
+        width, height = self._known_size or (0, 0)
+        ratio = pixel_ratio(sys.platform, width, self._surface.width(),
+                            self._surface.devicePixelRatioF())
+        return (f"okno OCCT {width}×{height}, Qt {self._surface.width()}×"
+                f"{self._surface.height()}, poměr myši {ratio:.2f}")
 
     def graphics_info(self) -> str:
         """Grafický ovladač OpenGL (výrobce, zařízení, verze) – pro log a self-test."""
@@ -572,18 +597,25 @@ class OccViewer(QWidget):
                 from OCP.WNT import WNT_Window
 
                 window = WNT_Window(_as_capsule(handle))
+            elif sys.platform == "darwin":  # Qt winId() je na Macu NSView
+                from OCP.Cocoa import Cocoa_Window
+
+                window = Cocoa_Window(_as_capsule(handle))
             else:
                 from OCP.Xw import Xw_Window
 
                 window = Xw_Window(display, handle)
 
             stage = "opengl"
-            driver = OpenGl_GraphicDriver(display, True)
-            viewer = V3d_Viewer(driver)
-            viewer.SetDefaultLights()
-            viewer.SetLightOn()
-            view = viewer.CreateView()
-            view.SetWindow(window)
+            try:
+                viewer, view = self._open_view(display, window, software=False)
+            except Exception as exc:  # noqa: BLE001
+                if sys.platform != "darwin":
+                    raise
+                # Mac bez grafické karty (virtuál, vzdálená plocha): zkusit softwarové OpenGL.
+                log.warning("OpenGL s grafickou kartou nejde (%s) – zkouším softwarové", exc)
+                viewer, view = self._open_view(display, window, software=True)
+                self.software = True
             if not window.IsMapped():
                 window.Map()
             context = AIS_InteractiveContext(viewer)
@@ -599,6 +631,21 @@ class OccViewer(QWidget):
             part, fit, accent = self._pending
             self._pending = None
             self.show_part(part, fit=fit, accent=accent)
+
+    def _open_view(self, display: Any, window: Any, software: bool) -> tuple[Any, Any]:
+        """Grafický ovladač, prohlížeč a pohled OCCT napojený na okno. ``software`` = bez
+        hardwarové akcelerace (OpenGL_Caps.contextNoAccel, na Macu softwarový renderer Apple)."""
+        driver = OpenGl_GraphicDriver(display, True)
+        if software:
+            driver.ChangeOptions().contextNoAccel = True
+        viewer = V3d_Viewer(driver)
+        viewer.SetDefaultLights()
+        viewer.SetLightOn()
+        view = viewer.CreateView()
+        self._failed.append((driver, viewer, view))  # při chybě zůstanou až do zavření okna
+        view.SetWindow(window)
+        self._failed.pop()
+        return viewer, view
 
     def _style(self) -> None:
         view, context = self._view, self._context
@@ -651,8 +698,9 @@ class OccViewer(QWidget):
             self._view.MustBeResized()
 
     def _pixels(self, pos) -> tuple[int, int]:
-        """Qt dává souřadnice v logických bodech, OCCT chce fyzické pixely (škálování 150 %…)."""
-        ratio = self._surface.devicePixelRatioF()
+        """Qt dává souřadnice v logických bodech, OCCT chce pixely svého okna (150 %, Retina)."""
+        ratio = pixel_ratio(sys.platform, self._known_size[0] if self._known_size else 0,
+                            self._surface.width(), self._surface.devicePixelRatioF())
         return int(pos.x() * ratio), int(pos.y() * ratio)
 
     def _mouse_press(self, event: QMouseEvent) -> None:
@@ -673,12 +721,13 @@ class OccViewer(QWidget):
         if buttons and self._press is not None:
             if (pos - self._press).manhattanLength() > _DRAG_THRESHOLD:
                 self._dragging = True
-            if self._dragging and buttons & Qt.MouseButton.LeftButton:
-                self._view.Rotation(x, y)
-            elif self._dragging and buttons & (Qt.MouseButton.MiddleButton
-                                               | Qt.MouseButton.RightButton):
+            pan = bool(buttons & (Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton)
+                       or event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            if self._dragging and pan:  # Shift + levé: posun i na trackpadu (Mac)
                 lx, ly = self._pixels(self._last)
                 self._view.Pan(x - lx, ly - y)
+            elif self._dragging and buttons & Qt.MouseButton.LeftButton:
+                self._view.Rotation(x, y)
         else:
             self._context.MoveTo(x, y, self._view, True)  # předvýběr pod kurzorem
         self._last = pos

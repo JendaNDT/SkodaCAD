@@ -92,6 +92,19 @@
   přesah, kolize, vůle nad rovinou přiložení, manipulační rezerva **výchozí 0 mm**, posun po
   přímce. Sonda se ukládá do studie (`device`, **formát verze 14**); přiložení je jen pohled.
   V okně skupina Sonda v panelu NDT (Přiložit sondu sem, barva podle výsledku), `skodacad sonda`.
+- (16. 10. 2026, rozhodnutí autora) **Závazné vymezení UT** (`docs/ndt/04-zavazne-vymezeni-ut.md`,
+  má přednost před plánem `03-…`): UT posuzuje jen **přístupnost sondy** a **geometrické
+  pokrytí** – nikdy prozvučitelnost materiálu, detekovatelnost vad ani virtuální signály
+  (A/B-scan, etapa 16 mimo rozsah). Povinné upozornění `ndt.UT_DISCLAIMER` doslovně v okně
+  (skupina „Přístupnost UT sondy“) i v každém výstupu a protokolu. Výsledky pokrytí: geometricky
+  pokryto / nepokryto / nelze spolehlivě vyhodnotit; procento pokrytí není pravděpodobnost
+  nálezu. Lom a odraz jen s výslovně zadanými předpoklady, skutečně spočítané a testované.
+- (16. 10. 2026, rozhodnutí autora) **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`):
+  hned po etapě 03 první spustitelná verze pro MacBook Air M4 (16 GB) – **ZIP se `SkodaCAD.app`**
+  z GitHub Releases, data a log v **`~/SkodaCAD`** jako ve Windows, samostatná úloha GitHub
+  Actions na macOS arm64, Windows beze změny. Stejné jádro, formát i NDT. Podepsání a
+  notarizace až při rozhodnutí o distribuci. Kompatibilitu netvrdit, dokud ji uživatel neověří
+  na skutečném Macu.
 
 ## Architektura (`src/skodacad/`)
 
@@ -120,7 +133,7 @@
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
 | `thickness_map.py` | mapa tloušťky stěny: síť povrchu (půlení nejdelší strany v u, v), tloušťka v těžištích, barvy, souhrn, CSV |
 | `section.py` | řez modelem: rovina řezu, přesný řez, plochy řezu, export DXF/SVG, ořez sítě mapy rovinou |
-| `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost; studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
+| `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost a povinné upozornění UT (`UT_DISCLAIMER`, názvy `UT_ACCESS`, `UT_COVERAGE`); studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
 | `ndt/geometry.py` | NDT geometrické jádro (`PartGeometry`): `cast` (průsečíky, úseky v materiálu, jistota), `classify`, `surface_at` (normála, zakřivení), `visible`, `collision` (průnik, vůle), `faces_of`; konstanty `ALGORITHM`, tolerance |
 | `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
@@ -130,7 +143,8 @@
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
-| `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
+| `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
+| `.github/workflows/` | `windows.yml` (vydání „nejnovejsi“) a samostatný `macos.yml` (Apple Silicon, předběžné vydání „nejnovejsi-mac“) |
 
 ## Pravidla
 
@@ -168,7 +182,7 @@
 - Kontrola okna i 3D: `xvfb-run -a skodacad-gui --self-test out/self-test.txt`
 - Sestavení aplikace lokálně: `uv pip install -e ".[build]"` a
   `pyinstaller packaging/skodacad.spec --noconfirm`; pak self-test `dist/SkodaCAD/SkodaCAD`.
-- Stav sestavení pro Windows sleduj v GitHub Actions (workflow „Windows aplikace“).
+- Stav sestavení sleduj v GitHub Actions (workflow „Windows aplikace“ a „macOS aplikace“).
 
 ## Známé pasti (OCCT prohlížeč)
 
@@ -436,6 +450,17 @@
   díl by sondu přebilo). Prohlížeč maže sondu s dílem (`show_part`) → `_shown_probe = None`.
 - Self-test kreslí druh „probe“ (průhledné těleso) zvlášť a přikládá sondu na desku.
 
+## Známé pasti (NDT – závazné vymezení UT)
+
+- Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
+  `ndt.UT_DISCLAIMER` beze změny slova. `tests/test_ndt_scope.py` ho porovnává s citací
+  v `docs/ndt/04-zavazne-vymezeni-ut.md` – kdo změní jedno, musí změnit obojí.
+- Tentýž test hledá ve všech `src/**/*.py` a README zakázaná označení („mapa
+  prozvučitelnosti“, „pravděpodobnost detekce“, A-scan, B-scan) – **i v komentářích**.
+  Názvy brát z `UT_ACCESS` / `UT_COVERAGE`.
+- Doporučení (poloha sondy, změna dílu) optimalizují jen přístupnost a pokrytí – ne „lepší
+  detekci“. Totéž platí pro AI (`assistant.RULES`).
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -462,6 +487,33 @@
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
+
+## Známé pasti (macOS)
+
+- 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
+  ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
+- Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
+  v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
+  (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
+- Trackpad nemá prostřední tlačítko → posun pohledu i **Shift + levé tažení** (všude).
+  Qt na Macu bere `Cmd` jako `Ctrl` (Cmd+klik, Cmd+Z); fyzický Control+klik je pravý klik.
+- `.app` se balí **`ditto -c -k --keepParent`** – `upload-artifact` by ztratil práva
+  a symbolické odkazy uvnitř balíčku. Kontrola stažení rozbalí ZIP přes `ditto -x -k`.
+- Vydání „nejnovejsi-mac“ je `--prerelease --latest=false` – jinak by `releases/latest`
+  (odkaz pro Windows v README) ukázal na Mac a stažení Windows by přestalo fungovat.
+- Aplikace je podepsaná jen „ad-hoc“ (PyInstaller, bez certifikátu): u uživatele ji
+  Gatekeeper zablokuje, povolí se v *Soukromí a zabezpečení → Přesto otevřít*
+  (macOS 15+ už bez pravého kliku). Notarizace až při rozhodnutí o distribuci.
+- Mac na GitHubu (`macos-15`, virtuál bez GPU) **nevytvoří akcelerovaný NSOpenGLContext**
+  („NSOpenGLContext creation failed“). `OccViewer._open_view` to na Macu zkusí znovu se
+  `OpenGl_Caps.contextNoAccel` → „Apple Software Renderer / 2.1“; tím projde celý self-test
+  (kreslení, výběr, mapa, řez, sonda). Self-test píše „– softwarové kreslení“.
+- Bez té zálohy proces po nepovedeném OpenGL **spadl při zavírání okna** (segfault v
+  `window.close()`). Nepovedené objekty OCCT proto drží `OccViewer._failed` až do konce okna;
+  jestli pád spravila tahle pojistka, nebo jen to, že se OpenGL podaří, zatím nevíme (cesta
+  „OpenGL nejde vůbec“ se na Macu netestuje). Při pádu vypíše workflow nativní zásobník
+  z hlášení macOS (`~/Library/Logs/DiagnosticReports/SkodaCAD*.ips`).
+- Kompatibilita platí, až ji uživatel ověří na MacBooku (seznam v `docs/ndt/08-navrh-macos.md`).
 
 ## Jak přidat nový prvek
 
@@ -495,5 +547,9 @@
   [ ] omezené přímé úpravy ploch.
 - [ ] **NDT modul** (plán `docs/ndt/03-implementacni-plan.md`) – [x] etapa 00 referenční díly,
   [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
-  [x] 03 virtuální sonda a její přiložení (formát v14), [ ] 04–05 UT paprsek (Snellův zákon)
-  a ruční pohyb sondy (milník M1) …
+  [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
+  [ ] 04–05 geometrický model UT svazku (lom jen se zadanými předpoklady) a ruční pohyb sondy
+  (milník M1) …
+- [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
+  `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
+  softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
