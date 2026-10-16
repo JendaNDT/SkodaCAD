@@ -193,3 +193,84 @@ def test_cli_prints_study_states(capsys, tmp_path):
     out = capsys.readouterr().out
     assert "⚠ UT desky shora (UT) – zastaralá" in out
     assert "Kontrolovaná plocha se posunula o 10.00 mm" in out
+
+
+# --- sonda (etapa 03) -----------------------------------------------------------------------
+
+
+def test_probe_is_stored_in_study_with_undo(tmp_path):
+    from skodacad.ndt.devices import Probe
+
+    session = opened("zebro")
+    assert session.ndt_probe("s1") == Probe.angle()  # bez sondy ve studii = výchozí
+    session.verify_ndt_study("s1", "J. N.")
+    session.set_ndt_device("s1", {"kind": "straight", "diameter": 12})
+    assert session.ndt_study("s1")["device"] == {"kind": "straight", "diameter": 12,
+                                                 "height": 25, "max_gap": 0.5, "reserve": 0}
+    assert "verified" not in session.ndt_study("s1")  # sonda je zadání studie
+    assert session.ndt_probe("s1") == Probe.straight(12)
+    path = session.save(tmp_path / "zebro.json")
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 14
+    session.undo()
+    assert "device" not in session.ndt_study("s1")
+    with pytest.raises(DocumentError, match="Průměr sondy musí být číslo"):
+        session.set_ndt_device("s1", {"kind": "straight", "diameter": 0})
+
+
+def test_probe_placement_is_a_view_that_follows_the_part():
+    session = opened("zebro")
+    top = face_at(session.result.part, 60, 0, 20)
+    placed = session.place_ndt_probe("s1", [top.wrapped], (22, 0, 20), angle=180)
+    assert placed.ok and placed.clearance == pytest.approx(5)  # paprsek k žebru (−X)
+    assert session.ndt_placement is placed  # podruhé z paměti
+    document_before = session.document.to_dict()
+    session.set_parameter("s", "14")  # tlustší žebro (bok x = 7) → volno 3 mm
+    assert session.ndt_placement.clearance == pytest.approx(3)
+    session.set_ndt_device("s1", {"kind": "angle", "reserve": 5})
+    assert session.ndt_placement.state == "tight"
+    session.turn_ndt_probe(0)  # paprsek od žebra: sonda se k němu otočí zadním koncem
+    assert session.ndt_placement.state == "collision"  # zadní konec (28 mm) v žebru
+    session.undo()
+    session.undo()
+    assert session.document.to_dict() == document_before  # přiložení se do modelu nepíše
+    session.clear_ndt_placement()
+    assert session.ndt_placement is None
+
+
+def test_probe_placement_errors():
+    session = opened("zebro")
+    part = session.result.part
+    with pytest.raises(DocumentError, match="právě jednu plochu"):
+        session.place_ndt_probe("s1", [part.edges()[0].wrapped])
+    with pytest.raises(DocumentError, match="„x“ v modelu není"):
+        session.place_ndt_probe("x", [face_at(part, 60, 0, 20).wrapped])
+    session.place_ndt_probe("s1", [face_at(part, 60, 0, 20).wrapped], (60, 0, 20))
+    session.remove_ndt_study("s1")
+    assert session.ndt_placement is None
+    assert session.ndt_placement_error == "Studie se sondou už v modelu není."
+    session.open(NDT / "deska.json")
+    assert session.ndt_placement_request is None  # nový model = bez sondy
+
+
+def test_cli_probe(capsys):
+    assert main(["sonda", str(NDT / "zebro.json"), "--bod", "22,0,20", "--smer", "-1,0,0",
+                 "--posun", "-1,0,0", "--delka", "10"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:5] == [
+        "Úhlová sonda 40 × 20 × 25 mm, výstupní bod 12 mm od čela (mezera nejvýš 0.50 mm, "
+        "rezerva 0.00 mm)",
+        "Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:",
+        "  Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.",
+        "Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm",
+        "  první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.",
+    ]
+    assert main(["sonda", str(NDT / "trubka.json"), "--bod", "0,0,57.15", "--prima", "20"]) == 0
+    out = capsys.readouterr().out
+    assert "Přiložení v [0; 0; 57.15]" in out and "Nedosedá. Mezera pod sondou 0.88 mm" in out
+    assert main(["sonda", str(NDT / "zebro.json"), "--bod", "22,0,20", "--smer", "-1,0,0",
+                 "--studie", "s1", "--rezerva", "5", "--celo", "15"]) == 0
+    assert "Málo místa. Volno jen 2.00 mm" in capsys.readouterr().out
+    assert main(["sonda", str(NDT / "zebro.json"), "--bod", "22,0,20", "--uhlova", "40x20"]) == 2
+    assert "délka x šířka x výška" in capsys.readouterr().err
+    assert main(["sonda", str(NDT / "zebro.json"), "--bod", "22,0,40"]) == 2
+    assert "od povrchu dílu" in capsys.readouterr().err

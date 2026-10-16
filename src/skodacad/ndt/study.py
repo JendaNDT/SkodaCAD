@@ -31,7 +31,8 @@ METHODS = {  # zkratka → český název metody
     "RT": "radiografická",
 }
 TARGET_KINDS = ("faces",)  # objem a svar přidá etapa 07
-STUDY_KEYS = ("id", "name", "method", "target", "note", "created", "part", "verified")
+STUDY_KEYS = ("id", "name", "method", "target", "device", "note", "created", "part",
+              "verified")
 
 STATE_LABELS = {"ok": "platná", "stale": "zastaralá", "incomplete": "neúplná",
                 "broken": "neplatná vazba"}
@@ -83,6 +84,13 @@ def check_study(study: Any, index: int = 1) -> None:
             raise StudyError(f"{where}: „{key}“ musí být text.")
     if "target" in study:
         _check_target(study["target"], where)
+    if "device" in study:
+        from skodacad.ndt.devices import DeviceError, Probe
+
+        try:
+            Probe.from_dict(study["device"])
+        except DeviceError as exc:
+            raise StudyError(f"{where}: {exc}") from None
     verified = study.get("verified")
     if verified is not None:
         if (not isinstance(verified, dict) or set(verified) - {"by", "date", "part"}
@@ -309,3 +317,11 @@ def duplicate(study: dict[str, Any], existing: list[dict[str, Any]]) -> dict[str
     copied["id"] = new_id(existing)
     copied["name"] = f"{study_name(study)} (kopie)"
     return copied
+
+
+def study_probe(study: dict[str, Any]) -> Any:
+    """Sonda studie (``device``), bez ní výchozí úhlová sonda 40 × 20 × 25 mm."""
+    from skodacad.ndt.devices import Probe
+
+    device = study.get("device")
+    return Probe.from_dict(device) if device is not None else Probe.angle()

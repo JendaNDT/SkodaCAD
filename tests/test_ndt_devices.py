@@ -165,3 +165,12 @@ def test_bad_placement_is_czech_error(parts):
     assert place(plate, Probe.straight(10), (0, 0, 20), (0, 0, -1)).ok  # přímé sondě nevadí
     with pytest.raises(DeviceError, match="Krok posunu"):
         scan_line(plate, ANGLE, (0, 0, 20), TO_RIB, TO_RIB, 10, 0)
+
+
+def test_beam_by_angle_on_top_and_side_faces(parts):
+    plate = parts["deska"]
+    assert place(plate, ANGLE, (0, 0, 20), angle=0).x_dir == pytest.approx((1, 0, 0))
+    assert place(plate, ANGLE, (0, 0, 20), angle=90).x_dir == pytest.approx((0, 1, 0))
+    assert place(plate, ANGLE, (0, 0, 20), angle=180).x_dir == pytest.approx((-1, 0, 0))
+    side = place(plate, Probe.straight(10), (100, 0, 10), angle=0)  # boční plocha kolmá na X
+    assert side.z_dir == pytest.approx((1, 0, 0)) and side.x_dir == pytest.approx((0, 1, 0))

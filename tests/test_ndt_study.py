@@ -54,7 +54,7 @@ def test_old_models_load_without_ndt_and_save_as_current_version(path, tmp_path)
     document = Document.load(path)
     assert document.ndt is None
     data = document.to_dict()
-    assert "ndt" not in data and data["version"] == VERSION == 13
+    assert "ndt" not in data and data["version"] == VERSION == 14
 
 
 def test_study_survives_save_and_load(tmp_path):
@@ -84,6 +84,8 @@ def test_study_survives_save_and_load(tmp_path):
     ({"studies": [{"id": "s1", "method": "UT", "verified": {"date": "2026-10-16"}}]},
      "„verified“ musí být"),
     ({"studies": [{"id": "s1", "method": "UT", "name": 5}]}, "„name“ musí být text"),
+    ({"studies": [{"id": "s1", "method": "UT", "device": {"kind": "angle", "front": 99}}]},
+     "studie „s1“: Výstupní bod"),
 ])
 def test_bad_ndt_section_is_czech_error(ndt, message):
     data = plate().to_dict() | {"ndt": ndt}

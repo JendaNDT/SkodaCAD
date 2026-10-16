@@ -40,6 +40,9 @@ from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
+from skodacad.measure import face_reference as surface_reference
+from skodacad.ndt.devices import DeviceError, Placement, Probe, place
+from skodacad.ndt.geometry import GeometryError, PartGeometry
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
     StudyError,
@@ -47,6 +50,7 @@ from skodacad.ndt.study import (
     new_study,
     part_fingerprint,
     refresh_target,
+    study_probe,
     target_for,
 )
 from skodacad.ndt.study import duplicate as duplicate_study
@@ -135,6 +139,11 @@ class ModelSession:
         self.map_visible = False  # počítat i mapu tloušťky stěny (zapíná okno)
         self.section_settings: SectionSettings | None = None  # řez modelem (jen pohled)
         self._section_cache: tuple[Any, ...] | None = None
+        # přiložená NDT sonda (jen pohled): (id studie, odkaz na plochu, úhel paprsku [°])
+        self.ndt_placement_request: tuple[str, dict[str, Any], float] | None = None
+        self.ndt_placement_error = ""
+        self._placement_cache: tuple[Any, ...] | None = None
+        self._geometry_cache: tuple[Any, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -146,6 +155,7 @@ class ModelSession:
         self.dirty = False
         self._undo.clear()
         self._redo.clear()
+        self.ndt_placement_request = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -156,6 +166,7 @@ class ModelSession:
         self.dirty = False
         self._undo.clear()
         self._redo.clear()
+        self.ndt_placement_request = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -910,6 +921,91 @@ class ModelSession:
                 doc.ndt = None  # bez studií se sekce do souboru nepíše
 
         return self._change(remove)
+
+    # --- NDT sonda ---------------------------------------------------------------------
+
+    def ndt_probe(self, study_id: str) -> Probe:
+        """Sonda studie (uložená, jinak výchozí úhlová 40 × 20 × 25 mm)."""
+        return study_probe(_studies(self._require())[self._study_index(study_id)])
+
+    def set_ndt_device(self, study_id: str, device: dict[str, Any] | Probe) -> BuildResult:
+        """Uloží sondu do studie (změna zadání – ověření studie zanikne)."""
+        try:
+            probe = device if isinstance(device, Probe) else Probe.from_dict(device)
+        except DeviceError as exc:
+            raise DocumentError(str(exc)) from None
+        record = probe.to_dict()
+        return self._edit_study(study_id, lambda study: study.update(device=record), setup=True)
+
+    def place_ndt_probe(self, study_id: str, shapes: list[Any], point: Any = None,
+                        angle: float = 0.0) -> Placement:
+        """Přiloží sondu studie na plochu vybranou ve 3D (jen pohled, do modelu se neukládá;
+        po změně dílu se přiloží znovu na stejné místo). ``angle`` = směr paprsku ve stupních."""
+        self._require_computed("přiložení sondy")
+        self._study_index(study_id)
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není kam sondu přiložit.")
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if len(faces) != 1 or edges:
+            raise DocumentError("Sondu přikládáš na jednu plochu – vyber ve 3D právě jednu "
+                                "plochu (klikni na ni v místě přiložení).")
+        reference = surface_reference(faces[0], point)
+        self.ndt_placement_request = (study_id, reference, float(angle))
+        placement = self.ndt_placement
+        if placement is None:
+            self.ndt_placement_request = None
+            raise DocumentError(self.ndt_placement_error)
+        return placement
+
+    def turn_ndt_probe(self, angle: float) -> Placement | None:
+        """Natočí přiloženou sondu (směr paprsku ve stupních)."""
+        if self.ndt_placement_request is None:
+            return None
+        study_id, reference, _ = self.ndt_placement_request
+        self.ndt_placement_request = (study_id, reference, float(angle))
+        return self.ndt_placement
+
+    def clear_ndt_placement(self) -> None:
+        self.ndt_placement_request = None
+        self.ndt_placement_error = ""
+
+    @property
+    def ndt_placement(self) -> Placement | None:
+        """Přiložená sonda na aktuálním dílu (přepočítá se po změně dílu i sondy); None =
+        žádná, nebo nejde přiložit (důvod v ``ndt_placement_error``)."""
+        request = self.ndt_placement_request
+        result = self.result
+        if request is None or result is None or result.part is None or self.computing:
+            return None
+        study_id, reference, angle = request
+        try:
+            probe = self.ndt_probe(study_id)
+        except DocumentError:
+            self.ndt_placement_error = "Studie se sondou už v modelu není."
+            return None
+        key = (study_id, repr(reference), angle, probe)
+        cache = self._placement_cache
+        if cache is not None and cache[0] is result and cache[1] == key:
+            return cache[2]
+        placement = None
+        try:
+            face, at = find_face(result.part, reference["face"])
+            placement = place(self._ndt_geometry(), probe, (at.X, at.Y, at.Z), angle=angle,
+                              face=face)
+            self.ndt_placement_error = ""
+        except (SelectionError, DeviceError, GeometryError) as exc:
+            self.ndt_placement_error = f"Sondu nejde přiložit: {exc}"
+        except Exception as exc:  # noqa: BLE001 – pohled nesmí shodit okno
+            self.ndt_placement_error = (f"Sondu nejde přiložit (neočekávaná chyba jádra "
+                                        f"{type(exc).__name__}: {exc}).")
+        self._placement_cache = (result, key, placement)
+        return placement
+
+    def _ndt_geometry(self) -> PartGeometry:
+        part = self.result.part
+        if self._geometry_cache is None or self._geometry_cache[0] is not part:
+            self._geometry_cache = (part, PartGeometry(part))
+        return self._geometry_cache[1]
 
     def ndt_highlight(self, study_id: str) -> list[Any]:
         """Plochy kontrolované oblasti na dílu (OCCT) pro zvýraznění; co chybí, vynechá."""

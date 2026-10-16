@@ -177,13 +177,18 @@ class Placement:
         return f"{self.label.capitalize()}. " + " ".join(self.messages)
 
 
-def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None) -> Placement:
-    """Přiloží sondu do bodu plochy (přichytí se k nejbližšímu povrchu) se směrem paprsku
-    ``beam`` (sklopí se do tečné roviny; u přímé sondy jen natočí otisk)."""
+def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
+          angle: float | None = None, face: Any = None) -> Placement:
+    """Přiloží sondu do bodu plochy (přichytí se k nejbližšímu povrchu, nebo k ``face``).
+
+    Směr paprsku je ``beam`` (sklopí se do tečné roviny), nebo ``angle`` ve stupních: 0° =
+    průmět osy +X do plochy (u plochy kolmé na X osa +Y), kladně proti směru hodin při
+    pohledu na plochu zvenku. U přímé sondy směr jen natočí otisk.
+    """
     from build123d import Location, Plane, Vector
 
     try:
-        surface = geo.surface_at(point)
+        surface = geo.surface_at(point, face)
     except GeometryError as exc:
         raise DeviceError(str(exc)) from None
     if surface.distance > SNAP:
@@ -192,7 +197,11 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None) -> Plac
     normal = Vector(*surface.normal)
     if normal.length < 0.5:
         raise DeviceError("Směr plochy v bodě přiložení nejde určit – zkus jiné místo.")
-    x_dir = _tangent(normal, beam, probe.kind == "angle")
+    if angle is not None:
+        base, turn = _tangent(normal, None, False), math.radians(float(angle))
+        x_dir = (base * math.cos(turn) + normal.cross(base) * math.sin(turn)).normalized()
+    else:
+        x_dir = _tangent(normal, beam, probe.kind == "angle")
     plane = Plane(origin=Vector(*surface.point), x_dir=x_dir, z_dir=normal)
     body = Location(plane) * probe.body()
 
