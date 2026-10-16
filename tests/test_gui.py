@@ -27,6 +27,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.highlighted = []
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
+        self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
         self.picked_point = None
 
     def show_part(self, part, fit=False, accent=None):
@@ -35,6 +36,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.picked_point = None
         self.measurement = []
         self.thickness_map = None
+        self.probe = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -49,6 +51,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def hide_thickness_map(self):
         self.thickness_map = None
+
+    def show_probe(self, body, state, start, end, text):
+        self.probe = (state, tuple(start), tuple(end), text, body.volume)
+
+    def hide_probe(self):
+        self.probe = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -1156,3 +1164,80 @@ def test_ndt_panel_is_locked_while_ai_works(ndt_window):
                                            w.ndt_panel.delete_action))
     w.set_assistant_busy(False)
     assert w.ndt_dock.isEnabled() and w.ndt_panel.rename_action.isEnabled()
+
+
+# --- sonda v panelu NDT (etapa 03) -----------------------------------------------------------
+
+
+@pytest.fixture
+def rib_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "zebro.json", template=True)
+    w.ndt_panel.studies.setCurrentRow(0)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_place_turn_and_remove_probe(rib_window, slot_errors):
+    w = rib_window
+    panel = w.ndt_panel
+    assert "Úhlová sonda 40 × 20 × 25 mm" in panel.probe_label.text()
+    assert "(výchozí)" in panel.probe_label.text()
+    assert not panel.place_action.isEnabled()  # nic není vybráno
+    w.viewer.click([face_at(w.session.result.part, 22, 0, 20)], (22, 0, 20))
+    panel.angle.setValue(180)  # paprsek k žebru (−X)
+    assert panel.place_action.isEnabled()
+    panel.place_action.trigger()
+    state, start, end, text, volume = w.viewer.probe
+    assert state == "ok" and start == pytest.approx((22, 0, 20))
+    assert end == pytest.approx((22 - 30, 0, 20))  # čára směru paprsku
+    assert text == "přiloženo · volno 5.0 mm" and volume == pytest.approx(40 * 20 * 25)
+    assert "Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm." in \
+        panel.placement_label.text()
+    panel.angle.setValue(0)  # otočit: zadní konec sondy zajede do žebra
+    assert w.viewer.probe[0] == "collision"
+    assert "Koliduje" in panel.placement_label.text()
+    edit(w, "t", "25")  # silnější deska: sonda se přiloží znovu na posunutou plochu
+    assert w.viewer.probe[1] == pytest.approx((22, 0, 25))
+    panel.remove_probe_action.trigger()
+    assert w.viewer.probe is None and w.session.ndt_placement_request is None
+    assert slot_errors == []
+
+
+def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    w = rib_window
+    panel = w.ndt_panel
+    panel.probe_action.trigger()  # no_dialogs: zrušeno → beze změny
+    assert "device" not in w.session.ndt_study("s1")
+
+    def accept(self, dialog):
+        dialog.kind.setCurrentIndex(dialog.kind.findData("straight"))
+        assert not dialog.fields["length"].isVisibleTo(dialog)  # délka jen u úhlové
+        dialog.fields["diameter"].setValue(12)
+        dialog.fields["reserve"].setValue(3)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
+    panel.probe_action.trigger()
+    assert w.session.ndt_study("s1")["device"] == {"kind": "straight", "diameter": 12,
+                                                   "height": 25, "max_gap": 0.5,
+                                                   "reserve": 3}
+    assert panel.probe_label.text().startswith("Přímá sonda Ø 12 × 25 mm; mezera nejvýš 0.50")
+    action(w, "Zpět").trigger()
+    assert "device" not in w.session.ndt_study("s1")
+    assert slot_errors == []
+
+
+def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
+    w = rib_window
+    panel = w.ndt_panel
+    w.viewer.click([edge_at(w.session.result.part, 0, -50, 80)])
+    assert not panel.place_action.isEnabled()  # hrana, ne plocha
+    w.session.set_ndt_method("s1", "PT")
+    w._refresh_all()
+    assert panel.probe_label.text() == "Sonda je zatím jen pro UT studie."
+    assert not panel.probe_action.isEnabled()
+    assert slot_errors == []

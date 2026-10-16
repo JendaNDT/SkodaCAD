@@ -11,7 +11,7 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
         self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
+        self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
         self._view_actions: list[QAction] = []
@@ -471,6 +472,24 @@ class MainWindow(QMainWindow):
         self.ndt_dock = self._add_dock("NDT", "ndt_dock", self.ndt_panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
         self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
+
+    def _refresh_probe(self) -> None:
+        """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
+        (u přímé sondy kolmo do materiálu)."""
+        placement = self.session.ndt_placement
+        if placement is self._shown_probe:
+            return
+        self._shown_probe = placement
+        if placement is None:
+            self.viewer.hide_probe()
+            return
+        origin = placement.origin
+        if placement.probe.kind == "straight":
+            direction, reach = tuple(-v for v in placement.z_dir), 20.0
+        else:
+            direction, reach = placement.x_dir, 30.0
+        end = tuple(o + d * reach for o, d in zip(origin, direction, strict=True))
+        self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short)
 
     def show_ndt(self) -> None:
         self.ndt_dock.show()
@@ -948,12 +967,14 @@ class MainWindow(QMainWindow):
             self._had_part = part is not None
             self._shown_key = (result, section)
             self._shown_map = None  # prohlížeč mapu s dílem smazal
+            self._shown_probe = None  # … i sondu
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
         self._refresh_saved_measurements()
         self._refresh_thickness_map()
         self._refresh_section_panel()
+        self._refresh_probe()
         self.ndt_panel.refresh()
 
     # --- přepočet na pozadí ----------------------------------------------------------
@@ -1010,7 +1031,9 @@ class MainWindow(QMainWindow):
         """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …),
         nebo kontrolovanou oblast studie vybrané v panelu NDT."""
         study_id = self.ndt_panel.current_id()
-        if study_id is not None:
+        if study_id is not None and self.session.ndt_placement_request is not None:
+            shapes = []  # přiložená sonda je teď hlavní – oblast přes celý díl by ji přebila
+        elif study_id is not None:
             shapes = self.session.ndt_highlight(study_id)
         elif self._selected_id:
             shapes = self.session.feature_highlight(self._selected_id)

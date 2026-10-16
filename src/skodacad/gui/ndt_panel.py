@@ -1,8 +1,10 @@
-"""Panel NDT: studie nedestruktivní kontroly v modelu (etapa 01 – zatím bez výpočtů).
+"""Panel NDT: studie nedestruktivní kontroly v modelu a virtuální sonda (etapy 01 a 03).
 
 Seznam studií se stavem (✓ platná, ⚠ zastaralá / neúplná, ✕ neplatná vazba), nová studie
 z ploch vybraných ve 3D, úpravy a ověření. Všechno jde přes ``ModelSession`` (jeden krok Zpět
 na úpravu); panel sám nic nepočítá. Klik na studii zvýrazní ve 3D kontrolovanou oblast.
+U UT studie jde nastavit sondu (uloží se do studie) a přiložit ji kliknutím na plochu – sonda
+se ve 3D nakreslí v barvě výsledku (jen pohled, do modelu se neukládá).
 """
 
 from __future__ import annotations
@@ -13,17 +15,24 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from skodacad.document import DocumentError
 from skodacad.ndt import DISCLAIMER
+from skodacad.ndt.devices import KINDS, Probe
 from skodacad.ndt.study import METHODS, StudyResult
 
 if TYPE_CHECKING:
@@ -32,6 +41,9 @@ if TYPE_CHECKING:
 _STUDY_ID = Qt.ItemDataRole.UserRole
 _STATE_COLORS = {"ok": QColor("#1b7f3b"), "stale": QColor("#b9770e"),
                  "incomplete": QColor("#b9770e"), "broken": QColor("#c0392b")}
+_PLACEMENT_COLORS = {"ok": "#1b7f3b", "collision": "#c0392b"}  # ostatní stavy oranžově
+ANGLE_HINT = ("Směr paprsku ve stupních: 0° = osa +X sklopená do plochy (u plochy kolmé na X "
+              "osa +Y), kladně proti směru hodin při pohledu na plochu zvenku.")
 METHOD_LABELS = {key: f"{key} – {name}" for key, name in METHODS.items()}
 HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Nová studie. "
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
@@ -56,6 +68,11 @@ class NdtPanel(QWidget):
         self.unverify_action = action("Zrušit ověření", self.unverify)
         self.duplicate_action = action("Kopie", self.duplicate)
         self.delete_action = action("Smazat studii", self.delete)
+        self.probe_action = action("Sonda…", self.edit_probe)
+        self.probe_action.setToolTip("Druh a rozměry virtuální sondy, dovolená mezera, rezerva")
+        self.place_action = action("Přiložit sondu sem", self.place_probe)
+        self.place_action.setToolTip("Přiloží sondu studie na plochu, na kterou jsi klikl(a)")
+        self.remove_probe_action = action("Odebrat sondu", self.remove_probe)
 
         layout = QVBoxLayout(self)
         warning = QLabel(DISCLAIMER)
@@ -94,6 +111,36 @@ class NdtPanel(QWidget):
                 buttons.addWidget(window._tool_button(item))
             buttons.addStretch()
             layout.addLayout(buttons)
+        probe_box = QGroupBox("Sonda (UT) – geometrie přiložení")
+        probe_layout = QVBoxLayout(probe_box)
+        self.probe_label = QLabel()
+        self.probe_label.setObjectName("ndt_probe")
+        self.probe_label.setWordWrap(True)
+        probe_layout.addWidget(self.probe_label)
+        buttons = QHBoxLayout()
+        for item in (self.probe_action, self.place_action, self.remove_probe_action):
+            buttons.addWidget(window._tool_button(item))
+        buttons.addStretch()
+        probe_layout.addLayout(buttons)
+        angle_row = QHBoxLayout()
+        angle_row.addWidget(QLabel("Směr paprsku [°]:"))
+        self.angle = QSpinBox()
+        self.angle.setObjectName("ndt_angle")
+        self.angle.setRange(-180, 180)
+        self.angle.setSingleStep(15)
+        self.angle.setWrapping(True)
+        self.angle.setToolTip(ANGLE_HINT)
+        self.angle.valueChanged.connect(lambda _value: self._angle_changed())
+        angle_row.addWidget(self.angle)
+        angle_row.addStretch()
+        probe_layout.addLayout(angle_row)
+        self.placement_label = QLabel()
+        self.placement_label.setObjectName("ndt_placement")
+        self.placement_label.setWordWrap(True)
+        self.placement_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        probe_layout.addWidget(self.placement_label)
+        layout.addWidget(probe_box)
         self.details = QLabel()
         self.details.setObjectName("ndt_details")
         self.details.setWordWrap(True)
@@ -150,10 +197,12 @@ class NdtPanel(QWidget):
                 self.studies.setCurrentItem(item)
         self.studies.blockSignals(False)
         self._show_details()
+        self._show_probe()
         self.refresh_actions()
 
     def _row_changed(self) -> None:
         self._show_details()
+        self._show_probe()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
 
@@ -192,11 +241,16 @@ class NdtPanel(QWidget):
         self.verify_action.setEnabled(selected and result is not None and result.state == "ok")
         record = self._record(self.current_id())
         self.unverify_action.setEnabled(selected and record is not None and "verified" in record)
+        ut = selected and (self._record(self.current_id()) or {}).get("method") == "UT"
+        self.probe_action.setEnabled(ut)
+        self.place_action.setEnabled(ut and has_part and info.faces == 1 and info.edges == 0)
+        self.remove_probe_action.setEnabled(session.ndt_placement_request is not None)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.rename_action,
                            self.method_action, self.note_action, self.duplicate_action,
                            self.delete_action, self.confirm_action, self.verify_action,
-                           self.unverify_action):
+                           self.unverify_action, self.probe_action, self.place_action,
+                           self.remove_probe_action):
                 action.setEnabled(False)
 
     # --- úpravy (každá přes ModelSession = jeden krok Zpět) -------------------------------
@@ -299,6 +353,118 @@ class NdtPanel(QWidget):
         if study_id is not None:
             self._apply("Studii nejde smazat",
                         lambda: self.window.session.remove_ndt_study(study_id))
+
+    # --- sonda (etapa 03) ------------------------------------------------------------------
+
+    def _show_probe(self) -> None:
+        """Sonda vybrané studie a výsledek přiložení."""
+        session = self.window.session
+        record = self._record(self.current_id())
+        if record is None:
+            self.probe_label.setText("Vyber UT studii – sonda patří ke studii.")
+        elif record.get("method") != "UT":
+            self.probe_label.setText("Sonda je zatím jen pro UT studie.")
+        else:
+            stored = "" if "device" in record else " (výchozí)"
+            probe = session.ndt_probe(record["id"])
+            self.probe_label.setText(f"{probe.label}{stored}; mezera nejvýš "
+                                     f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm.")
+        placement = session.ndt_placement
+        if placement is not None:
+            color = _PLACEMENT_COLORS.get(placement.state, "#b9770e")
+            self.placement_label.setText(f'<span style="color: {color};"><b>'
+                                         f"{placement.text}</b></span>")
+        elif session.ndt_placement_request is not None and session.ndt_placement_error:
+            self.placement_label.setText(f'<span style="color: #c0392b;">'
+                                         f"{session.ndt_placement_error}</span>")
+        else:
+            self.placement_label.setText("Klikni ve 3D na plochu a dej Přiložit sondu sem.")
+
+    def edit_probe(self) -> None:
+        study_id = self.current_id()
+        if study_id is None:
+            return
+        dialog = ProbeDialog(self.window.session.ndt_probe(study_id), self)
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.values()
+        self._apply("Sondu nejde nastavit",
+                    lambda: self.window.session.set_ndt_device(study_id, values))
+
+    def place_probe(self) -> None:
+        study_id = self.current_id()
+        if study_id is None:
+            return
+        picked, point = list(self.window._picked), self.window.viewer.picked_point
+        angle = self.angle.value()
+        self._apply("Sondu nejde přiložit", lambda: self.window.session.place_ndt_probe(
+            study_id, picked, point, angle))
+
+    def remove_probe(self) -> None:
+        self.window.session.clear_ndt_placement()
+        self.window._refresh_all()
+
+    def _angle_changed(self) -> None:
+        if self.window.session.ndt_placement_request is None:
+            return
+        self.window._busy(lambda: self.window.session.turn_ndt_probe(self.angle.value()))
+        self.window._refresh_all()
+
+
+class ProbeDialog(QDialog):
+    """Nastavení virtuální sondy studie: druh, rozměry, výstupní bod, mezera a rezerva."""
+
+    FIELDS = (("diameter", "Průměr [mm]", ("straight",)), ("length", "Délka [mm]", ("angle",)),
+              ("width", "Šířka [mm]", ("angle",)), ("height", "Výška [mm]", None),
+              ("front", "Výstupní bod od čela [mm]", ("angle",)),
+              ("max_gap", "Dovolená mezera pod sondou [mm]", None),
+              ("reserve", "Manipulační rezerva [mm]", None))
+
+    def __init__(self, probe: Probe, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Sonda NDT studie")
+        form = QFormLayout(self)
+        note = QLabel("Obecná virtuální sonda – ne katalogový výrobek. Mezera 0,5 mm odpovídá "
+                      "EN ISO 17640 (nejde o tvrzení o shodě).")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #555;")
+        form.addRow(note)
+        self.kind = QComboBox()
+        self.kind.setObjectName("probe_kind")
+        for key, label in KINDS.items():
+            self.kind.addItem(label.capitalize(), key)
+        self.kind.setCurrentIndex(self.kind.findData(probe.kind))
+        self.kind.currentIndexChanged.connect(lambda _index: self._kind_changed())
+        form.addRow("Druh", self.kind)
+        self.fields: dict[str, QDoubleSpinBox] = {}
+        self.labels: dict[str, QLabel] = {}
+        for key, label, _kinds in self.FIELDS:
+            field = QDoubleSpinBox()
+            field.setObjectName(f"probe_{key}")
+            field.setDecimals(2)
+            field.setRange(0.0, 1000.0)
+            field.setValue(float(getattr(probe, key)))
+            self.fields[key] = field
+            self.labels[key] = QLabel(label)
+            form.addRow(self.labels[key], field)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+        self._kind_changed()
+
+    def _kind_changed(self) -> None:
+        kind = self.kind.currentData()
+        for key, _label, kinds in self.FIELDS:
+            shown = kinds is None or kind in kinds
+            self.fields[key].setVisible(shown)
+            self.labels[key].setVisible(shown)
+
+    def values(self) -> dict:
+        kind = self.kind.currentData()
+        return {"kind": kind, **{key: self.fields[key].value() for key, _label, kinds
+                                 in self.FIELDS if kinds is None or kind in kinds}}
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

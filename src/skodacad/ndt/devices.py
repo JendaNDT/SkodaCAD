@@ -176,6 +176,19 @@ class Placement:
     def text(self) -> str:
         return f"{self.label.capitalize()}. " + " ".join(self.messages)
 
+    @property
+    def short(self) -> str:
+        """Krátký popisek do 3D (stav a hlavní číslo)."""
+        detail = {
+            "collision": f"{self.volume:.0f} mm³",
+            "overhang": f"{self.overhang * 100:.0f} % mimo",
+            "lift_off": f"mezera {self.gap or 0:.2f} mm",
+            "tight": f"volno {self.clearance or 0:.1f} mm",
+            "ok": (f"volno {self.clearance:.1f} mm" if self.clearance is not None
+                   else "volno"),
+        }.get(self.state, "")
+        return f"{self.label} · {detail}" if detail else self.label
+
 
 def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
           angle: float | None = None, face: Any = None) -> Placement:

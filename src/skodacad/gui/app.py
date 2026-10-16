@@ -288,6 +288,20 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     item = panel.studies.item(0).text() if panel.studies.count() else "?"
     lines.append(f"✓ NDT studie: OK ({item}; po změně tloušťky zastaralá, Zpět platná)")
+    lines.stream.write("  … NDT sonda\n")
+    lines.stream.flush()
+    top = max(session.result.part.faces(), key=lambda face: face.center().Z)  # horní plocha
+    placed = session.place_ndt_probe(session.ndt_studies[0].id, [top.wrapped], (0, 0, 20), 90)
+    window._refresh_all()  # sonda se nakreslí ve 3D (průhledné tělo, čára, popisek)
+    QApplication.processEvents()
+    if not placed.ok:
+        lines.append(f"✕ NDT sonda: {placed.text}")
+        return False
+    image = user_dir() / "self-test-sonda.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    lines.append(f"✓ NDT sonda: OK ({placed.short}, snímek {image}: {shown})")
+    session.clear_ndt_placement()
+    window._refresh_all()
     return True
 
 
@@ -407,7 +421,7 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map", "accent"):
+    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)

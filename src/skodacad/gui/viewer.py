@@ -93,6 +93,11 @@ STANDARD_VIEWS = {
 _DRAG_THRESHOLD = 3  # pixely; menší pohyb myši je pořád „klik“
 
 
+PROBE_COLORS = {"ok": (0.13, 0.62, 0.30), "tight": (0.93, 0.55, 0.10),
+                "lift_off": (0.93, 0.55, 0.10), "overhang": (0.93, 0.55, 0.10),
+                "uncertain": (0.93, 0.55, 0.10), "collision": (0.86, 0.15, 0.15)}
+
+
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
     return Quantity_Color(r, g, b, Quantity_TOC_RGB)
 
@@ -198,6 +203,7 @@ class OccViewer(QWidget):
         self._highlight: AIS_Shape | None = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
+        self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self._pending: tuple[Any, bool] | None = None
         self._press: QPoint | None = None
@@ -225,6 +231,7 @@ class OccViewer(QWidget):
         self._remove_highlight()
         self._remove_measurement()
         self._remove_map()
+        self._remove_probe()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -310,6 +317,33 @@ class OccViewer(QWidget):
                                                           _rgb(0.0, 0.22, 0.07))
         self._view.Redraw()
 
+    def show_probe(self, body: Any, state: str, start: Any, end: Any, text: str) -> None:
+        """Virtuální NDT sonda: průhledné tělo v barvě stavu (zelená přiloženo, oranžová málo
+        místa / nedosedá / přesahuje, červená kolize) a čára směru paprsku z výstupního bodu
+        s popiskem. Kliknout na ni nejde – plochy dílu pod ní jdou dál vybírat."""
+        if not self.ready:
+            return
+        self._remove_probe()
+        color = _rgb(*PROBE_COLORS.get(state, PROBE_COLORS["uncertain"]))
+        shown = AIS_Shape(getattr(body, "wrapped", body))
+        shown.SetColor(color)
+        shown.SetTransparency(0.35)
+        self._context.Display(shown, False)
+        self._context.Deactivate(shown)
+        self._probe_objects = [shown, *self._marker_objects(start, end, text, color)]
+        self._view.Redraw()
+
+    def hide_probe(self) -> None:
+        if not self.ready:
+            return
+        self._remove_probe()
+        self._view.Redraw()
+
+    def _remove_probe(self) -> None:
+        for shown in self._probe_objects:
+            self._context.Remove(shown, False)
+        self._probe_objects = []
+
     def graphics_info(self) -> str:
         """Grafický ovladač OpenGL (výrobce, zařízení, verze) – pro log a self-test."""
         if not self.ready:
@@ -363,6 +397,15 @@ class OccViewer(QWidget):
             self._context.Remove(shown, False)
             if self._ais is not None:
                 self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
+            self._view.Redraw()
+            return
+        if variant == "probe":  # průhledné těleso (virtuální NDT sonda)
+            body = AIS_Shape(BRepPrimAPI_MakeBox(10, 10, 10).Shape())
+            body.SetColor(_rgb(*PROBE_COLORS["ok"]))
+            body.SetTransparency(0.35)
+            self._context.Display(body, False)
+            self._view.Redraw()
+            self._context.Remove(body, False)
             self._view.Redraw()
             return
         if variant == "accent":  # díl s plochami jiné barvy (plochy řezu)
