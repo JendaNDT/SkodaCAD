@@ -65,6 +65,12 @@ class FakeViewer(QtWidgets.QWidget):
     def set_standard_view(self, name):
         self.views.append(name)
 
+    def dump(self, path):
+        """Snímek 3D pohledu (AI asistent si díl „prohlíží“)."""
+        with open(path, "wb") as handle:
+            handle.write(b"\x89PNG\r\n\x1a\nnahled")
+        return True
+
 
 @pytest.fixture(scope="module")
 def app():
@@ -921,4 +927,105 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
 
     action(w, "Řez modelem").trigger()  # vypnout → zase celý díl
     assert w.viewer.parts[-1][0] is w.session.result.part and w.session.section is None
+    assert slot_errors == []
+
+
+# --- AI asistent -----------------------------------------------------------------------
+
+
+def wait_for_assistant(window, timeout=30.0):
+    import time
+
+    from PySide6.QtTest import QTest
+
+    end = time.monotonic() + timeout
+    while window.assistant_panel.busy and time.monotonic() < end:
+        QTest.qWait(20)
+    assert not window.assistant_panel.busy, "asistent nedoběhl"
+
+
+def test_assistant_panel_edits_model_in_one_undo_step(window, slot_errors):
+    from skodacad.assistant import offline_client
+
+    requests = []
+    turns = [
+        ([{"type": "text", "text": "Zvětším přírubu."},
+          {"type": "tool_use", "id": "t1", "name": "set_parameters",
+           "input": {"values": {"D": 200}}}], "tool_use"),
+        ([{"type": "tool_use", "id": "t2", "name": "view_part", "input": {"view": "iso"}}],
+         "tool_use"),
+        ([{"type": "text", "text": "Hotovo, D = 200 mm."}], "end_turn"),
+    ]
+    panel = window.assistant_panel
+    panel.client_factory = lambda settings: offline_client(turns, requests)
+    action(window, "AI asistent").trigger()
+    panel.prompt.setPlainText("zvětši D na 200")
+    action(window, "Odeslat").trigger()
+    assert panel.busy  # během práce AI jsou ruční úpravy zamčené
+    assert not window.model_dock.isEnabled() and not window.undo_action.isEnabled()
+    assert not action(window, "Smazat prvek").isEnabled()
+    wait_for_assistant(window)
+
+    assert window.session.document.parameters["D"] == 200
+    assert window._param_fields["D"].text() == "200"  # okno ukazuje nový stav
+    text = panel.history_text()
+    assert "Ty: zvětši D na 200" in text
+    assert "→ Nastavuji parametry: D = 200" in text and "Hotovo, D = 200 mm." in text
+    assert window.viewer.views[-1] == "iso"  # AI se na díl podívala izometricky
+    image = requests[2]["body"]["messages"][-1]["content"][0]["content"][0]
+    assert image["type"] == "image" and image["source"]["media_type"] == "image/png"
+    assert "Kč" in panel.status.text() and panel.prompt.toPlainText() == ""
+    assert window.model_dock.isEnabled() and window.undo_action.isEnabled()
+
+    action(window, "Zpět").trigger()  # celá odpověď AI = jeden krok Zpět
+    assert window.session.document.parameters["D"] == 165
+    assert slot_errors == []
+
+
+def test_assistant_without_key_explains_and_new_model_resets(window, slot_errors,
+                                                               monkeypatch, examples_dir):
+    from skodacad.assistant import offline_client
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    panel = window.assistant_panel
+    assert "chybí API klíč" in panel.status.text()
+    panel.prompt.setPlainText("zvětši D")
+    panel.send()
+    assert not panel.busy and "Chybí API klíč" in panel.history_text()
+
+    panel.client_factory = lambda settings: offline_client(
+        [([{"type": "text", "text": "Příruba má 4 díry."}], "end_turn")])
+    panel.prompt.setPlainText("kolik má děr?")
+    panel.send()
+    wait_for_assistant(window)
+    assert panel.assistant.messages
+    window.session.dirty = False
+    window.open_model(examples_dir / "krabicka.json", template=True)
+    assert panel.assistant.messages == []  # jiný model = nová konverzace
+    assert "nová konverzace" in panel.history_text()
+    action(window, "Nová konverzace").trigger()
+    assert panel.history_text() == ""
+    assert slot_errors == []
+
+
+def test_assistant_settings_dialog_saves_key_and_model(window, monkeypatch, tmp_path,
+                                                        slot_errors):
+    import json
+
+    from PySide6.QtWidgets import QDialog, QLineEdit
+
+    def fill(self, dialog):
+        assert dialog.key_edit.echoMode() == QLineEdit.EchoMode.Password  # klíč není vidět
+        dialog.key_edit.setText(" sk-ant-test ")
+        dialog.model_combo.setCurrentIndex(dialog.model_combo.findData("claude-sonnet-5-5"))
+        dialog.effort_combo.setCurrentIndex(dialog.effort_combo.findData("medium"))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", fill)
+    action(window, "Nastavení AI…").trigger()
+    saved = json.loads((tmp_path / "nastaveni.json").read_text(encoding="utf-8"))["ai"]
+    assert saved == {"api_key": "sk-ant-test", "model": "claude-sonnet-5-5",
+                     "effort": "medium"}
+    status = window.assistant_panel.status.text()
+    assert "Sonnet 5.5" in status and "vyváženě" in status and "chybí" not in status
     assert slot_errors == []

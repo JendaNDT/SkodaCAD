@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
+from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -116,6 +117,8 @@ class MainWindow(QMainWindow):
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
         self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
+        self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
+        self._view_actions: list[QAction] = []
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -132,6 +135,7 @@ class MainWindow(QMainWindow):
         self._build_measure_panel()
         self._build_map_panel()
         self._build_section_panel()
+        self._build_assistant_panel()
         self._build_menus()
         self.resize(1400, 860)
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
@@ -140,6 +144,7 @@ class MainWindow(QMainWindow):
                          Qt.Orientation.Vertical)
         self.tabifyDockWidget(self.measure_dock, self.map_dock)
         self.tabifyDockWidget(self.map_dock, self.section_dock)
+        self.tabifyDockWidget(self.section_dock, self.assistant_dock)
         self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
@@ -217,6 +222,8 @@ class MainWindow(QMainWindow):
         self.thickness_map_action.setToolTip("Obarví celý díl podle tloušťky stěny (NDT) – "
                                              "červeně nejtenčí místa")
         self.section_action = self._action("Řez modelem", self.toggle_section, "R")
+        self.assistant_action = self._action("AI asistent", self.show_assistant, "Ctrl+I")
+        self.assistant_action.setToolTip("Úprava modelu podle popisu (Claude)")
         self.section_action.setCheckable(True)
         self.section_action.setToolTip("Rozřízne díl rovinou a ukáže, jak vypadá uvnitř "
                                        "(model se nemění)")
@@ -440,14 +447,56 @@ class MainWindow(QMainWindow):
         self.section_dock = self._add_dock("Řez", "section_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _build_assistant_panel(self) -> None:
+        """Panel AI asistenta: rozhovor s Claude, který model upravuje (jeden krok Zpět)."""
+        self.assistant_panel = AssistantPanel(self)
+        self.assistant_dock = self._add_dock("AI asistent", "assistant_dock",
+                                             self.assistant_panel,
+                                             Qt.DockWidgetArea.RightDockWidgetArea,
+                                             scroll=False)  # historie se posouvá sama
+
+    def show_assistant(self) -> None:
+        self.assistant_dock.show()
+        self.assistant_dock.raise_()
+        # rozhovor potřebuje místo – úprava prvku nad ním se zmenší
+        self.resizeDocks([self.editor_dock, self.assistant_dock], [220, 620],
+                         Qt.Orientation.Vertical)
+        self.assistant_panel.prompt.setFocus()
+
+    def set_assistant_busy(self, busy: bool) -> None:
+        """Během práce AI se model ručně neupravuje (úpravy by se křížily) – zamknou se
+        panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
+        for widget in (self.model_dock, self.editor_dock, self.menuBar(), self.toolbar):
+            widget.setEnabled(not busy)
+        if busy:
+            keep = {self.fit_action, self.assistant_action, *self._view_actions}
+            self._assistant_lock = [a for a in self.findChildren(QAction)
+                                    if a.parent() is self and a not in keep and a.isEnabled()]
+            for action in self._assistant_lock:
+                action.setEnabled(False)
+        else:
+            for action in self._assistant_lock:
+                action.setEnabled(True)
+            self._assistant_lock = []
+            self._refresh_actions()
+
+    def after_assistant_change(self) -> None:
+        """AI změnila model (přes ModelSession) – obnovit strom, parametry a 3D."""
+        if self._selected_id is not None and not any(
+                f["id"] == self._selected_id for f in self.session.document.features):
+            self._selected_id = None
+        self._reload_all()
+
     def _add_dock(self, title: str, name: str, content: QWidget,
-                  area: Qt.DockWidgetArea) -> QDockWidget:
-        scroll = QScrollArea()
-        scroll.setWidget(content)
-        scroll.setWidgetResizable(True)
+                  area: Qt.DockWidgetArea, scroll: bool = True) -> QDockWidget:
+        if scroll:
+            area_widget = QScrollArea()
+            area_widget.setWidget(content)
+            area_widget.setWidgetResizable(True)
+            content = area_widget
         dock = QDockWidget(title, self)
         dock.setObjectName(name)
-        dock.setWidget(scroll)
+        dock.setWidget(content)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         dock.setMinimumWidth(340)
         self.addDockWidget(area, dock)
@@ -460,7 +509,7 @@ class MainWindow(QMainWindow):
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
-        toolbar = self.addToolBar("Hlavní")
+        toolbar = self.toolbar = self.addToolBar("Hlavní")
         toolbar.setObjectName("main_toolbar")
         toolbar.setMovable(False)
 
@@ -513,9 +562,13 @@ class MainWindow(QMainWindow):
         model_menu.addAction(self.section_face_action)
         model_menu.addAction(self.flip_section_action)
         model_menu.addAction(self.export_section_action)
+        model_menu.addSeparator()
+        model_menu.addAction(self.assistant_action)
+        model_menu.addAction(self.assistant_panel.settings_action)
         toolbar.addAction(self.rebuild_action)
         toolbar.addAction(self.thickness_map_action)
         toolbar.addAction(self.section_action)
+        toolbar.addAction(self.assistant_action)
         toolbar.addSeparator()
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
         self._fill_selection_menu(selection_menu)
@@ -525,6 +578,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.fit_action)
         for key, (label, shortcut) in VIEW_LABELS.items():
             action = self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
+            self._view_actions.append(action)
             view_menu.addAction(action)
             if key in ("iso", "top", "front", "right"):
                 toolbar.addAction(action)
@@ -552,6 +606,7 @@ class MainWindow(QMainWindow):
         self.session.new_document()
         self._selected_id = None
         self._reload_all(fit=True)
+        self.assistant_panel.model_replaced()
         self.statusBar().showMessage("Nový díl – začni tlačítkem „Přidat prvek“ → Skica.", 10000)
         return True
 
@@ -567,6 +622,7 @@ class MainWindow(QMainWindow):
         log.info("Otevřen model %s", path)
         self._selected_id = None
         self._reload_all(fit=True)
+        self.assistant_panel.model_replaced()
         return True
 
     def open_dialog(self) -> None:
@@ -976,6 +1032,8 @@ class MainWindow(QMainWindow):
         self.delete_parameter_action.setEnabled(
             has_document and bool(self.session.document.parameters))
         self._refresh_selection_actions()
+        for action in self._assistant_lock:  # AI pracuje – ruční úpravy počkají
+            action.setEnabled(False)
 
     def _refresh_selection_actions(self) -> None:
         info = self.session.selection_info(self._picked)
@@ -1507,6 +1565,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         if self._confirm_discard():
+            self.assistant_panel.shutdown()  # rozpracovaná odpověď AI se zastaví
             self._poll_timer.stop()
             if self._runner is not None:
                 self._runner.close()  # pomocné procesy přepočtu
