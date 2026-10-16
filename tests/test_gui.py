@@ -27,6 +27,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.highlighted = []
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
+        self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
         self.picked_point = None
 
     def show_part(self, part, fit=False, accent=None):
@@ -35,6 +36,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.picked_point = None
         self.measurement = []
         self.thickness_map = None
+        self.probe = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -49,6 +51,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def hide_thickness_map(self):
         self.thickness_map = None
+
+    def show_probe(self, body, state, start, end, text):
+        self.probe = (state, tuple(start), tuple(end), text, body.volume)
+
+    def hide_probe(self):
+        self.probe = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -184,6 +192,7 @@ def no_dialogs(monkeypatch):
     shown = []
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
     monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("", False))
+    monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *a, **k: ("", False))
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: ("", ""))
     for name in ("information", "about", "warning", "critical"):
@@ -221,6 +230,20 @@ def test_examples_menu_items_open_examples(window, slot_errors):
         action(window, stem).trigger()
         assert title in window.windowTitle()
         assert window.session.path is None
+    assert slot_errors == []
+
+
+def test_ndt_reference_parts_are_in_examples_menu_in_order(window, slot_errors):
+    from PySide6.QtWidgets import QMenu
+
+    menu = next(m for m in window.findChildren(QMenu) if m.title() == "NDT – referenční díly")
+    labels = [a.text() for a in menu.actions()]
+    assert len(labels) == 8
+    assert labels[0] == "NDT 1 – Deska" and labels[-1] == "NDT 8 – Obtížný přístup"
+    window.session.dirty = False
+    action(window, "NDT 3 – Deska se žebrem").trigger()
+    assert "žebrem" in window.windowTitle()
+    assert window.session.result.part.volume == pytest.approx(460_000)
     assert slot_errors == []
 
 
@@ -1028,4 +1051,193 @@ def test_assistant_settings_dialog_saves_key_and_model(window, monkeypatch, tmp_
                      "effort": "medium"}
     status = window.assistant_panel.status.text()
     assert "Sonnet 5.5" in status and "vyváženě" in status and "chybí" not in status
+    assert slot_errors == []
+
+
+# --- panel NDT ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ndt_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "deska.json", template=True)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def ndt_texts(w):
+    return [w.ndt_panel.studies.item(i).text() for i in range(w.ndt_panel.studies.count())]
+
+
+def test_ndt_panel_shows_sample_study_and_highlights_its_target(ndt_window, slot_errors):
+    w = ndt_window
+    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    assert "Nenahrazuje kvalifikovaný postup" in w.ndt_panel.findChildren(
+        QtWidgets.QLabel)[0].text()
+    w.ndt_panel.studies.setCurrentRow(0)
+    assert len(w.viewer.highlighted) == 1  # horní plocha desky
+    assert "kontrolovaná oblast: 1 plocha" in w.ndt_panel.details.text()
+    assert "Neověřeno." in w.ndt_panel.details.text()
+    assert not w.ndt_panel.confirm_action.isEnabled()  # platná – není co potvrzovat
+    first = w.tree.topLevelItem(0)
+    w.tree.setCurrentItem(first)  # prvek ve stromu → zvýraznit prvek, ne oblast studie
+    assert w.ndt_panel.current_id() is None
+    action(w, "Panel NDT studií").trigger()
+    assert slot_errors == []
+
+
+def test_ndt_panel_stale_confirm_and_verify(ndt_window, slot_errors, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    w = ndt_window
+    w.ndt_panel.studies.setCurrentRow(0)
+    edit(w, "t", "30")
+    assert ndt_texts(w) == ["⚠ UT desky shora (UT) – zastaralá"]
+    assert "posunula o 10.00 mm" in w.ndt_panel.details.text()
+    assert not w.ndt_panel.verify_action.isEnabled()
+    w.ndt_panel.confirm_action.trigger()
+    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("J. N.", True))
+    w.ndt_panel.verify_action.trigger()
+    assert "Ověřil(a) J. N." in w.ndt_panel.details.text()
+    assert w.ndt_panel.unverify_action.isEnabled()
+    w.ndt_panel.unverify_action.trigger()
+    assert "Neověřeno." in w.ndt_panel.details.text()
+    action(w, "Zpět").trigger()
+    assert "Ověřil(a) J. N." in w.ndt_panel.details.text()
+    assert slot_errors == []
+
+
+def test_ndt_panel_new_study_from_click_and_edits(ndt_window, slot_errors, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    w = ndt_window
+    part = w.session.result.part
+    w.viewer.click([face_at(part, 0, 0, 0)], (0, 0, 0))  # spodní plocha
+    w.ndt_panel.method_combo.setCurrentIndex(w.ndt_panel.method_combo.findData("MT"))
+    w.ndt_panel.new_action.trigger()
+    assert ndt_texts(w)[1] == "✓ MT studie 2 (MT) – platná"
+    assert w.ndt_panel.current_id() == "s2"
+    w.ndt_panel.rename_action.trigger()  # dialog zrušen (no_dialogs) – nic se nezmění
+    assert ndt_texts(w)[1].startswith("✓ MT studie 2")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("MT zespodu", True))
+    w.ndt_panel.rename_action.trigger()
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("PT – kapilární", True))
+    w.ndt_panel.method_action.trigger()
+    assert ndt_texts(w)[1] == "✓ MT zespodu (PT) – platná"
+    monkeypatch.setattr(QInputDialog, "getMultiLineText",
+                        lambda *a, **k: ("Celá spodní plocha.", True))
+    w.ndt_panel.note_action.trigger()
+    assert "Poznámka: Celá spodní plocha." in w.ndt_panel.details.text()
+    part = w.session.result.part
+    w.viewer.click([face_at(part, 0, 0, 20), face_at(part, 0, 0, 0)], (0, 0, 20))
+    assert w.ndt_panel.target_action.isEnabled()
+    w.ndt_panel.target_action.trigger()
+    assert "kontrolovaná oblast: 2 plochy" in w.ndt_panel.details.text()
+    w.ndt_panel.duplicate_action.trigger()
+    assert ndt_texts(w)[2] == "✓ MT zespodu (kopie) (PT) – platná"
+    w.ndt_panel.delete_action.trigger()
+    assert len(ndt_texts(w)) == 2
+    action(w, "Zpět").trigger()
+    assert len(ndt_texts(w)) == 3
+    assert slot_errors == []
+
+
+def test_ndt_new_study_without_selection_is_incomplete(ndt_window, slot_errors):
+    w = ndt_window
+    action(w, "Nová NDT studie z výběru").trigger()
+    assert ndt_texts(w)[1] == "⚠ UT studie 2 (UT) – neúplná"
+    assert "Chybí kontrolovaná oblast" in w.ndt_panel.details.text()
+    w.viewer.click([edge_at(w.session.result.part, 0, -50, 20)])
+    assert not w.ndt_panel.target_action.isEnabled()  # hrana není plocha
+    assert slot_errors == []
+
+
+def test_ndt_panel_is_locked_while_ai_works(ndt_window):
+    w = ndt_window
+    w.ndt_panel.studies.setCurrentRow(0)
+    w.set_assistant_busy(True)
+    w.ndt_panel.refresh()
+    assert not w.ndt_dock.isEnabled()
+    assert not any(a.isEnabled() for a in (w.ndt_panel.new_action, w.ndt_panel.rename_action,
+                                           w.ndt_panel.delete_action))
+    w.set_assistant_busy(False)
+    assert w.ndt_dock.isEnabled() and w.ndt_panel.rename_action.isEnabled()
+
+
+# --- sonda v panelu NDT (etapa 03) -----------------------------------------------------------
+
+
+@pytest.fixture
+def rib_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "zebro.json", template=True)
+    w.ndt_panel.studies.setCurrentRow(0)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_place_turn_and_remove_probe(rib_window, slot_errors):
+    w = rib_window
+    panel = w.ndt_panel
+    assert "Úhlová sonda 40 × 20 × 25 mm" in panel.probe_label.text()
+    assert "(výchozí)" in panel.probe_label.text()
+    assert not panel.place_action.isEnabled()  # nic není vybráno
+    w.viewer.click([face_at(w.session.result.part, 22, 0, 20)], (22, 0, 20))
+    panel.angle.setValue(180)  # paprsek k žebru (−X)
+    assert panel.place_action.isEnabled()
+    panel.place_action.trigger()
+    state, start, end, text, volume = w.viewer.probe
+    assert state == "ok" and start == pytest.approx((22, 0, 20))
+    assert end == pytest.approx((22 - 30, 0, 20))  # čára směru paprsku
+    assert text == "přiloženo · volno 5.0 mm" and volume == pytest.approx(40 * 20 * 25)
+    assert "Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm." in \
+        panel.placement_label.text()
+    panel.angle.setValue(0)  # otočit: zadní konec sondy zajede do žebra
+    assert w.viewer.probe[0] == "collision"
+    assert "Koliduje" in panel.placement_label.text()
+    edit(w, "t", "25")  # silnější deska: sonda se přiloží znovu na posunutou plochu
+    assert w.viewer.probe[1] == pytest.approx((22, 0, 25))
+    panel.remove_probe_action.trigger()
+    assert w.viewer.probe is None and w.session.ndt_placement_request is None
+    assert slot_errors == []
+
+
+def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    w = rib_window
+    panel = w.ndt_panel
+    panel.probe_action.trigger()  # no_dialogs: zrušeno → beze změny
+    assert "device" not in w.session.ndt_study("s1")
+
+    def accept(self, dialog):
+        dialog.kind.setCurrentIndex(dialog.kind.findData("straight"))
+        assert not dialog.fields["length"].isVisibleTo(dialog)  # délka jen u úhlové
+        dialog.fields["diameter"].setValue(12)
+        dialog.fields["reserve"].setValue(3)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
+    panel.probe_action.trigger()
+    assert w.session.ndt_study("s1")["device"] == {"kind": "straight", "diameter": 12,
+                                                   "height": 25, "max_gap": 0.5,
+                                                   "reserve": 3}
+    assert panel.probe_label.text().startswith("Přímá sonda Ø 12 × 25 mm; mezera nejvýš 0.50")
+    action(w, "Zpět").trigger()
+    assert "device" not in w.session.ndt_study("s1")
+    assert slot_errors == []
+
+
+def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
+    w = rib_window
+    panel = w.ndt_panel
+    w.viewer.click([edge_at(w.session.result.part, 0, -50, 80)])
+    assert not panel.place_action.isEnabled()  # hrana, ne plocha
+    w.session.set_ndt_method("s1", "PT")
+    w._refresh_all()
+    assert panel.probe_label.text() == "Sonda je zatím jen pro UT studie."
+    assert not panel.probe_action.isEnabled()
     assert slot_errors == []

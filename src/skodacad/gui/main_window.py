@@ -7,10 +7,11 @@ Okno nikdy nemodeluje samo – všechno jde přes ``ModelSession`` (jádro).
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
@@ -45,6 +46,7 @@ from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
@@ -100,6 +102,19 @@ def _swatch(color: tuple[float, float, float]) -> str:
     return f'<span style="color: rgb({r}, {g}, {b});">■</span>'
 
 
+def _reference_parts(folder: Path) -> list[tuple[str, Path]]:
+    """Referenční díly NDT do nabídky: (název modelu, soubor), seřazené podle čísla v názvu."""
+    parts = []
+    for path in folder.glob("*.json"):
+        try:
+            name = str(json.loads(path.read_text(encoding="utf-8")).get("name") or path.stem)
+        except (OSError, ValueError, AttributeError):
+            name = path.stem
+        parts.append((name, path))
+    return sorted(parts, key=lambda item: [int(t) if t.isdigit() else t
+                                           for t in item[0].split()])
+
+
 class MainWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
                  examples_dir: Path | None = None, user_dir: Path | None = None,
@@ -117,7 +132,9 @@ class MainWindow(QMainWindow):
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
         self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
+        self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
+        self.ai_busy = False  # AI asistent zrovna upravuje model
         self._view_actions: list[QAction] = []
 
         if viewer_factory is None:
@@ -135,6 +152,7 @@ class MainWindow(QMainWindow):
         self._build_measure_panel()
         self._build_map_panel()
         self._build_section_panel()
+        self._build_ndt_panel()
         self._build_assistant_panel()
         self._build_menus()
         self.resize(1400, 860)
@@ -144,7 +162,8 @@ class MainWindow(QMainWindow):
                          Qt.Orientation.Vertical)
         self.tabifyDockWidget(self.measure_dock, self.map_dock)
         self.tabifyDockWidget(self.map_dock, self.section_dock)
-        self.tabifyDockWidget(self.section_dock, self.assistant_dock)
+        self.tabifyDockWidget(self.section_dock, self.ndt_dock)
+        self.tabifyDockWidget(self.ndt_dock, self.assistant_dock)
         self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
@@ -447,6 +466,38 @@ class MainWindow(QMainWindow):
         self.section_dock = self._add_dock("Řez", "section_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _build_ndt_panel(self) -> None:
+        """Panel NDT: studie nedestruktivní kontroly (stav po každém přepočtu)."""
+        self.ndt_panel = NdtPanel(self)
+        self.ndt_dock = self._add_dock("NDT", "ndt_dock", self.ndt_panel,
+                                       Qt.DockWidgetArea.RightDockWidgetArea)
+        self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
+
+    def _refresh_probe(self) -> None:
+        """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
+        (u přímé sondy kolmo do materiálu)."""
+        placement = self.session.ndt_placement
+        if placement is self._shown_probe:
+            return
+        self._shown_probe = placement
+        if placement is None:
+            self.viewer.hide_probe()
+            return
+        origin = placement.origin
+        if placement.probe.kind == "straight":
+            direction, reach = tuple(-v for v in placement.z_dir), 20.0
+        else:
+            direction, reach = placement.x_dir, 30.0
+        end = tuple(o + d * reach for o, d in zip(origin, direction, strict=True))
+        self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short)
+
+    def show_ndt(self) -> None:
+        self.ndt_dock.show()
+        self.ndt_dock.raise_()
+        # seznam studií a tlačítka potřebují místo – úprava prvku nad nimi se zmenší
+        self.resizeDocks([self.editor_dock, self.ndt_dock], [220, 620],
+                         Qt.Orientation.Vertical)
+
     def _build_assistant_panel(self) -> None:
         """Panel AI asistenta: rozhovor s Claude, který model upravuje (jeden krok Zpět)."""
         self.assistant_panel = AssistantPanel(self)
@@ -466,7 +517,9 @@ class MainWindow(QMainWindow):
     def set_assistant_busy(self, busy: bool) -> None:
         """Během práce AI se model ručně neupravuje (úpravy by se křížily) – zamknou se
         panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
-        for widget in (self.model_dock, self.editor_dock, self.menuBar(), self.toolbar):
+        self.ai_busy = busy
+        for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.menuBar(),
+                       self.toolbar):
             widget.setEnabled(not busy)
         if busy:
             keep = {self.fit_action, self.assistant_action, *self._view_actions}
@@ -522,6 +575,13 @@ class MainWindow(QMainWindow):
             examples_menu.addAction(
                 self._action(path.stem, lambda p=path: self.open_model(p, template=True))
             )
+        ndt_examples = _reference_parts(self.examples_dir / "ndt") if self.examples_dir else []
+        if ndt_examples:
+            ndt_menu = examples_menu.addMenu("NDT – referenční díly")
+            for label, path in ndt_examples:
+                ndt_menu.addAction(
+                    self._action(label, lambda p=path: self.open_model(p, template=True))
+                )
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
         file_menu.addAction(self.save_action)
@@ -573,6 +633,14 @@ class MainWindow(QMainWindow):
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
         self._fill_selection_menu(selection_menu)
 
+        ndt_menu = bar.addMenu("&NDT")
+        ndt_menu.addAction(self.ndt_action)
+        ndt_menu.addAction(self.ndt_panel.new_action)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.confirm_action, self.ndt_panel.verify_action,
+                     self.ndt_panel.duplicate_action, self.ndt_panel.delete_action):
+            ndt_menu.addAction(item)
+
         view_menu = bar.addMenu("&Zobrazení")
         view_menu.addAction(self.fit_action)
         toolbar.addAction(self.fit_action)
@@ -595,6 +663,7 @@ class MainWindow(QMainWindow):
         menu.addAction(self.replace_in_feature_action)
         menu.addSeparator()
         menu.addAction(self.save_measurement_action)
+        menu.addAction(self.ndt_panel.new_action)
         menu.addAction(self.section_face_action)
         menu.addAction(self.clear_selection_action)
 
@@ -898,12 +967,15 @@ class MainWindow(QMainWindow):
             self._had_part = part is not None
             self._shown_key = (result, section)
             self._shown_map = None  # prohlížeč mapu s dílem smazal
+            self._shown_probe = None  # … i sondu
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
         self._refresh_saved_measurements()
         self._refresh_thickness_map()
         self._refresh_section_panel()
+        self._refresh_probe()
+        self.ndt_panel.refresh()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -956,8 +1028,17 @@ class MainWindow(QMainWindow):
                                          "spočítaném stavu (Znovu změnu vrátí).", 10000)
 
     def _update_highlight(self) -> None:
-        """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …)."""
-        shapes = self.session.feature_highlight(self._selected_id) if self._selected_id else []
+        """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …),
+        nebo kontrolovanou oblast studie vybrané v panelu NDT."""
+        study_id = self.ndt_panel.current_id()
+        if study_id is not None and self.session.ndt_placement_request is not None:
+            shapes = []  # přiložená sonda je teď hlavní – oblast přes celý díl by ji přebila
+        elif study_id is not None:
+            shapes = self.session.ndt_highlight(study_id)
+        elif self._selected_id:
+            shapes = self.session.feature_highlight(self._selected_id)
+        else:
+            shapes = []
         self.viewer.highlight(shapes)
 
     def _refresh_title(self) -> None:
@@ -1065,6 +1146,8 @@ class MainWindow(QMainWindow):
 
     def _tree_selection_changed(self, current: QTreeWidgetItem | None, _previous=None) -> None:
         self._selected_id = current.data(0, _FEATURE_ID) if current is not None else None
+        if current is not None and self.ndt_panel.current_id() is not None:
+            self.ndt_panel.select(None)  # zvýraznit prvek, ne oblast studie
         self._refresh_actions()
         self._load_editor()
         self._update_highlight()
@@ -1107,6 +1190,7 @@ class MainWindow(QMainWindow):
         """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, měření, akce povolit."""
         self._picked = list(shapes)
         self._refresh_selection_actions()
+        self.ndt_panel.refresh_actions()
         self._refresh_measure_list()
         self.section_face_action.setEnabled(
             self.session.display_part is not None

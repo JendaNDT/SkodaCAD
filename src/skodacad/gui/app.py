@@ -192,6 +192,15 @@ def _run_self_test(lines: _Report) -> int:
                 volume = session.properties.volume_mm3
                 lines.append(f"✓ {model.name}: objem {volume:.0f} mm³, export STEP/STL/3MF")
                 last_model = model
+        references = sorted(folder.glob("ndt/*.json")) if folder is not None else []
+        for model in references:  # referenční díly NDT: jen postavit
+            result = ModelSession().open_template(model)
+            if not result.ok:
+                ok = False
+                lines.append(f"✕ ndt/{model.name}: {result.first_error.message}")
+        if references and ok:
+            lines.append(f"✓ Referenční díly NDT: {len(references)} postaveno")
+            ok = _self_test_ndt_geometry(folder / "ndt", lines) and ok
 
         ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
@@ -235,9 +244,65 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
                      f"{viewer.error or 'okno se nezobrazilo'}")
     ok = _self_test_sketcher(window, lines) and ok
     ok = _self_test_assistant(window, lines) and ok
+    ok = _self_test_ndt(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_ndt_geometry(folder: Path, lines: list[str]) -> bool:
+    """NDT geometrické jádro bez okna (kontrolu dělá jádro – okno nemodeluje)."""
+    from skodacad.ndt.geometry import self_check
+
+    ok, text = self_check(folder)
+    lines.append(("✓ " if ok else "✕ ") + text)
+    return ok
+
+
+def _self_test_ndt(window, lines: _Report) -> bool:
+    """NDT studie v okně: referenční deska – platná, po změně tloušťky zastaralá, Zpět platná
+    (a zvýraznění kontrolované oblasti ve 3D)."""
+    lines.stream.write("  … NDT studie\n")
+    lines.stream.flush()
+    folder = examples_dir()
+    model = folder / "ndt" / "deska.json" if folder is not None else None
+    if model is None or not model.exists():
+        lines.append("✕ NDT studie: chybí referenční díl ndt/deska.json")
+        return False
+    window.session.dirty = False
+    window.open_model(model, template=True)
+    panel, session = window.ndt_panel, window.session
+    panel.studies.setCurrentRow(0)  # → zvýraznění kontrolované oblasti ve 3D
+    QApplication.processEvents()
+    states = [[r.state for r in session.ndt_studies]]
+    field = window._param_fields["t"]
+    field.setText("30")
+    field.editingFinished.emit()
+    states.append([r.state for r in session.ndt_studies])
+    window.undo_action.trigger()
+    QApplication.processEvents()
+    states.append([r.state for r in session.ndt_studies])
+    if states != [["ok"], ["stale"], ["ok"]]:
+        lines.append(f"✕ NDT studie: stavy {' → '.join(map(str, states))} (čekáno platná → "
+                     "zastaralá → platná)")
+        return False
+    item = panel.studies.item(0).text() if panel.studies.count() else "?"
+    lines.append(f"✓ NDT studie: OK ({item}; po změně tloušťky zastaralá, Zpět platná)")
+    lines.stream.write("  … NDT sonda\n")
+    lines.stream.flush()
+    top = max(session.result.part.faces(), key=lambda face: face.center().Z)  # horní plocha
+    placed = session.place_ndt_probe(session.ndt_studies[0].id, [top.wrapped], (0, 0, 20), 90)
+    window._refresh_all()  # sonda se nakreslí ve 3D (průhledné tělo, čára, popisek)
+    QApplication.processEvents()
+    if not placed.ok:
+        lines.append(f"✕ NDT sonda: {placed.text}")
+        return False
+    image = user_dir() / "self-test-sonda.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    lines.append(f"✓ NDT sonda: OK ({placed.short}, snímek {image}: {shown})")
+    session.clear_ndt_placement()
+    window._refresh_all()
+    return True
 
 
 def _self_test_assistant(window, lines: _Report) -> bool:
@@ -356,7 +421,7 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map", "accent"):
+    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)

@@ -222,6 +222,57 @@ a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). M
 * Se zapnutou **mapou tloušťky** zůstane barevná i rozříznutá – mapa se ořízne přesně
   rovinou řezu a uvidíš i vnitřek (třeba korozi uvnitř trubky).
 
+### NDT studie (předběžné posouzení)
+
+Začátek modulu NDT podle plánu v [docs/ndt/](docs/ndt/) (etapy 00 a 01). **NDT studie** je
+záznam v modelu: metoda (**UT, PT, MT, RT**), **kontrolovaná oblast** (plochy dílu), poznámka
+a ověření. Zatím se nic nepočítá (paprsek, sonda a pokrytí přijdou v dalších etapách) – studie
+ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nemění.
+
+> Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, normové
+> vyhodnocení ani reálnou kontrolu.
+
+* **Referenční díly:** *Soubor → Otevřít ukázku → NDT – referenční díly* – deska, blok
+  s kapsou, deska se žebrem, otvor, trubka, tupý svar V, koutový svar a obtížný přístup.
+  Každý má ukázkovou studii; ručně spočítané očekávané výsledky (půlkroky, mezní úhly, vůle
+  sondy) jsou v [docs/ndt/05-referencni-dily.md](docs/ndt/05-referencni-dily.md).
+* **Panel NDT** (záložka vedle *Měření*, nabídka *NDT*): vyber ve 3D plochy kontrolované
+  oblasti (Ctrl+klik přidá další), zvol metodu a **Nová NDT studie z výběru** (i pravým
+  tlačítkem → *Z výběru ve 3D*). Klik na studii v seznamu oblast ve 3D zvýrazní.
+* Stav studie se počítá při každé změně modelu:
+
+| Stav | Kdy |
+|---|---|
+| ✓ **platná** | díl je stejný jako při nastavení studie a všechny plochy oblasti se našly |
+| ⚠ **zastaralá** | díl se od nastavení změnil (parametr, prvek, materiál) – u plochy, která se posunula, i o kolik; zkontroluj a dej **Potvrdit pro aktuální díl** |
+| ⚠ **neúplná** | chybí kontrolovaná oblast – vyber plochy a dej **Oblast z výběru** |
+| ✕ **neplatná vazba** | plocha oblasti na dílu už není (nebo díl nejde postavit) |
+
+* Pozná se to podle **otisku dílu** – kontrolního součtu parametrů, prvků a materiálu.
+  Přejmenování prvku se nepočítá, posunutá díra ano (i když objem zůstane stejný).
+  Přejmenování studie zastaralou studii neopraví – jen *Potvrdit*.
+* **Ověřit…** zapíše, kdo studii odborně ověřil a kdy. Ověření platí jen pro díl, pro který
+  se dalo – po změně dílu se ukáže „ověření neplatí“. Změna metody nebo oblasti ho smaže.
+* Každá úprava studie je jeden krok **Zpět**; změníš tloušťku → studie zastaralá → Ctrl+Z →
+  zase platná.
+* **Geometrické jádro NDT** (etapa 02, zatím bez okna): průchod přímky dílem (úseky
+  v materiálu, úhly dopadu), směr a zakřivení plochy, bod uvnitř/vně, viditelnost a kolize
+  tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
+  tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
+  jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
+* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Sonda* v panelu NDT nastavíš sondu
+  (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
+  dovolená mezera pod sondou a manipulační rezerva; uloží se do studie). Klikni ve 3D na plochu
+  a dej **Přiložit sondu sem**: sonda se nakreslí **zeleně** (přiloženo), **oranžově** (málo
+  místa, nedosedá, přesahuje přes okraj či otvor) nebo **červeně** (koliduje) a pod ní je
+  vysvětlení s čísly (mezera, průnik v mm³, volno k překážkám). *Směr paprsku [°]* sondu
+  natočí (0° = osa +X, 90° = +Y), *Odebrat sondu* ji schová. Přiložení je jen pohled – do
+  souboru se neukládá a po změně dílu se přepočítá.
+* Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
+  Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
+  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Tažení sondy myší
+  a paprsek s lomem přijdou v etapách 04–05.
+
 ### Tažení a přechod
 
 **Tažení** protáhne profil po trase – trubky, kolena, madla, rámy z jeklu. Ukázka:
@@ -360,6 +411,33 @@ skodacad build examples/priruba.json --set n=8  # totéž s 8 dírami místo 4
 skodacad build examples/krabicka.json --format 3mf,svg
 skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → priruba-ai.json
 skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
+skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
+skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
+```
+
+`skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
+(úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
+`0,0,100`, s desetinnou čárkou `"0;0;12,5"`; `--delka` omezí délku přímky, `--set` dočasně
+změní parametr. Jde jen o geometrii přímky – ne o fyzikální model UT:
+
+```
+Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):
+  úsek 1: 42.85 → 48.85 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
+  úsek 2: 151.15 → 157.15 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
+  celkem v materiálu: 12.00 mm (jen jisté úseky), jistota: ok
+```
+
+`skodacad sonda` přiloží virtuální sondu do bodu `--bod` (na povrchu) se směrem paprsku
+`--smer`: výchozí úhlová 40 × 20 × 25 mm, jiná přes `--prima 10`, `--uhlova 40x20x25`,
+`--celo 12`, sonda ze studie `--studie s1`; meze `--mezera 0.5` a `--rezerva 5`. S `--posun`
+(a `--delka`, `--krok`) sondu posouvá a vypíše, odkud kam volně jede:
+
+```
+Úhlová sonda 40 × 20 × 25 mm, výstupní bod 12 mm od čela (mezera nejvýš 0.50 mm, rezerva 0.00 mm)
+Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:
+  Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.
+Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm
+  první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.
 ```
 
 `skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako
@@ -379,6 +457,17 @@ Vlastnosti dílu:
   Hmotnost:  2.442 kg (ocel, 7.85 g/cm³)
   Rozměry:   165.00 × 165.00 × 18.00 mm
 Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
+```
+
+Model s NDT studiemi vypíše i jejich stav (`skodacad build examples/ndt/deska.json
+--set t=30`):
+
+```
+NDT studie:
+  ⚠ UT desky shora (UT) – zastaralá
+      Díl se od nastavení studie změnil – zkontroluj ji a potvrď pro aktuální díl.
+      Kontrolovaná plocha se posunula o 10.00 mm – zkontroluj, že je to pořád ta správná.
+      Neověřeno.
 ```
 
 Model s uloženými měřeními je vypíše taky a s nastavenou mapou tloušťky (nebo s volbou
@@ -409,13 +498,14 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 14,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
   "features": [ ... ],
   "measurements": [ ... ],
-  "thickness_map": {"limit": 4}
+  "thickness_map": {"limit": 4},
+  "ndt": {"studies": [ ... ]}
 }
 ```
 
@@ -552,8 +642,34 @@ Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fia
 vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
-verze 12 normalizované díly (`standard`) a ocelový profil (`steel`); starší soubory se
-načtou beze změny.
+verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
+(`ndt`), verze 14 sonda ve studii (`device`); starší soubory se načtou beze změny.
+
+### NDT studie (`ndt`)
+
+```json
+"ndt": {"studies": [
+  {"id": "s1", "name": "UT desky shora", "method": "UT",
+   "target": {"kind": "faces",
+              "faces": [{"face": {"at": [0, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
+   "note": "Přímá sonda z horní plochy.", "created": "2026-10-16", "part": "3f9a1c0b7d2e4a65",
+   "verified": {"by": "J. N.", "date": "2026-10-16", "part": "3f9a1c0b7d2e4a65"}}
+]}
+```
+
+* **`method`** – `UT`, `PT`, `MT` nebo `RT`. **`target`** – kontrolovaná oblast: zatím jen
+  `"kind": "faces"` se seznamem ploch zapsaných jako u měření (bod `at`, směr `normal`, druh,
+  poloměr). Bez ní (nebo s prázdným seznamem) je studie neúplná.
+* **`part`** – otisk dílu (16 znaků), ke kterému byla studie založena nebo naposledy
+  potvrzena; jiný otisk = studie zastaralá. **`verified`** (nepovinné) – kdo a kdy ověřil,
+  pro jaký otisk dílu. `name`, `note`, `created` jsou texty.
+* Stav studie se do souboru neukládá – spočítá se při každém přepočtu. Neznámé položky
+  ve studii jsou chyba (překlep se tak nepřehlédne). Sekce bez studií se nezapisuje.
+* **`device`** (verze 14, nepovinné) – sonda studie, bez ní výchozí úhlová:
+  `{"kind": "angle", "length": 40, "width": 20, "height": 25, "front": 12, "max_gap": 0.5,
+  "reserve": 0}` nebo `{"kind": "straight", "diameter": 10, "height": 25, "max_gap": 0.5,
+  "reserve": 0}` (mm; `front` = výstupní bod od čela, `max_gap` = dovolená mezera pod sondou,
+  `reserve` = manipulační rezerva). Přiložení sondy se do souboru neukládá.
 
 ### Materiály
 

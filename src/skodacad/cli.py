@@ -1,9 +1,13 @@
-"""Příkazová řádka: ``skodacad build model.json`` a ``skodacad ai model.json "úprava"``.
+"""Příkazová řádka: ``skodacad build model.json``, ``skodacad ai model.json "úprava"`` a
+``skodacad paprsek model.json --z x,y,z --smer dx,dy,dz`` a ``skodacad sonda model.json --bod
+x,y,z``.
 
 ``build`` postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená
 měření, mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty
 do složky ``out/``. ``ai`` upraví model podle popisu přes AI asistenta (Claude API);
-když soubor modelu neexistuje, vytvoří nový díl.
+když soubor modelu neexistuje, vytvoří nový díl. ``paprsek`` vypíše průchod přímky dílem
+(úseky v materiálu, úhly dopadu, jistotu) a ``sonda`` přiložení virtuální sondy (mezera,
+přesah, kolize, vůle; s ``--posun`` i posun po přímce) – geometrie NDT bez okna.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from skodacad import assistant as ai_assistant
 from skodacad.assistant import EFFORTS, AssistantError, AssistantSettings
@@ -18,6 +23,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
+from skodacad.ndt import DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -53,13 +59,169 @@ def main(argv: list[str] | None = None) -> int:
                     "nastavení, jinak claude-opus-5-5)")
     ai.add_argument("--dukladnost", choices=list(EFFORTS),
                     help="low = rychle a levně, medium, high = důkladně (výchozí)")
-    args = parser.parse_args(argv)
+    ray = commands.add_parser("paprsek", help="průchod přímky dílem: úseky v materiálu (NDT)")
+    ray.add_argument("model", type=Path, help="soubor modelu (.json)")
+    ray.add_argument("--z", dest="origin", required=True, metavar="X,Y,Z",
+                     help="počátek paprsku v mm, např. 0,0,100 (nebo \"0;0;12,5\")")
+    ray.add_argument("--smer", dest="direction", required=True, metavar="DX,DY,DZ",
+                     help="směr paprsku, např. 0,0,-1")
+    ray.add_argument("--delka", type=float, help="délka paprsku v mm (výchozí: přes celý díl)")
+    ray.add_argument("--set", dest="overrides", action="append", default=[],
+                     metavar="NÁZEV=HODNOTA", help="dočasně změň parametr, např. --set t=30")
+    probe = commands.add_parser("sonda", help="přilož virtuální NDT sondu na díl")
+    probe.add_argument("model", type=Path, help="soubor modelu (.json)")
+    probe.add_argument("--bod", dest="point", required=True, metavar="X,Y,Z",
+                       help="bod přiložení na povrchu (výstupní bod paprsku) v mm")
+    probe.add_argument("--smer", dest="direction", metavar="DX,DY,DZ",
+                       help="směr paprsku (sklopí se do plochy); výchozí osa X")
+    probe.add_argument("--studie", help="vezmi sondu z NDT studie (id, např. s1)")
+    probe.add_argument("--prima", type=float, metavar="PRŮMĚR",
+                       help="přímá sonda daného průměru [mm]")
+    probe.add_argument("--uhlova", metavar="DxŠxV", help="úhlová sonda, např. 40x20x25 [mm]")
+    probe.add_argument("--celo", type=float, help="výstupní bod úhlové sondy od čela [mm]")
+    probe.add_argument("--mezera", type=float, help="dovolená mezera pod sondou [mm] (0.5)")
+    probe.add_argument("--rezerva", type=float, help="manipulační rezerva [mm] (0)")
+    probe.add_argument("--posun", dest="move", metavar="DX,DY,DZ",
+                       help="posouvej sondu tímto směrem a vypiš, kde volně jede")
+    probe.add_argument("--delka", type=float, default=50.0, help="délka posunu [mm] (50)")
+    probe.add_argument("--krok", type=float, default=1.0, help="krok posunu [mm] (1)")
+    probe.add_argument("--set", dest="overrides", action="append", default=[],
+                       metavar="NÁZEV=HODNOTA", help="dočasně změň parametr")
+    args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
+        if args.command == "paprsek":
+            return _ray(args)
+        if args.command == "sonda":
+            return _probe(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
         return 2
+
+
+def _ray(args: argparse.Namespace) -> int:
+    from skodacad.ndt.geometry import ALGORITHM, GeometryError, PartGeometry
+
+    origin, direction = _vector(args.origin, "--z"), _vector(args.direction, "--smer")
+    document = Document.load(args.model)
+    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    if result.part is None:
+        raise ValueError("Model nemá těleso – paprsek nemá čím procházet.")
+    try:
+        ray = PartGeometry(result.part).cast(origin, direction, args.delka)
+    except GeometryError as exc:
+        raise ValueError(str(exc)) from None
+    print(f"Paprsek z [{_coords(origin)}] směrem [{_coords(direction)}] "
+          f"(algoritmus {ALGORITHM}):")
+    if not ray.segments:
+        print("  materiálem neprochází")
+    for number, segment in enumerate(ray.segments, start=1):
+        entry = (f"vstup {segment.entry.incidence:.1f}°" if segment.entry
+                 else "začíná v materiálu")
+        exit_ = (f"výstup {segment.exit.incidence:.1f}°" if segment.exit
+                 else "pokračuje za konec paprsku")
+        mark = "" if segment.certain else " – NEJISTÝ"
+        print(f"  úsek {number}: {segment.start:.2f} → {segment.end:.2f} mm, v materiálu "
+              f"{segment.length:.2f} mm ({entry}, {exit_}){mark}")
+    print(f"  celkem v materiálu: {ray.material_length:.2f} mm (jen jisté úseky), jistota: "
+          + ("ok" if ray.certain else "NEJISTÉ"))
+    for reason in ray.reasons:
+        print(f"  ⚠ {reason}")
+    print("  (jen geometrie přímky – ne fyzikální model UT ani detekovatelnost vad)")
+    return 0
+
+
+def _probe(args: argparse.Namespace) -> int:
+    from skodacad.ndt.devices import DeviceError, Probe, place, scan_line
+    from skodacad.ndt.geometry import GeometryError, PartGeometry
+    from skodacad.ndt.study import study_probe
+
+    point = _vector(args.point, "--bod")
+    direction = _vector(args.direction, "--smer") if args.direction else None
+    document = Document.load(args.model)
+    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    if result.part is None:
+        raise ValueError("Model nemá těleso – není kam sondu přiložit.")
+    try:
+        probe = _cli_probe(args, document, Probe, study_probe)
+        geo = PartGeometry(result.part)
+        placed = place(geo, probe, point, direction)
+    except (DeviceError, GeometryError) as exc:
+        raise ValueError(str(exc)) from None
+    print(f"{probe.label} (mezera nejvýš {probe.max_gap:.2f} mm, rezerva "
+          f"{probe.reserve:.2f} mm)")
+    print(f"Přiložení v [{_coords(placed.origin)}], paprsek "
+          f"[{_coords(placed.x_dir)}]:")
+    print(f"  {placed.text}")
+    if args.move:
+        move = _vector(args.move, "--posun")
+        try:
+            scan = scan_line(geo, probe, point, direction, move, args.delka, args.krok)
+        except DeviceError as exc:
+            raise ValueError(str(exc)) from None
+        free = ", ".join(f"{a:g}–{b:g} mm" for a, b in scan.free_ranges) or "nikde"
+        print(f"Posun směrem [{_coords(move)}] o {args.delka:g} mm po {args.krok:g} mm: "
+              f"volně {free}")
+        problem = next(((offset, p) for offset, p in scan.positions if not p.ok), None)
+        if problem is not None:
+            print(f"  první potíž po {problem[0]:g} mm: {problem[1].text}")
+    print("  (jen geometrie přiložení – ne fyzikální model UT ani detekovatelnost vad)")
+    return 0
+
+
+def _cli_probe(args: argparse.Namespace, document: Document, probe_class: type,
+               study_probe: Any) -> Any:
+    """Sonda z příkazové řádky: ze studie, přímá, úhlová, nebo výchozí úhlová."""
+    if args.studie:
+        studies = (document.ndt or {}).get("studies", [])
+        study = next((s for s in studies if s.get("id") == args.studie), None)
+        if study is None:
+            raise ValueError(f"NDT studie „{args.studie}“ v modelu není.")
+        base = study_probe(study)
+    elif args.prima is not None:
+        base = probe_class.straight(args.prima)
+    elif args.uhlova:
+        try:
+            length, width, height = (float(v.replace(",", "."))
+                                     for v in args.uhlova.lower().split("x"))
+        except ValueError:
+            raise ValueError(f"--uhlova „{args.uhlova}“ musí být délka x šířka x výška, např. "
+                             "40x20x25.") from None
+        base = probe_class.angle(length, width, height)
+    else:
+        base = probe_class.angle()
+    changes = {key: value for key, value in (("front", args.celo), ("max_gap", args.mezera),
+                                             ("reserve", args.rezerva)) if value is not None}
+    return probe_class.from_dict({**base.to_dict(), **changes}) if changes else base
+
+
+def _glue_negative(argv: list[str]) -> list[str]:
+    """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
+    glued: list[str] = []
+    items = iter(argv)
+    for item in items:
+        if item in ("--z", "--smer", "--bod", "--posun"):
+            value = next(items, None)
+            glued.append(item if value is None else f"{item}={value}")
+        else:
+            glued.append(item)
+    return glued
+
+
+def _vector(text: str, option: str) -> tuple[float, float, float]:
+    """„0,0,100“ nebo „0;0;12,5“ (s desetinnou čárkou) → tři čísla."""
+    parts = text.split(";") if ";" in text else text.split(",")
+    try:
+        x, y, z = (float(part.strip().replace(",", ".")) for part in parts)
+    except ValueError:
+        raise ValueError(f"{option} „{text}“ musí být tři čísla, např. 0,0,100 nebo "
+                         "\"0;0;12,5\".") from None
+    return (x, y, z)
+
+
+def _coords(values: tuple[float, float, float]) -> str:
+    return "; ".join(f"{round(v, 4) + 0.0:g}" for v in values)  # bez 3.5e-15 a −0
 
 
 def _parse_overrides(items: list[str]) -> dict[str, float]:
@@ -100,6 +262,11 @@ def _build(args: argparse.Namespace) -> int:
         print("Měření:")
         for measurement in result.measurements:
             print(f"  {measurement.text}")
+    if result.ndt:
+        print("NDT studie:")
+        for study in result.ndt:
+            print("  " + study.text.replace("\n", "\n  "))
+        print(f"  ({DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

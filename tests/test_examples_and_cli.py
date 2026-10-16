@@ -5,11 +5,14 @@ from skodacad import Document, rebuild
 from skodacad.cli import main
 from skodacad.export import FORMATS, export
 
-EXAMPLE_NAMES = sorted(path.stem for path in EXAMPLES.glob("*.json"))  # všechny ukázky
+# všechny ukázky i referenční díly NDT („ndt/deska“)
+EXAMPLE_NAMES = sorted(path.relative_to(EXAMPLES).with_suffix("").as_posix()
+                       for path in [*EXAMPLES.glob("*.json"), *EXAMPLES.glob("ndt/*.json")])
 
 
 def test_examples_are_found():
     assert {"priruba", "krabicka", "hridel", "paka", "deska", "kryt"} <= set(EXAMPLE_NAMES)
+    assert "ndt/zebro" in EXAMPLE_NAMES
 
 
 @pytest.mark.parametrize("name", EXAMPLE_NAMES)
@@ -18,7 +21,7 @@ def test_examples_build_and_export_everything(examples_dir, tmp_path, name):
     assert result.ok, [(s.label, s.message) for s in result.statuses if s.status != "ok"]
     assert len(result.part.solids()) == 1
     for fmt in FORMATS:
-        path = export(result.part, tmp_path / f"{name}.{fmt}")
+        path = export(result.part, tmp_path / f"{name.replace('/', '_')}.{fmt}")
         assert path.stat().st_size > 0
 
 

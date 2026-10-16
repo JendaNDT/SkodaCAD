@@ -1,0 +1,29 @@
+{
+  "format": "skodacad",
+  "version": 13,
+  "name": "NDT 6 – Tupý svar V",
+  "description": "Referenční díl NDT č. 6: dva plechy t = 12 s tupým svarem V 60° podél osy Y, převýšení h a podkořen p. Díl je jedno těleso – hranice úkosu v něm vidět není (cílový objem svaru přijde v etapě 07). Kořen přímým paprskem shora: čelo sondy mimo převýšení → výstupní bod ≥ c/2 + 12 = 22 mm od osy; 45° (12 mm) ne, 60° (20,78 mm) těsně ne, 70° (32,97 mm) ano. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B = plechy dohromady, c × h = šířka × výška převýšení, k × p = šířka × výška podkořene.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"A": 300, "B": 100, "t": 12, "c": 20, "h": 2, "k": 6, "p": 1},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys plechů", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "B"}]},
+    {"id": "plechy", "type": "extrude", "name": "Plechy", "sketch": "obrys", "distance": "t"},
+    {"id": "svar_prurez", "type": "sketch", "name": "Převýšení a podkořen", "plane": "XZ",
+     "elements": [
+       {"shape": "polygon", "points": [["-c/2", "t"], ["c/2", "t"], ["c/2 - 3", "t + h"],
+                                       ["-c/2 + 3", "t + h"]]},
+       {"shape": "polygon", "points": [["-k/2", 0], ["-k/2 + 1", "-p"], ["k/2 - 1", "-p"],
+                                       ["k/2", 0]]}]},
+    {"id": "svar", "type": "extrude", "name": "Svar", "sketch": "svar_prurez",
+     "operation": "add", "distance": "B", "direction": "both"}
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT svaru shora", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 14], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Cíl: kořen svaru, úhlová sonda z horní plochy plechu.",
+     "created": "2026-10-16", "part": "650b773fdd7c1b67"}
+  ]}
+}

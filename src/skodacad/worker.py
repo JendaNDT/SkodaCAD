@@ -67,6 +67,7 @@ def encode_result(result: BuildResult) -> dict[str, Any]:
         "measurements": list(result.measurements),  # jen čísla a texty
         "thickness_map": result.thickness_map,  # seznamy čísel
         "map_error": result.map_error,
+        "ndt": list(result.ndt),  # stavy NDT studií – jen texty
     }
 
 
@@ -83,6 +84,7 @@ def decode_result(data: dict[str, Any]) -> BuildResult:
         measurements=data["measurements"],
         thickness_map=data["thickness_map"],
         map_error=data["map_error"],
+        ndt=data["ndt"],
     )
 
 

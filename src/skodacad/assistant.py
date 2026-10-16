@@ -196,7 +196,8 @@ MODEL_TOOLS = [
            "description": {"type": "string"}}),
     _tool("replace_model", "Nahradí celý model novým (nový díl z popisu nebo velká "
           "přestavba). „model“ je celý JSON modelu (name, material, parameters, features …; "
-          "format a version se doplní).",
+          "format a version se doplní). NDT studie (ndt) uživatele zůstanou, když je v modelu "
+          "výslovně neuvedeš.",
           {"model": {"type": "object"}}, ("model",)),
 ]
 VIEW_TOOL = _tool(
@@ -387,8 +388,14 @@ class ModelTools:
         return ToolOutput("Údaje dílu změněny.", changed=True)
 
     def _tool_replace_model(self, data: dict[str, Any]) -> ToolOutput:
-        self.session.replace_document(copy.deepcopy(_object(data, "model")))
-        return ToolOutput("Model nahrazen.", changed=True)
+        model = copy.deepcopy(_object(data, "model"))
+        current = self.session.document
+        kept = "ndt" not in model and current is not None and bool(current.ndt)
+        if kept:  # studie jsou práce uživatele – přestavba dílu je jen označí jako zastaralé
+            model["ndt"] = copy.deepcopy(current.ndt)
+        self.session.replace_document(model)
+        return ToolOutput("Model nahrazen." + (" NDT studie uživatele zůstaly." if kept else ""),
+                          changed=True)
 
     def _tool_view_part(self, data: dict[str, Any]) -> ToolOutput:
         view = data.get("view", "current")
@@ -447,6 +454,10 @@ def build_report(session: Any) -> str:
         lines.append("Díl zatím nemá žádné těleso.")
     for measurement in result.measurements:
         lines.append(f"Měření „{measurement.name}“: {measurement.text}")
+    for study in result.ndt:
+        details = "; ".join(study.messages)
+        lines.append(f"NDT studie [{study.id}] „{study.name}“ ({study.method}): {study.label}"
+                     + (f" – {details}" if details else ""))
     return "\n".join(lines)
 
 
@@ -472,6 +483,9 @@ Jak pracuješ:
   prvkem standard – ne ručně kreslenými kružnicemi.
 - Když něco nejde nebo zadání není jasné, řekni to a navrhni možnost. Neodhaduj rozměry,
   které uživatel nezadal, aniž bys to řekl.
+- NDT studie (sekce ndt) měň jen na výslovné přání. Výsledky NDT (pokrytí, detekovatelnost
+  vad, shodu s normou) nikdy neodhaduj ani nevymýšlej – počítá je program, zatím jen
+  geometricky. Když po tvé změně dílu studie zastará, řekni to; potvrdit ji musí uživatel.
 - Na konci krátce shrň, co se změnilo (rozměry, objem/hmotnost), a co si uživatel může
   zkontrolovat. Celou tvou úpravu vrátí jedním Zpět (Ctrl+Z).
 """
