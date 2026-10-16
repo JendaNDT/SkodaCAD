@@ -200,6 +200,28 @@ Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tlouš
   s naměřenými hodnotami z ultrazvuku.
 * Pod mapou je díl jen v obrysech hran, aby byly vidět barvy.
 
+### Řez modelem
+
+**Model → Řez modelem** (klávesa `R` nebo tlačítko v horní liště) díl přesně rozřízne rovinou
+a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). Model se přitom
+**nemění**, řez je jen pohled a do souboru se neukládá.
+
+* Panel **Řez** (záložka vedle *Měření* a *Mapy tloušťky*):
+  * **Rovina** – kolmo na osu X, Y nebo Z (výchozí podélně kolmo na Y, uprostřed dílu),
+    nebo **rovnoběžně s vybranou plochou**: klikni na rovinnou plochu (i šikmou) a zvol tuto
+    možnost (nebo pravé tlačítko → *Řez rovnoběžně s vybranou plochou*) – posuvník pak
+    posouvá řez do hloubky pod plochu.
+  * **Poloha** posuvníkem (řez se spočítá po puštění) nebo přesně číslem v mm.
+  * **Otočit stranu** – zbude druhá polovina.
+  * **Export DXF/SVG…** – obrys plochy řezu jako 2D výkres: DXF pro jiné CADy či laser,
+    SVG (vyplněný řez) jako obrázek do protokolu.
+* Plochy řezu jsou **cihlové** a pod panelem je jejich obsah (průřez dílu v té rovině).
+* Na rozříznutý díl jde klikat jako jindy: měření (i na ploše řezu – vzdálenosti, tloušťka),
+  zaoblení, sražení, skica a díra na ploše. Prvek se přidá na celý díl. Co vzniklo jen řezem
+  (plocha řezu), na díl použít ani uložit nejde – okno to česky řekne.
+* Se zapnutou **mapou tloušťky** zůstane barevná i rozříznutá – mapa se ořízne přesně
+  rovinou řezu a uvidíš i vnitřek (třeba korozi uvnitř trubky).
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
