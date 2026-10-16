@@ -1,8 +1,9 @@
-"""Příkazová řádka: ``skodacad build model.json``.
+"""Příkazová řádka: ``skodacad build model.json`` a ``skodacad ai model.json "úprava"``.
 
-Postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená měření,
-mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty do
-složky ``out/``.
+``build`` postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená
+měření, mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty
+do složky ``out/``. ``ai`` upraví model podle popisu přes AI asistenta (Claude API);
+když soubor modelu neexistuje, vytvoří nový díl.
 """
 
 from __future__ import annotations
@@ -11,6 +12,9 @@ import argparse
 import sys
 from pathlib import Path
 
+from skodacad import assistant as ai_assistant
+from skodacad.assistant import EFFORTS, AssistantError, AssistantSettings
+from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
@@ -38,11 +42,22 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--mapa", action="store_true",
                        help="spočítej mapu tloušťky stěny i bez nastavení v modelu "
                             "(souhrn + body do CSV)")
+    ai = commands.add_parser("ai", help="uprav model podle popisu (AI asistent Claude)")
+    ai.add_argument("model", type=Path,
+                    help="soubor modelu (.json); když neexistuje, vznikne nový díl")
+    ai.add_argument("request", help="co udělat, česky (např. \"zvětši D na 200\")")
+    ai.add_argument("-o", "--out", type=Path,
+                    help="kam uložit výsledek (výchozí: <model>-ai.json vedle původního)")
+    ai.add_argument("--prepsat", action="store_true", help="ulož výsledek do původního souboru")
+    ai.add_argument("--claude", choices=sorted(AI_MODELS), help="model Claude (výchozí z "
+                    "nastavení, jinak claude-opus-5-5)")
+    ai.add_argument("--dukladnost", choices=list(EFFORTS),
+                    help="low = rychle a levně, medium, high = důkladně (výchozí)")
     args = parser.parse_args(argv)
 
     try:
-        return _build(args)
-    except (DocumentError, ExpressionError, ValueError, RuntimeError) as exc:
+        return _ai(args) if args.command == "ai" else _build(args)
+    except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
         return 2
 
@@ -122,3 +137,54 @@ def _print_properties(result: BuildResult, material: str) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _ai(args: argparse.Namespace) -> int:
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    new_part = not args.model.exists()
+    if new_part:
+        session.new_document()
+        target = args.out or args.model
+    else:
+        session.open(args.model)
+        target = args.out or (args.model if args.prepsat else
+                              args.model.with_name(f"{args.model.stem}-ai.json"))
+    settings = AssistantSettings.load(ai_assistant.settings_path(ai_assistant.user_dir()))
+    if args.claude:
+        settings.model = args.claude
+    if args.dukladnost:
+        settings.effort = args.dukladnost
+    tools = ai_assistant.ModelTools(session)
+    helper = ai_assistant.new_assistant(settings, tools, _examples_dir())
+    print(f"AI asistent ({AI_MODELS[settings.model]}, {EFFORTS[settings.effort]}): "
+          f"{'nový díl' if new_part else args.model}")
+
+    def show(kind: str, text: str) -> None:
+        if kind == "text":
+            print(text, end="", flush=True)
+        elif kind == "tool":
+            print(f"\n  → {text}", flush=True)
+        else:
+            print(f"    {text}", flush=True)
+
+    session.begin_group()
+    try:
+        helper.ask(args.request, session.document.to_dict(), tools.report(), tools.run, show,
+                   lambda: session.document.to_dict())
+    finally:
+        session.end_group()
+        print(f"\nSpotřeba: {helper.usage.describe(settings.model)}")
+    if session.can_undo:
+        session.save(target)
+        print(f"Uloženo: {target}")
+    else:
+        print("Model se nezměnil – nic se neukládá.")
+    print(tools.report())
+    return 0
+
+
+def _examples_dir() -> Path | None:
+    folder = Path(__file__).resolve().parents[2] / "examples"
+    return folder if folder.is_dir() else None

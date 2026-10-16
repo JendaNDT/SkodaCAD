@@ -263,3 +263,68 @@ def test_system_prompt_describes_whole_format(examples_dir):
     assert all(material in prompt for material in DENSITIES_G_CM3)
     assert '<priklad soubor="priruba.json">' in prompt
     assert "Pro vývoj" not in prompt  # jen část o formátu
+
+
+# --- příkazová řádka ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def offline_cli(monkeypatch, tmp_path):
+    """Příkazová řádka s přehranými odpověďmi místo sítě (a čistým profilem uživatele)."""
+    import skodacad.assistant as module
+
+    monkeypatch.setenv("SKODACAD_HOME", str(tmp_path / "profil"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    state = {"turns": [], "requests": []}
+    monkeypatch.setattr(module, "make_client",
+                        lambda settings, **kw: offline_client(state["turns"],
+                                                              state["requests"]))
+    return state
+
+
+def test_cli_edits_copy_of_model(examples_dir, tmp_path, offline_cli, capsys):
+    import shutil
+
+    from skodacad import Document
+    from skodacad.cli import main
+
+    model = tmp_path / "priruba.json"
+    shutil.copy(examples_dir / "priruba.json", model)
+    offline_cli["turns"] += [([tool("set_parameters", {"values": {"D": 200}})], "tool_use"),
+                             ([text("Průměr je 200 mm.")], "end_turn")]
+    code = main(["ai", str(model), "zvětši D na 200", "--claude", "claude-sonnet-5-5",
+                 "--dukladnost", "low"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "→ Nastavuji parametry: D = 200" in out and "Průměr je 200 mm." in out
+    assert "Spotřeba:" in out and "Uloženo:" in out
+    assert Document.load(tmp_path / "priruba-ai.json").parameters["D"] == 200
+    assert Document.load(model).parameters["D"] == 165  # původní soubor zůstal
+    body = offline_cli["requests"][0]["body"]
+    assert body["model"] == "claude-sonnet-5-5" and body["output_config"] == {"effort": "low"}
+
+
+def test_cli_creates_new_part_from_description(tmp_path, offline_cli, capsys):
+    from skodacad import Document, rebuild
+    from skodacad.cli import main
+
+    plate = {"name": "Deska", "parameters": {"a": 50},
+             "features": [{"id": "s", "type": "sketch",
+                           "elements": [{"shape": "rectangle", "width": "a", "height": "a"}]},
+                          {"id": "e", "type": "extrude", "sketch": "s", "distance": 5}]}
+    offline_cli["turns"] += [([tool("replace_model", {"model": plate})], "tool_use"),
+                             ([text("Deska je hotová.")], "end_turn")]
+    target = tmp_path / "deska.json"
+    assert main(["ai", str(target), "deska 50 × 50 × 5"]) == 0
+    assert "Uloženo:" in capsys.readouterr().out
+    assert rebuild(Document.load(target)).part.volume == pytest.approx(50 * 50 * 5)
+
+
+def test_cli_without_key_explains_where_to_get_it(examples_dir, tmp_path, monkeypatch,
+                                                  capsys):
+    from skodacad.cli import main
+
+    monkeypatch.setenv("SKODACAD_HOME", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert main(["ai", str(examples_dir / "priruba.json"), "zvětši"]) == 2
+    assert "Chybí API klíč" in capsys.readouterr().err

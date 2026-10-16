@@ -99,8 +99,14 @@ class AssistantSettings:
         return self.api_key or os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
-def settings_path(user_dir: Path) -> Path:
-    return Path(user_dir) / SETTINGS_FILE
+def user_dir() -> Path:
+    """Složka SkodaCAD v profilu uživatele (jako okno; SKODACAD_HOME ji přepíše)."""
+    base = os.environ.get("SKODACAD_HOME")
+    return Path(base) if base else Path.home() / "SkodaCAD"
+
+
+def settings_path(folder: Path) -> Path:
+    return Path(folder) / SETTINGS_FILE
 
 
 def make_client(settings: AssistantSettings, **options: Any) -> Any:
