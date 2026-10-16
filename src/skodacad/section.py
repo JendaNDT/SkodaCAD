@@ -149,20 +149,45 @@ def cut(part: Part | None, plane: SectionPlane) -> Section:
     return Section(plane, kept, faces)
 
 
-def keep_triangles(nodes: list[Point], triangles: list[tuple[int, int, int]],
-                   plane: SectionPlane) -> list[tuple[int, int, int]]:
-    """Trojúhelníky sítě (mapa tloušťky), které leží na zbylé straně řezu."""
+def clip_mesh(nodes: list[Point], triangles: list[tuple[int, int, int]], colors: list[Any],
+              plane: SectionPlane) -> tuple[list[Point], list[tuple[int, int, int]], list[Any]]:
+    """Síť (mapa tloušťky) oříznutá rovinou řezu: trojúhelníky přes rovinu se rozdělí přesně
+    na ní (nové uzly s dopočtenou polohou i barvou), takže okraj mapy je rovný."""
     normal = Vector(*plane.normal).normalized()
     ox, oy, oz = plane.origin
-    nx, ny, nz = normal.X, normal.Y, normal.Z
-    kept = []
+    side = [(x - ox) * normal.X + (y - oy) * normal.Y + (z - oz) * normal.Z
+            for x, y, z in nodes]
+    nodes, colors = list(nodes), list(colors)
+    cache: dict[tuple[int, int], int] = {}
+
+    def crossing(i: int, j: int) -> int:
+        key = (i, j) if i < j else (j, i)
+        if key not in cache:
+            t = side[i] / (side[i] - side[j])
+            nodes.append(tuple(a + (b - a) * t for a, b in zip(nodes[i], nodes[j],
+                                                                 strict=True)))
+            colors.append(tuple(a + (b - a) * t for a, b in zip(colors[i], colors[j],
+                                                                  strict=True)))
+            cache[key] = len(nodes) - 1
+        return cache[key]
+
+    kept: list[tuple[int, int, int]] = []
     for tri in triangles:
-        cx = sum(nodes[i][0] for i in tri) / 3 - ox
-        cy = sum(nodes[i][1] for i in tri) / 3 - oy
-        cz = sum(nodes[i][2] for i in tri) / 3 - oz
-        if cx * nx + cy * ny + cz * nz <= 1e-9:
+        inside = [side[i] <= 1e-9 for i in tri]
+        if all(inside):
             kept.append(tri)
-    return kept
+            continue
+        if not any(inside):
+            continue
+        polygon = []  # Sutherland–Hodgman pro jednu rovinu, pořadí (orientace) zůstane
+        for k in range(3):
+            current, following = tri[k], tri[(k + 1) % 3]
+            if inside[k]:
+                polygon.append(current)
+            if inside[k] != inside[(k + 1) % 3]:
+                polygon.append(crossing(current, following))
+        kept += [(polygon[0], polygon[i], polygon[i + 1]) for i in range(1, len(polygon) - 1)]
+    return nodes, kept, colors
 
 
 def export_2d(section: Section, path: str | Path) -> Path:

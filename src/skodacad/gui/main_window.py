@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QScrollArea,
+    QSlider,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -50,6 +51,8 @@ from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
 from skodacad.measure import SavedResult, Value, format_value
 from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
+from skodacad.section import AXIS_NAMES
+from skodacad.section import describe as describe_section
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 from skodacad.thickness_map import BELOW_LIMIT, NO_MATERIAL, SCALE, ThicknessMap
 
@@ -74,6 +77,8 @@ SELECTION_ACTIONS = {
 MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost a tloušťka stěny "
                 "v místě kliknutí. Ctrl+klik na druhou změří vzdálenost a úhel mezi nimi.")
 _MEASURE_COLOR = QColor("#1b7f3b")
+
+_SLIDER_STEPS = 1000  # jemnost posuvníku řezu
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888"),
@@ -103,7 +108,7 @@ class MainWindow(QMainWindow):
         self._runner = runner
         self.session = ModelSession(runner)
         self._pending_shown = False  # okno ukazuje „Přepočítávám…“
-        self._shown_result = None  # výsledek, jehož díl je právě v prohlížeči
+        self._shown_key: tuple | None = None  # (výsledek, řez) právě v prohlížeči
         self.examples_dir = examples_dir
         self.user_dir = user_dir or Path.home()
         self._param_fields: dict[str, QLineEdit] = {}
@@ -126,6 +131,7 @@ class MainWindow(QMainWindow):
         self._build_editor_panel()
         self._build_measure_panel()
         self._build_map_panel()
+        self._build_section_panel()
         self._build_menus()
         self.resize(1400, 860)
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
@@ -133,6 +139,7 @@ class MainWindow(QMainWindow):
         self.resizeDocks([self.editor_dock, self.measure_dock], [420, 400],
                          Qt.Orientation.Vertical)
         self.tabifyDockWidget(self.measure_dock, self.map_dock)
+        self.tabifyDockWidget(self.map_dock, self.section_dock)
         self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
@@ -209,6 +216,17 @@ class MainWindow(QMainWindow):
         self.thickness_map_action.setCheckable(True)
         self.thickness_map_action.setToolTip("Obarví celý díl podle tloušťky stěny (NDT) – "
                                              "červeně nejtenčí místa")
+        self.section_action = self._action("Řez modelem", self.toggle_section, "R")
+        self.section_action.setCheckable(True)
+        self.section_action.setToolTip("Rozřízne díl rovinou a ukáže, jak vypadá uvnitř "
+                                       "(model se nemění)")
+        self.section_face_action = self._action("Řez rovnoběžně s vybranou plochou",
+                                                self.section_from_face)
+        self.flip_section_action = self._action("Otočit stranu řezu", self.flip_section)
+        self.flip_section_action.setIconText("Otočit stranu")
+        self.export_section_action = self._action("Export řezu do DXF/SVG…",
+                                                  self.export_section)
+        self.export_section_action.setIconText("Export DXF/SVG…")
         self.export_map_action = self._action("Export bodů mapy do CSV…", self.export_map)
         self.export_map_action.setIconText("Export CSV…")
         self.export_map_action.setEnabled(False)
@@ -380,6 +398,48 @@ class MainWindow(QMainWindow):
         self.map_dock = self._add_dock("Mapa tloušťky", "map_dock", panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _build_section_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        top = QHBoxLayout()
+        for action in (self.section_action, self.flip_section_action,
+                       self.export_section_action):
+            top.addWidget(self._tool_button(action))
+        top.addStretch()
+        layout.addLayout(top)
+        form = QFormLayout()
+        self.section_combo = QComboBox()
+        self.section_combo.setObjectName("section_plane")
+        for axis, name in AXIS_NAMES.items():
+            self.section_combo.addItem(name[0].upper() + name[1:], axis)
+        self.section_combo.addItem("Rovnoběžně s vybranou plochou", "face")
+        self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
+        self.section_combo.activated.connect(lambda _index: self._section_kind_chosen())
+        form.addRow("Rovina", self.section_combo)
+        self.section_slider = QSlider(Qt.Orientation.Horizontal)
+        self.section_slider.setObjectName("section_slider")
+        self.section_slider.setRange(0, _SLIDER_STEPS)
+        self.section_slider.valueChanged.connect(lambda _value: self._section_slider_moved())
+        self.section_slider.sliderReleased.connect(self._section_slider_released)
+        form.addRow("Poloha", self.section_slider)
+        self.section_field = QLineEdit()
+        self.section_field.setObjectName("section_position")
+        self.section_field.editingFinished.connect(self._section_field_edited)
+        self.section_position_label = QLabel("Poloha [mm]")
+        form.addRow(self.section_position_label, self.section_field)
+        self.section_range_label = QLabel()
+        self.section_range_label.setStyleSheet("color: #555;")
+        form.addRow("", self.section_range_label)
+        layout.addLayout(form)
+        self.section_info = QLabel()
+        self.section_info.setObjectName("section_info")
+        self.section_info.setWordWrap(True)
+        self.section_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.section_info)
+        layout.addStretch()
+        self.section_dock = self._add_dock("Řez", "section_dock", panel,
+                                           Qt.DockWidgetArea.RightDockWidgetArea)
+
     def _add_dock(self, title: str, name: str, content: QWidget,
                   area: Qt.DockWidgetArea) -> QDockWidget:
         scroll = QScrollArea()
@@ -448,8 +508,14 @@ class MainWindow(QMainWindow):
         model_menu.addSeparator()
         model_menu.addAction(self.thickness_map_action)
         model_menu.addAction(self.export_map_action)
+        model_menu.addSeparator()
+        model_menu.addAction(self.section_action)
+        model_menu.addAction(self.section_face_action)
+        model_menu.addAction(self.flip_section_action)
+        model_menu.addAction(self.export_section_action)
         toolbar.addAction(self.rebuild_action)
         toolbar.addAction(self.thickness_map_action)
+        toolbar.addAction(self.section_action)
         toolbar.addSeparator()
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
         self._fill_selection_menu(selection_menu)
@@ -475,6 +541,7 @@ class MainWindow(QMainWindow):
         menu.addAction(self.replace_in_feature_action)
         menu.addSeparator()
         menu.addAction(self.save_measurement_action)
+        menu.addAction(self.section_face_action)
         menu.addAction(self.clear_selection_action)
 
     # --- práce se souborem -------------------------------------------------------
@@ -765,18 +832,22 @@ class MainWindow(QMainWindow):
         self._refresh_tree()
         self._refresh_properties()
         result = self.session.result
-        if result is not self._shown_result or fit:  # díl se kreslí znovu jen když je nový
+        section = self.session.section
+        if (result, section) != self._shown_key or fit:  # kreslit znovu jen nový díl či řez
             self._picked = []  # → starý výběr ve 3D už neplatí
-            part = result.part if result else None
+            part = self.session.display_part
             # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
-            self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
+            self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part),
+                                  accent=section.faces if section is not None else None)
             self._had_part = part is not None
-            self._shown_result = result
+            self._shown_key = (result, section)
+            self._shown_map = None  # prohlížeč mapu s dílem smazal
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
         self._refresh_saved_measurements()
         self._refresh_thickness_map()
+        self._refresh_section_panel()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -979,6 +1050,9 @@ class MainWindow(QMainWindow):
         self._picked = list(shapes)
         self._refresh_selection_actions()
         self._refresh_measure_list()
+        self.section_face_action.setEnabled(
+            self.session.display_part is not None
+            and self.session.selection_info(self._picked).faces == 1)
         info = self.session.selection_info(self._picked)
         if not info.text:
             self.statusBar().showMessage(HELP_HINT)
@@ -1180,8 +1254,10 @@ class MainWindow(QMainWindow):
                 x, y, z = found.thinnest or (0.0, 0.0, 0.0)
                 marker = ((x, y, z), f"min {number(found.minimum)} mm") \
                     if found.thinnest is not None else None
-                self.viewer.show_thickness_map(found.nodes, found.triangles,
-                                               found.node_colors(), marker)
+                nodes, triangles, colors = session.visible_map()
+                section = session.section
+                self.viewer.show_thickness_map(nodes, triangles, colors, marker,
+                                               fill=section.faces if section else None)
             self._shown_map = found
         settings = session.map_settings if session.document is not None else None
         for key, field in self.map_fields.items():
@@ -1211,6 +1287,156 @@ class MainWindow(QMainWindow):
             self.map_summary.setText("Zapni mapu tlačítkem nahoře (nebo klávesou M): díl se "
                                      "obarví podle tloušťky stěny. Kliknutím na místo ve 3D "
                                      "změříš přesnou tloušťku (panel Měření).")
+
+    # --- řez modelem -----------------------------------------------------------------------
+
+    def toggle_section(self) -> None:
+        """Zapne/vypne řez (výchozí kolmo na osu Y uprostřed dílu)."""
+        if not self.section_action.isChecked():
+            self.session.clear_section()
+        else:
+            self.section_dock.raise_()
+            axis = self.section_combo.currentData()
+            try:
+                self._busy(lambda: self.session.set_section_axis(
+                    axis if axis in ("X", "Y", "Z") else "Y"))
+            except DocumentError as exc:
+                self.statusBar().showMessage(str(exc), 10000)
+                self.section_action.setChecked(False)
+                return
+        self._refresh_all()
+
+    def section_from_face(self) -> None:
+        """Řez rovnoběžně s plochou vybranou ve 3D."""
+        try:
+            self._busy(lambda: self.session.set_section_face(self._picked,
+                                                             self.viewer.picked_point))
+        except DocumentError as exc:
+            self._error("Řez nejde vést", str(exc))
+            self._refresh_section_panel()
+            return
+        self.section_dock.raise_()
+        self._refresh_all()
+
+    def flip_section(self) -> None:
+        if self.session.section_settings is None:
+            return
+        self._busy(self.session.flip_section)
+        self._refresh_all()
+
+    def export_section(self) -> None:
+        """Obrys řezu jako 2D výkres (DXF pro CAD a laser, SVG jako obrázek)."""
+        name = self.session.document.name if self.session.document else "rez"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export řezu", str(self.user_dir / f"{name}-rez.dxf"),
+            "DXF – 2D výkres pro CAD (*.dxf);;SVG – obrázek do protokolu (*.svg)")
+        if not path:
+            return
+        try:
+            written = self.session.export_section(path)
+        except (DocumentError, OSError) as exc:
+            self._error("Export řezu se nepovedl", str(exc))
+            return
+        self.statusBar().showMessage(f"Řez uložen: {written}", 8000)
+
+    def _section_kind_chosen(self) -> None:
+        kind = self.section_combo.currentData()
+        if kind == "face":
+            self.section_from_face()
+            return
+        if self.session.section_settings is None and not self.section_action.isChecked():
+            self.section_action.setChecked(True)
+        try:
+            self._busy(lambda: self.session.set_section_axis(kind))
+        except DocumentError as exc:
+            self.statusBar().showMessage(str(exc), 10000)
+        self._refresh_all()
+
+    def _section_slider_moved(self) -> None:
+        """Táhnutí jen ukazuje číslo; řez se spočítá po puštění (u klávesnice hned)."""
+        if self.session.section_settings is None:
+            return
+        low, high = self.session.section_range()
+        value = low + (high - low) * self.section_slider.value() / _SLIDER_STEPS
+        self.section_field.setText(format_parameter_value(round(value, 2)))
+        if not self.section_slider.isSliderDown():
+            self._apply_section_position(value)
+
+    def _section_slider_released(self) -> None:
+        if self.session.section_settings is None:
+            return
+        low, high = self.session.section_range()
+        self._apply_section_position(
+            low + (high - low) * self.section_slider.value() / _SLIDER_STEPS)
+
+    def _section_field_edited(self) -> None:
+        if self.session.section_settings is None:
+            return
+        text = self.section_field.text().strip().replace(",", ".")
+        try:
+            value = float(text)
+        except ValueError:
+            self.section_field.setStyleSheet(_INVALID_STYLE)
+            self.statusBar().showMessage(f"„{text}“ není číslo – napiš polohu řezu v mm.",
+                                         10000)
+            return
+        self.section_field.setStyleSheet("")
+        if abs(value - self.session.section_settings.position) > 1e-9:
+            self._apply_section_position(value)
+
+    def _apply_section_position(self, value: float) -> None:
+        if abs(value - self.session.section_settings.position) < 1e-9:
+            return
+        self._busy(lambda: self.session.set_section_position(value))
+        self._refresh_all()
+
+    def _refresh_section_panel(self) -> None:
+        session = self.session
+        settings = session.section_settings
+        has_part = session.result is not None and session.result.part is not None
+        self.section_action.setEnabled(has_part or settings is not None)
+        self.section_action.setChecked(settings is not None)
+        self.flip_section_action.setEnabled(settings is not None)
+        self.export_section_action.setEnabled(session.section is not None)
+        self.section_face_action.setEnabled(
+            has_part and session.selection_info(self._picked).faces == 1)
+        for widget in (self.section_slider, self.section_field):
+            widget.setEnabled(settings is not None)
+        if settings is None:
+            self.section_position_label.setText("Poloha [mm]")
+            self.section_range_label.setText("")
+            self.section_info.setText("Zapni řez tlačítkem nahoře (nebo klávesou R): díl se "
+                                      "rozřízne a uvidíš ho uvnitř. Model se nemění. Na "
+                                      "plochy řezu jde klikat a měřit.")
+            return
+        kind = settings.axis or "face"
+        index = self.section_combo.findData(kind)
+        if index >= 0 and self.section_combo.currentIndex() != index:
+            self.section_combo.setCurrentIndex(index)
+        try:
+            low, high = session.section_range()
+        except DocumentError:
+            low, high = settings.position, settings.position
+        word = "Hloubka" if settings.axis is None else f"Poloha {settings.axis}"
+        self.section_position_label.setText(f"{word} [mm]")
+        self.section_range_label.setText(f"od {number(low)} do {number(high)} mm")
+        if not self.section_field.hasFocus():
+            self.section_field.setText(format_parameter_value(round(settings.position, 2)))
+        if not self.section_slider.isSliderDown() and high > low:
+            self.section_slider.blockSignals(True)
+            self.section_slider.setValue(round((settings.position - low) / (high - low)
+                                               * _SLIDER_STEPS))
+            self.section_slider.blockSignals(False)
+        section = session.section
+        if section is None:
+            self.section_info.setText(f"✕ {session.section_error}")
+            return
+        where = describe_section(section.plane)
+        if settings.axis is None:
+            where = f"rovnoběžně s plochou, {number(settings.position)} mm pod ní"
+        self.section_info.setText(f"Řez {where}\nPlocha řezu: {number(section.area)} mm² "
+                                  "(cihlově)\nKlikni na plochu řezu a změříš ji v panelu "
+                                  "Měření.")
 
     def export_map(self) -> None:
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""

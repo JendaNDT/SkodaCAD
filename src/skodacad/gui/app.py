@@ -225,7 +225,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
                      f"OpenGL: {viewer.graphics_info()})")
         ok = (_self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
-              and _self_test_map(window, lines))
+              and _self_test_map(window, lines) and _self_test_section(window, lines))
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -306,7 +306,7 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map"):  # měření a mapa
+    for variant in ("line", "point", "ball", "label", "arial", "map", "accent"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)
@@ -331,6 +331,26 @@ def _self_test_map(window, lines: _Report) -> bool:
                  f"bodů za {found.seconds:.1f} s, snímek {image}: "
                  f"{window.viewer.dump(str(image))})")
     window.thickness_map_action.trigger()  # vypnout
+    return True
+
+
+def _self_test_section(window, lines: _Report) -> bool:
+    """Řez ukázky (přesný řez jádrem, barevné plochy řezu) – i s mapou tloušťky v řezu."""
+    lines.stream.write("  … řez modelem\n")
+    lines.stream.flush()
+    window.section_action.trigger()
+    QApplication.processEvents()
+    section = window.session.section
+    if section is None:
+        lines.append(f"✕ Řez modelem: {window.session.section_error or 'nezapnul se'}")
+        return False
+    window.thickness_map_action.trigger()  # mapa jen na zbylé polovině
+    QApplication.processEvents()
+    image = user_dir() / "self-test-rez.png"
+    lines.append(f"✓ Řez modelem: OK (plocha řezu {section.area:.0f} mm², i s mapou, snímek "
+                 f"{image}: {window.viewer.dump(str(image))})")
+    window.thickness_map_action.trigger()
+    window.section_action.trigger()
     return True
 
 

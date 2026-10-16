@@ -19,6 +19,7 @@ import sys
 from typing import Any
 
 from OCP.AIS import (
+    AIS_ColoredShape,
     AIS_InteractiveContext,
     AIS_SelectionScheme_Replace,
     AIS_SelectionScheme_XOR,
@@ -38,6 +39,7 @@ from OCP.Aspect import (
 )
 from OCP.BRep import BRep_Builder
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.Font import Font_FA_Bold
 from OCP.GeomAbs import GeomAbs_C1
 from OCP.gp import gp_Pnt
@@ -93,6 +95,19 @@ _DRAG_THRESHOLD = 3  # pixely; menší pohyb myši je pořád „klik“
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
     return Quantity_Color(r, g, b, Quantity_TOC_RGB)
+
+
+def _faces_of(shape: Any) -> list[Any]:
+    """Plochy tvaru OCCT (pro zkoušku kreslení v self-testu)."""
+    from OCP.TopAbs import TopAbs_FACE as face_kind
+    from OCP.TopExp import TopExp_Explorer
+
+    explorer = TopExp_Explorer(shape, face_kind)
+    faces = []
+    while explorer.More():
+        faces.append(explorer.Current())
+        explorer.Next()
+    return faces
 
 
 def _unlit(shown: Any) -> None:
@@ -196,10 +211,12 @@ class OccViewer(QWidget):
     def ready(self) -> bool:
         return self._view is not None
 
-    def show_part(self, part: Any | None, fit: bool = False) -> None:
-        """Zobrazí díl (build123d ``Part``) nebo nic; ``fit`` = přizpůsobit pohled."""
+    def show_part(self, part: Any | None, fit: bool = False,
+                  accent: list[Any] | None = None) -> None:
+        """Zobrazí díl (build123d ``Part``) nebo nic; ``fit`` = přizpůsobit pohled,
+        ``accent`` = plochy jinou barvou (plochy řezu)."""
         if not self.ready:
-            self._pending = (part, fit)
+            self._pending = (part, fit, accent)
             return
         context = self._context
         if self._ais is not None:
@@ -209,9 +226,11 @@ class OccViewer(QWidget):
         self._remove_measurement()
         self._remove_map()
         if part is not None:
-            ais = AIS_Shape(part.wrapped)
+            ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
             ais.SetColor(_rgb(0.56, 0.62, 0.70))
+            for face in accent or []:
+                ais.SetCustomColor(getattr(face, "wrapped", face), _rgb(0.82, 0.38, 0.33))
             drawer = ais.Attributes()  # obrysy ploch až po barvě, jinak je SetColor přebarví
             drawer.SetFaceBoundaryDraw(True)
             drawer.SetFaceBoundaryAspect(
@@ -346,6 +365,17 @@ class OccViewer(QWidget):
                 self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
             self._view.Redraw()
             return
+        if variant == "accent":  # díl s plochami jiné barvy (plochy řezu)
+            colored = AIS_ColoredShape(BRepPrimAPI_MakeBox(10, 10, 10).Shape())
+            colored.SetColor(color)
+            for face in _faces_of(colored.Shape()):
+                colored.SetCustomColor(face, _rgb(0.82, 0.38, 0.33))
+                break
+            self._context.Display(colored, False)
+            self._view.Redraw()
+            self._context.Remove(colored, False)
+            self._view.Redraw()
+            return
         if variant in ("point", "ball"):
             marker = Aspect_TOM_BALL if variant == "ball" else Aspect_TOM_POINT
             shown.Attributes().SetPointAspect(Prs3d_PointAspect(marker, color, 2.0))
@@ -364,9 +394,11 @@ class OccViewer(QWidget):
         self._view.Redraw()
 
     def show_thickness_map(self, nodes: list, triangles: list, colors: list,
-                           marker: tuple[Any, str] | None = None) -> None:
+                           marker: tuple[Any, str] | None = None,
+                           fill: list[Any] | None = None) -> None:
         """Barevná mapa tloušťky stěny přes díl. Díl se ukáže jen obrysem hran, ale plochy jde
-        dál vybírat kliknutím (měření v bodě). ``marker`` = (bod, popisek) nejtenčího místa."""
+        dál vybírat kliknutím (měření v bodě). ``marker`` = (bod, popisek) nejtenčího místa,
+        ``fill`` = plochy vyplněné barvou řezu (díl je pod mapou jen drátěný)."""
         if not self.ready:
             return
         self._remove_map()
@@ -387,6 +419,18 @@ class OccViewer(QWidget):
         self._context.Display(colored, False)
         self._context.Deactivate(colored)
         self._map_objects.append(colored)
+        if fill:
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            for face in fill:
+                builder.Add(compound, getattr(face, "wrapped", face))
+            cut_faces = AIS_Shape(compound)
+            cut_faces.SetColor(_rgb(0.82, 0.38, 0.33))
+            cut_faces.SetDisplayMode(1)
+            self._context.Display(cut_faces, False)
+            self._context.Deactivate(cut_faces)
+            self._map_objects.append(cut_faces)
         if marker is not None:
             point, text = marker
             self._map_objects += self._marker_objects(point, point, text, _rgb(0.55, 0.0, 0.55))
@@ -509,9 +553,9 @@ class OccViewer(QWidget):
         self._sync_size()
         log.info("3D prohlížeč spuštěn (OpenGL: %s)", self.graphics_info())
         if self._pending is not None:
-            part, fit = self._pending
+            part, fit, accent = self._pending
             self._pending = None
-            self.show_part(part, fit=fit)
+            self.show_part(part, fit=fit, accent=accent)
 
     def _style(self) -> None:
         view, context = self._view, self._context

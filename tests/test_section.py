@@ -15,7 +15,6 @@ from skodacad.section import (
     describe,
     export_2d,
     face_plane,
-    keep_triangles,
 )
 
 
@@ -104,13 +103,6 @@ def test_export_section_as_dxf_and_svg(tmp_path):
         export_2d(section, tmp_path / "rez.pdf")
 
 
-def test_map_triangles_on_the_kept_side():
-    nodes = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 5), (1, 0, 5), (0, 1, 5)]
-    triangles = [(0, 1, 2), (3, 4, 5)]
-    assert keep_triangles(nodes, triangles, axis_plane("Z", 2)) == [(0, 1, 2)]
-    assert keep_triangles(nodes, triangles, axis_plane("Z", 2, flipped=True)) == [(3, 4, 5)]
-
-
 # --- řez v ModelSession: jen pohled, výběr z rozříznutého dílu funguje na celém dílu -------
 
 
@@ -188,3 +180,18 @@ def test_selection_on_cut_part_works_on_the_whole_part():
     # měřit na ploše řezu jde (jen uložit ne): tloušťka od řezu dozadu přes celou desku
     values = session.measure_selection([on_cut.wrapped], (15, 0, 5))
     assert values[0].kind == "thickness" and values[0].value == pytest.approx(15)
+
+
+def test_map_mesh_is_clipped_exactly_at_the_plane():
+    from skodacad.section import clip_mesh
+
+    nodes = [(0, 0, 0), (2, 0, 0), (0, 2, 0)]  # trojúhelník přes rovinu x = 1
+    colors = [(1, 0, 0), (0, 0, 1), (1, 0, 0)]
+    plane = axis_plane("X", 1)  # odřízne x > 1
+    new_nodes, triangles, new_colors = clip_mesh(nodes, [(0, 1, 2)], colors, plane)
+    assert all(new_nodes[i][0] <= 1 + 1e-12 for tri in triangles for i in tri)
+    area = sum(abs((new_nodes[b][0] - new_nodes[a][0]) * (new_nodes[c][1] - new_nodes[a][1])
+                   - (new_nodes[c][0] - new_nodes[a][0]) * (new_nodes[b][1] - new_nodes[a][1]))
+               / 2 for a, b, c in triangles)
+    assert area == pytest.approx(2 - 0.5)  # celý trojúhelník 2 bez rohu za rovinou 0,5
+    assert new_colors[new_nodes.index((1, 0, 0))] == pytest.approx((0.5, 0, 0.5))  # půl cesty

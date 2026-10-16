@@ -29,8 +29,9 @@ class FakeViewer(QtWidgets.QWidget):
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.picked_point = None
 
-    def show_part(self, part, fit=False):
+    def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
+        self.accent = list(accent or [])  # plochy jinou barvou (plochy řezu)
         self.picked_point = None
         self.measurement = []
         self.thickness_map = None
@@ -42,8 +43,9 @@ class FakeViewer(QtWidgets.QWidget):
     def show_measurement(self, lines):
         self.measurement = list(lines)
 
-    def show_thickness_map(self, nodes, triangles, colors, marker=None):
+    def show_thickness_map(self, nodes, triangles, colors, marker=None, fill=None):
         self.thickness_map = (len(nodes), len(triangles), list(colors), marker)
+        self.map_fill = list(fill or [])
 
     def hide_thickness_map(self):
         self.thickness_map = None
@@ -763,4 +765,62 @@ def test_thickness_map_in_window(window, no_dialogs, slot_errors, monkeypatch, t
     assert w.viewer.thickness_map is None and not w.session.map_visible
     edit(w, "t", "20")
     assert w.session.thickness_map is None  # vypnutá mapa se nepočítá
+    assert slot_errors == []
+
+
+# --- řez modelem ---------------------------------------------------------------------------
+
+
+def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    w = window  # příruba Ø165 × 18 s otvorem Ø62 a čtyřmi děrami Ø18
+    full = w.session.result.part
+    assert not w.flip_section_action.isEnabled() and "Zapni řez" in w.section_info.text()
+    action(w, "Řez modelem").trigger()  # výchozí kolmo na Y uprostřed (středem otvoru)
+    shown, _fit = w.viewer.parts[-1]
+    assert shown is w.session.section.part and shown.volume == pytest.approx(full.volume / 2)
+    assert len(w.viewer.accent) == 2  # dvě plochy řezu vedle otvoru
+    area = 2 * (165 - 62) / 2 * 18 - 4 * 2  # bez sražení obvodu 2 a otvoru 1 mm (2 × 2 rohy)
+    assert w.session.section.area == pytest.approx(area, rel=0.02)
+    assert "Plocha řezu" in w.section_info.text()
+    assert w.session.document.to_dict() == w.session.document.to_dict() and not \
+        w.session.dirty  # řez model nemění
+
+    set_text(w.section_field, "40")  # poloha číslem
+    assert w.session.section_settings.position == 40
+    w.section_slider.setValue(1000)  # posuvník na konec dílu → řez díl míjí
+    assert w.session.section is None and "✕" in w.section_info.text()
+    w.section_slider.setValue(500)
+    assert w.session.section is not None
+    action(w, "Otočit stranu řezu").trigger()
+    assert w.session.section_settings.flipped
+    w.section_combo.setCurrentIndex(w.section_combo.findData("Z"))
+    w.section_combo.activated.emit(w.section_combo.currentIndex())
+    assert w.session.section_settings.axis == "Z"
+    assert w.session.section.area == pytest.approx(math.pi * (82.5**2 - 31**2)
+                                                   - 4 * math.pi * 81, rel=1e-3)
+
+    # řez rovnoběžně s plochou kliknutím (horní plocha → do hloubky)
+    top = face_at(shown_part(w), 60, 0, 18)
+    w.viewer.click([top], point=(60, 0, 18))
+    action(w, "Řez rovnoběžně s vybranou plochou").trigger()
+    assert w.session.section_settings.axis is None
+    assert w.section_combo.currentData() == "face"
+
+    target = tmp_path / "rez.dxf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    action(w, "Export řezu do DXF/SVG…").trigger()
+    assert target.exists() and target.stat().st_size > 0
+
+    # mapa tloušťky v řezu: kreslí se jen trojúhelníky zbylé poloviny
+    action(w, "Mapa tloušťky stěny").trigger()
+    nodes, triangles, colors, marker = w.viewer.thickness_map
+    assert 0 < triangles < len(w.session.thickness_map.triangles)
+    assert len(colors) == nodes > len(w.session.thickness_map.nodes)  # uzly na řezu navíc
+    assert w.viewer.map_fill == w.session.section.faces  # plochy řezu vyplněné
+    action(w, "Mapa tloušťky stěny").trigger()
+
+    action(w, "Řez modelem").trigger()  # vypnout → zase celý díl
+    assert w.viewer.parts[-1][0] is w.session.result.part and w.session.section is None
     assert slot_errors == []

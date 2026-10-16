@@ -59,6 +59,7 @@ from skodacad.section import (
     axis_plane,
     axis_range,
     base_depth_range,
+    clip_mesh,
     face_base,
     offset_plane,
 )
@@ -729,6 +730,17 @@ class ModelSession:
             doc.thickness_map = saved
 
         return self._change(mutate)
+
+    def visible_map(self) -> tuple[list, list, list]:
+        """Mapa tloušťky k zobrazení (uzly, trojúhelníky, barvy uzlů) – při zapnutém řezu
+        oříznutá rovinou řezu."""
+        found = self.thickness_map
+        if found is None:
+            return [], [], []
+        colors = found.node_colors()
+        if self.section is None:
+            return found.nodes, found.triangles, colors
+        return clip_mesh(found.nodes, found.triangles, colors, self.section_plane)
 
     def export_thickness_map(self, path: str | Path) -> Path:
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) pro Excel."""
