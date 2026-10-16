@@ -222,6 +222,36 @@ a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). M
 * Se zapnutou **mapou tloušťky** zůstane barevná i rozříznutá – mapa se ořízne přesně
   rovinou řezu a uvidíš i vnitřek (třeba korozi uvnitř trubky).
 
+### Tažení a přechod
+
+**Tažení** protáhne profil po trase – trubky, kolena, madla, rámy z jeklu. Ukázka:
+*Soubor → Otevřít ukázku → koleno*.
+
+* **Trasa** jsou body `x; y; z`, jeden na řádek (i s parametry, např. `L; 0; L`). Profil se
+  táhne od prvního bodu k poslednímu.
+* **Poloměr ohybu** zaoblí rohy trasy jako ohýbačka trubek. Prázdné nebo 0 = ostrý roh,
+  kusy se potkají **na pokos** (svařený rám).
+* **Profil**: *kruh / trubka* (průměr), *obdélník / jekl* (šířka × výška), nebo *tvar ze skici*
+  (libovolná skica, i s dírami). S **tloušťkou stěny** je kruh trubka a obdélník jekl.
+* Profil stojí kolmo na začátek trasy, jeho střed (počátek skici) je v prvním bodě. Šířka
+  jde vodorovně; když trasa začíná svisle, šířka jde podél osy X (stejně jako skica na XY).
+* Tažení jde i odebírat (*Operace → odebrat*: drážka podél hrany) a opakovat polem.
+
+**Přechod** plynule spojí dvě a více skic – výsypka, redukce, násypka. Ukázka: *výsypka*.
+
+1. Nakresli skicu dole (třeba kruh na XY) a další výš (*Posun roviny* např. 300 – čtverec).
+2. *Přidat prvek → Přechod* – spojí dvě poslední skici. Pořadí je pořadí ve stromu, v panelu
+   jde zaškrtnout i víc skic (dole kruh, uprostřed ovál, nahoře čtverec).
+3. **Rovné stěny** – mezi skicami rovné plochy (jehlan, komolý kužel); bez nich se plocha
+   mezi více skicami plynule prohne.
+4. **Tloušťka stěny** – dutý přechod s otevřenými konci (plech). Mezi dvěma kruhy nebo
+   podobnými tvary je stěna přesně kolmo k povrchu. U přechodu **kruh ↔ hranatý tvar** to
+   jádro neumí – stěna se tam měří v rovinách skic (vodorovně) a kolmo k šikmé stěně je
+   o něco tenčí (u ukázky výsypky asi 2,7 mm místo 3 mm). Skutečnou tloušťku ukáže
+   *mapa tloušťky stěny*.
+
+Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se dělá tloušťkou stěny).
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
@@ -245,7 +275,7 @@ změníš původní prvek (průměr díry, rozměr výstupku), přepočítají s
 * **Zrcadlení celého dílu:** když u zrcadlení nic nezaškrtneš, zrcadlí se celý díl – stačí
   namodelovat polovinu souměrného dílu. Rovina může být i plocha dílu (např. *pravá
   plocha* díl zdvojí).
-* Opakovat jde vysunutí, rotace, díry, pole a zrcadlení. Zaoblení, sražení a skořepina se
+* Opakovat jde vysunutí, rotace, tažení, přechod, díry, pole a zrcadlení. Zaoblení, sražení a skořepina se
   opakovat nedají – dej je do stromu až za pole.
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
@@ -304,7 +334,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 10,
+  "version": 11,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -327,6 +357,8 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `sketch` | 2D skica | `plane`, `offset`, `elements` (seznam tvarů) |
 | `extrude` | vysunutí skici | `sketch`, `distance`, `operation`, `direction`, `through_all` |
 | `revolve` | rotace skici kolem osy | `sketch`, `axis` (`X`/`Y`/`Z`), `angle` (výchozí 360) |
+| `sweep` | tažení profilu po trase | `path` (`[[x, y, z], …]`, aspoň 2 body), `bend_radius` (0 = ostré rohy na pokos), `profile` (`circle`/`rectangle`/`sketch`), `diameter`; `width`, `height`; `sketch`; `wall` (trubka/jekl), `operation` |
+| `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled` (`true` = rovné stěny), `wall` (dutý s otevřenými konci), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
@@ -442,7 +474,8 @@ ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se n
 Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fialově), `step` =
 vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
-se znovu. Soubory verze 1–9 se načtou dál.
+se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`;
+starší soubory se načtou beze změny.
 
 ### Materiály
 

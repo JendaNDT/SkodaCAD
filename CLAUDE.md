@@ -60,6 +60,10 @@
   velký kvádr za rovinou), rovina X/Y/Z nebo rovnoběžně s vybranou plochou, posuvník,
   otočení, export obrysu řezu DXF/SVG, mapa tloušťky oříznutá rovinou. Řez je **jen pohled**
   (`ModelSession.section_settings`), do modelu se neukládá – formát se nemění.
+- (16. 10. 2026, schváleno) **Tažení a přechod** – prvek `sweep`: trasa z bodů [x, y, z] +
+  poloměr ohybu (0 = ostré rohy na pokos), profil kruh/trubka, obdélník/jekl nebo skica;
+  prvek `loft`: přechod mezi skicami v pořadí, `ruled`, dutý se stěnou `wall` (otevřené
+  konce). Formát verze 11.
 
 ## Architektura (`src/skodacad/`)
 
@@ -74,7 +78,7 @@
 | `projection.py` | promítnutí hran dílu do roviny skici, kandidáti pro skicář, obnova odkazů z dílu |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
-| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; pole a zrcadlení |
+| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
@@ -270,6 +274,24 @@
 - `AIS_ColoredShape` (barva po plochách) se chová jako `AIS_Shape` – výběr ploch a hran,
   drátěný režim pod mapou; self-test ho kreslí jako druh „accent“.
 
+## Známé pasti (tažení a přechod)
+
+- Trasa je `Polyline` (2 body nebo poloměr 0) nebo `FilletPolyline` (ohyby). Ostré rohy chtějí
+  `Transition.RIGHT` (spoj na pokos, objem = průřez × délka osy), oblouky `TRANSFORMED`.
+- Profil stojí na rovině s `z_dir` = tečna na začátku trasy a `x_dir` = Z × tečna (u svislého
+  začátku osa X) – šířka jekl je tak vodorovně a skica na XY u svislé trasy nezmění polohu.
+- Dutý přechod: `offset` (skořepina s otevřenými konci) je přesný jen u ploch, které OCCT umí
+  odsadit (kužel, válec, rovina). U přechodu kruh ↔ hranatý tvar (B-spline plochy) se **tiše
+  nepovede** – vrátí nezměněné těleso. Proto `_hollow_loft` výsledek ověří (objem ≈ plocha
+  pláště × stěna) a jinak odečte vnitřní přechod ze skic zmenšených 2D offsetem – stěna je
+  pak měřená v rovinách skic (kolmo tenčí, u výsypky 3 → 2,7 mm). Zkoušeno bez úspěchu:
+  `MakeThickSolidByJoin` s jinými parametry, zesílení pláště (`thicken`) i prodloužení
+  pláště + uzavřený offset (jádro vrátí prázdný tvar nebo dojde paměť).
+- Mapa tloušťky na ostrém okraji plechu (konce výsypky) ukáže nesmyslně malé číslo – paprsek
+  z úzké čelní plošky hned narazí na šikmou stěnu pod úhlem do 60°.
+- Hotové pole formuláře, které patří k jiné volbě (`when`), se při úpravě nečte
+  (`FieldsForm._commit`) – skryté hodnoty (šířka jeklu u kruhu) zůstanou v modelu.
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -323,5 +345,6 @@
   pro skicu (tečná rovina).
 - [ ] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
   měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [x] řez modelem
-  (jen pohled, export DXF/SVG), [ ] sweep/loft, [ ] normalizované díly.
+  (jen pohled, export DXF/SVG), [x] tažení a přechod (formát verze 11),
+  [ ] normalizované díly.
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.
