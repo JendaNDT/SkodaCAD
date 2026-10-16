@@ -1,0 +1,14 @@
+{
+  "format": "skodacad",
+  "version": 12,
+  "name": "Rám z jeklu",
+  "description": "Ukázka ocelového profilu podle tabulek: svařovaný rám L × W z jeklu 40 × 20 × 2 (EN 10219, rohy podle normy). Profil je tažený po trase z bodů, rohy jsou na pokos (poloměr ohybu 0) a trasa začíná uprostřed strany, aby byly všechny čtyři rohy stejné. Profil jde přepnout ve formuláři prvku (IPE, U, L, jiný jekl, trubka).",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"L": 800, "W": 500},
+  "features": [
+    {"id": "ram", "type": "sweep", "name": "Rám", "profile": "steel", "section": "RHS 40x20x2",
+     "path": [["L/2", 0, 0], ["L", 0, 0], ["L", "W", 0], [0, "W", 0], [0, 0, 0],
+              ["L/2", 0, 0]]}
+  ]
+}

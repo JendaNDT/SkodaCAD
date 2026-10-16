@@ -235,6 +235,10 @@ a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). M
   (libovolná skica, i s dírami). S **tloušťkou stěny** je kruh trubka a obdélník jekl.
 * Profil stojí kolmo na začátek trasy, jeho střed (počátek skici) je v prvním bodě. Šířka
   jde vodorovně; když trasa začíná svisle, šířka jde podél osy X (stejně jako skica na XY).
+* **Ocelový profil podle tabulek** (*Profil → ocelový profil*): IPE, U, L, jekl nebo trubka –
+  profil stojí na výšku, střed obalového obdélníku je v prvním bodě trasy.
+* **Uzavřená trasa** (poslední bod = první) udělá rám: všechny rohy jsou stejné (na pokos
+  nebo s ohybem). Ukázka: *ram* – rám z jeklu 40 × 20 × 2.
 * Tažení jde i odebírat (*Operace → odebrat*: drážka podél hrany) a opakovat polem.
 
 **Přechod** plynule spojí dvě a více skic – výsypka, redukce, násypka. Ukázka: *výsypka*.
@@ -251,6 +255,39 @@ a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). M
    *mapa tloušťky stěny*.
 
 Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se dělá tloušťkou stěny).
+
+### Normalizované díly
+
+*Přidat prvek → Normalizovaný díl* vloží díl podle strojnických tabulek. Ukázka:
+*drzak_loziska* (kapsa na ložisko 608 a kapsy na matice M3 pro 3D tisk).
+
+| Druh | Velikosti | Délka |
+|---|---|---|
+| šroub s válcovou hlavou, imbus – ISO 4762 | M2–M30 | dřík pod hlavou |
+| šroub se šestihrannou hlavou – ISO 4017 | M2–M30 | dřík pod hlavou |
+| zápustný šroub, imbus – ISO 10642 | M3–M20 | celková i s hlavou |
+| šestihranná matice – ISO 4032, podložka – ISO 7089 | M2–M30 | – |
+| kuličkové ložisko | 623–626, 608, 688, řady 6000 a 6200 (do 6010/6210) | – |
+| válcový kolík – ISO 2338 | Ø2–Ø20 | délka kolíku |
+| těsné pero – DIN 6885 tvar A | 2 × 2 až 28 × 16 (u každého rozsah hřídele) | délka pera |
+| ocelový profil – tyč | IPE 80–400, U 80–240, L 20 × 3 – 120 × 12, jekly, trubky | délka tyče |
+
+* Díl stojí na zvolené **rovině** v **polohách** `x; y` (jako díra – víc kusů najednou):
+  šroub má hlavu nad plochou a dřík v materiálu, zápustný šroub je zapuštěný, matice,
+  podložka, ložisko, kolík a tyč leží na ploše. **Natočení** otočí šestihran, pero či profil.
+* **Operace**: *nový díl* (samotný šroub k tisku nebo do STEP), *přidat*, nebo **odebrat =
+  kapsa**. Kapsa je obrys dílu bez děr (matice bez díry, ložisko jako válec) zvětšený o
+  **vůli kapsy** na každou stranu (pro 3D tisk 0,1–0,2 mm). Aby kapsa šla do materiálu,
+  zvol *Směr → otočit do materiálu*.
+* **Drážka pro pero**: na hřídeli klikni na plášť (*Skica na ploše* → tečná rovina) a pero
+  odeber – vznikne drážka hloubky t1 podle DIN 6885 (pero leží podél osy hřídele).
+* Závit je **vyznačený** – dřík má jmenovitý průměr (M6 = 6 mm), stejně jako u děr. Tvary jsou
+  zjednodušené (bez sražení hlav, ložisko jako prstenec).
+* Ocelový profil jde dát i **do skici** (*tvar Ocelový profil*) – pak ho jde vysunout,
+  táhnout či otáčet jako každou skicu.
+
+Rozměry jsou z tabulek ověřených porovnáním více zdrojů (normy jsou placené) – zdroje jsou
+v `src/skodacad/standards.py`. Plochy průřezů IPE, U a L souhlasí s tabulkovými.
 
 ### Pole a zrcadlení
 
@@ -275,7 +312,8 @@ změníš původní prvek (průměr díry, rozměr výstupku), přepočítají s
 * **Zrcadlení celého dílu:** když u zrcadlení nic nezaškrtneš, zrcadlí se celý díl – stačí
   namodelovat polovinu souměrného dílu. Rovina může být i plocha dílu (např. *pravá
   plocha* díl zdvojí).
-* Opakovat jde vysunutí, rotace, tažení, přechod, díry, pole a zrcadlení. Zaoblení, sražení a skořepina se
+* Opakovat jde vysunutí, rotace, tažení, přechod, normalizované díly, díry, pole a
+  zrcadlení. Zaoblení, sražení a skořepina se
   opakovat nedají – dej je do stromu až za pole.
 
 Prvek vybraný ve stromu jde smazat (*Smazat*, klávesa Delete) nebo posunout (▲ ▼). Nový prvek
@@ -334,7 +372,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 11,
+  "version": 12,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -357,7 +395,8 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `sketch` | 2D skica | `plane`, `offset`, `elements` (seznam tvarů) |
 | `extrude` | vysunutí skici | `sketch`, `distance`, `operation`, `direction`, `through_all` |
 | `revolve` | rotace skici kolem osy | `sketch`, `axis` (`X`/`Y`/`Z`), `angle` (výchozí 360) |
-| `sweep` | tažení profilu po trase | `path` (`[[x, y, z], …]`, aspoň 2 body), `bend_radius` (0 = ostré rohy na pokos), `profile` (`circle`/`rectangle`/`sketch`), `diameter`; `width`, `height`; `sketch`; `wall` (trubka/jekl), `operation` |
+| `sweep` | tažení profilu po trase | `path` (`[[x, y, z], …]`, aspoň 2 body; poslední = první → uzavřený rám), `bend_radius` (0 = ostré rohy na pokos), `profile` (`circle`/`rectangle`/`steel`/`sketch`), `diameter`; `width`, `height`; `section` (`"IPE 100"`, `"L 50x5"`, `"RHS 40x20x2"`, `"CHS 48.3x2.6"`); `sketch`; `wall` (trubka/jekl), `operation` |
+| `standard` | normalizovaný díl | `kind` (`socket_screw`, `hex_screw`, `countersunk_screw`, `nut`, `washer`, `bearing`, `pin`, `key`, `profile`), `size` (`"M6"`, `"608"`, `"6"`, `"8x7"`, `"IPE 100"`), `length`, `plane`, `offset`, `positions` (`[[x, y], …]`), `angle`, `direction` (`normal`/`reverse` = do materiálu), `operation`, `clearance` (vůle kapsy) |
 | `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled` (`true` = rovné stěny), `wall` (dutý s otevřenými konci), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `chamfer` | sražení hran | `edges`, `distance` |
@@ -388,6 +427,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `slot` | `length` (rozteč středů), `width` – drážka |
 | `polygon` | `points` – seznam bodů `[[x, y], …]` |
 | `profile` | obrys z úseček a oblouků s vazbami – kreslí se ve skicáři, viz níže |
+| `steel` | `section` – průřez ocelového profilu podle tabulek (`"IPE 100"`, `"UPN 100"`, `"L 50x5"`, `"RHS 40x20x2"`, `"CHS 48.3x2.6"`), střed obalového obdélníku v `center` |
 
 Všechny tvary mají navíc `center` (`[x, y]`), `angle` a `mode` (`add` = přidat, `subtract` = odečíst,
 tak vzniká např. otvor v kruhu).
@@ -474,8 +514,9 @@ ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se n
 Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fialově), `step` =
 vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
-se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`;
-starší soubory se načtou beze změny.
+se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
+verze 12 normalizované díly (`standard`) a ocelový profil (`steel`); starší soubory se
+načtou beze změny.
 
 ### Materiály
 

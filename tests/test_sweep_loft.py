@@ -86,6 +86,27 @@ def test_sketch_profile_with_hole_starts_at_the_first_point():
         (-5, -3, 5, 3, 50))
 
 
+def test_closed_path_makes_a_frame_mitered_or_bent():
+    """Uzavřená trasa (poslední bod = první): rám, všechny rohy stejné, objem = průřez × osa."""
+    area = 40 * 20 - 36 * 16
+    corners = [[0, 0, 0], [800, 0, 0], [800, 500, 0], [0, 500, 0], [0, 0, 0]]
+    frame = build_ok([{"id": "r", "type": "sweep", "path": corners, "profile": "rectangle",
+                       "width": 40, "height": 20, "wall": 2}])
+    assert frame.volume == pytest.approx(area * 2600)
+    assert len(frame.solids()) == 1
+    box = frame.bounding_box()
+    assert (box.size.X, box.size.Y, box.size.Z) == pytest.approx((840, 540, 20))
+    bent = build_ok([{"id": "r", "type": "sweep", "path": corners, "bend_radius": 60,
+                      "profile": "circle", "diameter": 30, "wall": 2}])
+    centerline = 2600 - 8 * 60 + 2 * math.pi * 60  # rohy nahradí čtvrtkruhy R60
+    assert bent.volume == pytest.approx(math.pi * (15**2 - 13**2) * centerline, rel=1e-6)
+    straight = build_ok([{"id": "r", "type": "sweep", "path": [[0, 0, 0], [50, 0, 0],
+                                                               [100, 0, 0], [100, 80, 0]],
+                          "bend_radius": 20, "profile": "circle", "diameter": 10}])
+    assert straight.volume == pytest.approx(  # bod uprostřed rovné části nevadí
+        math.pi * 25 * (180 - 2 * 20 + math.pi / 2 * 20), rel=1e-6)
+
+
 def test_sweep_cut_makes_a_groove_and_parameters_work():
     part = build_ok(box_features(20, 100, 20) + [
         {"id": "dr", "type": "sweep", "path": [[0, "-L/2", 20], [0, "L/2", 20]],

@@ -416,39 +416,50 @@ SWEEP_PROFILES = ("circle", "rectangle", "steel", "sketch")
 
 @feature("sweep", "Tažení")
 def build_sweep(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    """Profil (kruh/trubka, obdélník/jekl, skica) tažený po trase z bodů s ohyby.
+    """Profil (kruh/trubka, obdélník/jekl, ocelový profil, skica) tažený po trase z bodů.
 
     Trasa je jako ohýbaná trubka: body [x, y, z] a poloměr ohybu v rozích (0 = ostrý
     roh, spoj na pokos). Profil se postaví kolmo na začátek trasy: střed (počátek skici)
-    v prvním bodě, šířka vodorovně (u svislého začátku podél osy X).
+    v prvním bodě, šířka vodorovně (u svislého začátku podél osy X). Uzavřená trasa
+    (poslední bod = první) dá rám – táhne se po dvou polovinách, které se potkají uprostřed
+    rovných stran, takže jsou na pokos všechny rohy (OCCT uzavřenou trasu neumí).
     """
-    path, sharp = _sweep_path(ctx, feature)
-    start, tangent = path @ 0, path % 0
-    x_dir = Vector(0, 0, 1).cross(tangent)
-    if x_dir.length < 1e-9:  # trasa začíná svisle
-        x_dir = Vector(1, 0, 0)
-    plane = Plane(origin=start, x_dir=x_dir.normalized(), z_dir=tangent)
+    paths, sharp = _sweep_paths(ctx, feature)
     shape = _sweep_profile(ctx, feature)
     operation = _choice(
         feature, "operation", ("new", "add", "cut"), "new" if ctx.part is None else "add"
     )
-    try:
-        solid = sweep(plane * shape, path,
-                      transition=Transition.RIGHT if sharp else Transition.TRANSFORMED)
-    except Exception as exc:  # noqa: BLE001 – chyby jádra převádíme na lidskou zprávu
-        raise FeatureError(f"Tažení se nepodařilo ({type(exc).__name__}) – profil je asi "
-                           "větší než poloměr ohybu, nebo se trasa kříží sama se sebou.") from None
-    if not solid.is_valid or solid.volume <= 0:
-        raise FeatureError("Tažení dalo poškozené těleso – profil je nejspíš větší než "
-                           "poloměr ohybu (zvětši poloměr nebo zmenši profil).")
+    pieces = []
+    for path in paths:
+        start, tangent = path @ 0, path % 0
+        x_dir = Vector(0, 0, 1).cross(tangent)
+        if x_dir.length < 1e-9:  # trasa začíná svisle
+            x_dir = Vector(1, 0, 0)
+        plane = Plane(origin=start, x_dir=x_dir.normalized(), z_dir=tangent)
+        try:
+            piece = sweep(plane * shape, path,
+                          transition=Transition.RIGHT if sharp else Transition.TRANSFORMED)
+        except Exception as exc:  # noqa: BLE001 – chyby jádra převádíme na lidskou zprávu
+            raise FeatureError(f"Tažení se nepodařilo ({type(exc).__name__}) – profil je asi "
+                               "větší než poloměr ohybu, nebo se trasa kříží sama se sebou."
+                               ) from None
+        if not piece.is_valid or piece.volume <= 0:
+            raise FeatureError("Tažení dalo poškozené těleso – profil je nejspíš větší než "
+                               "poloměr ohybu (zvětši poloměr nebo zmenši profil).")
+        pieces.append(piece)
+    solid = pieces[0] if len(pieces) == 1 else pieces[0] + pieces[1]
+    if not solid.is_valid:
+        raise FeatureError("Tažení po uzavřené trase dalo poškozené těleso – zkontroluj, jestli "
+                           "se trasa nekříží sama se sebou.")
     ctx.apply(solid, operation, "Tažení", empty_cut="zkontroluj trasu a velikost profilu")
 
 
-def _sweep_path(ctx: BuildContext, feature: dict[str, Any]) -> tuple[Any, bool]:
+def _sweep_paths(ctx: BuildContext, feature: dict[str, Any]) -> tuple[list[Any], bool]:
+    """Trasa tažení (u uzavřené dvě poloviny) a zda má ostré rohy."""
     raw = required(feature, "path")
     if not isinstance(raw, list) or len(raw) < 2:
         raise FeatureError("Trasa tažení potřebuje aspoň 2 body [x, y, z].")
-    points = []
+    points: list[Vector] = []
     for index, point in enumerate(raw, start=1):
         if not isinstance(point, list) or len(point) != 3:
             raise FeatureError(f"Bod trasy č. {index} musí být [x, y, z].")
@@ -460,13 +471,44 @@ def _sweep_path(ctx: BuildContext, feature: dict[str, Any]) -> tuple[Any, bool]:
     radius = ctx.num(feature.get("bend_radius", 0))
     if radius < 0:
         raise FeatureError(f"Poloměr ohybu nesmí být záporný (je {radius:g}).")
-    if len(points) == 2 or radius == 0:
-        return Polyline(*points), len(points) > 2
-    try:
-        return FilletPolyline(*points, radius=radius), False
-    except Exception:  # noqa: BLE001
-        raise FeatureError(f"Ohyb R{radius:g} se nevejde mezi body trasy – zmenši poloměr "
-                           "ohybu nebo body oddal.") from None
+    closed = len(points) > 3 and (points[-1] - points[0]).length < 1e-6
+    if closed:
+        ring = _without_straight(points[:-1], closed=True)
+        if len(ring) < 3:
+            raise FeatureError("Uzavřená trasa potřebuje aspoň 3 rohy.")
+        start = (ring[0] + ring[1]) * 0.5  # začátek i konec uprostřed rovné strany
+        loop = [start, *ring[1:], ring[0], start]
+        half = len(loop) // 2
+        middle = (loop[half - 1] + loop[half]) * 0.5
+        pieces = [[*loop[:half], middle], [middle, *loop[half:]]]
+    else:
+        pieces = [_without_straight(points, closed=False)]
+    paths = []
+    for piece in pieces:
+        if len(piece) == 2 or radius == 0:
+            paths.append(Polyline(*piece))
+            continue
+        try:
+            paths.append(FilletPolyline(*piece, radius=radius))
+        except Exception:  # noqa: BLE001
+            raise FeatureError(f"Ohyb R{radius:g} se nevejde mezi body trasy – zmenši poloměr "
+                               "ohybu nebo body oddal.") from None
+    sharp = radius == 0 and any(len(piece) > 2 for piece in pieces)
+    return paths, sharp
+
+
+def _without_straight(points: list[Vector], closed: bool) -> list[Vector]:
+    """Body bez těch, které leží na přímce mezi sousedy (nejsou to rohy)."""
+    kept = []
+    count = len(points)
+    for i, point in enumerate(points):
+        if not closed and i in (0, count - 1):
+            kept.append(point)
+            continue
+        before, after = points[i - 1], points[(i + 1) % count]
+        if (point - before).normalized().cross((after - point).normalized()).length > 1e-9:
+            kept.append(point)
+    return kept
 
 
 def _sweep_profile(ctx: BuildContext, feature: dict[str, Any]) -> Sketch:
