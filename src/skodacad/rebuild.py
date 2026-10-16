@@ -16,6 +16,8 @@ from skodacad.document import Document, DocumentError
 from skodacad.expressions import ExpressionError, resolve_parameters
 from skodacad.features import FEATURE_TYPES, BuildContext, FeatureError, describe
 from skodacad.measure import SavedResult, evaluate
+from skodacad.ndt.study import StudyResult
+from skodacad.ndt.study import evaluate_all as evaluate_studies
 from skodacad.selectors import SelectionError
 from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
 from skodacad.thickness_map import compute as compute_map
@@ -44,6 +46,7 @@ class BuildResult:
     measurements: list[SavedResult] = field(default_factory=list)  # uložená měření na dílu
     thickness_map: ThicknessMap | None = None  # mapa tloušťky stěny (jen když se chtěla)
     map_error: str = ""  # proč mapa nejde spočítat
+    ndt: list[StudyResult] = field(default_factory=list)  # stavy NDT studií na dílu
 
     @property
     def ok(self) -> bool:
@@ -91,6 +94,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None,
     result.part = ctx.part
     result.sketches = ctx.sketches
     result.measurements = [evaluate(ctx.part, m) for m in document.measurements]
+    result.ndt = evaluate_studies(ctx.part, document)
     if with_map:
         try:
             result.thickness_map = compute_map(ctx.part,

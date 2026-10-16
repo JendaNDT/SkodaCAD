@@ -38,9 +38,10 @@ FORMAT = "skodacad"
 # („plane“: {"at": …, "normal": …}), verze 9 uložená měření („measurements“), verze 10
 # nastavení mapy tloušťky stěny („thickness_map“), verze 11 prvky „sweep“ (tažení po trase)
 # a „loft“ (přechod mezi skicami), verze 12 normalizované díly („standard“), ocelový profil
-# ve skice („steel“) a v tažení. Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 12
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+# ve skice („steel“) a v tažení, verze 13 NDT studie („ndt“). Starší verze jsou podmnožinou –
+# načtou se beze změny.
+VERSION = 13
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 
 
 class DocumentError(ValueError):
@@ -57,6 +58,7 @@ class Document:
     features: list[dict[str, Any]] = field(default_factory=list)
     measurements: list[dict[str, Any]] = field(default_factory=list)  # uložená měření
     thickness_map: dict[str, Any] | None = None  # nastavení mapy tloušťky stěny (NDT)
+    ndt: dict[str, Any] | None = None  # NDT studie {"studies": [...]} (nemění těleso)
 
     @classmethod
     def from_dict(cls, data: Any) -> Document:
@@ -120,6 +122,15 @@ class Document:
             except MapError as exc:
                 raise DocumentError(str(exc)) from None
 
+        ndt = data.get("ndt")
+        if ndt is not None:
+            from skodacad.ndt.study import StudyError, check
+
+            try:
+                check(ndt)
+            except StudyError as exc:
+                raise DocumentError(str(exc)) from None
+
         return cls(
             name=str(data.get("name", "Bez názvu")),
             description=str(data.get("description", "")),
@@ -129,6 +140,7 @@ class Document:
             features=copy.deepcopy(features),
             measurements=copy.deepcopy(measurements),
             thickness_map=copy.deepcopy(thickness_map),
+            ndt=copy.deepcopy(ndt),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -145,6 +157,8 @@ class Document:
         }
         if self.thickness_map is not None:
             data["thickness_map"] = copy.deepcopy(self.thickness_map)
+        if self.ndt is not None:
+            data["ndt"] = copy.deepcopy(self.ndt)
         return data
 
     @classmethod
