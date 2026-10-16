@@ -20,6 +20,75 @@ def opened(name="deska"):
     return session
 
 
+def coverage_session(runner=None):
+    from skodacad.ndt.devices import Probe
+
+    session = ModelSession(runner)
+    session.open(NDT / "deska.json")
+    assert session.wait(30)
+    part = session.result.part
+    session.set_ndt_target("s1", [face_at(part, 0, 0, 0).wrapped], (0, 0, 0))
+    assert session.wait(30)
+    session.set_ndt_device("s1", Probe.straight(10))
+    assert session.wait(30)
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    return session
+
+
+def test_coverage_is_a_view_invalidated_by_part_and_probe_changes(tmp_path):
+    session = coverage_session()
+    before = session.document.to_dict()
+    result = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    assert session.ndt_coverage is result
+    assert session.document.to_dict() == before
+    assert result.area("covered") > 0
+    csv = session.export_ndt_coverage(tmp_path / "coverage.csv")
+    assert csv.exists()
+    session.set_section_axis("X", 0)
+    nodes, _, _ = session.visible_ndt_coverage()
+    assert nodes and len(nodes) <= 3 * len(result.triangles) * 2
+    session.shift_ndt_probe(5)
+    assert session.ndt_coverage is None
+    session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=0)
+    session.set_parameter("t", "30")
+    assert session.ndt_coverage is None
+    with pytest.raises(DocumentError, match="platnou UT studii"):
+        session.compute_ndt_coverage()
+
+
+def test_coverage_background_result_and_cancel_do_not_change_model():
+    runner = BackgroundRebuilder()
+    try:
+        session = coverage_session(runner)
+        before = session.document.to_dict()
+        old_part = session.result.part
+        assert session.start_ndt_coverage(mode="line", step_mm=10, length_mm=0) is None
+        assert session.computing and session.ndt_coverage is None
+        assert session.wait(40), session.failure
+        assert not session.failure
+        assert session.ndt_coverage is not None
+        assert session.result.part is old_part
+        session.start_ndt_coverage(step_mm=0.5)
+        assert session.cancel()
+        assert session.document.to_dict() == before and session.ndt_coverage is None
+    finally:
+        runner.close()
+
+
+def test_coverage_cli_csv_and_negative_point_coordinates(tmp_path, capsys):
+    from skodacad.ndt import UT_DISCLAIMER
+
+    csv = tmp_path / "coverage.csv"
+    assert main(["pokryti", str(NDT / "deska.json"), "--plocha", "-5,0,20", "--prima", "10",
+                 "--cil", "-5,0,0", "--rezim", "line", "--delka", "0", "--krok", "5",
+                 "--konvergence", "--csv", str(csv)]) == 0
+    text = capsys.readouterr().out
+    assert UT_DISCLAIMER in text and "Geometricky pokryto: 100.00 %" in text
+    assert "Citlivost na krok" in text and csv.exists()
+    assert main(["pokryti", str(NDT / "deska.json"), "--plocha", "0,0,20",
+                 "--cil", "0,0,0", "--krok", "0"]) == 2
+
+
 def state(session, study_id="s1"):
     return next(r for r in session.ndt_studies if r.id == study_id)
 

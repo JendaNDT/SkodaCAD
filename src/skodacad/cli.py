@@ -98,6 +98,35 @@ def main(argv: list[str] | None = None) -> int:
     probe.add_argument("--krok", type=float, default=1.0, help="krok posunu [mm] (1)")
     probe.add_argument("--set", dest="overrides", action="append", default=[],
                        metavar="NÁZEV=HODNOTA", help="dočasně změň parametr")
+    coverage = commands.add_parser("pokryti", help="mapa geometrického pokrytí UT")
+    coverage.add_argument("model", type=Path)
+    coverage.add_argument("--plocha", required=True, metavar="X,Y,Z",
+                          help="výchozí bod sondy na pojezdové ploše [mm]")
+    coverage.add_argument("--studie", help="UT studie se sondou a cílovými plochami")
+    coverage.add_argument("--cil", action="append", metavar="X,Y,Z",
+                          help="kontrolovaný bod (lze opakovat)")
+    coverage.add_argument("--cil-plocha", action="append", metavar="X,Y,Z",
+                          help="bod určující cílovou plochu (lze opakovat)")
+    coverage.add_argument("--rezim", choices=("line", "face"), default="face")
+    coverage.add_argument("--krok", type=float, default=5.0, help="krok pojezdu [mm]")
+    coverage.add_argument("--krok-cile", type=float, help="krok sítě cíle [mm], jinak --krok")
+    coverage.add_argument("--delka", type=float, default=50.0, help="délka přímé dráhy [mm]")
+    coverage.add_argument("--smer", type=float, default=0.0, help="natočení sondy [°]")
+    coverage.add_argument("--sklon", "--uhel", dest="beam_angle", type=float)
+    coverage.add_argument("--prima", type=float, metavar="PRŮMĚR")
+    coverage.add_argument("--uhlova", metavar="DxŠxV")
+    coverage.add_argument("--celo", type=float)
+    coverage.add_argument("--mezera", type=float)
+    coverage.add_argument("--rezerva", type=float)
+    coverage.add_argument("--odrazy", dest="bounces", type=int)
+    coverage.add_argument("--dosah", dest="max_length", type=float)
+    coverage.add_argument("--snell", metavar="ALFA,C1,C2")
+    coverage.add_argument("--vlna", choices=("shear", "longitudinal"), default="shear")
+    coverage.add_argument("--tolerance", type=float, help="numerický poloměr zachycení [mm]")
+    coverage.add_argument("--rozevreni", type=float, default=0.0, help="poloviční úhel [°]")
+    coverage.add_argument("--konvergence", action="store_true", help="porovnej krok a 2× krok")
+    coverage.add_argument("--csv", type=Path)
+    coverage.add_argument("--set", dest="overrides", action="append", default=[])
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -105,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ray(args)
         if args.command == "sonda":
             return _probe(args)
+        if args.command == "pokryti":
+            return _coverage(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -217,12 +248,72 @@ def _cli_probe(args: argparse.Namespace, document: Document, probe_class: type,
     return probe_class.from_dict({**base.to_dict(), **changes}) if changes else base
 
 
+def _coverage(args: argparse.Namespace) -> int:
+    from skodacad.ndt.coverage import check_convergence
+    from skodacad.ndt.coverage import compute as coverage_compute
+    from skodacad.ndt.devices import Probe, place
+    from skodacad.ndt.geometry import PartGeometry
+    from skodacad.ndt.study import study_probe
+    from skodacad.ndt.ut import refract
+
+    if args.beam_angle is not None and args.snell is not None:
+        raise ValueError("Zadej buď --sklon, nebo --snell, ne obojí.")
+    if args.cil and args.cil_plocha:
+        raise ValueError("Zadej buď --cil, nebo --cil-plocha, ne obojí.")
+    document = Document.load(args.model)
+    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    geo = PartGeometry(result.part)
+    probe = _cli_probe(args, document, Probe, study_probe)
+    placed = place(geo, probe, _vector(args.plocha, "--plocha"), angle=args.smer)
+    faces, points = [], None
+    if args.cil:
+        points = [_vector(text, "--cil") for text in args.cil]
+    elif args.cil_plocha:
+        for text in args.cil_plocha:
+            surface = geo.surface_at(_vector(text, "--cil-plocha"))
+            if surface.distance > 1e-4 or not surface.certain:
+                raise ValueError("Cílovou plochu urči bodem uvnitř plochy, mimo její hrany.")
+            if not any(surface.face.wrapped.IsSame(f.wrapped) for f in faces):
+                faces.append(surface.face)
+    elif args.studie:
+        record = next(s for s in (document.ndt or {}).get("studies", [])
+                      if s["id"] == args.studie)
+        study_result = next(s for s in result.ndt if s.id == args.studie)
+        if record["method"] != "UT" or study_result.state != "ok":
+            raise ValueError("Vyber platnou UT studii.")
+        faces, problems = geo.faces_of(record.get("target"))
+        if problems:
+            raise ValueError(" ".join(problems))
+    else:
+        raise ValueError("Zadej --cil, --cil-plocha nebo --studie s kontrolovanou oblastí.")
+    refraction = refract(*_vector(args.snell, "--snell"), args.vlna) if args.snell else None
+    options = dict(faces=faces or None, points=points, mode=args.rezim,
+                   scan_step=args.krok, target_step=(args.krok if args.krok_cile is None
+                                                     else args.krok_cile),
+                   length_mm=args.delka, angle_deg=args.smer, tolerance_mm=args.tolerance,
+                   spread_deg=args.rozevreni, beta=args.beam_angle, bounces=args.bounces,
+                   max_length=args.max_length, refraction=refraction)
+    covered = coverage_compute(geo, placed, **options)
+    covered.assumptions.update(model=args.model.name, parameters=dict(result.parameters),
+                               study_id=args.studie)
+    print("\n".join(covered.summary()))
+    print("Předpoklady:", covered.assumptions)
+    if args.konvergence:
+        print(check_convergence(geo, placed, **options).text)
+    if args.csv:
+        try:
+            print("CSV:", covered.write_csv(args.csv))
+        except OSError as exc:
+            raise ValueError(f"CSV nejde uložit: {exc}") from None
+    return 0
+
+
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
     glued: list[str] = []
     items = iter(argv)
     for item in items:
-        if item in ("--z", "--smer", "--bod", "--posun"):
+        if item in ("--z", "--smer", "--bod", "--posun", "--plocha", "--cil", "--cil-plocha"):
             value = next(items, None)
             glued.append(item if value is None else f"{item}={value}")
         else:

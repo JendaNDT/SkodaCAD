@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
         self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
+        self._shown_coverage = None
         self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -480,6 +481,7 @@ class MainWindow(QMainWindow):
     def _refresh_probe(self) -> None:
         """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
         (u přímé sondy kolmo do materiálu)."""
+        self._refresh_coverage()
         placement = self.session.ndt_placement
         if placement is self._shown_probe:
             return
@@ -497,6 +499,18 @@ class MainWindow(QMainWindow):
         points = beam.points if beam is not None else ()
         self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short,
                                points)
+
+    def _refresh_coverage(self) -> None:
+        found = self.session.ndt_coverage
+        if found is self._shown_coverage:
+            return
+        if found is None:
+            self.viewer.hide_coverage_map()
+            if self.session.map_visible:
+                self._refresh_thickness_map()
+        else:
+            self.viewer.show_coverage_map(*self.session.visible_ndt_coverage())
+        self._shown_coverage = found
 
     def show_ndt(self) -> None:
         self.ndt_dock.show()
@@ -651,6 +665,10 @@ class MainWindow(QMainWindow):
         for item in (self.ndt_panel.probe_action, self.ndt_panel.place_action,
                      self.ndt_panel.drag_probe_action, self.ndt_panel.scan_action,
                      self.ndt_panel.remove_probe_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.coverage_action, self.ndt_panel.clear_coverage_action,
+                     self.ndt_panel.export_coverage_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -979,6 +997,7 @@ class MainWindow(QMainWindow):
             self._had_part = part is not None
             self._shown_key = (result, section)
             self._shown_map = None  # prohlížeč mapu s dílem smazal
+            self._shown_coverage = None
             self._shown_probe = None  # … i sondu
         self._refresh_actions()
         self._refresh_progress()
@@ -1400,7 +1419,8 @@ class MainWindow(QMainWindow):
     def _refresh_thickness_map(self) -> None:
         """Mapa ve 3D a panel: nastavení z modelu, legenda, souhrn."""
         session = self.session
-        found = session.thickness_map if session.map_visible else None
+        found = (session.thickness_map if session.map_visible and session.ndt_coverage is None
+                 else None)
         if found is not self._shown_map:
             if found is None:
                 self.viewer.hide_thickness_map()

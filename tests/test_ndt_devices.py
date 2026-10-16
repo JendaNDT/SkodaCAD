@@ -68,6 +68,16 @@ def test_bad_probe_is_czech_error(data, message):
 # --- přiložení: deska se žebrem ------------------------------------------------------------
 
 
+def test_collision_cannot_be_excluded_by_offset_clearance_cut():
+    from build123d import Align, Box, Pos
+
+    plate = Box(40, 40, 20, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    bump = Pos(3, 0, 20) * Box(1, 10, 0.0005,
+                              align=(Align.CENTER, Align.CENTER, Align.MIN))
+    placed = place(PartGeometry(plate + bump), Probe.straight(10), (0, 0, 20))
+    assert placed.state == "collision" and placed.volume > 0.001
+
+
 def test_angle_probe_next_to_rib(parts):
     rib = parts["zebro"]
     free = place(rib, ANGLE, (22, 0, 20), TO_RIB)

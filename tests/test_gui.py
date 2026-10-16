@@ -29,6 +29,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.highlighted = []
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
+        self.coverage_map = None
         self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
         self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
@@ -40,6 +41,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.picked_point = None
         self.measurement = []
         self.thickness_map = None
+        self.coverage_map = None
         self.probe = None
         self.beam = []
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
@@ -56,6 +58,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def hide_thickness_map(self):
         self.thickness_map = None
+
+    def show_coverage_map(self, nodes, triangles, colors):
+        self.coverage_map = (list(nodes), list(triangles), list(colors))
+
+    def hide_coverage_map(self):
+        self.coverage_map = None
 
     def show_probe(self, body, state, start, end, text, beam=()):
         self.probe = (state, tuple(start), tuple(end), text, body.volume)
@@ -130,6 +138,61 @@ def test_open_shows_parameters_tree_and_properties(window):
     assert window.windowTitle() == "Plochá příruba (priruba.json) – ŠkodaCAD"
     part, fit = window.viewer.parts[-1]
     assert part is not None and fit
+
+
+def test_coverage_panel_compute_hide_export_and_invalidation(ndt_window, tmp_path, monkeypatch,
+                                                             slot_errors):
+    from skodacad.ndt import UT_DISCLAIMER
+    from skodacad.ndt.devices import Probe
+
+    w = ndt_window
+    panel = w.ndt_panel
+    session = w.session
+    panel.select("s1")
+    session.set_ndt_target("s1", [face_at(session.result.part, 0, 0, 0).wrapped], (0, 0, 0))
+    session.set_ndt_device("s1", Probe.straight(10))
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    w._refresh_all()
+    assert panel.coverage_action.isEnabled()
+    panel.coverage_step.setValue(10)
+    panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("line"))
+    panel.coverage_action.trigger()
+    assert session.ndt_coverage is not None and w.viewer.coverage_map is not None
+    assert UT_DISCLAIMER in panel.coverage_label.text()
+    assert "Geometricky pokryto" in panel.coverage_label.text()
+    assert w.viewer.probe is not None
+    path = tmp_path / "pokryti.csv"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *a: (str(path), "CSV"))
+    panel.export_coverage_action.trigger()
+    assert path.exists()
+    panel.clear_coverage_action.trigger()
+    assert session.ndt_coverage is None and w.viewer.coverage_map is None
+    panel.coverage_action.trigger()
+    panel.shift_probe(1)
+    assert session.ndt_coverage is None and w.viewer.coverage_map is None
+
+
+def test_scan_slider_clears_coverage_summary_and_export(ndt_window, slot_errors):
+    from skodacad.ndt.devices import Probe
+
+    w = ndt_window
+    session, panel = w.session, w.ndt_panel
+    session.set_ndt_target("s1", [face_at(session.result.part, 0, 0, 0).wrapped], (0, 0, 0))
+    session.set_ndt_device("s1", Probe.straight(10))
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    session.scan_ndt_line(20, 5)
+    session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    panel.select("s1")
+    w._refresh_all()
+    assert "Geometricky pokryto:" in panel.coverage_label.text()
+    assert panel.export_coverage_action.isEnabled()
+    assert panel.clear_coverage_action.isEnabled()
+    panel.scan_slider.setValue(1)
+    assert session.ndt_coverage is None and w.viewer.coverage_map is None
+    assert "Geometricky pokryto:" not in panel.coverage_label.text()
+    assert not panel.export_coverage_action.isEnabled()
+    assert not panel.clear_coverage_action.isEnabled()
+    assert slot_errors == []
 
 
 def test_parameter_change_rebuilds(window):

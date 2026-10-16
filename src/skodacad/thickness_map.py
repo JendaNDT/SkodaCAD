@@ -257,7 +257,7 @@ class _Surface:
     trojúhelníky, které ji mají, stejným bodem, takže v síti nevzniknou díry.
     """
 
-    def __init__(self, part: Any, step: float) -> None:
+    def __init__(self, part: Any, step: float, faces: list[Any] | None = None) -> None:
         from OCP.BRepMesh import BRepMesh_IncrementalMesh
 
         self.nodes: list[Point] = []
@@ -267,7 +267,7 @@ class _Surface:
         self.areas: list[float] = []
         self.step = step
         BRepMesh_IncrementalMesh(part.wrapped, max(0.05, step / 8), False, 0.5, False)
-        for face in part.faces():
+        for face in part.faces() if faces is None else faces:
             self._add_face(face)
             if len(self.triangles) > MAX_TRIANGLES:
                 raise MapError(f"Mapa by měla přes {MAX_TRIANGLES} bodů – zvol větší krok "

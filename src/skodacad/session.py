@@ -42,6 +42,8 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
+from skodacad.ndt.coverage import CoverageMap
+from skodacad.ndt.coverage import compute as compute_coverage
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
 from skodacad.ndt.study import METHODS as NDT_METHODS
@@ -148,6 +150,8 @@ class ModelSession:
         self.ndt_scan_index = 0
         self._placement_cache: tuple[Any, ...] | None = None
         self._geometry_cache: tuple[Any, Any] | None = None
+        self._coverage_cache: tuple[Any, CoverageMap] | None = None
+        self._coverage_pending: tuple[Any, ...] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -185,6 +189,8 @@ class ModelSession:
         if self.document is None:
             raise DocumentError("Není otevřený žádný model.")
         self.failure = ""
+        self.clear_ndt_coverage()
+        self._coverage_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -211,7 +217,13 @@ class ModelSession:
         if finished is None or finished.job != self._job:
             return False
         self._job = None
-        if finished.result is not None:
+        if self._coverage_pending is not None:
+            if finished.coverage is not None:
+                self._coverage_cache = (self._coverage_pending, finished.coverage)
+            else:
+                self.failure = finished.error
+            self._coverage_pending = None
+        elif finished.result is not None:
             self.result = finished.result
             self._computed = self.document
         else:
@@ -233,6 +245,7 @@ class ModelSession:
             return False
         self._runner.cancel()
         self._job = None
+        self._coverage_pending = None
         document, computed = self._require(), self._computed
         if computed is None:
             self.failure = ("Přepočet zastaven – model zatím není spočítaný. Uprav ho "
@@ -1046,6 +1059,7 @@ class ModelSession:
         return placement
 
     def clear_ndt_placement(self) -> None:
+        self.clear_ndt_coverage()
         self.ndt_placement_request = None
         self.ndt_placement_error = ""
         self._line_scan = None
@@ -1111,6 +1125,95 @@ class ModelSession:
         if self._geometry_cache is None or self._geometry_cache[0] is not part:
             self._geometry_cache = (part, PartGeometry(part))
         return self._geometry_cache[1]
+
+    def _coverage_context(self) -> tuple[Any, ...]:
+        request = self.ndt_placement_request
+        record = self.ndt_study(request[0]) if request else None
+        return (self.result, repr(request), repr(record))
+
+    @property
+    def ndt_coverage(self) -> CoverageMap | None:
+        """Mapa platí pouze pro původní díl, zadání studie a přiložení sondy."""
+        if self.computing or self._coverage_cache is None:
+            return None
+        key, result = self._coverage_cache
+        try:
+            current = self._coverage_context()
+        except DocumentError:
+            self._coverage_cache = None
+            return None
+        if key[0] is not current[0] or key[1:] != current[1:]:
+            self._coverage_cache = None
+            return None
+        return result
+
+    def clear_ndt_coverage(self) -> None:
+        self._coverage_cache = None
+
+    def _coverage_inputs(self) -> tuple[PartGeometry, Placement, list[Any], float]:
+        self._require_computed("výpočet pokrytí")
+        placed = self.ndt_placement
+        if placed is None or self.ndt_placement_request is None:
+            raise DocumentError("Nejdřív přilož sondu UT studie na pojezdovou plochu.")
+        study_id, _, angle = self.ndt_placement_request
+        record = self.ndt_study(study_id)
+        state = next(r.state for r in self.ndt_studies if r.id == study_id)
+        if record["method"] != "UT" or state != "ok":
+            raise DocumentError("Pokrytí potřebuje platnou UT studii s kontrolovanou oblastí.")
+        geo = self._ndt_geometry()
+        faces, problems = geo.faces_of(record.get("target"))
+        if problems or not faces:
+            raise DocumentError("Kontrolovanou oblast nejde určit: " + " ".join(problems))
+        return geo, placed, faces, angle
+
+    def compute_ndt_coverage(self, mode: str = "face", step_mm: float = 5.0,
+                             bounces: int | None = None, spread_deg: float = 0.0,
+                             length_mm: float = 50.0) -> CoverageMap:
+        """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
+        geo, placed, faces, angle = self._coverage_inputs()
+        key = self._coverage_context()
+        self.clear_ndt_coverage()
+        try:
+            result = compute_coverage(geo, placed, faces=faces, mode=mode,
+                                      scan_step=step_mm, target_step=step_mm, angle_deg=angle,
+                                      bounces=bounces, spread_deg=spread_deg, length_mm=length_mm)
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
+        result.assumptions.update(study_id=self.ndt_placement_request[0],
+                                  part_fingerprint=part_fingerprint(self._require()),
+                                  parameters=dict(self.result.parameters))
+        self._coverage_cache = (key, result)
+        return result
+
+    def start_ndt_coverage(self, **options: Any) -> CoverageMap | None:
+        """Okno použije existující pomocný proces: zůstává živé a výpočet jde zastavit."""
+        self._coverage_inputs()
+        if self._runner is None:
+            return self.compute_ndt_coverage(**options)
+        key = self._coverage_context()
+        self.clear_ndt_coverage()
+        self.failure = ""
+        self._job = self._runner.submit_coverage(self._require().to_dict(),
+                                                self.ndt_placement_request, options)
+        self._coverage_pending = key
+        return None
+
+    def visible_ndt_coverage(self) -> tuple[list, list, list]:
+        result = self.ndt_coverage
+        if result is None:
+            return [], [], []
+        nodes, triangles, colors = result.mesh()
+        plane = self.section_plane
+        return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def export_ndt_coverage(self, path: str | Path) -> Path:
+        result = self.ndt_coverage
+        if result is None:
+            raise DocumentError("Nejdřív spočítej mapu geometrického pokrytí UT.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
 
     def ndt_highlight(self, study_id: str) -> list[Any]:
         """Plochy kontrolované oblasti na dílu (OCCT) pro zvýraznění; co chybí, vynechá."""

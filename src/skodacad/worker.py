@@ -101,12 +101,21 @@ def _worker_main(conn: Any) -> None:
             message = conn.recv()
         except (EOFError, OSError):
             return  # okno skončilo
-        if message[0] != "rebuild":
+        if message[0] not in ("rebuild", "coverage"):
             return
-        _, job, data, with_map = message
+        kind, job, data, *options = message
         try:
-            reply = ("result", job, encode_result(rebuild(Document.from_dict(data),
-                                                          with_map=with_map)))
+            if kind == "coverage":
+                from skodacad.session import ModelSession
+
+                session = ModelSession()
+                session.document = Document.from_dict(data)
+                session.rebuild()
+                session.ndt_placement_request = options[0]
+                reply = ("coverage", job, session.compute_ndt_coverage(**options[1]))
+            else:
+                reply = ("result", job, encode_result(rebuild(Document.from_dict(data),
+                                                              with_map=options[0])))
         except DocumentError as exc:
             reply = ("error", job, str(exc))
         except Exception as exc:  # noqa: BLE001 – chybu pošleme oknu, proces běží dál
@@ -139,6 +148,7 @@ class Finished:
     job: int
     result: BuildResult | None = None
     error: str = ""
+    coverage: Any = None
 
 
 class BackgroundRebuilder:
@@ -167,10 +177,17 @@ class BackgroundRebuilder:
     def submit(self, document: dict[str, Any], with_map: bool = False) -> int:
         """Spustí přepočet modelu (slovník z ``Document.to_dict``), s ``with_map`` i mapu
         tloušťky stěny. Rozpočítaný starší přepočet se ukončí – jeho výsledek by už neplatil."""
+        return self._submit(("rebuild", document, with_map))
+
+    def submit_coverage(self, document: dict[str, Any], placement: Any,
+                        options: dict[str, Any]) -> int:
+        return self._submit(("coverage", document, placement, options))
+
+    def _submit(self, message: tuple) -> int:
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
         self._job += 1
-        worker.conn.send(("rebuild", self._job, document, with_map))
+        worker.conn.send((message[0], self._job, *message[1:]))
         self._active = worker
         self.started = time.monotonic()
         if not self._idle:
@@ -200,6 +217,8 @@ class BackgroundRebuilder:
                 del self._idle[MAX_IDLE:]
                 if kind == "result":
                     return Finished(job, result=decode_result(payload))
+                if kind == "coverage":
+                    return Finished(job, coverage=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass
