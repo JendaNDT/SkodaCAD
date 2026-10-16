@@ -1073,8 +1073,8 @@ def ndt_texts(w):
 def test_ndt_panel_shows_sample_study_and_highlights_its_target(ndt_window, slot_errors):
     w = ndt_window
     assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
-    assert "Nenahrazuje kvalifikovaný postup" in w.ndt_panel.findChildren(
-        QtWidgets.QLabel)[0].text()
+    assert w.ndt_panel.findChildren(QtWidgets.QLabel)[0] is w.ndt_panel.warning  # nahoře
+    assert "nenahrazují kvalifikovaný NDT postup" in w.ndt_panel.warning.text()  # UT studie
     w.ndt_panel.studies.setCurrentRow(0)
     assert len(w.viewer.highlighted) == 1  # horní plocha desky
     assert "kontrolovaná oblast: 1 plocha" in w.ndt_panel.details.text()
@@ -1180,8 +1180,15 @@ def rib_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
 
 
 def test_place_turn_and_remove_probe(rib_window, slot_errors):
+    from PySide6.QtWidgets import QGroupBox
+
+    from skodacad.ndt import UT_DISCLAIMER
+
     w = rib_window
     panel = w.ndt_panel
+    assert panel.findChild(QGroupBox, "ndt_ut").title() == "Přístupnost UT sondy"
+    assert panel.warning.text() == UT_DISCLAIMER  # povinné upozornění (04-zavazne-…)
+    assert panel.warning.isVisibleTo(panel)
     assert "Úhlová sonda 40 × 20 × 25 mm" in panel.probe_label.text()
     assert "(výchozí)" in panel.probe_label.text()
     assert not panel.place_action.isEnabled()  # nic není vybráno
@@ -1232,6 +1239,8 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
 
 
 def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
+    from skodacad.ndt import DISCLAIMER, UT_DISCLAIMER
+
     w = rib_window
     panel = w.ndt_panel
     w.viewer.click([edge_at(w.session.result.part, 0, -50, 80)])
@@ -1239,5 +1248,10 @@ def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_erro
     w.session.set_ndt_method("s1", "PT")
     w._refresh_all()
     assert panel.probe_label.text() == "Sonda je zatím jen pro UT studie."
+    assert panel.warning.text() == DISCLAIMER  # PT: obecné upozornění, ne UT
+    panel.studies.setCurrentRow(-1)  # bez výběru podle metody nové studie (UT)
+    assert panel.warning.text() == UT_DISCLAIMER
+    panel.method_combo.setCurrentIndex(panel.method_combo.findData("RT"))
+    assert panel.warning.text() == DISCLAIMER
     assert not panel.probe_action.isEnabled()
     assert slot_errors == []

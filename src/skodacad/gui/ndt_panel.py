@@ -4,7 +4,9 @@ Seznam studií se stavem (✓ platná, ⚠ zastaralá / neúplná, ✕ neplatná
 z ploch vybraných ve 3D, úpravy a ověření. Všechno jde přes ``ModelSession`` (jeden krok Zpět
 na úpravu); panel sám nic nepočítá. Klik na studii zvýrazní ve 3D kontrolovanou oblast.
 U UT studie jde nastavit sondu (uloží se do studie) a přiložit ji kliknutím na plochu – sonda
-se ve 3D nakreslí v barvě výsledku (jen pohled, do modelu se neukládá).
+se ve 3D nakreslí v barvě výsledku (jen pohled, do modelu se neukládá). U UT (vybraná studie,
+bez výběru metoda nové studie) je nahoře povinné upozornění ``UT_DISCLAIMER``
+(``docs/ndt/04-zavazne-vymezeni-ut.md``), jinak obecné ``DISCLAIMER``.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
-from skodacad.ndt import DISCLAIMER
+from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_DISCLAIMER
 from skodacad.ndt.devices import KINDS, Probe
 from skodacad.ndt.study import METHODS, StudyResult
 
@@ -75,16 +77,18 @@ class NdtPanel(QWidget):
         self.remove_probe_action = action("Odebrat sondu", self.remove_probe)
 
         layout = QVBoxLayout(self)
-        warning = QLabel(DISCLAIMER)
-        warning.setWordWrap(True)
-        warning.setStyleSheet("color: #8a5a00; font-style: italic;")
-        layout.addWidget(warning)
+        self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
+        self.warning.setObjectName("ndt_warning")
+        self.warning.setWordWrap(True)
+        self.warning.setStyleSheet("color: #8a5a00; font-style: italic;")
+        layout.addWidget(self.warning)
         top = QHBoxLayout()  # metoda a tlačítko pod sebou – vedle sebe se do panelu nevejdou
         top.addWidget(QLabel("Metoda nové studie:"))
         self.method_combo = QComboBox()
         self.method_combo.setObjectName("ndt_method")
         for key, label in METHOD_LABELS.items():
             self.method_combo.addItem(label, key)
+        self.method_combo.currentIndexChanged.connect(lambda _index: self._show_warning())
         top.addWidget(self.method_combo)
         top.addStretch()
         layout.addLayout(top)
@@ -111,7 +115,8 @@ class NdtPanel(QWidget):
                 buttons.addWidget(window._tool_button(item))
             buttons.addStretch()
             layout.addLayout(buttons)
-        probe_box = QGroupBox("Sonda (UT) – geometrie přiložení")
+        probe_box = QGroupBox(UT_ACCESS)
+        probe_box.setObjectName("ndt_ut")
         probe_layout = QVBoxLayout(probe_box)
         self.probe_label = QLabel()
         self.probe_label.setObjectName("ndt_probe")
@@ -196,15 +201,23 @@ class NdtPanel(QWidget):
             if record["id"] == selected:
                 self.studies.setCurrentItem(item)
         self.studies.blockSignals(False)
+        self._show_warning()
         self._show_details()
         self._show_probe()
         self.refresh_actions()
 
     def _row_changed(self) -> None:
+        self._show_warning()
         self._show_details()
         self._show_probe()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
+
+    def _show_warning(self) -> None:
+        """UT studie (nebo nová UT bez výběru) = povinné upozornění UT, jinak obecné."""
+        record = self._record(self.current_id())
+        method = record.get("method") if record else self.method_combo.currentData()
+        self.warning.setText(UT_DISCLAIMER if method == "UT" else DISCLAIMER)
 
     def _show_details(self) -> None:
         result = self.current()

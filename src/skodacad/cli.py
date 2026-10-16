@@ -23,7 +23,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
-from skodacad.ndt import DISCLAIMER
+from skodacad.ndt import DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -166,7 +166,7 @@ def _probe(args: argparse.Namespace) -> int:
         problem = next(((offset, p) for offset, p in scan.positions if not p.ok), None)
         if problem is not None:
             print(f"  první potíž po {problem[0]:g} mm: {problem[1].text}")
-    print("  (jen geometrie přiložení – ne fyzikální model UT ani detekovatelnost vad)")
+    print(f"  ({UT_DISCLAIMER})")
     return 0
 
 
@@ -267,6 +267,8 @@ def _build(args: argparse.Namespace) -> int:
         for study in result.ndt:
             print("  " + study.text.replace("\n", "\n  "))
         print(f"  ({DISCLAIMER})")
+        if any(study.method == "UT" for study in result.ndt):
+            print(f"  ({UT_DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

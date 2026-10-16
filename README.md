@@ -232,6 +232,17 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
 > Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, normové
 > vyhodnocení ani reálnou kontrolu.
 
+**UT je závazně vymezené** ([docs/ndt/04-zavazne-vymezeni-ut.md](docs/ndt/04-zavazne-vymezeni-ut.md),
+má přednost před starším plánem): program posuzuje jen **přístupnost UT sondy** (jde přiložit
+a posouvat bez kolize?) a **geometrické pokrytí** kontrolované oblasti – nikdy prozvučitelnost
+materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okně (skupina
+*Přístupnost UT sondy*) i ve výpisech příkazové řádky je povinné upozornění:
+
+> ŠkodaCAD provádí pouze geometrické posouzení přístupnosti ultrazvukové sondy a pokrytí
+> kontrolované oblasti na základě zjednodušeného modelu ultrazvukového svazku. Nevyhodnocuje
+> fyzikální prozvučitelnost materiálu ani detekovatelnost vad. Výsledky nenahrazují
+> kvalifikovaný NDT postup ani odborné posouzení.
+
 * **Referenční díly:** *Soubor → Otevřít ukázku → NDT – referenční díly* – deska, blok
   s kapsou, deska se žebrem, otvor, trubka, tupý svar V, koutový svar a obtížný přístup.
   Každý má ukázkovou studii; ručně spočítané očekávané výsledky (půlkroky, mezní úhly, vůle
@@ -260,7 +271,8 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
   tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
   jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
-* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Sonda* v panelu NDT nastavíš sondu
+* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Přístupnost UT sondy* v panelu NDT
+  nastavíš sondu
   (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
   dovolená mezera pod sondou a manipulační rezerva; uloží se do studie). Klikni ve 3D na plochu
   a dej **Přiložit sondu sem**: sonda se nakreslí **zeleně** (přiloženo), **oranžově** (málo
@@ -270,8 +282,9 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   souboru se neukládá a po změně dílu se přepočítá.
 * Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
   Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
-  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Tažení sondy myší
-  a paprsek s lomem přijdou v etapách 04–05.
+  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Další etapy UT:
+  geometrický model svazku (lom jen se zadanými předpoklady), tažení sondy myší a *Mapa
+  geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze spolehlivě vyhodnotit).
 
 ### Tažení a přechod
 
@@ -438,6 +451,7 @@ Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:
   Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.
 Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm
   první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.
+  (ŠkodaCAD provádí pouze geometrické posouzení přístupnosti ultrazvukové sondy a pokrytí …)
 ```
 
 `skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako
