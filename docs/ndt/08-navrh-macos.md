@@ -5,7 +5,21 @@
 > kompatibilita není zajištěná.**
 
 Stav: návrh 16. 10. 2026 · **rozhodnuto:** nejdřív sladit UT, pak Mac; balíček **ZIP se
-`SkodaCAD.app`**; nastavení a log v **`~/SkodaCAD`** jako ve Windows.
+`SkodaCAD.app`**; nastavení a log v **`~/SkodaCAD`** jako ve Windows · **kroky 1–3 hotové**,
+čeká se na ruční test na MacBooku.
+
+## 0. Výsledek na Macu GitHubu (16. 10. 2026, `macos-15`, Apple Silicon)
+
+- Instalace jen z hotových kol, ruff a všech 658 testů prošlo; `SkodaCAD.app` se sestavila,
+  podepsala „ad-hoc“ a z rozbaleného ZIPu prošel celý self-test (**VÝSLEDEK: OK**): 14 ukázek
+  a 8 referenčních dílů NDT se stejnými objemy jako ve Windows, exporty, kreslení všech značek,
+  výběr kliknutím, měření, mapa tloušťky (13 490 bodů za 1,5 s), řez, skicář (slvs), AI bez
+  sítě, NDT studie i sonda, přepočet na pozadí v pomocném procesu (5,2 s i se startem).
+- První běh: virtuál bez grafické karty nevytvořil OpenGL („NSOpenGLContext creation failed“)
+  a při zavírání okna proces spadl. Oprava: na Macu záložní **softwarové OpenGL** (Apple
+  Software Renderer 2.1) a nepovedené objekty OCCT se neruší dřív než okno – druhý běh prošel.
+- Na virtuálu je obrazovka bez Retiny (poměr myši 1,00) – **Retina, trackpad a skutečná
+  grafika se ověří až na MacBooku.**
 
 ## 1. Audit knihoven (ověřeno 16. 10. 2026 na PyPI)
 

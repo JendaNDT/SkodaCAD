@@ -38,6 +38,10 @@ sestavuje a testuje ji GitHub na svém Macu, ruční zkouška na MacBooku Air M4
    zoom dvěma prsty.
 5. Nastavení, log (`skodacad.log`) a výchozí místo pro modely je složka **`SkodaCAD`** ve tvé
    domovské složce – stejně jako ve Windows.
+6. Kdyby 3D nešlo spustit s grafickou kartou (virtuál, vzdálená plocha), aplikace kreslí
+   softwarově – pomaleji, ale funguje. Kontrolu celé aplikace spustíš v Terminálu:
+   `/Applications/SkodaCAD.app/Contents/MacOS/SkodaCAD --self-test ~/SkodaCAD/self-test.txt`
+   (výsledek je v souboru `self-test.txt`, na konci „VÝSLEDEK: OK“).
 
 AI asistent posílá model společnosti Anthropic **jen** po tvém dotazu v panelu *AI asistent*
 a jen s vloženým API klíčem. Bez klíče (např. při prezentaci) z aplikace nic neodchází.

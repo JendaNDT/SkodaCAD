@@ -504,6 +504,15 @@
 - Aplikace je podepsaná jen „ad-hoc“ (PyInstaller, bez certifikátu): u uživatele ji
   Gatekeeper zablokuje, povolí se v *Soukromí a zabezpečení → Přesto otevřít*
   (macOS 15+ už bez pravého kliku). Notarizace až při rozhodnutí o distribuci.
+- Mac na GitHubu (`macos-15`, virtuál bez GPU) **nevytvoří akcelerovaný NSOpenGLContext**
+  („NSOpenGLContext creation failed“). `OccViewer._open_view` to na Macu zkusí znovu se
+  `OpenGl_Caps.contextNoAccel` → „Apple Software Renderer / 2.1“; tím projde celý self-test
+  (kreslení, výběr, mapa, řez, sonda). Self-test píše „– softwarové kreslení“.
+- Bez té zálohy proces po nepovedeném OpenGL **spadl při zavírání okna** (segfault v
+  `window.close()`). Nepovedené objekty OCCT proto drží `OccViewer._failed` až do konce okna;
+  jestli pád spravila tahle pojistka, nebo jen to, že se OpenGL podaří, zatím nevíme (cesta
+  „OpenGL nejde vůbec“ se na Macu netestuje). Při pádu vypíše workflow nativní zásobník
+  z hlášení macOS (`~/Library/Logs/DiagnosticReports/SkodaCAD*.ips`).
 - Kompatibilita platí, až ji uživatel ověří na MacBooku (seznam v `docs/ndt/08-navrh-macos.md`).
 
 ## Jak přidat nový prvek
@@ -541,5 +550,6 @@
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
   [ ] 04–05 geometrický model UT svazku (lom jen se zadanými předpoklady) a ruční pohyb sondy
   (milník M1) …
-- [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – další na řadě: audit, prohlížeč
-  přes `Cocoa_Window`, `SkodaCAD.app` v ZIP, úloha GitHub Actions na macOS arm64.
+- [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
+  `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
+  softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
