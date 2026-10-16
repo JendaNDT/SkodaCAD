@@ -24,12 +24,16 @@ LENGTH_TOL = 1e-6  # mm – průsečíky blíž k sobě jsou jeden bod
 EDGE_TOL = 1e-3  # mm – průsečík blíž k hraně plochy = „přes hranu“
 GRAZING_COS = 0.01  # |cos| úhlu paprsek–normála pod touto mezí = tečný dotyk (≈ 89,4°)
 TOLERANCES = {"délka [mm]": LENGTH_TOL, "hrana [mm]": EDGE_TOL,
-              "tečnost [°]": round(math.degrees(math.acos(GRAZING_COS)), 1)}
+              "tečnost [°]": round(math.degrees(math.acos(GRAZING_COS)), 1),
+              "průnik [mm³]": 1e-3}
 
 ALONG_SURFACE = "Paprsek běží po povrchu dílu – délku v materiálu tu nejde určit."
 THROUGH_EDGE = "Paprsek prochází hranou nebo rohem dílu."
 GRAZING = "Paprsek se plochy jen tečně dotýká."
 UNDECIDED = "Jádro tu nerozhodlo, jestli je bod v materiálu."
+ON_EDGE = "Bod leží na hraně mezi plochami – směr plochy tu není jednoznačný."
+NO_OVERLAP = "Průnik s dílem jádro nespočítalo – kolizi nejde vyloučit."
+OVERLAP_TOL = 1e-3  # mm³ – menší průnik je jen dotyk (sonda položená na ploše)
 
 Point = tuple[float, float, float]
 
@@ -101,6 +105,58 @@ class RayResult:
         return _along(self.origin, self.direction, distance)
 
 
+@dataclass(frozen=True)
+class SurfacePoint:
+    """Bod plochy: směr ven z materiálu a zakřivení (pro přiložení sondy, tečnou rovinu)."""
+
+    point: Point  # nejbližší bod plochy k zadanému bodu
+    normal: Point  # ven z materiálu
+    kind: str  # plane, cylinder, cone, sphere, torus, other
+    curvatures: tuple[float, float]  # [1/mm]: + vypouklá (vnějšek trubky), − vydutá (díra)
+    directions: tuple[Point, Point]  # hlavní směry k zakřivením (větší |zakřivení| první)
+    distance: float  # jak daleko byl zadaný bod od plochy [mm]
+    reasons: tuple[str, ...] = ()
+    face: Any = field(default=None, compare=False, repr=False)
+
+    @property
+    def radii(self) -> tuple[float, float]:
+        """Poloměry zakřivení [mm] (∞ = rovně)."""
+        return tuple(1 / abs(k) if abs(k) > 1e-12 else math.inf for k in self.curvatures)
+
+    @property
+    def certain(self) -> bool:
+        return not self.reasons
+
+
+@dataclass(frozen=True)
+class Visibility:
+    """Vidí bod plochy daným směrem ven, nebo mu něco stojí v cestě?"""
+
+    visible: bool
+    blocker: Hit | None  # první překážka (None = nic, nebo směr míří rovnou do materiálu)
+    distance: float | None  # vzdálenost k překážce [mm], 0 = směr míří do materiálu
+    reasons: tuple[str, ...] = ()
+
+    @property
+    def certain(self) -> bool:
+        return not self.reasons
+
+
+@dataclass(frozen=True)
+class Collision:
+    """Překrytí tělesa (sonda, jho, detektor) s dílem a vůle k překážkám."""
+
+    volume: float  # společný objem [mm³]
+    colliding: bool  # průnik nad OVERLAP_TOL (nebo ho nejde vyloučit)
+    clearance: float | None  # nejmenší vzdálenost k dílu bez ignorovaných ploch [mm]
+    points: tuple[Point, Point] | None  # nejbližší body (na dílu, na tělese)
+    reasons: tuple[str, ...] = ()
+
+    @property
+    def certain(self) -> bool:
+        return not self.reasons
+
+
 # --- jádro ---------------------------------------------------------------------------------
 
 
@@ -166,6 +222,116 @@ class PartGeometry:
         segments = _segments(pieces, hits)
         return RayResult(origin, unit, limit, tuple(hits), tuple(segments),
                          tuple(dict.fromkeys(reasons)))
+
+    # --- bod plochy -------------------------------------------------------------------
+
+    def surface_at(self, point: Point, face: Any = None) -> SurfacePoint:
+        """Nejbližší bod plochy (nebo zadané ``face``): normála ven, zakřivení, druh plochy."""
+        from build123d import Face, Vertex
+
+        point = _point(point, "Bod")
+        here = Vertex(*point)
+        reasons: list[str] = []
+        if face is None:
+            found = sorted(((f.distance_to(here), f) for f in self.part.faces()),
+                           key=lambda item: item[0])
+            if not found:
+                raise GeometryError("Díl nemá žádnou plochu.")
+            face = found[0][1]
+            if len(found) > 1 and found[1][0] - found[0][0] < EDGE_TOL:
+                reasons.append(ON_EDGE)
+        face = face if isinstance(face, Face) else Face(face)
+        distance, on_face, _ = face.distance_to_with_closest_points(here)
+        where = (on_face.X, on_face.Y, on_face.Z)
+        u, v = _uv(face.wrapped, where)
+        normal = _outward_normal(face.wrapped, u, v)
+        if normal == (0.0, 0.0, 0.0):
+            reasons.append(UNDECIDED)
+        curvatures, directions = _curvature(face.wrapped, u, v, normal)
+        kind = face.geom_type.name.lower()
+        if kind not in ("plane", "cylinder", "cone", "sphere", "torus"):
+            kind = "other"
+        return SurfacePoint(where, normal, kind, curvatures, directions, distance,
+                            tuple(reasons), face)
+
+    # --- viditelnost ------------------------------------------------------------------
+
+    def visible(self, point: Point, direction: Point, max_length: float | None = None
+                ) -> Visibility:
+        """Vidí bod (na povrchu dílu) směrem ``direction`` ven, nebo mu díl stojí v cestě?"""
+        ray = self.cast(point, direction, max_length)
+        blocking = next((s for s in ray.segments if s.end > EDGE_TOL), None)
+        if blocking is not None and blocking.start <= EDGE_TOL:
+            return Visibility(False, None, 0.0)  # směr míří rovnou do materiálu
+        stop = blocking.start if blocking is not None else ray.max_length
+        reasons = [r for h in ray.hits if EDGE_TOL < h.distance <= stop + LENGTH_TOL
+                   for r in h.reasons]
+        if ALONG_SURFACE in ray.reasons or UNDECIDED in ray.reasons:
+            reasons += [r for r in ray.reasons if r in (ALONG_SURFACE, UNDECIDED)]
+        reasons = list(dict.fromkeys(reasons))
+        if blocking is None:
+            return Visibility(True, None, None, tuple(reasons))
+        return Visibility(False, blocking.entry, blocking.start, tuple(reasons))
+
+    # --- kolize ---------------------------------------------------------------------------
+
+    def collision(self, solid: Any, ignore_faces: Any = ()) -> Collision:
+        """Překrytí tělesa s dílem (dotyk není kolize) a vůle k dílu bez ``ignore_faces``
+        (plocha, na které těleso stojí)."""
+        from OCP.BRep import BRep_Builder
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+        from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+        from OCP.TopoDS import TopoDS_Compound
+
+        shape = getattr(solid, "wrapped", solid)
+        reasons: list[str] = []
+        common = BRepAlgoAPI_Common(self.part.wrapped, shape)
+        volume = 0.0
+        if common.IsDone():  # OCCT 8: chyby hlásí jen IsDone (HasErrors tu není)
+            props = GProp_GProps()
+            BRepGProp.VolumeProperties_s(common.Shape(), props)
+            volume = abs(props.Mass())
+        else:
+            reasons.append(NO_OVERLAP)
+        colliding = volume > OVERLAP_TOL or bool(reasons)
+        ignored = [getattr(f, "wrapped", f) for f in ignore_faces]
+        others = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(others)
+        count = 0
+        for face in self.part.faces():
+            if not any(face.wrapped.IsSame(other) for other in ignored):
+                builder.Add(others, face.wrapped)
+                count += 1
+        clearance, points = None, None
+        if count:
+            distance = BRepExtrema_DistShapeShape(others, shape)
+            if distance.IsDone() and distance.NbSolution():
+                a, b = distance.PointOnShape1(1), distance.PointOnShape2(1)
+                clearance = distance.Value()
+                points = ((a.X(), a.Y(), a.Z()), (b.X(), b.Y(), b.Z()))
+        if colliding:
+            clearance = 0.0
+        return Collision(volume, colliding, clearance, points, tuple(reasons))
+
+    # --- plochy studie --------------------------------------------------------------------
+
+    def faces_of(self, target: Any) -> tuple[list[Any], list[str]]:
+        """Plochy kontrolované oblasti studie (odkazy významem) → (plochy, české problémy)."""
+        from skodacad.selectors import SelectionError, find_face
+
+        faces, problems = [], []
+        references = (target or {}).get("faces", []) if isinstance(target, dict) else []
+        for number, reference in enumerate(references, start=1):
+            try:
+                face, _ = find_face(self.part, reference["face"])
+            except (SelectionError, KeyError, TypeError) as exc:
+                problems.append(f"Plocha č. {number}: {exc}")
+                continue
+            faces.append(face)
+        return faces, problems
 
     def _hits(self, origin: Point, unit: Point, limit: float) -> list[Hit]:
         from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
@@ -260,6 +426,46 @@ def _outward_normal(face: Any, u: float, v: float) -> Point:
     direction = props.Normal()
     sign = -1.0 if face.Orientation() == TopAbs_REVERSED else 1.0
     return (sign * direction.X(), sign * direction.Y(), sign * direction.Z())
+
+
+def _uv(face: Any, point: Point) -> tuple[float, float]:
+    from OCP.BRep import BRep_Tool
+    from OCP.gp import gp_Pnt
+    from OCP.ShapeAnalysis import ShapeAnalysis_Surface
+
+    uv = ShapeAnalysis_Surface(BRep_Tool.Surface_s(face)).ValueOfUV(gp_Pnt(*point), 1e-7)
+    return uv.X(), uv.Y()
+
+
+def _curvature(face: Any, u: float, v: float, normal: Point
+               ) -> tuple[tuple[float, float], tuple[Point, Point]]:
+    """Hlavní zakřivení vůči normále ven z materiálu: + vypouklá, − vydutá (větší |k| první).
+
+    OCCT počítá zakřivení vůči normále plochy (kladné = plocha se ohýbá k normále); ta může
+    mířit dovnitř materiálu (otočená plocha) – znaménko se srovná podle ``normal``.
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepLProp import BRepLProp_SLProps
+    from OCP.gp import gp_Dir
+
+    props = BRepLProp_SLProps(BRepAdaptor_Surface(face), u, v, 2, 1e-9)
+    if not props.IsCurvatureDefined() or not props.IsNormalDefined():
+        return (0.0, 0.0), ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    occ = props.Normal()
+    sign = 1.0 if occ.X() * normal[0] + occ.Y() * normal[1] + occ.Z() * normal[2] >= 0 else -1.0
+    k_max, k_min = -sign * props.MaxCurvature(), -sign * props.MinCurvature()
+    if props.IsUmbilic():  # rovina, koule – všechny směry stejné
+        first = props.D1U()
+        first_dir = gp_Dir(first) if first.Magnitude() > 1e-12 else gp_Dir(1, 0, 0)
+        second_dir = gp_Dir(occ.Crossed(first_dir)) if not occ.IsParallel(
+            first_dir, 1e-9) else gp_Dir(0, 1, 0)
+        d_max, d_min = first_dir, second_dir
+    else:
+        d_max, d_min = gp_Dir(), gp_Dir()
+        props.CurvatureDirections(d_max, d_min)
+    pairs = sorted([(k_max, d_max), (k_min, d_min)], key=lambda item: -abs(item[0]))
+    clean = tuple(0.0 if abs(k) < 1e-12 else k for k, _ in pairs)
+    return clean, tuple((d.X(), d.Y(), d.Z()) for _, d in pairs)
 
 
 def _edge_distance(face: Any, point: Point) -> float:
