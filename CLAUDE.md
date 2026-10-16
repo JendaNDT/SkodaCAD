@@ -60,6 +60,15 @@
   velký kvádr za rovinou), rovina X/Y/Z nebo rovnoběžně s vybranou plochou, posuvník,
   otočení, export obrysu řezu DXF/SVG, mapa tloušťky oříznutá rovinou. Řez je **jen pohled**
   (`ModelSession.section_settings`), do modelu se neukládá – formát se nemění.
+- (16. 10. 2026, schváleno) **Tažení a přechod** – prvek `sweep`: trasa z bodů [x, y, z] +
+  poloměr ohybu (0 = ostré rohy na pokos), profil kruh/trubka, obdélník/jekl nebo skica;
+  prvek `loft`: přechod mezi skicami v pořadí, `ruled`, dutý se stěnou `wall` (otevřené
+  konce). Formát verze 11.
+- (16. 10. 2026, schváleno) **Normalizované díly** – `standards.py`, prvek `standard`:
+  šrouby ISO 4762/4017/10642, matice ISO 4032, podložky ISO 7089, kuličková ložiska, kolíky
+  ISO 2338, pera DIN 6885, tyče z ocelových profilů (IPE, UPN, L, jekl, trubka); ocelový
+  profil i jako tvar skici `steel` a profil tažení. Prvek tělesa (ne sestava), závit
+  vyznačený, odebrání = kapsa s vůlí. Tabulky ověřené z více zdrojů. Formát verze 12.
 
 ## Architektura (`src/skodacad/`)
 
@@ -74,7 +83,8 @@
 | `projection.py` | promítnutí hran dílu do roviny skici, kandidáti pro skicář, obnova odkazů z dílu |
 | `holes.py` | strojnické tabulky děr (ISO 2306, 273, DIN 974-1, DIN 74, 3D tisk) a tvar díry |
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
-| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; pole a zrcadlení |
+| `standards.py` | normalizované díly: tabulky (šrouby, matice, podložky, ložiska, kolíky, pera, ocelové profily), tvary v místních souřadnicích, kapsy, průřezy profilů |
+| `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
@@ -270,6 +280,45 @@
 - `AIS_ColoredShape` (barva po plochách) se chová jako `AIS_Shape` – výběr ploch a hran,
   drátěný režim pod mapou; self-test ho kreslí jako druh „accent“.
 
+## Známé pasti (tažení a přechod)
+
+- Trasa je `Polyline` (2 body nebo poloměr 0) nebo `FilletPolyline` (ohyby). Ostré rohy chtějí
+  `Transition.RIGHT` (spoj na pokos, objem = průřez × délka osy), oblouky `TRANSFORMED`.
+- Profil stojí na rovině s `z_dir` = tečna na začátku trasy a `x_dir` = Z × tečna (u svislého
+  začátku osa X) – šířka jekl je tak vodorovně a skica na XY u svislé trasy nezmění polohu.
+- Dutý přechod: `offset` (skořepina s otevřenými konci) je přesný jen u ploch, které OCCT umí
+  odsadit (kužel, válec, rovina). U přechodu kruh ↔ hranatý tvar (B-spline plochy) se **tiše
+  nepovede** – vrátí nezměněné těleso. Proto `_hollow_loft` výsledek ověří (objem ≈ plocha
+  pláště × stěna) a jinak odečte vnitřní přechod ze skic zmenšených 2D offsetem – stěna je
+  pak měřená v rovinách skic (kolmo tenčí, u výsypky 3 → 2,7 mm). Zkoušeno bez úspěchu:
+  `MakeThickSolidByJoin` s jinými parametry, zesílení pláště (`thicken`) i prodloužení
+  pláště + uzavřený offset (jádro vrátí prázdný tvar nebo dojde paměť).
+- Mapa tloušťky na ostrém okraji plechu (konce výsypky) ukáže nesmyslně malé číslo – paprsek
+  z úzké čelní plošky hned narazí na šikmou stěnu pod úhlem do 60°.
+- **Uzavřenou trasu** (poslední bod = první) OCCT protáhne jako poškozené těleso. Proto
+  `_sweep_paths` začne uprostřed první strany a trasu rozdělí na dvě poloviny, které se
+  potkají uprostřed rovné strany; obě se táhnou zvlášť a sečtou (všechny rohy na pokos).
+  Body uprostřed rovné části (`_without_straight`) se vynechají – `FilletPolyline` na nich
+  padá.
+- Hotové pole formuláře, které patří k jiné volbě (`when`), se při úpravě nečte
+  (`FieldsForm._commit`) – skryté hodnoty (šířka jeklu u kruhu) zůstanou v modelu.
+
+## Známé pasti (normalizované díly)
+
+- Díl se staví v místních souřadnicích „jak sedí na ploše“ (rovina z = 0, +Z ven): šroub
+  hlavou nahoru a dříkem do materiálu, matice/ložisko/kolík/tyč na ploše, pero spodkem
+  v hloubce t1. `direction: reverse` = zrcadlení podle roviny (kapsa do materiálu).
+- Kapsa (`operation: cut`) bere **obrys bez děr** zvětšený o vůli na každou stranu – jinak
+  by v kapse na matici či ložisko zůstal sloupek uprostřed (`part_shape(pocket=True)`).
+- Velikost má ve formuláři víc polí se stejným klíčem `size` (každé pro jiné druhy, `when`
+  s n-ticí hodnot). `FieldsForm.widget(key)` vrací to viditelné, `_commit` čte jen viditelná.
+- UPN: sklon vnitřní strany pásnice 8 %, tf platí v polovině šířky pásnice od hřbetu (b/2) –
+  jen tak plocha sedí s tabulkou (jinde o 1–1,5 % vedle). Nad UPN 300 by to bylo 5 % a
+  (b − tw)/2 od kraje – v tabulce zatím nejsou.
+- Úhelník L: r2 = r1/2 (výpočtová hodnota EN 10056-1). Jekly: rohy 2t/2,5t/3t vně, o t méně
+  uvnitř (EN 10219-2, výpočtové hodnoty).
+- Ložisko 688 otevřené je 8 × 16 × **4** (688ZZ se krytkami 5 mm) – zdroje se v tom pletou.
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -321,7 +370,8 @@
   zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
 - [x] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [x] šikmé a zakřivené plochy
   pro skicu (tečná rovina).
-- [ ] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
+- [x] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
   měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [x] řez modelem
-  (jen pohled, export DXF/SVG), [ ] sweep/loft, [ ] normalizované díly.
+  (jen pohled, export DXF/SVG), [x] tažení a přechod (formát verze 11),
+  [x] normalizované díly (formát verze 12).
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

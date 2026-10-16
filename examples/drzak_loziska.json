@@ -1,0 +1,24 @@
+{
+  "format": "skodacad",
+  "version": 12,
+  "name": "Držák ložiska 608 pro 3D tisk",
+  "description": "Ukázka normalizovaných dílů: kvádr s kapsou na kuličkové ložisko 608 (8 × 22 × 7), dvěma průchozími dírami M3 a kapsami na matice M3 zespodu – vše podle tabulek. Kapsy jsou o vůli v větší na každou stranu (pro tisk 0,1–0,2 mm). Ložisko a matice jsou prvek Normalizovaný díl s operací Odebrat a směrem „otočit do materiálu“. A × B × H = rozměry kvádru, e = rozteč děr.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"A": 60, "B": 30, "H": 12, "e": 44, "v": 0.15},
+  "features": [
+    {"id": "zaklad", "type": "sketch", "name": "Obrys", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "B", "corner_radius": 4}]},
+    {"id": "kvadr", "type": "extrude", "name": "Kvádr", "sketch": "zaklad", "distance": "H"},
+    {"id": "lozisko", "type": "standard", "name": "Kapsa na ložisko", "kind": "bearing",
+     "size": "608", "plane": "top", "positions": [[0, 0]], "direction": "reverse",
+     "operation": "cut", "clearance": "v"},
+    {"id": "hridel", "type": "hole", "name": "Průchod pro hřídel", "kind": "clearance",
+     "size": "M8", "fit": "coarse", "plane": "top", "positions": [[0, 0]], "through_all": true},
+    {"id": "diry", "type": "hole", "name": "Díry M3", "kind": "clearance", "size": "M3",
+     "plane": "top", "positions": [["-e/2", 0], ["e/2", 0]], "through_all": true},
+    {"id": "matice", "type": "standard", "name": "Kapsy na matice", "kind": "nut",
+     "size": "M3", "plane": "bottom", "positions": [["-e/2", 0], ["e/2", 0]],
+     "angle": 30, "direction": "reverse", "operation": "cut", "clearance": "v"}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "format": "skodacad",
+  "version": 11,
+  "name": "Trubkové koleno 90°",
+  "description": "Ukázka tažení po trase: trubka D × s ohnutá o 90° s poloměrem ohybu R a rovnými konci délky L od rohu trasy. Trasa jsou body [x; y; z] (roh trasy je průsečík os obou rovných částí), ohyb zaoblí roh jako ohýbačka. Poloměr ohybu 0 = ostrý roh, svařený na pokos. Jiný profil (jekl, vlastní skica) jde přepnout ve formuláři prvku. Rozměry jsou ilustrační.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"D": 48.3, "s": 3.2, "R": 72, "L": 150},
+  "features": [
+    {"id": "koleno", "type": "sweep", "name": "Koleno", "path": [[0, 0, 0], [0, 0, "L"],
+                                                                ["L", 0, "L"]],
+     "bend_radius": "R", "profile": "circle", "diameter": "D", "wall": "s"}
+  ],
+  "measurements": [
+    {"id": "m1", "name": "Tloušťka stěny v ohybu", "kind": "thickness",
+     "a": {"face": {"at": [4.0117, 0, 145.9883], "normal": [-0.7071, 0, 0.7071],
+                    "type": "torus"}}}
+  ]
+}

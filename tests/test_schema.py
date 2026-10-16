@@ -135,3 +135,18 @@ def test_pattern_fields_shown_by_kind_exist():
         if field.when:
             key, value = field.when
             assert value in {k for k, _ in fields[key].choices}
+
+
+def test_new_sweep_is_a_pipe_elbow_and_new_loft_joins_last_two_sketches():
+    features = []
+    add(features, "sweep")
+    length = 2 * 60 + math.pi / 2 * 40  # rovné části + ohyb R40
+    assert build(features).part.volume == pytest.approx(math.pi * (15**2 - 13**2) * length)
+    assert new_feature("sketch", features)["plane"] == "top"  # po tělese kreslí na díl
+
+    features = []
+    add(features, "sketch")
+    add(features, "sketch", offset=30, elements=[{"shape": "circle", "diameter": 20}])
+    loft = add(features, "loft")
+    assert loft["sketches"] == ["sketch1", "sketch2"]
+    assert build(features).part.volume > 0
