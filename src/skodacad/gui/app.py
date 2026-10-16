@@ -243,9 +243,42 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
                      f"{viewer.error or 'okno se nezobrazilo'}")
     ok = _self_test_sketcher(window, lines) and ok
     ok = _self_test_assistant(window, lines) and ok
+    ok = _self_test_ndt(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_ndt(window, lines: _Report) -> bool:
+    """NDT studie v okně: referenční deska – platná, po změně tloušťky zastaralá, Zpět platná
+    (a zvýraznění kontrolované oblasti ve 3D)."""
+    lines.stream.write("  … NDT studie\n")
+    lines.stream.flush()
+    folder = examples_dir()
+    model = folder / "ndt" / "deska.json" if folder is not None else None
+    if model is None or not model.exists():
+        lines.append("✕ NDT studie: chybí referenční díl ndt/deska.json")
+        return False
+    window.session.dirty = False
+    window.open_model(model, template=True)
+    panel, session = window.ndt_panel, window.session
+    panel.studies.setCurrentRow(0)  # → zvýraznění kontrolované oblasti ve 3D
+    QApplication.processEvents()
+    states = [[r.state for r in session.ndt_studies]]
+    field = window._param_fields["t"]
+    field.setText("30")
+    field.editingFinished.emit()
+    states.append([r.state for r in session.ndt_studies])
+    window.undo_action.trigger()
+    QApplication.processEvents()
+    states.append([r.state for r in session.ndt_studies])
+    if states != [["ok"], ["stale"], ["ok"]]:
+        lines.append(f"✕ NDT studie: stavy {' → '.join(map(str, states))} (čekáno platná → "
+                     "zastaralá → platná)")
+        return False
+    item = panel.studies.item(0).text() if panel.studies.count() else "?"
+    lines.append(f"✓ NDT studie: OK ({item}; po změně tloušťky zastaralá, Zpět platná)")
+    return True
 
 
 def _self_test_assistant(window, lines: _Report) -> bool:
