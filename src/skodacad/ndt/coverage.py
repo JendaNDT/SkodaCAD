@@ -1,0 +1,402 @@
+"""Mapa geometrického pokrytí UT: vzorky ploch/bodů, platné polohy a geometrická ramena.
+
+Tolerance je numerický poloměr zachycení, nikoli fyzikální šířka paprsku. Procenta ploch
+jsou vážená obsahy trojúhelníků. Bodové dotazy se počítají odděleně, bez fiktivní plochy.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from skodacad.ndt import UT_COVERAGE, UT_DISCLAIMER
+from skodacad.ndt.devices import Placement, place
+from skodacad.ndt.geometry import PartGeometry, Point
+from skodacad.ndt.ut import Refraction, trace_beam
+from skodacad.thickness_map import _Surface
+
+ALGORITHM = "ndt-ut-pokryti 1"
+PERCENT_NOTE = ("Procento vyjadřuje pouze geometrický podíl zasažené oblasti, "
+                "nikoli pravděpodobnost nalezení vady.")
+STATES = {"covered": "Geometricky pokryto", "uncovered": "Geometricky nepokryto",
+          "uncertain": "Nelze spolehlivě vyhodnotit"}
+COLORS = {"covered": (0.15, 0.70, 0.25), "uncovered": (0.85, 0.20, 0.15),
+          "uncertain": (0.90, 0.75, 0.15)}
+MAX_POSITIONS = 20_000
+MAX_COMPARISONS = 80_000_000
+
+
+class CoverageError(ValueError):
+    """Výpočet není možný nebo nastavení není platné (česky)."""
+
+
+@dataclass(frozen=True)
+class CoverageHit:
+    leg: int
+    distance: float
+    origin: Point
+
+
+@dataclass(frozen=True)
+class CoverageMap:
+    nodes: list[Point]
+    triangles: list[tuple[int, int, int]]
+    centers: list[Point]
+    areas: list[float]
+    states: list[str]
+    hits: list[CoverageHit | None]
+    reasons: list[str]
+    positions: int
+    valid_positions: int
+    uncertain_positions: int
+    assumptions: dict[str, Any]
+    seconds: float
+
+    @property
+    def total_area(self) -> float:
+        return sum(self.areas)
+
+    def area(self, state: str) -> float:
+        return sum(a for a, s in zip(self.areas, self.states, strict=True) if s == state)
+
+    def percent(self, state: str) -> float:
+        if self.total_area:
+            return 100 * self.area(state) / self.total_area
+        return 100 * self.states.count(state) / len(self.states) if self.states else 0.0
+
+    def mesh(self) -> tuple[list, list, list]:
+        """Oddělené uzly každé plošky: žádná interpolace mezi třemi stavy."""
+        nodes, triangles, colors = [], [], []
+        for tri, state in zip(self.triangles, self.states, strict=False):
+            start = len(nodes)
+            nodes.extend(self.nodes[i] for i in tri)
+            triangles.append((start, start + 1, start + 2))
+            colors.extend([COLORS[state]] * 3)
+        return nodes, triangles, colors
+
+    def summary(self) -> list[str]:
+        lines = [UT_COVERAGE, UT_DISCLAIMER, PERCENT_NOTE,
+                 f"Polohy sondy: {self.positions}, platné {self.valid_positions}, "
+                 f"nejisté {self.uncertain_positions}."]
+        for state, label in STATES.items():
+            quantity = (f"{self.area(state):.1f} mm²" if self.total_area
+                        else f"{self.states.count(state)} bodů")
+            lines.append(f"{label}: {self.percent(state):.2f} % ({quantity}).")
+        direct = sum(s == "covered" and h is not None and h.leg == 1
+                     for s, h in zip(self.states, self.hits, strict=True))
+        reflected = self.states.count("covered") - direct
+        lines += [f"První zásah: přímé rameno {direct} vzorků, odraz {reflected} vzorků.",
+                  f"Krok pojezdu {self.assumptions['scan_step_mm']:g} mm, "
+                  f"cíle {self.assumptions['target_step_mm']:g} mm, "
+                  f"tolerance {self.assumptions['tolerance_mm']:g} mm, "
+                  f"rozevření {self.assumptions['spread_deg']:g}°.",
+                  f"Výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}."]
+        lines.extend(dict.fromkeys(r for r in self.reasons if r))
+        return lines
+
+    def write_csv(self, path: str | Path) -> Path:
+        path = Path(path)
+        with path.open("w", encoding="utf-8-sig", newline="") as stream:
+            writer = csv.writer(stream, delimiter=";")
+            for text in (UT_COVERAGE, UT_DISCLAIMER, PERCENT_NOTE,
+                         json.dumps(self.assumptions, ensure_ascii=False, sort_keys=True)):
+                writer.writerow([text])
+            writer.writerow(["x [mm]", "y [mm]", "z [mm]", "obsah [mm²]", "stav", "důvod",
+                             "rameno", "dráha [mm]", "sonda x [mm]", "sonda y [mm]",
+                             "sonda z [mm]"])
+
+            def cz(value: float) -> str:
+                return f"{value:.6f}".replace(".", ",")
+
+            for p, a, state, hit, reason in zip(self.centers, self.areas, self.states,
+                                               self.hits, self.reasons, strict=True):
+                extra = ([hit.leg, cz(hit.distance), *(cz(v) for v in hit.origin)]
+                         if hit else [""] * 5)
+                writer.writerow([*(cz(v) for v in p), cz(a), STATES[state], reason, *extra])
+        return path
+
+
+def _number(value: float, label: str, minimum: float, maximum: float) -> float:
+    if (isinstance(value, bool) or not isinstance(value, int | float)
+            or not math.isfinite(value) or not minimum <= value <= maximum):
+        raise CoverageError(f"{label} musí být konečné číslo {minimum:g}–{maximum:g}.")
+    return float(value)
+
+
+def _grid_face(face: Any, step: float) -> list[Point]:
+    """Mřížka v parametrech plochy, body mimo ořezanou plochu (včetně otvorů) vynechává."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepClass import BRepClass_FaceClassifier
+    from OCP.BRepTools import BRepTools
+    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
+
+    surface = BRepAdaptor_Surface(face.wrapped)
+    u0, u1, v0, v1 = BRepTools.UVBounds_s(face.wrapped)
+
+    def intervals(axis: int) -> int:
+        # Nejdelší z pěti izokřivek, měřeno po úsecích (válcový obvod není tětiva).
+        lengths = []
+        for cross in range(5):
+            fixed = (v0 + (v1 - v0) * cross / 4 if axis == 0
+                     else u0 + (u1 - u0) * cross / 4)
+            low, high = (u0, u1) if axis == 0 else (v0, v1)
+            pts = [surface.Value(low + (high - low) * i / 32, fixed) if axis == 0
+                   else surface.Value(fixed, low + (high - low) * i / 32) for i in range(33)]
+            lengths.append(sum(a.Distance(b) for a, b in zip(pts, pts[1:], strict=False)))
+        return max(1, math.ceil(max(lengths) / step))
+
+    nu, nv = intervals(0), intervals(1)
+    if (nu + 1) * (nv + 1) > MAX_POSITIONS:
+        raise CoverageError("Pojezd by měl příliš mnoho poloh – zvětši krok výpočtu.")
+    classifier = BRepClass_FaceClassifier()
+    result = []
+    for i in range(nu + 1):
+        for j in range(nv + 1):
+            p = surface.Value(u0 + (u1 - u0) * i / nu, v0 + (v1 - v0) * j / nv)
+            classifier.Perform(face.wrapped, p, 1e-7)
+            if classifier.State() in (TopAbs_IN, TopAbs_ON):
+                result.append((p.X(), p.Y(), p.Z()))
+    return result
+
+
+def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, leg: Any,
+                      options: dict[str, Any], source: Point, mode: str, length: float,
+                      step: float, angle: float, cache: dict) -> tuple[CoverageHit, bool] | None:
+    """Numerická blízkost sama nezakryje slepé místo u překážky.
+
+    Na rovinném pojezdu dopočítá mezi uzly polohu osového paprsku, znovu ověří otisk,
+    kolizi i celou dráhu. Na zakřivené ploše tento rovinný důkaz nelze použít.
+    """
+    normal = placed.z_dir
+    denominator = sum(d * n for d, n in zip(leg.direction, normal, strict=True))
+    if abs(denominator) < 1e-9:
+        return None
+    distance = sum((t - a) * n for t, a, n in zip(point, leg.start, normal, strict=True))
+    distance /= denominator
+    shift = tuple(t - a - d * distance
+                  for t, a, d in zip(point, leg.start, leg.direction, strict=True))
+    if math.sqrt(sum(v * v for v in shift)) > step * 1.5:
+        return None
+    origin = tuple(o + delta for o, delta in zip(placed.origin, shift, strict=True))
+    if mode == "line":
+        offset = tuple(o - s for o, s in zip(origin, source, strict=True))
+        along = sum(v * d for v, d in zip(offset, placed.x_dir, strict=True))
+        off_line = sum((v - along * d)**2
+                       for v, d in zip(offset, placed.x_dir, strict=True))
+        if not -1e-6 <= along <= length + 1e-6 or off_line > 1e-10:
+            return None
+    key = tuple(round(v, 7) for v in origin)
+    if key not in cache:
+        surface = geo.surface_at(origin, placed.surface.face)
+        if surface.distance > 1e-6:
+            cache[key] = None
+        else:
+            candidate = place(geo, placed.probe, origin, angle=angle, face=placed.surface.face)
+            cache[key] = (trace_beam(geo, candidate, **options)
+                          if candidate.ok or candidate.state == "uncertain" else None)
+    beam = cache[key]
+    if beam is None:
+        return None
+    for candidate in beam.legs:
+        offset = tuple(t - a for t, a in zip(point, candidate.start, strict=True))
+        along = sum(v * d for v, d in zip(offset, candidate.direction, strict=True))
+        residual = sum((v - along * d)**2
+                       for v, d in zip(offset, candidate.direction, strict=True))
+        if -1e-6 <= along <= candidate.length + 1e-6 and residual < 1e-10:
+            hit = CoverageHit(candidate.index, candidate.cumulative_length - candidate.length
+                              + max(0, along), beam.placement.origin)
+            return hit, beam.placement.ok and candidate.certain
+    return None
+
+
+def _line_triangle_point(nodes: list[Point], triangle: tuple[int, int, int],
+                         placed: Placement, leg: Any) -> Point | None:
+    """Průnik plošky rovinou osového pojezdu: čára se vykreslí jako zasažené plošky.
+
+    Bodový dotaz vyžaduje zásah bodu; u plošky stačí zásah uvnitř trojúhelníku, ne nutně
+    přes jeho těžiště. Šířka takového pásu se při zjemňování sítě zmenšuje.
+    """
+    ax, ay, az = placed.x_dir
+    bx, by, bz = leg.direction
+    normal = (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+    vertices = [nodes[i] for i in triangle]
+    distances = [sum((v - a) * n for v, a, n in zip(p, leg.start, normal, strict=True))
+                 for p in vertices]
+    cuts = []
+    for i, j in ((0, 1), (1, 2), (2, 0)):
+        a, b = distances[i], distances[j]
+        if abs(a) < 1e-9:
+            cuts.append(vertices[i])
+        if a * b < 0:
+            t = a / (a - b)
+            cuts.append(tuple(v + t * (w - v)
+                              for v, w in zip(vertices[i], vertices[j], strict=True)))
+    if not cuts:
+        return None
+    return tuple(sum(p[i] for p in cuts) / len(cuts) for i in range(3))
+
+
+def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None = None,
+            points: list[Point] | None = None, mode: str = "face", scan_step: float = 5.0,
+            target_step: float = 4.0, length_mm: float = 50.0, angle_deg: float = 0.0,
+            tolerance_mm: float | None = None, spread_deg: float = 0.0,
+            beta: float | None = None, bounces: int | None = None,
+            max_length: float | None = None, refraction: Refraction | None = None) -> CoverageMap:
+    """Pokrytí cílových ploch NEBO bodů. Neplatná poloha nikdy nepřispívá k pokrytí.
+
+    Výpočet je diskrétní: 85,5 % pro desku je limit osového spojitého pojezdu bez tolerance,
+    nikoli přesná hodnota při libovolné mřížce a nenulové toleranci.
+    """
+    started = time.monotonic()
+    scan_step = _number(scan_step, "Krok pojezdu [mm]", 0.1, 1000)
+    target_step = _number(target_step, "Krok cíle [mm]", 0.1, 1000)
+    length_mm = _number(length_mm, "Délka pojezdu [mm]", 0, 100000)
+    angle_deg = _number(angle_deg, "Směr sondy [°]", -36000, 36000)
+    spread_deg = _number(spread_deg, "Rozevření [°]", 0, 45)
+    # Ve 2D je nejvzdálenější bod buňky půl úhlopříčky, ne 0,6 její strany.
+    default_tolerance = max(target_step * math.sqrt(0.5),
+                            scan_step * (math.sqrt(0.5) if mode == "face" else 0.6))
+    tolerance = default_tolerance if tolerance_mm is None else _number(
+        tolerance_mm, "Tolerance zachycení [mm]", 0, 1000)
+    if mode not in ("line", "face"):
+        raise CoverageError("Zvol pojezd po ploše (face) nebo po přímce (line).")
+    if bool(faces) == bool(points):
+        raise CoverageError("Vyber cílové plochy, nebo kontrolované body (právě jednu možnost).")
+    # Ověřit parametry paprsku i tehdy, když na pojezdu nebude žádná platná poloha.
+    initial_beam = trace_beam(geo, placement, beta, bounces, max_length, refraction)
+    if faces:
+        surface = _Surface(geo.part, target_step, faces)
+        nodes, triangles = surface.nodes, surface.triangles
+        centers, areas = surface.centers, surface.areas
+        reasons = [""] * len(centers)
+    else:
+        nodes, triangles, centers, areas, reasons = [], [], [], [], []
+        for raw in points:
+            if len(raw) != 3 or any(isinstance(v, bool) or not math.isfinite(v) for v in raw):
+                raise CoverageError("Kontrolovaný bod musí mít tři konečné souřadnice.")
+            point = tuple(float(v) for v in raw)
+            state = geo.classify(point)
+            if state == "outside":
+                raise CoverageError("Kontrolovaný bod leží mimo materiál dílu.")
+            reason = "Geometrie bodu není jednoznačná." if state == "unknown" else ""
+            if state == "surface":
+                reason = " ".join(geo.surface_at(point).reasons)
+            centers.append(point)
+            areas.append(0.0)
+            reasons.append(reason)
+    if not centers:
+        raise CoverageError("Kontrolovanou oblast se nepodařilo rozdělit – vyber jinou plochu.")
+    face = placement.surface.face
+    if mode == "face":
+        candidates = _grid_face(face, scan_step)
+        # Na malé kruhové/ořezané ploše mohou všechny rohy hrubé UV buňky ležet vně.
+        # Skutečně přiložená sonda je rovněž známá kandidátní poloha.
+        if not any(math.dist(p, placement.origin) < 1e-6 for p in candidates):
+            candidates.append(placement.origin)
+    else:
+        count = math.ceil(length_mm / scan_step)
+        if count + 1 > MAX_POSITIONS:
+            raise CoverageError("Přímá dráha má příliš mnoho poloh – zvětši krok výpočtu.")
+        candidates = [tuple(o + d * min(i * scan_step, length_mm)
+                            for o, d in zip(placement.origin, placement.x_dir, strict=True))
+                      for i in range(count + 1)]
+    if (len(candidates) > MAX_POSITIONS
+            or len(candidates) * len(centers) * (initial_beam.bounces + 1) > MAX_COMPARISONS):
+        raise CoverageError("Výpočet je příliš jemný – zvětši krok nebo zmenši cílovou oblast.")
+    states = ["uncertain" if r else "uncovered" for r in reasons]
+    hits: list[CoverageHit | None] = [None] * len(centers)
+    valid, uncertain = 0, 0
+    slope = math.tan(math.radians(spread_deg))
+    resolved: dict = {}
+    beam_options = dict(beta=beta, bounces=bounces, max_length=max_length, refraction=refraction)
+    for candidate in candidates:
+        # Přímka nesmí přichytit bod mimo ořezanou plochu k jejímu okraji.
+        surf = geo.surface_at(candidate, face)
+        if surf.distance > 1e-6:
+            continue
+        placed = place(geo, placement.probe, candidate, angle=angle_deg, face=face)
+        if not placed.ok and placed.state != "uncertain":
+            continue
+        valid += int(placed.ok)
+        uncertain += int(not placed.ok)
+        beam = trace_beam(geo, placed, beta, bounces, max_length, refraction)
+        for leg in beam.legs:
+            ax, ay, az = leg.start
+            dx, dy, dz = leg.direction
+            previous = leg.cumulative_length - leg.length
+            for k, (tx, ty, tz) in enumerate(centers):
+                if states[k] == "covered":
+                    continue
+                vx, vy, vz = tx - ax, ty - ay, tz - az
+                projection = vx * dx + vy * dy + vz * dz
+                # Disk osy/kužele na rameni, bez kulového prodloužení za konce ramene.
+                if projection < -1e-7 or projection > leg.length + 1e-7:
+                    continue
+                along = min(leg.length, max(0.0, projection))
+                radius = tolerance + (previous + along) * slope
+                h2 = (vx - along * dx)**2 + (vy - along * dy)**2 + (vz - along * dz)**2
+                if h2 > radius**2 + 1e-12:
+                    continue
+                certain = placed.ok and leg.certain and not reasons[k]
+                hit = CoverageHit(leg.index, previous + along, placed.origin)
+                physical_radius = (previous + along) * slope
+                if h2 > physical_radius**2 + 1e-10:
+                    target = (tx, ty, tz)
+                    if faces and mode == "line" and spread_deg == 0:
+                        target = _line_triangle_point(nodes, triangles[k], placed, leg)
+                        if target is None:
+                            continue
+                    if placed.surface.kind == "plane":
+                        verified = _resolve_axis_hit(geo, placed, target, leg, beam_options,
+                                                     placement.origin, mode, length_mm,
+                                                     scan_step, angle_deg, resolved)
+                        if verified is None:
+                            continue
+                        hit, verified_certain = verified
+                        certain = verified_certain and not reasons[k]
+                    else:
+                        certain = False
+                states[k] = "covered" if certain else "uncertain"
+                hits[k] = hit
+    for k, state in enumerate(states):
+        if state == "uncertain" and not reasons[k]:
+            reasons[k] = ("Zásah jen v numerické toleranci na zakřivené ploše, "
+                          "z nejistého přiložení nebo nejistého ramene paprsku.")
+    assumptions = {**initial_beam.assumptions, "coverage_algorithm": ALGORITHM,
+                   "mode": mode, "scan_step_mm": scan_step, "target_step_mm": target_step,
+                   "length_mm": length_mm, "angle_deg": angle_deg, "tolerance_mm": tolerance,
+                   "spread_deg": spread_deg, "probe": placement.probe.to_dict(),
+                   "source": placement.origin, "interpolated_positions_checked": len(resolved)}
+    return CoverageMap(nodes, triangles, centers, areas, states, hits, reasons, len(candidates),
+                       valid, uncertain, assumptions, time.monotonic() - started)
+
+
+@dataclass(frozen=True)
+class Convergence:
+    fine_pct: float
+    coarse_pct: float
+    delta_pct: float
+    stable: bool
+
+    @property
+    def text(self) -> str:
+        return (f"Citlivost na krok: největší rozdíl tří stavů {self.delta_pct:.2f} "
+                "procentního bodu "
+                f"(pokryto {self.fine_pct:.2f} % / {self.coarse_pct:.2f} % při 2× kroku); "
+                + ("stabilní do 1 p. b." if self.stable else "zjemni krok výpočtu."))
+
+
+def check_convergence(geo: PartGeometry, placement: Placement, **kwargs: Any) -> Convergence:
+    """Porovná krok a dvojnásobný krok; numerická tolerance zůstává stejná."""
+    fine = compute(geo, placement, **kwargs)
+    coarse_options = {**kwargs, "scan_step": fine.assumptions["scan_step_mm"] * 2,
+                      "target_step": fine.assumptions["target_step_mm"] * 2,
+                      "tolerance_mm": fine.assumptions["tolerance_mm"]}
+    coarse = compute(geo, placement, **coarse_options)
+    delta = max(abs(fine.percent(s) - coarse.percent(s)) for s in STATES)
+    return Convergence(fine.percent("covered"), coarse.percent("covered"), delta, delta <= 1)

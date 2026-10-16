@@ -217,6 +217,7 @@ class OccViewer(QWidget):
         self._highlight: AIS_Shape | None = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
+        self._coverage_objects: list[Any] = []
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
@@ -250,6 +251,7 @@ class OccViewer(QWidget):
         self._remove_measurement()
         self._remove_map()
         self._remove_probe()
+        self._remove_coverage()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -520,15 +522,58 @@ class OccViewer(QWidget):
         self._remove_map()
         self._view.Redraw()
 
+    def show_coverage_map(self, nodes: list, triangles: list, colors: list) -> None:
+        """Tři diskrétní barvy cílových plošek UT, nezávisle na sondě a měřeních."""
+        if not self.ready:
+            return
+        self._remove_coverage()
+        if not triangles:
+            self._view.Redraw()
+            return
+        from OCP.OCP.collections import HArray1_int
+
+        mesh = Poly_Triangulation(len(nodes), len(triangles), False)
+        for i, point in enumerate(nodes, start=1):
+            mesh.SetNode(i, gp_Pnt(*point))
+        for i, (a, b, c) in enumerate(triangles, start=1):
+            mesh.SetTriangle(i, Poly_Triangle(a + 1, b + 1, c + 1))
+        packed = HArray1_int(1, len(nodes))
+        for i, (r, g, b) in enumerate(colors, start=1):
+            packed.SetValue(i, int(r * 255) | int(g * 255) << 8 | int(b * 255) << 16)
+        shown = AIS_Triangulation(mesh)
+        shown.SetColors(packed)
+        shown.SetDisplayMode(0)
+        _unlit(shown)
+        self._context.Display(shown, False)
+        self._context.Deactivate(shown)
+        self._coverage_objects.append(shown)
+        if self._ais is not None:
+            self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
+        self._highlight_fill(False)
+        self._view.Redraw()
+
+    def hide_coverage_map(self) -> None:
+        if self.ready:
+            self._remove_coverage()
+            self._view.Redraw()
+
+    def _remove_coverage(self) -> None:
+        for shown in self._coverage_objects:
+            self._context.Remove(shown, False)
+        self._coverage_objects = []
+        if self._ais is not None and not self._map_objects:
+            self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
+        self._highlight_fill(bool(not self._map_objects))
+
     def _remove_map(self) -> None:
         if not self._map_objects:
             return
         for shown in self._map_objects:
             self._context.Remove(shown, False)
         self._map_objects = []
-        if self._ais is not None:
+        if self._ais is not None and not self._coverage_objects:
             self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
-        self._highlight_fill(True)
+        self._highlight_fill(not self._coverage_objects)
 
     def _highlight_fill(self, fill: bool) -> None:
         for kind in (Prs3d_TypeOfHighlight_LocalSelected, Prs3d_TypeOfHighlight_LocalDynamic):

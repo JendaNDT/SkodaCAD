@@ -306,6 +306,23 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     shown = window.viewer.dump(str(image)) if window.viewer.ready else False
     lines.append(f"✓ NDT sonda: OK ({placed.short}, {beam.short}, {scan.summary}, "
                  f"snímek {image}: {shown})")
+    from skodacad.ndt.devices import Probe
+
+    bottom = min(session.result.part.faces(), key=lambda face: face.center().Z)
+    session.set_ndt_target("s1", [bottom.wrapped], (0, 0, 0))
+    session.set_ndt_device("s1", Probe.straight(10))
+    top = max(session.result.part.faces(), key=lambda face: face.center().Z)
+    session.place_ndt_probe("s1", [top.wrapped], (0, 0, 20))
+    coverage = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    window._refresh_all()
+    QApplication.processEvents()
+    image = user_dir() / "self-test-pokryti.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    if not coverage.triangles or coverage.percent("covered") <= 0 or not shown:
+        lines.append("✕ Mapa geometrického pokrytí UT: výpočet nebo kreslení selhalo")
+        return False
+    lines.append(f"✓ Mapa geometrického pokrytí UT: {coverage.percent('covered'):.2f} %, "
+                 f"snímek {image}: {shown}")
     session.clear_ndt_placement()
     window._refresh_all()
     return True

@@ -232,7 +232,13 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
     else:
         x_dir = _tangent(normal, beam, probe.kind == "angle")
     plane = Plane(origin=Vector(*surface.point), x_dir=x_dir, z_dir=normal)
-    body = Location(plane) * probe.body()
+    templates = getattr(geo, "_probe_templates", None)
+    if templates is None:
+        templates = {}
+        geo._probe_templates = templates
+    if probe not in templates:
+        templates[probe] = probe.body()
+    body = Location(plane) * templates[probe]  # násobení polohou vytváří nový tvar
 
     gaps, contact, missing = [], 0, 0
     for sx, sy in probe.footprint():
@@ -249,8 +255,9 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
     total = contact + missing
     overhang = missing / total if total else 1.0
     gap = max(gaps) if gaps else None
-    volume = geo.collision(body).volume
     clearance = _clearance_above(geo, body, surface.point, surface.normal)
+    # Ořez pro vůli začíná 0,001 mm nad rovinou; drobnou kolizi tím nelze vyloučit.
+    volume = geo.collision(body).volume
 
     messages, problems = [], []
     if volume > OVERLAP_TOL:

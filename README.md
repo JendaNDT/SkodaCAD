@@ -322,8 +322,26 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
 * Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
   Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
   EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Lom podle Snellova
-  zákona (`--snell ALFA,C1,C2`) se počítá jen s výslovně zadanými rychlostmi. Další etapy UT:
-  *Mapa geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze spolehlivě vyhodnotit).
+  zákona (`--snell ALFA,C1,C2`) se počítá jen s výslovně zadanými rychlostmi.
+* **Mapa geometrického pokrytí UT (etapa 06):** vyber cílové plochy jako oblast platné UT
+  studie, nastav sondu a přilož ji na pojezdovou plochu. V panelu NDT zvol *Po ploše přiložení*
+  nebo *Z přímé dráhy*, krok v mm a **Spočítat pokrytí**. Přímá dráha používá *Délku čáry*.
+  Výpočet běží na pozadí, tlačítkem *Zastavit přepočet* jej lze přerušit. Barvy plošek:
+  zelená = geometricky pokryto, červená = geometricky nepokryto, žlutá = nelze spolehlivě
+  vyhodnotit. Souhrn obsahuje podíly v % i mm², počet poloh, krok a toleranci. **Export CSV…**
+  uloží vzorky, první zasahující rameno, délku dráhy a předpoklady. **Skrýt mapu** obnoví běžný
+  pohled. Při zobrazení pokrytí má tato mapa přednost před mapou tloušťky; řez ji ořízne.
+  Po změně dílu, studie, sondy či přiložení výsledek zanikne; do JSON se neukládá (verze 15).
+  Numerická tolerance sama neospravedlňuje kolidující polohu sondy: na rovinném pojezdu se
+  mezilehlé polohy znovu ověřují. Procento je geometrický podíl, nikoli pravděpodobnost nálezu
+  vady. Krok zjemni a porovnej výsledky; u bodových dotazů jde o podíl bodů, nikoli plochu.
+
+  Příklady příkazové řádky (bez změny modelu):
+
+  ```powershell
+  python -m skodacad pokryti examples/ndt/deska.json --plocha 0,0,20 --prima 10 --cil-plocha 0,0,0 --krok 5 --konvergence --csv pokryti.csv
+  python -m skodacad pokryti examples/ndt/zebro.json --plocha 60,0,20 --cil 0,0,0 --sklon 45 --smer 180 --odrazy 0 --rezim line --delka 50 --krok 2
+  ```
 
 ### Tažení a přechod
 

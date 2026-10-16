@@ -121,6 +121,16 @@
 
 ## Architektura (`src/skodacad/`)
 
+Etapa 06 (schválena autorem, implementována ve vývojové větvi): `ndt/coverage.py` počítá plochy
+nebo body z pojezdu `face`/`line`, tři stavy, CSV a citlivost na krok. `ModelSession` drží
+mapu pouze jako pohled; výpočet v okně používá `BackgroundRebuilder` a jde zrušit. Formát
+zůstává 15. `skodacad pokryti` vyžaduje `--plocha` a cíle (`--cil`, `--cil-plocha`, `--studie`).
+Numerická tolerance nesmí obejít otisk, kolizi ani rezervu: na rovině se mezilehlá poloha
+sondy skutečně přiloží a paprsek znovu spočítá. Na zakřivené ploše je pouhá numerická
+blízkost nejistá. Citlivost porovnává krok a 2× krok při stejné toleranci. Povinné upozornění
+UT a význam procenta jsou v panelu, CLI i CSV. V `devices.place` nelze ořez odsazený o 0,001 mm
+použít k vyloučení kolize; mohl by přehlédnout nízkou překážku (hlídá regresní test).
+
 | Soubor | Úloha |
 |---|---|
 | `document.py` | načtení/uložení JSON, kontrola struktury, `DocumentError` |
@@ -570,7 +580,8 @@
   [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
   [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
-  [ ] 05 ruční pohyb sondy (milník M1) …
+  [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (ve vývojové větvi),
+  [ ] 07 svar a cílová oblast jako NDT objekty …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
