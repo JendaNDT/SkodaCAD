@@ -19,6 +19,7 @@ from skodacad.ndt.geometry import (
     THROUGH_EDGE,
     GeometryError,
     PartGeometry,
+    self_check,
 )
 
 NDT = EXAMPLES / "ndt"
@@ -250,3 +251,45 @@ def test_faces_of_study_target():
     assert problems == ["Plocha č. 2: Plocha u bodu [0; 0; 10] už na dílu není – vyber ji "
                         "znovu ve 3D."]
     assert plate.faces_of(None) == ([], [])
+
+
+# --- příkazová řádka ------------------------------------------------------------------------
+
+
+def test_cli_ray_through_pipe(capsys):
+    from skodacad.cli import main
+
+    assert main(["paprsek", str(NDT / "trubka.json"), "--z", "0,0,100", "--smer",
+                 "0,0,-1"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:4] == [
+        "Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):",
+        "  úsek 1: 42.85 → 48.85 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)",
+        "  úsek 2: 151.15 → 157.15 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)",
+        "  celkem v materiálu: 12.00 mm (jen jisté úseky), jistota: ok",
+    ]
+
+
+def test_cli_ray_negative_coordinates_overrides_and_uncertainty(capsys):
+    from skodacad.cli import main
+
+    assert main(["paprsek", str(NDT / "deska.json"), "--z", "-150,0,20", "--smer",
+                 "1;0;0"]) == 0
+    out = capsys.readouterr().out
+    assert "materiálem neprochází" in out and "jistota: NEJISTÉ" in out
+    assert f"⚠ {ALONG_SURFACE}" in out
+    assert main(["paprsek", str(NDT / "deska.json"), "--z", "0;0;50", "--smer", "0,0,-1",
+                 "--set", "t=30", "--delka", "40"]) == 0
+    assert "20.00 → 40.00 mm, v materiálu 20.00 mm (vstup 0.0°, pokračuje za konec " \
+           "paprsku)" in capsys.readouterr().out
+    assert main(["paprsek", str(NDT / "deska.json"), "--z", "0,0", "--smer", "0,0,1"]) == 2
+    assert "musí být tři čísla" in capsys.readouterr().err
+    assert main(["paprsek", str(NDT / "deska.json"), "--z", "0,0,0", "--smer", "0,0,0"]) == 2
+    assert "nesmí být nulový" in capsys.readouterr().err
+
+
+def test_self_check_used_by_application_self_test():
+    ok, text = self_check(NDT)
+    assert ok, text
+    assert text == ("NDT geometrie: OK (paprsek trubkou 12.00 mm, přímka v ploše nejistá, "
+                    "kolize sondy 1500 mm³)")

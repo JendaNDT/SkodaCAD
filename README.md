@@ -255,6 +255,11 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   se dalo – po změně dílu se ukáže „ověření neplatí“. Změna metody nebo oblasti ho smaže.
 * Každá úprava studie je jeden krok **Zpět**; změníš tloušťku → studie zastaralá → Ctrl+Z →
   zase platná.
+* **Geometrické jádro NDT** (etapa 02, zatím bez okna): průchod přímky dílem (úseky
+  v materiálu, úhly dopadu), směr a zakřivení plochy, bod uvnitř/vně, viditelnost a kolize
+  tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
+  tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
+  jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
 
 ### Tažení a přechod
 
@@ -394,6 +399,19 @@ skodacad build examples/priruba.json --set n=8  # totéž s 8 dírami místo 4
 skodacad build examples/krabicka.json --format 3mf,svg
 skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → priruba-ai.json
 skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
+skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
+```
+
+`skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
+(úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
+`0,0,100`, s desetinnou čárkou `"0;0;12,5"`; `--delka` omezí délku přímky, `--set` dočasně
+změní parametr. Jde jen o geometrii přímky – ne o fyzikální model UT:
+
+```
+Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):
+  úsek 1: 42.85 → 48.85 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
+  úsek 2: 151.15 → 157.15 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
+  celkem v materiálu: 12.00 mm (jen jisté úseky), jistota: ok
 ```
 
 `skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako

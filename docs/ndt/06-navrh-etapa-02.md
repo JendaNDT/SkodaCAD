@@ -3,7 +3,7 @@
 > Etapa 02 plánu `03-implementacni-plan.md`. Zatím **jen návrh** – kód až po schválení.
 > Jde o geometrii (kudy vede přímka, kde je materiál), ne o fyziku UT ani detekovatelnost.
 
-Stav: návrh 16. 10. 2026 · navazuje na etapy 00–01 (větev `ccr-299f2dcb-9w8xc9`)
+Stav: návrh 16. 10. 2026 · **schváleno a provedeno** (hraniční případy = nejisté s důvodem, příkaz `skodacad paprsek`; odchylky označené „Provedeno:“)
 
 ## 1. Co etapa přinese
 
@@ -28,7 +28,7 @@ Open CASCADE:
 | Paprsek trubkou svisle osou | 42,85 / 48,85 / 151,15 / 157,15 → dva úseky po **6 mm** ✓ |
 | Kolize kvádru 40 × 20 × 25 se žebrem (zasunutý o 3 mm) | průnik **1 500 mm³** = 3 × 20 × 25 ✓; položený na plochu 0 mm³ ✓ |
 | Zakřivení vnější plochy trubky | poloměr **57,15 mm** po obvodu, rovná podél osy ✓ |
-| Rychlost | paprsek i s rozdělením na úseky **0,04–0,08 ms** (≈ 10 000 paprsků/s); kolize 3–6 ms |
+| Rychlost | paprsek i s rozdělením na úseky **0,04–0,08 ms** (≈ 10 000 paprsků/s); kolize 3–6 ms. *Provedeno:* i s kontrolou hran a ověřením každého úseku **0,25–0,4 ms** (≈ 3 000 paprsků/s) |
 | ⚠ Paprsek ležící **přesně v horní ploše** desky | jádro hlásí „vstup“ a „výstup“ → naivně 200 mm v materiálu, ve skutečnosti **nic** |
 | ⚠ Paprsek přesně **přes hranu** desky | stejný průsečík dvakrát (dvě plochy u hrany) |
 
@@ -127,3 +127,8 @@ Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):
 | 4 | README, CLAUDE.md, `docs/ndt/README.md` | popis, pasti (paprsek v ploše, hrana), plán |
 
 Formát souboru se **nemění**, nové knihovny **žádné**, okno beze změny.
+
+*Provedeno navíc:* šev válce a koule a body na pólech koule nejsou hrany (jinak by paprsek
+osou otvoru vyšel „přes hranu“); na pólu koule se normála počítá náhradním způsobem; bod
+plochy přesně na hraně mezi plochami je nejednoznačný (`ON_EDGE`). Zakřivení má znaménko:
++ vypouklá plocha (vnějšek trubky), − vydutá (díra, vnitřek trubky).

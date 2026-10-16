@@ -7,7 +7,8 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 3. [Kompletní implementační plán](03-implementacni-plan.md) – integrované pořadí etap, závislosti, výstupy a ověřování.
 4. [Návrh etap 00 a 01](04-navrh-etapa-00-01.md) – inventura rozhraní, referenční díly a datový model NDT studie (schváleno 16. 10. 2026).
 5. [Referenční díly](05-referencni-dily.md) – osm modelů v `examples/ndt/` s ručně spočítanými očekávanými výsledky (čeká na ověření NDT technikem).
+6. [Návrh etapy 02](06-navrh-etapa-02.md) – společné geometrické jádro: paprsek, bod plochy, uvnitř/vně, viditelnost, kolize (schváleno a provedeno 16. 10. 2026).
 
-**Stav:** etapa 00 (referenční díly) a etapa 01 (NDT studie v souboru modelu, formát verze 13, panel NDT v okně) jsou hotové. Další na řadě je etapa 02 – společné geometrické jádro.
+**Stav:** etapy 00 (referenční díly), 01 (NDT studie v souboru modelu, formát verze 13, panel NDT v okně) a 02 (geometrické jádro `ndt/geometry.py`, příkaz `skodacad paprsek`) jsou hotové. Další na řadě je etapa 03 – polohování a obálky NDT zařízení (virtuální sonda na povrchu, kolize, volný prostor).
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

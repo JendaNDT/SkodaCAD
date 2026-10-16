@@ -81,6 +81,11 @@
   s výstupním bodem 12 mm od čela. **NDT studie v souboru modelu** (sekce `ndt`, formát
   verze 13), otisk dílu z receptu, stavy platná/zastaralá/neúplná/neplatná vazba, panel NDT.
   NDT nikdy nemění geometrii, výsledky se neukládají, AI není zdroj čísel.
+- (16. 10. 2026, schváleno) **NDT etapa 02 – geometrické jádro** (`ndt/geometry.py`, návrh
+  `docs/ndt/06-navrh-etapa-02.md`): paprsek s úseky v materiálu, bod plochy se zakřivením,
+  uvnitř/vně, viditelnost, kolize tělesa. Hraniční případy (po povrchu, přes hranu, tečně) =
+  **nejisté s českým důvodem**, nikdy materiál. Jen přesné těleso OCCT (síť až podle potřeby),
+  příkaz `skodacad paprsek`. Formát se nemění.
 
 ## Architektura (`src/skodacad/`)
 
@@ -100,7 +105,7 @@
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build` a `skodacad ai` |
+| `cli.py` | příkazová řádka `skodacad build`, `skodacad ai` a `skodacad paprsek` |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
@@ -110,6 +115,7 @@
 | `thickness_map.py` | mapa tloušťky stěny: síť povrchu (půlení nejdelší strany v u, v), tloušťka v těžištích, barvy, souhrn, CSV |
 | `section.py` | řez modelem: rovina řezu, přesný řez, plochy řezu, export DXF/SVG, ořez sítě mapy rovinou |
 | `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost; studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
+| `ndt/geometry.py` | NDT geometrické jádro (`PartGeometry`): `cast` (průsečíky, úseky v materiálu, jistota), `classify`, `surface_at` (normála, zakřivení), `visible`, `collision` (průnik, vůle), `faces_of`; konstanty `ALGORITHM`, tolerance |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
@@ -383,6 +389,28 @@
 - Referenční díly jsou v podsložce `examples/ndt/` – test ukázek, nabídka (`_reference_parts`,
   řazení podle čísla v názvu), self-test i `skodacad.spec` ji procházejí zvlášť.
 
+## Známé pasti (NDT geometrické jádro)
+
+- `IntCurvesFace_ShapeIntersector` hlásí **vstup i výstup u přímky ležící v ploše** (deska
+  „naplocho“ → 200 mm „v materiálu“) a průsečík na hraně dvakrát. Úseky se proto nikdy
+  nepárují z přechodů – každý kousek mezi průsečíky ověří `classify` bodem uprostřed;
+  „na povrchu“ = `ALONG_SURFACE`, nejistý úsek se do `material_length` nepočítá.
+- Šev válce/koule (`BRep_Tool.IsClosed_s(edge, face)`) a degenerované hrany na pólech nejsou
+  hrany – `_edge_distance` je přeskočí, jinak by paprsek osou otvoru byl „přes hranu“.
+  Dvakrát **táž** plocha v jednom bodě = šev, ne hrana.
+- Na pólu koule dává `BRepGProp_Face.Normal` nulový vektor → `_outward_normal` použije
+  `BRepLProp_SLProps` (orientaci plochy otočí ručně). Normála z intersectoru je jinak už
+  ven z materiálu i u vnitřní stěny.
+- Zakřivení z `SLProps` je vůči normále plochy (kladné = ohýbá se k ní); znaménko se srovná
+  podle normály ven: + vypouklá (vnějšek trubky), − vydutá (díra).
+- `BRepAlgoAPI_Common` v OCCT 8 nemá `HasErrors` – jen `IsDone`. Nespočítaný průnik =
+  kolize se nevylučuje (`NO_OVERLAP`, `colliding=True`). Dotyk (objem pod 0,001 mm³) není
+  kolize; vůle se měří k plochám dílu bez té, na které těleso stojí (`ignore_faces`).
+- Rychlost: paprsek ~0,25–0,4 ms (průsečíky + kontrola hran + `classify` úseků; mimo obalový
+  kvádr se `classify` přeskočí), kolize 3–6 ms.
+- `skodacad paprsek --z -150,0,20`: argparse by zápornou trojici vzal jako volbu – `cli.
+  _glue_negative` ji přilepí (`--z=-150,0,20`).
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -441,5 +469,5 @@
 - [ ] **Fáze 4** – [x] AI asistent upravující model (Claude API, panel v okně, `skodacad ai`),
   [ ] omezené přímé úpravy ploch.
 - [ ] **NDT modul** (plán `docs/ndt/03-implementacni-plan.md`) – [x] etapa 00 referenční díly,
-  [x] etapa 01 NDT studie v modelu (formát v13, panel), [ ] etapa 02 společné geometrické jádro,
+  [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
   [ ] 03 polohování a obálky zařízení, [ ] 04–05 UT paprsek a ruční pohyb sondy (milník M1) …

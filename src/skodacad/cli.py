@@ -1,9 +1,11 @@
-"""Příkazová řádka: ``skodacad build model.json`` a ``skodacad ai model.json "úprava"``.
+"""Příkazová řádka: ``skodacad build model.json``, ``skodacad ai model.json "úprava"`` a
+``skodacad paprsek model.json --z x,y,z --smer dx,dy,dz``.
 
 ``build`` postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená
 měření, mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty
 do složky ``out/``. ``ai`` upraví model podle popisu přes AI asistenta (Claude API);
-když soubor modelu neexistuje, vytvoří nový díl.
+když soubor modelu neexistuje, vytvoří nový díl. ``paprsek`` vypíše průchod přímky dílem
+(úseky v materiálu, úhly dopadu, jistotu) – geometrie NDT bez okna.
 """
 
 from __future__ import annotations
@@ -54,13 +56,84 @@ def main(argv: list[str] | None = None) -> int:
                     "nastavení, jinak claude-opus-5-5)")
     ai.add_argument("--dukladnost", choices=list(EFFORTS),
                     help="low = rychle a levně, medium, high = důkladně (výchozí)")
-    args = parser.parse_args(argv)
+    ray = commands.add_parser("paprsek", help="průchod přímky dílem: úseky v materiálu (NDT)")
+    ray.add_argument("model", type=Path, help="soubor modelu (.json)")
+    ray.add_argument("--z", dest="origin", required=True, metavar="X,Y,Z",
+                     help="počátek paprsku v mm, např. 0,0,100 (nebo \"0;0;12,5\")")
+    ray.add_argument("--smer", dest="direction", required=True, metavar="DX,DY,DZ",
+                     help="směr paprsku, např. 0,0,-1")
+    ray.add_argument("--delka", type=float, help="délka paprsku v mm (výchozí: přes celý díl)")
+    ray.add_argument("--set", dest="overrides", action="append", default=[],
+                     metavar="NÁZEV=HODNOTA", help="dočasně změň parametr, např. --set t=30")
+    args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
+        if args.command == "paprsek":
+            return _ray(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
         return 2
+
+
+def _ray(args: argparse.Namespace) -> int:
+    from skodacad.ndt.geometry import ALGORITHM, GeometryError, PartGeometry
+
+    origin, direction = _vector(args.origin, "--z"), _vector(args.direction, "--smer")
+    document = Document.load(args.model)
+    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    if result.part is None:
+        raise ValueError("Model nemá těleso – paprsek nemá čím procházet.")
+    try:
+        ray = PartGeometry(result.part).cast(origin, direction, args.delka)
+    except GeometryError as exc:
+        raise ValueError(str(exc)) from None
+    print(f"Paprsek z [{_coords(origin)}] směrem [{_coords(direction)}] "
+          f"(algoritmus {ALGORITHM}):")
+    if not ray.segments:
+        print("  materiálem neprochází")
+    for number, segment in enumerate(ray.segments, start=1):
+        entry = (f"vstup {segment.entry.incidence:.1f}°" if segment.entry
+                 else "začíná v materiálu")
+        exit_ = (f"výstup {segment.exit.incidence:.1f}°" if segment.exit
+                 else "pokračuje za konec paprsku")
+        mark = "" if segment.certain else " – NEJISTÝ"
+        print(f"  úsek {number}: {segment.start:.2f} → {segment.end:.2f} mm, v materiálu "
+              f"{segment.length:.2f} mm ({entry}, {exit_}){mark}")
+    print(f"  celkem v materiálu: {ray.material_length:.2f} mm (jen jisté úseky), jistota: "
+          + ("ok" if ray.certain else "NEJISTÉ"))
+    for reason in ray.reasons:
+        print(f"  ⚠ {reason}")
+    print("  (jen geometrie přímky – ne fyzikální model UT ani detekovatelnost vad)")
+    return 0
+
+
+def _glue_negative(argv: list[str]) -> list[str]:
+    """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
+    glued: list[str] = []
+    items = iter(argv)
+    for item in items:
+        if item in ("--z", "--smer"):
+            value = next(items, None)
+            glued.append(item if value is None else f"{item}={value}")
+        else:
+            glued.append(item)
+    return glued
+
+
+def _vector(text: str, option: str) -> tuple[float, float, float]:
+    """„0,0,100“ nebo „0;0;12,5“ (s desetinnou čárkou) → tři čísla."""
+    parts = text.split(";") if ";" in text else text.split(",")
+    try:
+        x, y, z = (float(part.strip().replace(",", ".")) for part in parts)
+    except ValueError:
+        raise ValueError(f"{option} „{text}“ musí být tři čísla, např. 0,0,100 nebo "
+                         "\"0;0;12,5\".") from None
+    return (x, y, z)
+
+
+def _coords(values: tuple[float, float, float]) -> str:
+    return "; ".join(f"{v:g}" for v in values)
 
 
 def _parse_overrides(items: list[str]) -> dict[str, float]:

@@ -371,6 +371,36 @@ class PartGeometry:
         return Hit(distance, where, out, incidence, cosine < 0, tuple(reasons), Face(face))
 
 
+# --- kontrola pro self-test ---------------------------------------------------------------
+
+
+def self_check(folder: Any) -> tuple[bool, str]:
+    """Rychlá kontrola jádra na referenčních dílech (self-test aplikace, i ve Windows):
+    paprsek trubkou 2 × 6 mm, přímka v ploše desky nejistá, sonda zasunutá 3 mm do žebra
+    koliduje (3 × 20 × 25 mm³). Vrátí (v pořádku, český řádek zprávy)."""
+    from pathlib import Path
+
+    from build123d import Box, Pos
+
+    from skodacad.document import Document
+    from skodacad.rebuild import rebuild
+
+    def part(name: str) -> Part:
+        return rebuild(Document.load(Path(folder) / f"{name}.json")).part
+
+    pipe = PartGeometry(part("trubka")).cast((0, 0, 100), (0, 0, -1))
+    flat = PartGeometry(part("deska")).cast((-150, 0, 20), (1, 0, 0))
+    hit = PartGeometry(part("zebro")).collision(Pos(22, 0, 32.5) * Box(40, 20, 25))
+    if (abs(pipe.material_length - 12) < 1e-6 and pipe.certain
+            and flat.material_length == 0 and not flat.certain
+            and hit.colliding and abs(hit.volume - 1500) < 1e-3):
+        return True, (f"NDT geometrie: OK (paprsek trubkou {pipe.material_length:.2f} mm, "
+                      f"přímka v ploše nejistá, kolize sondy {hit.volume:.0f} mm³)")
+    return False, (f"NDT geometrie: paprsek {pipe.material_length:.2f} mm, v ploše "
+                   f"{flat.material_length:.2f} mm ({'; '.join(flat.reasons) or 'jisté'}), "
+                   f"kolize {hit.volume:.1f} mm³ (čekáno 12, 0 a nejisté, 1500)")
+
+
 # --- pomocné výpočty -----------------------------------------------------------------------
 
 

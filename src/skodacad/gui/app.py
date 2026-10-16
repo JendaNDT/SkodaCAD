@@ -200,6 +200,7 @@ def _run_self_test(lines: _Report) -> int:
                 lines.append(f"✕ ndt/{model.name}: {result.first_error.message}")
         if references and ok:
             lines.append(f"✓ Referenční díly NDT: {len(references)} postaveno")
+            ok = _self_test_ndt_geometry(folder / "ndt", lines) and ok
 
         ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
@@ -246,6 +247,15 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_ndt(window, lines) and ok
     window.session.dirty = False
     window.close()
+    return ok
+
+
+def _self_test_ndt_geometry(folder: Path, lines: list[str]) -> bool:
+    """NDT geometrické jádro bez okna (kontrolu dělá jádro – okno nemodeluje)."""
+    from skodacad.ndt.geometry import self_check
+
+    ok, text = self_check(folder)
+    lines.append(("✓ " if ok else "✕ ") + text)
     return ok
 
 
