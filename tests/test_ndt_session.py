@@ -277,3 +277,81 @@ def test_cli_probe(capsys):
     assert "délka x šířka x výška" in capsys.readouterr().err
     assert main(["sonda", str(NDT / "zebro.json"), "--bod", "22,0,40"]) == 2
     assert "od povrchu dílu" in capsys.readouterr().err
+
+
+# --- ruční pohyb sondy (etapa 05) -----------------------------------------------------------
+
+
+def test_probe_move_shift_and_line_scan_on_zebro():
+    session = opened("zebro")
+    top = face_at(session.result.part, 60, 0, 20)
+    with pytest.raises(DocumentError, match="Sonda není přiložená"):
+        session.shift_ndt_probe(1)
+    with pytest.raises(DocumentError, match="Sonda není přiložená"):
+        session.scan_ndt_line(10)
+    with pytest.raises(DocumentError, match="Čára posuvu není spočítaná"):
+        session.select_ndt_scan_index(0)
+
+    session.place_ndt_probe("s1", [top.wrapped], (22, 0, 20), angle=180)
+    moved = session.move_ndt_probe(None, [top.wrapped], (20, 0, 20))
+    assert moved.origin == pytest.approx((20, 0, 20))
+    assert moved.clearance == pytest.approx(3)  # zachovalo studii s1 i úhel 180°
+
+    shifted = session.shift_ndt_probe(5)  # +5 mm ve směru paprsku (−X) → x = 15 → kolize s žebrem
+    assert shifted.origin == pytest.approx((15, 0, 20))
+    assert shifted.state == "collision"
+    back = session.shift_ndt_probe(-7)  # −7 mm dozadu (+X) → x = 22
+    assert back.origin == pytest.approx((22, 0, 20))
+    assert back.ok
+    with pytest.raises(DocumentError, match="mimo plochu"):
+        session.shift_ndt_probe(-200)
+    assert session.ndt_placement.origin == pytest.approx((22, 0, 20))  # neplatný posun nic nemění
+
+    scan = session.scan_ndt_line(length=10, step=1)
+    assert session.ndt_line_scan is scan
+    assert scan.free_ranges == ((0, 5),)
+    assert "Volně: 0–5 mm. První potíž po 6 mm: Koliduje." in scan.summary
+    at_collision = session.select_ndt_scan_index(6)
+    assert session.ndt_scan_index == 6
+    assert at_collision.state == "collision"
+    assert session.ndt_line_scan is scan  # posun po čáře čáru nesmaže
+    with pytest.raises(DocumentError, match="mimo rozsah"):
+        session.select_ndt_scan_index(99)
+    session.turn_ndt_probe(90)
+    assert session.ndt_line_scan is None  # natočení sondy čáru zruší
+
+
+def test_probe_move_across_reference_parts():
+    # tupý svar: posun úhlové sondy 60° s 1 odrazem ukáže přechod přímého a odraženého paprsku
+    svar = opened("tupy_svar")
+    svar.set_ndt_device("s1", {"kind": "angle", "beam_angle": 60, "bounces": 1})
+    top = face_at(svar.result.part, -40, 0, 12)
+    svar.place_ndt_probe("s1", [top.wrapped], (-45, 0, 12), angle=0)
+    assert svar.ndt_beam.ok and len(svar.ndt_beam.legs) == 2
+    svar.shift_ndt_probe(20)  # blíž ke svaru (x = -25)
+    assert svar.ndt_placement.origin == pytest.approx((-25, 0, 12))
+    assert svar.ndt_beam.ok and svar.ndt_beam.legs[0].end[2] == pytest.approx(0)
+
+    # trubka: kolmá sonda Ø20 nedosedá, Ø6 dosedá i po posunu po plášti
+    trubka = opened("trubka")
+    outer = face_at(trubka.result.part, 0, 0, 57.15)
+    trubka.set_ndt_device("s1", {"kind": "straight", "diameter": 20})
+    placed = trubka.place_ndt_probe("s1", [outer.wrapped], (0, 0, 57.15))
+    assert placed.state == "lift_off"
+    trubka.set_ndt_device("s1", {"kind": "straight", "diameter": 6})
+    assert trubka.ndt_placement.ok
+    shifted = trubka.shift_ndt_probe(15)
+    assert shifted.ok and trubka.ndt_beam.ok
+
+    # kapsa: na dně kapsy Ø20 uprostřed sedí, po posunu narazí do stěny; zespodu dráha 15 → 40 mm
+    kapsa = opened("kapsa")
+    kapsa.set_ndt_device("s1", {"kind": "straight", "diameter": 20})
+    floor = face_at(kapsa.result.part, 0, 0, 15)
+    assert kapsa.place_ndt_probe("s1", [floor.wrapped], (0, 0, 15), angle=0).ok
+    assert kapsa.shift_ndt_probe(14).state == "collision"
+    bottom = face_at(kapsa.result.part, 0, 0, 0)
+    kapsa.move_ndt_probe("s1", [bottom.wrapped], (0, 0, 0), angle=0)
+    assert kapsa.ndt_beam.legs[0].length == pytest.approx(15)
+    kapsa.move_ndt_probe("s1", [bottom.wrapped], (40, 0, 0), angle=0)
+    assert kapsa.ndt_beam.legs[0].length == pytest.approx(40)
+

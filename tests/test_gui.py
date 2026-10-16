@@ -19,6 +19,8 @@ from skodacad.inspection import number  # noqa: E402
 class FakeViewer(QtWidgets.QWidget):
     selection_changed = Signal(list)
     context_menu_requested = Signal(QPoint)
+    probe_dragged = Signal(list, object)
+    probe_rotated = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -30,6 +32,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
         self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
+        self.probe_drag_enabled = False
 
     def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
@@ -70,6 +73,14 @@ class FakeViewer(QtWidgets.QWidget):
         """Jako by uživatel klikl (s Ctrl) na tyto plochy/hrany."""
         self.picked_point = point
         self.selection_changed.emit([shape.wrapped for shape in shapes])
+
+    def drag_probe(self, shapes, point):
+        """Jako by uživatel táhl sondou (režim Jezdit sondou myší / Alt+tah) po ploše."""
+        self.picked_point = point
+        self.probe_dragged.emit([shape.wrapped for shape in shapes], point)
+
+    def rotate_probe(self, delta_deg):
+        self.probe_rotated.emit(delta_deg)
 
     def fit_all(self):
         self.views.append("fit")
@@ -1268,6 +1279,48 @@ def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_erro
     panel.method_combo.setCurrentIndex(panel.method_combo.findData("RT"))
     assert panel.warning.text() == DISCLAIMER
     assert not panel.probe_action.isEnabled()
+    assert slot_errors == []
+
+
+def test_ndt_probe_interactive_drag_step_and_scan(rib_window, slot_errors):
+    w = rib_window
+    panel = w.ndt_panel
+    top = face_at(w.session.result.part, 22, 0, 20)
+
+    # režim „Jezdit sondou myší“ přiloží a plynule posouvá sondu po ploše
+    assert panel.drag_probe_action.isEnabled()
+    assert not panel.step_forward_action.isEnabled()
+    assert not panel.scan_action.isEnabled()
+    panel.angle.setValue(180)
+    panel.drag_probe_action.trigger()
+    assert w.viewer.probe_drag_enabled
+    w.viewer.drag_probe([top], (22, 0, 20))
+    assert w.viewer.probe[0] == "ok" and w.viewer.probe[1] == pytest.approx((22, 0, 20))
+    w.viewer.drag_probe([top], (19, 0, 20))
+    assert w.viewer.probe[1] == pytest.approx((19, 0, 20))
+    assert "volno k překážkám 2.00 mm" in panel.placement_label.text()
+
+    # krokový posun ◀ / ▶ a otáčení kolečkem
+    panel.step_mm.setValue(3.0)
+    panel.step_forward_action.trigger()  # +3 mm k žebru (−X) → x = 16 → kolize
+    assert w.viewer.probe[0] == "collision" and w.viewer.probe[1] == pytest.approx((16, 0, 20))
+    panel.step_back_action.trigger()
+    panel.step_back_action.trigger()  # −6 mm od žebra (+X) → x = 22
+    assert w.viewer.probe[0] == "ok" and w.viewer.probe[1] == pytest.approx((22, 0, 20))
+    w.viewer.rotate_probe(-15)
+    assert panel.angle.value() == 165
+    w.viewer.rotate_probe(15)
+    assert panel.angle.value() == -180
+
+    # projetí čáry a posuvník polohy po čáře
+    panel.scan_length.setValue(10)
+    panel.scan_action.trigger()
+    assert panel.scan_slider.isEnabled() and panel.scan_slider.maximum() == 10
+    assert panel.scan_label.isVisibleTo(panel)
+    assert "Čára (0 mm): Volně: 0–5 mm. První potíž po 6 mm: Koliduje." in panel.scan_label.text()
+    panel.scan_slider.setValue(6)
+    assert w.viewer.probe[0] == "collision" and w.viewer.probe[1] == pytest.approx((16, 0, 20))
+    assert "Čára (6 mm):" in panel.scan_label.text()
     assert slot_errors == []
 
 

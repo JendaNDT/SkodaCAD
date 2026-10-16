@@ -469,6 +469,10 @@ class MainWindow(QMainWindow):
     def _build_ndt_panel(self) -> None:
         """Panel NDT: studie nedestruktivní kontroly (stav po každém přepočtu)."""
         self.ndt_panel = NdtPanel(self)
+        if hasattr(self.viewer, "probe_dragged"):
+            self.viewer.probe_dragged.connect(self.ndt_panel.on_probe_dragged)
+        if hasattr(self.viewer, "probe_rotated"):
+            self.viewer.probe_rotated.connect(self.ndt_panel.on_probe_rotated)
         self.ndt_dock = self._add_dock("NDT", "ndt_dock", self.ndt_panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
         self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
@@ -642,6 +646,11 @@ class MainWindow(QMainWindow):
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.confirm_action, self.ndt_panel.verify_action,
                      self.ndt_panel.duplicate_action, self.ndt_panel.delete_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.probe_action, self.ndt_panel.place_action,
+                     self.ndt_panel.drag_probe_action, self.ndt_panel.scan_action,
+                     self.ndt_panel.remove_probe_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")

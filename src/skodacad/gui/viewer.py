@@ -191,6 +191,8 @@ class OccViewer(QWidget):
 
     selection_changed = Signal(list)  # vybrané plochy a hrany (TopoDS), [] = nic
     context_menu_requested = Signal(QPoint)  # pravý klik bez tažení, globální souřadnice
+    probe_dragged = Signal(list, object)  # plocha a bod [x, y, z] při jízdě sondou
+    probe_rotated = Signal(int)  # otočení sondy kolečkem (±15°)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -217,6 +219,8 @@ class OccViewer(QWidget):
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
+        self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
+        self._probe_dragging = False
         self._pending: tuple[Any, bool] | None = None
         self._press: QPoint | None = None
         self._last: QPoint | None = None
@@ -736,6 +740,14 @@ class OccViewer(QWidget):
         self._press = self._last = event.position().toPoint()
         self._dragging = False
         if event.button() == Qt.MouseButton.LeftButton:
+            alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+            if self.probe_drag_enabled or alt:
+                self._probe_dragging = True
+                picked = self._pick_face_at(*self._pixels(event.position()))
+                if picked is not None:
+                    self.probe_dragged.emit([picked[0]], picked[1])
+                return
+            self._probe_dragging = False
             self._view.StartRotation(*self._pixels(event.position()))
 
     def _mouse_move(self, event: QMouseEvent) -> None:
@@ -747,19 +759,30 @@ class OccViewer(QWidget):
         if buttons and self._press is not None:
             if (pos - self._press).manhattanLength() > _DRAG_THRESHOLD:
                 self._dragging = True
-            pan = bool(buttons & (Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton)
-                       or event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
-            if self._dragging and pan:  # Shift + levé: posun i na trackpadu (Mac)
-                lx, ly = self._pixels(self._last)
-                self._view.Pan(x - lx, ly - y)
-            elif self._dragging and buttons & Qt.MouseButton.LeftButton:
-                self._view.Rotation(x, y)
+            if self._probe_dragging and buttons & Qt.MouseButton.LeftButton:
+                self._dragging = True
+                picked = self._pick_face_at(x, y)
+                if picked is not None:
+                    self.probe_dragged.emit([picked[0]], picked[1])
+            else:
+                pan = bool(buttons & (Qt.MouseButton.MiddleButton | Qt.MouseButton.RightButton)
+                           or event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                if self._dragging and pan:  # Shift + levé: posun i na trackpadu (Mac)
+                    lx, ly = self._pixels(self._last)
+                    self._view.Pan(x - lx, ly - y)
+                elif self._dragging and buttons & Qt.MouseButton.LeftButton:
+                    self._view.Rotation(x, y)
         else:
             self._context.MoveTo(x, y, self._view, True)  # předvýběr pod kurzorem
         self._last = pos
 
     def _mouse_release(self, event: QMouseEvent) -> None:
         if not self.ready:
+            return
+        if self._probe_dragging:
+            self._probe_dragging = False
+            self._press = None
+            self._dragging = False
             return
         if not self._dragging:
             x, y = self._pixels(event.position())
@@ -773,6 +796,20 @@ class OccViewer(QWidget):
                 self.context_menu_requested.emit(event.globalPosition().toPoint())
         self._press = None
         self._dragging = False
+
+    def _pick_face_at(self, x: int, y: int) -> tuple[Any, tuple[float, float, float]] | None:
+        """Plocha a bod pod kurzorem [x, y] v pixelech OCCT (pro plynulou jízdu sondou)."""
+        context = self._context
+        context.MoveTo(x, y, self._view, False)
+        if not context.HasDetected() or not context.HasDetectedShape():
+            return None
+        shape = context.DetectedShape()
+        if shape.ShapeType() != TopAbs_FACE:
+            return None
+        self._remember_point()
+        if self.picked_point is None:
+            return None
+        return shape, self.picked_point
 
     def _select_at(self, x: int, y: int, toggle: bool = False) -> None:
         """Klik: nahradí výběr tím pod kurzorem; s Ctrl/Shift ho přidá nebo ubere."""
@@ -811,6 +848,12 @@ class OccViewer(QWidget):
     def _wheel(self, event: QWheelEvent) -> None:
         if not self.ready:
             return
+        alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+        if (self.probe_drag_enabled or alt) and self._probe_objects:
+            delta = event.angleDelta().y()
+            if delta:
+                self.probe_rotated.emit(15 if delta > 0 else -15)
+                return
         x, y = self._pixels(event.position())
         step = int(event.angleDelta().y() / 8)  # jeden „cvak“ kolečka = 15
         if step:

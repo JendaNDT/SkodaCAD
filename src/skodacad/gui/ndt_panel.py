@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -74,7 +75,18 @@ class NdtPanel(QWidget):
         self.probe_action.setToolTip("Druh a rozměry virtuální sondy, dovolená mezera, rezerva")
         self.place_action = action("Přiložit sondu sem", self.place_probe)
         self.place_action.setToolTip("Přiloží sondu studie na plochu, na kterou jsi klikl(a)")
+        self.drag_probe_action = action("Jezdit sondou myší", self._toggle_drag_mode)
+        self.drag_probe_action.setCheckable(True)
+        self.drag_probe_action.setToolTip(
+            "Levé tlačítko myší ve 3D jezdí sondou po povrchu dílu (nebo kdykoli drž Alt)")
         self.remove_probe_action = action("Odebrat sondu", self.remove_probe)
+        self.step_back_action = action("◀", lambda: self.shift_probe(-self.step_mm.value()))
+        self.step_back_action.setToolTip("Posunout sondu dozadu proti směru paprsku")
+        self.step_forward_action = action("▶", lambda: self.shift_probe(self.step_mm.value()))
+        self.step_forward_action.setToolTip("Posunout sondu dopředu ve směru paprsku")
+        self.scan_action = action("Projet čáru", self.scan_line)
+        self.scan_action.setToolTip(
+            "Projede sondou přímku ve směru paprsku po 1 mm a najde volný rozsah i první překážku")
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -123,7 +135,8 @@ class NdtPanel(QWidget):
         self.probe_label.setWordWrap(True)
         probe_layout.addWidget(self.probe_label)
         buttons = QHBoxLayout()
-        for item in (self.probe_action, self.place_action, self.remove_probe_action):
+        for item in (self.probe_action, self.place_action, self.drag_probe_action,
+                     self.remove_probe_action):
             buttons.addWidget(window._tool_button(item))
         buttons.addStretch()
         probe_layout.addLayout(buttons)
@@ -137,8 +150,40 @@ class NdtPanel(QWidget):
         self.angle.setToolTip(ANGLE_HINT)
         self.angle.valueChanged.connect(lambda _value: self._angle_changed())
         angle_row.addWidget(self.angle)
+        angle_row.addWidget(QLabel("Krok [mm]:"))
+        self.step_mm = QDoubleSpinBox()
+        self.step_mm.setObjectName("ndt_step")
+        self.step_mm.setDecimals(1)
+        self.step_mm.setRange(0.5, 100.0)
+        self.step_mm.setSingleStep(1.0)
+        self.step_mm.setValue(2.0)
+        angle_row.addWidget(self.step_mm)
+        for item in (self.step_back_action, self.step_forward_action):
+            angle_row.addWidget(window._tool_button(item))
         angle_row.addStretch()
         probe_layout.addLayout(angle_row)
+        scan_row = QHBoxLayout()
+        scan_row.addWidget(QLabel("Délka čáry [mm]:"))
+        self.scan_length = QDoubleSpinBox()
+        self.scan_length.setObjectName("ndt_scan_length")
+        self.scan_length.setDecimals(0)
+        self.scan_length.setRange(1.0, 500.0)
+        self.scan_length.setSingleStep(10.0)
+        self.scan_length.setValue(50.0)
+        scan_row.addWidget(self.scan_length)
+        scan_row.addWidget(window._tool_button(self.scan_action))
+        self.scan_slider = QSlider(Qt.Orientation.Horizontal)
+        self.scan_slider.setObjectName("ndt_scan_slider")
+        self.scan_slider.setRange(0, 0)
+        self.scan_slider.valueChanged.connect(self._scan_slider_changed)
+        scan_row.addWidget(self.scan_slider, stretch=1)
+        probe_layout.addLayout(scan_row)
+        self.scan_label = QLabel()
+        self.scan_label.setObjectName("ndt_scan_summary")
+        self.scan_label.setWordWrap(True)
+        self.scan_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.scan_label.hide()
+        probe_layout.addWidget(self.scan_label)
         self.placement_label = QLabel()
         self.placement_label.setObjectName("ndt_placement")
         self.placement_label.setWordWrap(True)
@@ -255,16 +300,27 @@ class NdtPanel(QWidget):
         record = self._record(self.current_id())
         self.unverify_action.setEnabled(selected and record is not None and "verified" in record)
         ut = selected and (self._record(self.current_id()) or {}).get("method") == "UT"
+        placed = ready and session.ndt_placement is not None
         self.probe_action.setEnabled(ut)
         self.place_action.setEnabled(ut and has_part and info.faces == 1 and info.edges == 0)
+        can_drag = has_part and (ut or placed)
+        self.drag_probe_action.setEnabled(can_drag)
+        if not can_drag and self.drag_probe_action.isChecked():
+            self.drag_probe_action.setChecked(False)
+            self.window.viewer.probe_drag_enabled = False
         self.remove_probe_action.setEnabled(session.ndt_placement_request is not None)
+        for action in (self.step_back_action, self.step_forward_action, self.scan_action):
+            action.setEnabled(placed)
+        self.scan_slider.setEnabled(placed and session.ndt_line_scan is not None)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.rename_action,
                            self.method_action, self.note_action, self.duplicate_action,
                            self.delete_action, self.confirm_action, self.verify_action,
                            self.unverify_action, self.probe_action, self.place_action,
-                           self.remove_probe_action):
+                           self.drag_probe_action, self.remove_probe_action,
+                           self.step_back_action, self.step_forward_action, self.scan_action):
                 action.setEnabled(False)
+            self.scan_slider.setEnabled(False)
 
     # --- úpravy (každá přes ModelSession = jeden krok Zpět) -------------------------------
 
@@ -367,10 +423,10 @@ class NdtPanel(QWidget):
             self._apply("Studii nejde smazat",
                         lambda: self.window.session.remove_ndt_study(study_id))
 
-    # --- sonda a paprsek (etapy 03 a 04) -----------------------------------------------------
+    # --- sonda a paprsek (etapy 03 až 05) ----------------------------------------------------
 
     def _show_probe(self) -> None:
-        """Sonda vybrané studie, výsledek přiložení a geometrická dráha paprsku."""
+        """Sonda vybrané studie, výsledek přiložení, čára posuvu a geometrická dráha paprsku."""
         session = self.window.session
         record = self._record(self.current_id())
         if record is None:
@@ -384,6 +440,24 @@ class NdtPanel(QWidget):
             self.probe_label.setText(f"{probe.label}{beam_info}{stored}; mezera nejvýš "
                                      f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm, "
                                      f"odrazy {probe.bounces}.")
+        if session.ndt_placement_request is not None:
+            self.angle.blockSignals(True)
+            self.angle.setValue(round(session.ndt_placement_request[2]))
+            self.angle.blockSignals(False)
+        scan = session.ndt_line_scan
+        self.scan_slider.blockSignals(True)
+        if scan is not None:
+            self.scan_slider.setRange(0, max(0, len(scan.positions) - 1))
+            self.scan_slider.setValue(session.ndt_scan_index)
+            dist = scan.positions[session.ndt_scan_index][0]
+            self.scan_label.setText(f"Čára ({dist:.0f} mm): {scan.summary}")
+            self.scan_label.show()
+        else:
+            self.scan_slider.setRange(0, 0)
+            self.scan_slider.setValue(0)
+            self.scan_label.setText("")
+            self.scan_label.hide()
+        self.scan_slider.blockSignals(False)
         placement = session.ndt_placement
         if placement is not None:
             color = _PLACEMENT_COLORS.get(placement.state, "#b9770e")
@@ -395,7 +469,8 @@ class NdtPanel(QWidget):
             self.placement_label.setText(f'<span style="color: #c0392b;">'
                                          f"{session.ndt_placement_error}</span>")
         else:
-            self.placement_label.setText("Klikni ve 3D na plochu a dej Přiložit sondu sem.")
+            self.placement_label.setText("Klikni ve 3D na plochu a dej Přiložit sondu sem "
+                                         "(nebo zapni Jezdit sondou myší / drž Alt).")
 
     def edit_probe(self) -> None:
         study_id = self.current_id()
@@ -420,6 +495,56 @@ class NdtPanel(QWidget):
     def remove_probe(self) -> None:
         self.window.session.clear_ndt_placement()
         self.window._refresh_all()
+
+    def _toggle_drag_mode(self) -> None:
+        self.window.viewer.probe_drag_enabled = self.drag_probe_action.isChecked()
+
+    def shift_probe(self, delta_mm: float) -> None:
+        self._apply("Sondu nejde posunout",
+                    lambda: self.window.session.shift_ndt_probe(delta_mm))
+
+    def scan_line(self) -> None:
+        self._apply("Čáru nejde projet",
+                    lambda: self.window.session.scan_ndt_line(self.scan_length.value(), 1.0))
+
+    def _scan_slider_changed(self, index: int) -> None:
+        if self.window.session.ndt_line_scan is None:
+            return
+        try:
+            self.window.session.select_ndt_scan_index(index)
+        except DocumentError as exc:
+            self.window.statusBar().showMessage(str(exc), 8000)
+            return
+        self.window._refresh_probe()
+        self._show_probe()
+
+    def on_probe_dragged(self, shapes: list, point: object) -> None:
+        """Jízda sondou myší ve 3D: přesune (nebo poprvé přiloží) sondu bez vyskakovacích oken."""
+        if self.window.ai_busy or self.window.session.computing:
+            return
+        session = self.window.session
+        if session.ndt_placement_request is not None:
+            study_id = session.ndt_placement_request[0]
+        else:
+            record = self._record(self.current_id())
+            if record is None or record.get("method") != "UT":
+                return
+            study_id = record["id"]
+        try:
+            session.move_ndt_probe(study_id, shapes, point, angle=self.angle.value())
+        except DocumentError as exc:
+            self.window.statusBar().showMessage(str(exc), 5000)
+            return
+        self.window._refresh_probe()
+        self.window._update_highlight()
+        self._show_probe()
+        self.refresh_actions()
+
+    def on_probe_rotated(self, delta_deg: int) -> None:
+        if self.window.ai_busy or self.window.session.ndt_placement_request is None:
+            return
+        angle = ((self.angle.value() + int(delta_deg) + 180) % 360) - 180
+        self.angle.setValue(angle)
 
     def _angle_changed(self) -> None:
         if self.window.session.ndt_placement_request is None:

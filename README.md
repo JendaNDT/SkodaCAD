@@ -300,24 +300,30 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
   tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
   jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
-* **Virtuální sonda a geometrický paprsek UT** (etapy 03 a 04, UT studie): ve skupině
-  *Přístupnost UT sondy* v panelu NDT nastavíš sondu
+* **Virtuální sonda, geometrický paprsek UT a ruční pohyb sondy** (etapy 03 až 05, milník M1): ve
+  skupině *Přístupnost UT sondy* v panelu NDT nastavíš sondu
   (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
   úhlem paprsku v materiálu $\beta$ [°], počtem odrazů v dílu, dovolenou mezerou pod sondou
   a manipulační rezervou; uloží se do studie). Klikni ve 3D na plochu
-  a dej **Přiložit sondu sem**: sonda i lomená dráha osy paprsku v dílu (včetně odrazu od stěn)
-  se nakreslí **zeleně** (přiloženo), **oranžově** (málo místa, nedosedá, přesahuje přes okraj
-  či otvor) nebo **červeně** (koliduje) a pod ní je vysvětlení s čísly (mezera, průnik v mm³,
-  volno k překážkám, ramena paprsku v materiálu, půlkrok, celý krok a jistota). *Směr paprsku [°]*
-  sondu natočí (0° = osa +X, 90° = +Y), *Odebrat sondu* ji schová. Přiložení i dráha paprsku jsou
-  jen pohled (vidět i v zapnutém *Řezu modelem*) – do souboru se neukládají a po změně dílu se
-  přepočítají.
+  a dej **Přiložit sondu sem** (nebo zapni **Jezdit sondou myší**, případně kdykoli drž `Alt` +
+  levé tlačítko myši a táhni po povrchu dílu): sonda i lomená dráha osy paprsku v dílu (včetně
+  odrazu od stěn) se nakreslí **zeleně** (přiloženo), **oranžově** (málo místa, nedosedá,
+  přesahuje přes okraj či otvor) nebo **červeně** (koliduje) a pod ní je vysvětlení s čísly
+  (mezera, průnik v mm³, volno k překážkám, ramena paprsku v materiálu, půlkrok, celý krok a
+  jistota).
+  * **Natočení a krokování:** *Směr paprsku [°]* (nebo kolečko myši při zapnutém *Jezdit sondou
+    myší* / s podrženým `Alt`) sondu natočí po 15° (0° = osa +X, 90° = +Y). Tlačítka **◀ / ▶**
+    posouvají přiloženou sondu po ploše o zvolený *Krok [mm]* dopředu ve směru paprsku a dozadu.
+  * **Projet čáru a posuvník:** tlačítko **Projet čáru** zkontroluje přímku zvolené délky
+    (*Délka čáry [mm]*) po 1 mm ve směru paprsku, vypíše souhrn (*„Volně: 0–5 mm. První potíž
+    po 6 mm: Koliduje.“*) a zpřístupní posuvník, kterým lze sondu po čáře plynule posouvat.
+  * *Odebrat sondu* ji schová. Přiložení, posuv i dráha paprsku jsou jen pohled (vidět i
+    v zapnutém *Řezu modelem*) – do souboru se neukládají a po změně dílu se přepočítají.
 * Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
   Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
   EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Lom podle Snellova
   zákona (`--snell ALFA,C1,C2`) se počítá jen s výslovně zadanými rychlostmi. Další etapy UT:
-  tažení sondy myší a *Mapa geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze
-  spolehlivě vyhodnotit).
+  *Mapa geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze spolehlivě vyhodnotit).
 
 ### Tažení a přechod
 

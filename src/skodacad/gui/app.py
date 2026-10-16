@@ -295,14 +295,17 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     top = max(session.result.part.faces(), key=lambda face: face.center().Z)  # horní plocha
     placed = session.place_ndt_probe(session.ndt_studies[0].id, [top.wrapped], (0, 0, 20), 90)
     beam = session.ndt_beam
+    shifted = session.shift_ndt_probe(5.0)
+    scan = session.scan_ndt_line(10.0, 2.0)
     window._refresh_all()  # sonda i paprsek se nakreslí ve 3D (průhledné tělo, čára, popisek)
     QApplication.processEvents()
-    if not placed.ok or beam is None or not beam.ok:
+    if not placed.ok or not shifted.ok or not scan.free_ranges or beam is None or not beam.ok:
         lines.append(f"✕ NDT sonda: {placed.text}")
         return False
     image = user_dir() / "self-test-sonda.png"
     shown = window.viewer.dump(str(image)) if window.viewer.ready else False
-    lines.append(f"✓ NDT sonda: OK ({placed.short}, {beam.short}, snímek {image}: {shown})")
+    lines.append(f"✓ NDT sonda: OK ({placed.short}, {beam.short}, {scan.summary}, "
+                 f"snímek {image}: {shown})")
     session.clear_ndt_placement()
     window._refresh_all()
     return True

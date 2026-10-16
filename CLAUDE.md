@@ -112,6 +112,12 @@
   `full_skip`, hloubka, jistota; nejistý dopad zastaví další odrazy). U sondy `beam_angle` a
   `bounces` (**formát verze 15**), v `skodacad sonda` volby `--uhel`, `--snell`, `--vlna`,
   `--odrazy`, `--dosah`; v okně vykreslení lomené dráhy paprsku ve 3D i v řezu.
+- (16. 10. 2026, schváleno) **NDT etapa 05 – ruční pohyb sondy v okně, milník M1** (návrh
+  `docs/ndt/10-navrh-etapa-05.md`): mezipaměť poloprostoru nad tečnou rovinou (`_upper_part`
+  v `ndt/devices.py`), interaktivní posun a přímá dráha v `ModelSession` (`move_ndt_probe`,
+  `shift_ndt_probe`, `scan_ndt_line`, `select_ndt_scan_index`), v okně přepínač *Jezdit sondou
+  myší* + `Alt`+tažení a `Alt`+kolečko ve 3D prohlížeči, krokování **◀ / ▶** a tlačítko *Projet
+  čáru* s posuvníkem. Formát se nemění (verze 15).
 
 ## Architektura (`src/skodacad/`)
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import copy
 import datetime
+import math
 import re
 import time
 from collections.abc import Callable
@@ -41,7 +42,7 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
-from skodacad.ndt.devices import DeviceError, Placement, Probe, place
+from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
@@ -143,6 +144,8 @@ class ModelSession:
         # přiložená NDT sonda (jen pohled): (id studie, odkaz na plochu, úhel paprsku [°])
         self.ndt_placement_request: tuple[str, dict[str, Any], float] | None = None
         self.ndt_placement_error = ""
+        self._line_scan: tuple[Any, str, Probe, ScanResult] | None = None
+        self.ndt_scan_index = 0
         self._placement_cache: tuple[Any, ...] | None = None
         self._geometry_cache: tuple[Any, Any] | None = None
 
@@ -156,7 +159,7 @@ class ModelSession:
         self.dirty = False
         self._undo.clear()
         self._redo.clear()
-        self.ndt_placement_request = None
+        self.clear_ndt_placement()
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -167,7 +170,7 @@ class ModelSession:
         self.dirty = False
         self._undo.clear()
         self._redo.clear()
-        self.ndt_placement_request = None
+        self.clear_ndt_placement()
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -950,13 +953,28 @@ class ModelSession:
         if len(faces) != 1 or edges:
             raise DocumentError("Sondu přikládáš na jednu plochu – vyber ve 3D právě jednu "
                                 "plochu (klikni na ni v místě přiložení).")
+        previous = self.ndt_placement_request
         reference = surface_reference(faces[0], point)
         self.ndt_placement_request = (study_id, reference, float(angle))
         placement = self.ndt_placement
         if placement is None:
-            self.ndt_placement_request = None
-            raise DocumentError(self.ndt_placement_error)
+            error = self.ndt_placement_error
+            self.ndt_placement_request = previous
+            raise DocumentError(error)
+        self._line_scan = None
+        self.ndt_scan_index = 0
         return placement
+
+    def move_ndt_probe(self, study_id: str | None, shapes: list[Any], point: Any,
+                       angle: float | None = None) -> Placement:
+        """Posune sondu na novou polohu ve 3D (zachová studii i natočení, když nejsou zadané)."""
+        if study_id is None:
+            if self.ndt_placement_request is None:
+                raise DocumentError("Sonda není přiložená.")
+            study_id = self.ndt_placement_request[0]
+        if angle is None:
+            angle = self.ndt_placement_request[2] if self.ndt_placement_request is not None else 0.0
+        return self.place_ndt_probe(study_id, shapes, point, angle=angle)
 
     def turn_ndt_probe(self, angle: float) -> Placement | None:
         """Natočí přiloženou sondu (směr paprsku ve stupních)."""
@@ -964,11 +982,88 @@ class ModelSession:
             return None
         study_id, reference, _ = self.ndt_placement_request
         self.ndt_placement_request = (study_id, reference, float(angle))
+        self._line_scan = None
+        self.ndt_scan_index = 0
         return self.ndt_placement
+
+    def shift_ndt_probe(self, step_mm: float) -> Placement:
+        """Posune přiloženou sondu po ploše přiložení o ``step_mm`` (+ dopředu ve směru paprsku,
+        − dozadu)."""
+        placement = self.ndt_placement
+        if placement is None or self.ndt_placement_request is None or self.result is None:
+            raise DocumentError("Sonda není přiložená.")
+        study_id, reference, angle = self.ndt_placement_request
+        face, _ = find_face(self.result.part, reference["face"])
+        geo = self._ndt_geometry()
+        step = float(step_mm)
+        target = tuple(o + d * step for o, d in zip(placement.origin, placement.x_dir, strict=True))
+        surface = geo.surface_at(target, face)
+        if (step != 0 and math.dist(target, surface.point) > max(0.25, abs(step) * 0.5)
+                or surface.distance > SNAP):
+            raise DocumentError("Posun vede mimo plochu přiložení.")
+        previous = self.ndt_placement_request
+        self.ndt_placement_request = (study_id, surface_reference(face, surface.point), angle)
+        moved = self.ndt_placement
+        if moved is None:
+            error = self.ndt_placement_error
+            self.ndt_placement_request = previous
+            raise DocumentError(error)
+        self._line_scan = None
+        self.ndt_scan_index = 0
+        return moved
+
+    def scan_ndt_line(self, length: float = 50.0, step: float = 1.0) -> ScanResult:
+        """Projede přiloženou sondou přímku z aktuálního místa ve směru paprsku."""
+        placement = self.ndt_placement
+        if placement is None or self.ndt_placement_request is None or self.result is None:
+            raise DocumentError("Sonda není přiložená.")
+        study_id, reference, angle = self.ndt_placement_request
+        face, _ = find_face(self.result.part, reference["face"])
+        try:
+            scan = scan_line(self._ndt_geometry(), placement.probe, placement.origin,
+                             angle=angle, face=face, length=float(length), step=float(step))
+        except (DeviceError, GeometryError) as exc:
+            raise DocumentError(str(exc)) from None
+        self._line_scan = (self.result, study_id, placement.probe, scan)
+        self.ndt_scan_index = 0
+        return scan
+
+    def select_ndt_scan_index(self, index: int) -> Placement:
+        """Přesune sondu na ``index``-tou polohu posledního projetí čáry."""
+        scan = self.ndt_line_scan
+        if scan is None or self.ndt_placement_request is None or self.result is None:
+            raise DocumentError("Čára posuvu není spočítaná.")
+        if not (0 <= index < len(scan.positions)):
+            raise DocumentError("Poloha na čáře je mimo rozsah.")
+        study_id, reference, angle = self.ndt_placement_request
+        face, _ = find_face(self.result.part, reference["face"])
+        point = scan.positions[index][1].origin
+        self.ndt_placement_request = (study_id, surface_reference(face, point), angle)
+        self.ndt_scan_index = int(index)
+        placement = self.ndt_placement
+        if placement is None:
+            raise DocumentError(self.ndt_placement_error)
+        return placement
 
     def clear_ndt_placement(self) -> None:
         self.ndt_placement_request = None
         self.ndt_placement_error = ""
+        self._line_scan = None
+        self.ndt_scan_index = 0
+
+    @property
+    def ndt_line_scan(self) -> ScanResult | None:
+        """Poslední projetí čáry přiloženou sondou (jen pohled); zanikne po změně dílu či sondy."""
+        if (self._line_scan is None or self.ndt_placement is None
+                or self.ndt_placement_request is None):
+            return None
+        result, study_id, probe, scan = self._line_scan
+        if (self.result is not result or self.ndt_placement_request[0] != study_id
+                or self.ndt_probe(study_id) != probe):
+            self._line_scan = None
+            self.ndt_scan_index = 0
+            return None
+        return scan
 
     @property
     def ndt_placement(self) -> Placement | None:

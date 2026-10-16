@@ -289,25 +289,44 @@ class ScanResult:
     positions: tuple[tuple[float, Placement], ...]  # (posun od začátku [mm], přiložení)
     free_ranges: tuple[tuple[float, float], ...]  # [(od, do)] mm – stav „přiloženo“
 
+    @property
+    def summary(self) -> str:
+        """Český souhrn volných úseků a první potíže pro okno."""
+        free = ", ".join(f"{a:g}–{b:g} mm" for a, b in self.free_ranges) or "nikde"
+        text = f"Volně: {free}."
+        problem = next(((offset, p) for offset, p in self.positions if not p.ok), None)
+        if problem is not None:
+            text += f" První potíž po {problem[0]:g} mm: {problem[1].text}"
+        return text
 
-def scan_line(geo: PartGeometry, probe: Probe, start: Any, beam: Any, move: Any,
-              length: float, step: float = 1.0) -> ScanResult:
-    """Posouvá sondu od ``start`` směrem ``move`` po krocích ``step`` až do ``length`` mm
-    (každá poloha se přichytí k povrchu) a najde úseky, kde jde volně přiložit."""
+
+def scan_line(geo: PartGeometry, probe: Probe, start: Any, beam: Any = None, move: Any = None,
+              length: float = 50.0, step: float = 1.0, angle: float | None = None,
+              face: Any = None) -> ScanResult:
+    """Posouvá sondu od ``start`` směrem ``move`` (výchozí = směr paprsku) po krocích ``step``
+    až do ``length`` mm (každá poloha se přichytí k povrchu) a najde úseky, kde jde volně
+    přiložit."""
     from build123d import Vector
 
     if not step > 0 or not length >= 0:
         raise DeviceError("Krok posunu musí být kladný a délka nezáporná.")
-    direction = Vector(*_vector(move, "Směr posunu"))
-    if direction.length < 1e-12:
-        raise DeviceError("Směr posunu nesmí být nulový.")
-    direction = direction.normalized()
     origin = Vector(*_vector(start, "Začátek posunu"))
+    first = place(geo, probe, tuple(origin), beam, angle=angle, face=face)
+    if move is None:
+        direction = Vector(*first.x_dir)
+    else:
+        direction = Vector(*_vector(move, "Směr posunu"))
+        if direction.length < 1e-12:
+            raise DeviceError("Směr posunu nesmí být nulový.")
+        direction = direction.normalized()
     count = int(math.floor(length / step + 1e-9))
-    positions = []
-    for index in range(count + 1):
+    positions = [(0.0, first)]
+    for index in range(1, count + 1):
         offset = index * step
-        positions.append((offset, place(geo, probe, tuple(origin + direction * offset), beam)))
+        positions.append((
+            offset,
+            place(geo, probe, tuple(origin + direction * offset), beam, angle=angle, face=face),
+        ))
     ranges: list[tuple[float, float]] = []
     for offset, placed in positions:
         if not placed.ok:
@@ -326,24 +345,45 @@ def _clearance_above(geo: PartGeometry, body: Any, origin: Point, normal: Point
                      ) -> float | None:
     """Nejmenší vzdálenost těla sondy k části dílu **nad** rovinou přiložení (None = nic tam
     není). Co leží pod rovinou (stěna díry, vnitřek trubky), sondě nepřekáží."""
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+
+    upper = _upper_part(geo, origin, normal)
+    if upper is None:
+        return None
+    distance = BRepExtrema_DistShapeShape(upper, body.wrapped)
+    return distance.Value() if distance.IsDone() and distance.NbSolution() else None
+
+
+def _upper_part(geo: PartGeometry, origin: Point, normal: Point) -> Any | None:
+    """Část dílu nad tečnou rovinou (ořezaná jednou pro každou rovinu na dílu)."""
     from build123d import Align, Box, Location, Plane, Vector
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
-    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp_Explorer
 
-    size = 4 * (geo.part.bounding_box().diagonal + 10)
-    lifted = Vector(*origin) + Vector(*normal) * 1e-3  # těsně nad rovinou (ne v ní)
-    half = Location(Plane(origin=lifted, z_dir=Vector(*normal))) * Box(
+    offset = sum(o * n for o, n in zip(origin, normal, strict=True))
+    key = (round(normal[0], 5), round(normal[1], 5), round(normal[2], 5), round(offset, 4))
+    cache = getattr(geo, "_upper_cache", None)
+    if cache is None:
+        cache = {}
+        object.__setattr__(geo, "_upper_cache", cache)
+    if key in cache:
+        return cache[key]
+    box = geo.part.bounding_box()
+    size = 4 * (box.diagonal + 10)
+    center = Vector(box.center())
+    n_vec = Vector(*normal)
+    plane_origin = center + n_vec * (offset - center.dot(n_vec) + 1e-3)
+    half = Location(Plane(origin=plane_origin, z_dir=n_vec)) * Box(
         size, size, size, align=(Align.CENTER, Align.CENTER, Align.MIN))
     common = BRepAlgoAPI_Common(geo.part.wrapped, half.wrapped)
-    if not common.IsDone():
-        return None
-    upper = common.Shape()
-    if not TopExp_Explorer(upper, TopAbs_FACE).More():
-        return None  # nad rovinou přiložení není nic
-    distance = BRepExtrema_DistShapeShape(upper, body.wrapped)
-    return distance.Value() if distance.IsDone() and distance.NbSolution() else None
+    upper = None
+    if common.IsDone():
+        shape = common.Shape()
+        if TopExp_Explorer(shape, TopAbs_FACE).More():
+            upper = shape
+    cache[key] = upper
+    return upper
 
 
 def _tangent(normal: Any, beam: Any, required: bool) -> Any:
