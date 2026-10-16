@@ -7,6 +7,7 @@ Okno nikdy nemodeluje samo – všechno jde přes ``ModelSession`` (jádro).
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -98,6 +99,19 @@ EXPORT_FORMATS = [
 def _swatch(color: tuple[float, float, float]) -> str:
     r, g, b = (int(c * 255) for c in color)
     return f'<span style="color: rgb({r}, {g}, {b});">■</span>'
+
+
+def _reference_parts(folder: Path) -> list[tuple[str, Path]]:
+    """Referenční díly NDT do nabídky: (název modelu, soubor), seřazené podle čísla v názvu."""
+    parts = []
+    for path in folder.glob("*.json"):
+        try:
+            name = str(json.loads(path.read_text(encoding="utf-8")).get("name") or path.stem)
+        except (OSError, ValueError, AttributeError):
+            name = path.stem
+        parts.append((name, path))
+    return sorted(parts, key=lambda item: [int(t) if t.isdigit() else t
+                                           for t in item[0].split()])
 
 
 class MainWindow(QMainWindow):
@@ -522,6 +536,13 @@ class MainWindow(QMainWindow):
             examples_menu.addAction(
                 self._action(path.stem, lambda p=path: self.open_model(p, template=True))
             )
+        ndt_examples = _reference_parts(self.examples_dir / "ndt") if self.examples_dir else []
+        if ndt_examples:
+            ndt_menu = examples_menu.addMenu("NDT – referenční díly")
+            for label, path in ndt_examples:
+                ndt_menu.addAction(
+                    self._action(label, lambda p=path: self.open_model(p, template=True))
+                )
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
         file_menu.addAction(self.save_action)

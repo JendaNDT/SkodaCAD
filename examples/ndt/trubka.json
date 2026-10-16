@@ -1,0 +1,16 @@
+{
+  "format": "skodacad",
+  "version": 12,
+  "name": "NDT 5 – Trubka",
+  "description": "Referenční díl NDT č. 5: trubka bez vad. Přímá sonda radiálně: dráha s = 6 mm. Rovná sonda šířky 20 napříč obvodem nedosedá – mezera u kraje 0,88 mm. Obvodový paprsek nad 63,5° (sin β = vnitřní / vnější poloměr) vnitřní stěnu mine. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. D = vnější průměr, s = tloušťka stěny, L = délka.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"D": 114.3, "s": 6, "L": 300},
+  "features": [
+    {"id": "prurez", "type": "sketch", "name": "Průřez trubky", "plane": "YZ",
+     "elements": [{"shape": "circle", "diameter": "D"},
+                  {"shape": "circle", "diameter": "D - 2*s", "mode": "subtract"}]},
+    {"id": "trubka", "type": "extrude", "name": "Trubka", "sketch": "prurez", "distance": "L",
+     "direction": "both"}
+  ]
+}

@@ -13,6 +13,8 @@ from PyInstaller.utils.hooks import (
 ROOT = Path(SPECPATH).parent  # noqa: F821 – SPECPATH dodává PyInstaller
 
 datas = [(str(path), "examples") for path in sorted((ROOT / "examples").glob("*.json"))]
+datas += [(str(path), "examples/ndt")  # referenční díly NDT
+          for path in sorted((ROOT / "examples" / "ndt").glob("*.json"))]
 datas.append((str(ROOT / "README.md"), "."))  # popis formátu modelu pro AI asistenta
 binaries = []
 # AI asistent: knihovna anthropic načítá části API až při použití – přibalit všechny.

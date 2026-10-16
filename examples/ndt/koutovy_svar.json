@@ -1,0 +1,24 @@
+{
+  "format": "skodacad",
+  "version": 12,
+  "name": "NDT 7 – Koutový svar (T-spoj)",
+  "description": "Referenční díl NDT č. 7: pásnice se stojinou a oboustrannými koutovými svary (rameno z = 7 mm, účinná tloušťka a ≈ 4,95 mm). Díl je jedno těleso. Přímá sonda zespodu pod stojinou: rovina styku stojiny s pásnicí v hloubce t = 10 mm. Sonda na pásnici jen ≥ s/2 + z = 12 mm od osy stojiny (paty svarů). Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × t = pásnice, s × v = tloušťka × výška stojiny, z = rameno svaru.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"A": 200, "B": 100, "t": 10, "s": 10, "v": 80, "z": 7},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys pásnice", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "B"}]},
+    {"id": "pasnice", "type": "extrude", "name": "Pásnice", "sketch": "obrys", "distance": "t"},
+    {"id": "stojina_obrys", "type": "sketch", "name": "Obrys stojiny", "plane": "top",
+     "elements": [{"shape": "rectangle", "width": "s", "height": "B"}]},
+    {"id": "stojina", "type": "extrude", "name": "Stojina", "sketch": "stojina_obrys",
+     "distance": "v"},
+    {"id": "svary_prurez", "type": "sketch", "name": "Průřez koutových svarů", "plane": "XZ",
+     "elements": [
+       {"shape": "polygon", "points": [["s/2", "t"], ["s/2 + z", "t"], ["s/2", "t + z"]]},
+       {"shape": "polygon", "points": [["-s/2", "t"], ["-s/2", "t + z"], ["-s/2 - z", "t"]]}]},
+    {"id": "svary", "type": "extrude", "name": "Koutové svary", "sketch": "svary_prurez",
+     "operation": "add", "distance": "B", "direction": "both"}
+  ]
+}

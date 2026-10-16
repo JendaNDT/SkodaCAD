@@ -224,6 +224,20 @@ def test_examples_menu_items_open_examples(window, slot_errors):
     assert slot_errors == []
 
 
+def test_ndt_reference_parts_are_in_examples_menu_in_order(window, slot_errors):
+    from PySide6.QtWidgets import QMenu
+
+    menu = next(m for m in window.findChildren(QMenu) if m.title() == "NDT – referenční díly")
+    labels = [a.text() for a in menu.actions()]
+    assert len(labels) == 8
+    assert labels[0] == "NDT 1 – Deska" and labels[-1] == "NDT 8 – Obtížný přístup"
+    window.session.dirty = False
+    action(window, "NDT 3 – Deska se žebrem").trigger()
+    assert "žebrem" in window.windowTitle()
+    assert window.session.result.part.volume == pytest.approx(460_000)
+    assert slot_errors == []
+
+
 @pytest.mark.parametrize("fmt", ["step", "stl", "3mf"])
 def test_export_menu_writes_file(window, slot_errors, monkeypatch, tmp_path, fmt):
     from PySide6.QtWidgets import QFileDialog

@@ -192,6 +192,14 @@ def _run_self_test(lines: _Report) -> int:
                 volume = session.properties.volume_mm3
                 lines.append(f"✓ {model.name}: objem {volume:.0f} mm³, export STEP/STL/3MF")
                 last_model = model
+        references = sorted(folder.glob("ndt/*.json")) if folder is not None else []
+        for model in references:  # referenční díly NDT: jen postavit
+            result = ModelSession().open_template(model)
+            if not result.ok:
+                ok = False
+                lines.append(f"✕ ndt/{model.name}: {result.first_error.message}")
+        if references and ok:
+            lines.append(f"✓ Referenční díly NDT: {len(references)} postaveno")
 
         ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
