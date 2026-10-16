@@ -3,7 +3,7 @@
 > Odpověď Claude Code na zadání v `03-implementacni-plan.md`, kap. 10. Zatím **jen návrh**:
 > kód se začne psát až po schválení. Nejde o NDT postup ani o tvrzení o detekovatelnosti vad.
 
-Stav: návrh 16. 10. 2026 · větev `ccr-299f2dcb-9w8xc9` (= main po PR #12)
+Stav: návrh 16. 10. 2026 · **schváleno a provedeno** (odchylky od návrhu jsou označené „Provedeno:“)
 
 ## 1. Etapa 00 – co v programu už je a na co se NDT napojí
 
@@ -111,6 +111,11 @@ Stavy studie (počítané, ne uložené):
 Ověření (`verified`) platí jen pro otisk, pro který se dalo. Po změně dílu se ukáže „ověření
 neplatí – díl se od ověření změnil“. Jakákoli úprava studie ověření smaže. Zpět vrátí i stav:
 změníš parametr → studie zastaralá → Zpět → zase platná.
+
+*Provedeno:* ověření smaže jen změna zadání (metoda, kontrolovaná oblast); přejmenování a
+poznámka ho nechají. Otisk dílu mění jen založení a **Potvrdit pro aktuální díl** – to navíc
+plochy oblasti znovu ukotví na jejich nové místo (jinak by hláška o posunu zůstala). Studii
+s chybějící plochou potvrdit nejde. AI asistent při přestavbě celého modelu studie ponechá.
 
 ### 3.3 Úpravy přes `ModelSession` (každá = jeden krok Zpět)
 

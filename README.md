@@ -222,6 +222,40 @@ a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). M
 * Se zapnutou **mapou tloušťky** zůstane barevná i rozříznutá – mapa se ořízne přesně
   rovinou řezu a uvidíš i vnitřek (třeba korozi uvnitř trubky).
 
+### NDT studie (předběžné posouzení)
+
+Začátek modulu NDT podle plánu v [docs/ndt/](docs/ndt/) (etapy 00 a 01). **NDT studie** je
+záznam v modelu: metoda (**UT, PT, MT, RT**), **kontrolovaná oblast** (plochy dílu), poznámka
+a ověření. Zatím se nic nepočítá (paprsek, sonda a pokrytí přijdou v dalších etapách) – studie
+ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nemění.
+
+> Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, normové
+> vyhodnocení ani reálnou kontrolu.
+
+* **Referenční díly:** *Soubor → Otevřít ukázku → NDT – referenční díly* – deska, blok
+  s kapsou, deska se žebrem, otvor, trubka, tupý svar V, koutový svar a obtížný přístup.
+  Každý má ukázkovou studii; ručně spočítané očekávané výsledky (půlkroky, mezní úhly, vůle
+  sondy) jsou v [docs/ndt/05-referencni-dily.md](docs/ndt/05-referencni-dily.md).
+* **Panel NDT** (záložka vedle *Měření*, nabídka *NDT*): vyber ve 3D plochy kontrolované
+  oblasti (Ctrl+klik přidá další), zvol metodu a **Nová NDT studie z výběru** (i pravým
+  tlačítkem → *Z výběru ve 3D*). Klik na studii v seznamu oblast ve 3D zvýrazní.
+* Stav studie se počítá při každé změně modelu:
+
+| Stav | Kdy |
+|---|---|
+| ✓ **platná** | díl je stejný jako při nastavení studie a všechny plochy oblasti se našly |
+| ⚠ **zastaralá** | díl se od nastavení změnil (parametr, prvek, materiál) – u plochy, která se posunula, i o kolik; zkontroluj a dej **Potvrdit pro aktuální díl** |
+| ⚠ **neúplná** | chybí kontrolovaná oblast – vyber plochy a dej **Oblast z výběru** |
+| ✕ **neplatná vazba** | plocha oblasti na dílu už není (nebo díl nejde postavit) |
+
+* Pozná se to podle **otisku dílu** – kontrolního součtu parametrů, prvků a materiálu.
+  Přejmenování prvku se nepočítá, posunutá díra ano (i když objem zůstane stejný).
+  Přejmenování studie zastaralou studii neopraví – jen *Potvrdit*.
+* **Ověřit…** zapíše, kdo studii odborně ověřil a kdy. Ověření platí jen pro díl, pro který
+  se dalo – po změně dílu se ukáže „ověření neplatí“. Změna metody nebo oblasti ho smaže.
+* Každá úprava studie je jeden krok **Zpět**; změníš tloušťku → studie zastaralá → Ctrl+Z →
+  zase platná.
+
 ### Tažení a přechod
 
 **Tažení** protáhne profil po trase – trubky, kolena, madla, rámy z jeklu. Ukázka:
@@ -381,6 +415,17 @@ Vlastnosti dílu:
 Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```
 
+Model s NDT studiemi vypíše i jejich stav (`skodacad build examples/ndt/deska.json
+--set t=30`):
+
+```
+NDT studie:
+  ⚠ UT desky shora (UT) – zastaralá
+      Díl se od nastavení studie změnil – zkontroluj ji a potvrď pro aktuální díl.
+      Kontrolovaná plocha se posunula o 10.00 mm – zkontroluj, že je to pořád ta správná.
+      Neověřeno.
+```
+
 Model s uloženými měřeními je vypíše taky a s nastavenou mapou tloušťky (nebo s volbou
 `--mapa`) i její souhrn – body mapy uloží do `out/<model>-tloustka.csv`
 (`skodacad build examples/trubka.json --set h=4`):
@@ -409,13 +454,14 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
   "features": [ ... ],
   "measurements": [ ... ],
-  "thickness_map": {"limit": 4}
+  "thickness_map": {"limit": 4},
+  "ndt": {"studies": [ ... ]}
 }
 ```
 
@@ -552,8 +598,29 @@ Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fia
 vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
-verze 12 normalizované díly (`standard`) a ocelový profil (`steel`); starší soubory se
-načtou beze změny.
+verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
+(`ndt`); starší soubory se načtou beze změny.
+
+### NDT studie (`ndt`)
+
+```json
+"ndt": {"studies": [
+  {"id": "s1", "name": "UT desky shora", "method": "UT",
+   "target": {"kind": "faces",
+              "faces": [{"face": {"at": [0, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
+   "note": "Přímá sonda z horní plochy.", "created": "2026-10-16", "part": "3f9a1c0b7d2e4a65",
+   "verified": {"by": "J. N.", "date": "2026-10-16", "part": "3f9a1c0b7d2e4a65"}}
+]}
+```
+
+* **`method`** – `UT`, `PT`, `MT` nebo `RT`. **`target`** – kontrolovaná oblast: zatím jen
+  `"kind": "faces"` se seznamem ploch zapsaných jako u měření (bod `at`, směr `normal`, druh,
+  poloměr). Bez ní (nebo s prázdným seznamem) je studie neúplná.
+* **`part`** – otisk dílu (16 znaků), ke kterému byla studie založena nebo naposledy
+  potvrzena; jiný otisk = studie zastaralá. **`verified`** (nepovinné) – kdo a kdy ověřil,
+  pro jaký otisk dílu. `name`, `note`, `created` jsou texty.
+* Stav studie se do souboru neukládá – spočítá se při každém přepočtu. Neznámé položky
+  ve studii jsou chyba (překlep se tak nepřehlédne). Sekce bez studií se nezapisuje.
 
 ### Materiály
 

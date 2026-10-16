@@ -212,6 +212,26 @@ def test_tool_inputs_are_validated(examples_dir):
     assert '"format": "skodacad"' in model.content and "Přepočet:" in model.content
 
 
+def test_rebuilt_model_keeps_user_ndt_studies_and_report_shows_them(examples_dir):
+    session = opened(examples_dir, "ndt/deska")
+    assert "NDT studie [s1] „UT desky shora“ (UT): platná" in build_report(session)
+    model = session.document.to_dict()
+    del model["ndt"]
+    model["parameters"]["t"] = 25
+    assistant, tools, requests = conversation(session, [
+        ([tool("replace_model", {"model": model}, "t1")], "tool_use"),
+        ([text("Deska je tlustší.")], "end_turn"),
+    ])
+    ask(assistant, tools, session, "přestav desku na tloušťku 25")
+    [study] = session.ndt_studies
+    assert study.state == "stale"
+    answer = requests[1]["body"]["messages"][-1]["content"][0]["content"]
+    assert answer.startswith("Model nahrazen. NDT studie uživatele zůstaly.")
+    assert "(UT): zastaralá – Díl se od nastavení studie změnil" in answer
+    assert "nikdy neodhaduj ani nevymýšlej" in system_prompt()
+    assert "### NDT studie (`ndt`)" in system_prompt()
+
+
 def test_report_shows_errors_and_missing_part(examples_dir):
     session = ModelSession()
     session.new_document()

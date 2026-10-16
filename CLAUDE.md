@@ -75,6 +75,12 @@
   rovnou nástroji nad `ModelSession`, celá odpověď = jeden krok Zpět. Klíč v profilu
   (`~/SkodaCAD/nastaveni.json`) nebo `ANTHROPIC_API_KEY`. Umí nový díl z popisu, vysvětlit
   a opravit chyby, prohlédnout si díl (snímek 3D) a příkazovou řádku. Formát se nemění.
+- (16. 10. 2026, schváleno) **NDT modul – etapy 00 a 01** podle `docs/ndt/03-implementacni-plan.md`
+  (návrh `04-navrh-etapa-00-01.md`): osm referenčních dílů `examples/ndt/` s ručně spočítanými
+  výsledky (`05-referencni-dily.md`, ověří kolega NDT technik), virtuální úhlová sonda 40 × 20 × 25
+  s výstupním bodem 12 mm od čela. **NDT studie v souboru modelu** (sekce `ndt`, formát
+  verze 13), otisk dílu z receptu, stavy platná/zastaralá/neúplná/neplatná vazba, panel NDT.
+  NDT nikdy nemění geometrii, výsledky se neukládají, AI není zdroj čísel.
 
 ## Architektura (`src/skodacad/`)
 
@@ -103,10 +109,12 @@
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
 | `thickness_map.py` | mapa tloušťky stěny: síť povrchu (půlení nejdelší strany v u, v), tloušťka v těžištích, barvy, souhrn, CSV |
 | `section.py` | řez modelem: rovina řezu, přesný řez, plochy řezu, export DXF/SVG, ořez sítě mapy rovinou |
+| `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost; studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
@@ -356,6 +364,25 @@
 - Vlastní id nového prvku jde jen parametrem `feature_id` (`add_feature`); id v hodnotách
   se dál nepřebírá (hlídá test skicáře).
 
+## Známé pasti (NDT studie)
+
+- Otisk dílu (`study.part_fingerprint`) je z **receptu** (parametry, prvky bez `name`,
+  materiál), ne z tvaru – posunutá díra nemění objem ani obalový kvádr. 20 a 20.0 jsou totéž
+  (`_canonical`). Jen **založení a potvrzení** studie mění její `part`; přejmenování ani
+  poznámka zastaralou studii nesmí „opravit“.
+- Potvrzení (`confirm_ndt_study`) plochy oblasti znovu ukotví (`refresh_target`) – jinak by
+  hláška „plocha se posunula o …“ zůstala navždy. Chybějící plocha = potvrzení odmítnuto.
+- Ověření (`verified`) nese otisk dílu, pro který platí; změna metody/oblasti ho smaže,
+  ověřit jde jen platnou studii (ne během přepočtu).
+- Panel NDT čte záznamy přes `_record` (bez výjimky): po smazání studie se seznam obnoví až
+  po překreslení dílu a mezitím ho volá `_selection_changed` se starým výběrem.
+- Klik na studii má při zvýraznění přednost před prvkem ve stromu; výběr prvku ve stromu
+  výběr studie zruší (`_update_highlight`, `_tree_selection_changed`).
+- AI `replace_model` bez klíče `ndt` studie uživatele **ponechá** (přestavba je jen označí
+  jako zastaralé). `RULES`: výsledky NDT AI nevymýšlí a studie mění jen na přání.
+- Referenční díly jsou v podsložce `examples/ndt/` – test ukázek, nabídka (`_reference_parts`,
+  řazení podle čísla v názvu), self-test i `skodacad.spec` ji procházejí zvlášť.
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -413,3 +440,6 @@
   [x] normalizované díly (formát verze 12).
 - [ ] **Fáze 4** – [x] AI asistent upravující model (Claude API, panel v okně, `skodacad ai`),
   [ ] omezené přímé úpravy ploch.
+- [ ] **NDT modul** (plán `docs/ndt/03-implementacni-plan.md`) – [x] etapa 00 referenční díly,
+  [x] etapa 01 NDT studie v modelu (formát v13, panel), [ ] etapa 02 společné geometrické jádro,
+  [ ] 03 polohování a obálky zařízení, [ ] 04–05 UT paprsek a ruční pohyb sondy (milník M1) …
