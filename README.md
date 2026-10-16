@@ -300,20 +300,24 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
   tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
   jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
-* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Přístupnost UT sondy* v panelu NDT
-  nastavíš sondu
+* **Virtuální sonda a geometrický paprsek UT** (etapy 03 a 04, UT studie): ve skupině
+  *Přístupnost UT sondy* v panelu NDT nastavíš sondu
   (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
-  dovolená mezera pod sondou a manipulační rezerva; uloží se do studie). Klikni ve 3D na plochu
-  a dej **Přiložit sondu sem**: sonda se nakreslí **zeleně** (přiloženo), **oranžově** (málo
-  místa, nedosedá, přesahuje přes okraj či otvor) nebo **červeně** (koliduje) a pod ní je
-  vysvětlení s čísly (mezera, průnik v mm³, volno k překážkám). *Směr paprsku [°]* sondu
-  natočí (0° = osa +X, 90° = +Y), *Odebrat sondu* ji schová. Přiložení je jen pohled – do
-  souboru se neukládá a po změně dílu se přepočítá.
+  úhlem paprsku v materiálu $\beta$ [°], počtem odrazů v dílu, dovolenou mezerou pod sondou
+  a manipulační rezervou; uloží se do studie). Klikni ve 3D na plochu
+  a dej **Přiložit sondu sem**: sonda i lomená dráha osy paprsku v dílu (včetně odrazu od stěn)
+  se nakreslí **zeleně** (přiloženo), **oranžově** (málo místa, nedosedá, přesahuje přes okraj
+  či otvor) nebo **červeně** (koliduje) a pod ní je vysvětlení s čísly (mezera, průnik v mm³,
+  volno k překážkám, ramena paprsku v materiálu, půlkrok, celý krok a jistota). *Směr paprsku [°]*
+  sondu natočí (0° = osa +X, 90° = +Y), *Odebrat sondu* ji schová. Přiložení i dráha paprsku jsou
+  jen pohled (vidět i v zapnutém *Řezu modelem*) – do souboru se neukládají a po změně dílu se
+  přepočítají.
 * Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
   Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
-  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Další etapy UT:
-  geometrický model svazku (lom jen se zadanými předpoklady), tažení sondy myší a *Mapa
-  geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze spolehlivě vyhodnotit).
+  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Lom podle Snellova
+  zákona (`--snell ALFA,C1,C2`) se počítá jen s výslovně zadanými rychlostmi. Další etapy UT:
+  tažení sondy myší a *Mapa geometrického pokrytí UT* (geometricky pokryto / nepokryto / nelze
+  spolehlivě vyhodnotit).
 
 ### Tažení a přechod
 
@@ -470,14 +474,19 @@ Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):
 ```
 
 `skodacad sonda` přiloží virtuální sondu do bodu `--bod` (na povrchu) se směrem paprsku
-`--smer`: výchozí úhlová 40 × 20 × 25 mm, jiná přes `--prima 10`, `--uhlova 40x20x25`,
-`--celo 12`, sonda ze studie `--studie s1`; meze `--mezera 0.5` a `--rezerva 5`. S `--posun`
+`--smer` a spočítá geometrickou dráhu osy UT paprsku v dílu: výchozí úhlová 40 × 20 × 25 mm
+($\beta = 45^\circ$, 1 odraz), jiná přes `--prima 10`, `--uhlova 40x20x25`, `--celo 12`,
+`--uhel 60` (nebo `--snell 36.44,2730,3250` a `--vlna shear`), `--odrazy 1`, `--dosah 100`,
+sonda ze studie `--studie s1`; meze `--mezera 0.5` a `--rezerva 5`. S `--posun`
 (a `--delka`, `--krok`) sondu posouvá a vypíše, odkud kam volně jede:
 
 ```
 Úhlová sonda 40 × 20 × 25 mm, výstupní bod 12 mm od čela (mezera nejvýš 0.50 mm, rezerva 0.00 mm)
 Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:
   Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.
+Dráha paprsku (úhel lomu 45.0°, nejvýš 1 odraz, algoritmus ndt-ut-paprsek 1):
+  rameno 1: [22; 0; 20] → [2; 0; 0], délka 28.28 mm, vodorovně 20.00 mm, hloubka 20.00 mm (dopad 45.0°)
+  ...
 Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm
   první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.
   (ŠkodaCAD provádí pouze geometrické posouzení přístupnosti ultrazvukové sondy a pokrytí …)
@@ -541,7 +550,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 14,
+  "version": 15,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -686,7 +695,8 @@ vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = ho
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
-(`ndt`), verze 14 sonda ve studii (`device`); starší soubory se načtou beze změny.
+(`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
+(`beam_angle`, `bounces`); starší soubory se načtou beze změny.
 
 ### NDT studie (`ndt`)
 
@@ -708,11 +718,13 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
   pro jaký otisk dílu. `name`, `note`, `created` jsou texty.
 * Stav studie se do souboru neukládá – spočítá se při každém přepočtu. Neznámé položky
   ve studii jsou chyba (překlep se tak nepřehlédne). Sekce bez studií se nezapisuje.
-* **`device`** (verze 14, nepovinné) – sonda studie, bez ní výchozí úhlová:
-  `{"kind": "angle", "length": 40, "width": 20, "height": 25, "front": 12, "max_gap": 0.5,
-  "reserve": 0}` nebo `{"kind": "straight", "diameter": 10, "height": 25, "max_gap": 0.5,
-  "reserve": 0}` (mm; `front` = výstupní bod od čela, `max_gap` = dovolená mezera pod sondou,
-  `reserve` = manipulační rezerva). Přiložení sondy se do souboru neukládá.
+* **`device`** (verze 14–15, nepovinné) – sonda studie, bez ní výchozí úhlová:
+  `{"kind": "angle", "length": 40, "width": 20, "height": 25, "front": 12, "beam_angle": 45,
+  "bounces": 1, "max_gap": 0.5, "reserve": 0}` nebo `{"kind": "straight", "diameter": 10,
+  "height": 25, "bounces": 0, "max_gap": 0.5, "reserve": 0}` (mm; `front` = výstupní bod od čela,
+  `beam_angle` = úhel lomu v materiálu $\beta$ [°] 1–85, `bounces` = počet odrazů 0–10,
+  `max_gap` = dovolená mezera pod sondou, `reserve` = manipulační rezerva). Přiložení sondy ani
+  dráha paprsku se do souboru neukládají.
 
 ### Materiály
 

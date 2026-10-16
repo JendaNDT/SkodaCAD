@@ -54,6 +54,7 @@ from skodacad.ndt.study import (
     target_for,
 )
 from skodacad.ndt.study import duplicate as duplicate_study
+from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -988,18 +989,27 @@ class ModelSession:
         if cache is not None and cache[0] is result and cache[1] == key:
             return cache[2]
         placement = None
+        beam = None
         try:
             face, at = find_face(result.part, reference["face"])
-            placement = place(self._ndt_geometry(), probe, (at.X, at.Y, at.Z), angle=angle,
-                              face=face)
+            geo = self._ndt_geometry()
+            placement = place(geo, probe, (at.X, at.Y, at.Z), angle=angle, face=face)
+            beam = trace_beam(geo, placement)
             self.ndt_placement_error = ""
-        except (SelectionError, DeviceError, GeometryError) as exc:
+        except (SelectionError, DeviceError, GeometryError, BeamError) as exc:
             self.ndt_placement_error = f"Sondu nejde přiložit: {exc}"
         except Exception as exc:  # noqa: BLE001 – pohled nesmí shodit okno
             self.ndt_placement_error = (f"Sondu nejde přiložit (neočekávaná chyba jádra "
                                         f"{type(exc).__name__}: {exc}).")
-        self._placement_cache = (result, key, placement)
+        self._placement_cache = (result, key, placement, beam)
         return placement
+
+    @property
+    def ndt_beam(self) -> BeamPath | None:
+        """Geometrická dráha osy UT paprsku přiložené sondy v dílu; None = žádná sonda."""
+        if self.ndt_placement is None or self._placement_cache is None:
+            return None
+        return self._placement_cache[3]
 
     def _ndt_geometry(self) -> PartGeometry:
         part = self.result.part

@@ -206,11 +206,12 @@ def test_probe_is_stored_in_study_with_undo(tmp_path):
     session.verify_ndt_study("s1", "J. N.")
     session.set_ndt_device("s1", {"kind": "straight", "diameter": 12})
     assert session.ndt_study("s1")["device"] == {"kind": "straight", "diameter": 12,
-                                                 "height": 25, "max_gap": 0.5, "reserve": 0}
+                                                 "height": 25, "bounces": 0,
+                                                 "max_gap": 0.5, "reserve": 0}
     assert "verified" not in session.ndt_study("s1")  # sonda je zadání studie
     assert session.ndt_probe("s1") == Probe.straight(12)
     path = session.save(tmp_path / "zebro.json")
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 14
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 15
     session.undo()
     assert "device" not in session.ndt_study("s1")
     with pytest.raises(DocumentError, match="Průměr sondy musí být číslo"):
@@ -223,6 +224,8 @@ def test_probe_placement_is_a_view_that_follows_the_part():
     placed = session.place_ndt_probe("s1", [top.wrapped], (22, 0, 20), angle=180)
     assert placed.ok and placed.clearance == pytest.approx(5)  # paprsek k žebru (−X)
     assert session.ndt_placement is placed  # podruhé z paměti
+    assert session.ndt_beam is not None and session.ndt_beam.ok
+    assert session.ndt_beam.half_skip == pytest.approx(20.0)
     document_before = session.document.to_dict()
     session.set_parameter("s", "14")  # tlustší žebro (bok x = 7) → volno 3 mm
     assert session.ndt_placement.clearance == pytest.approx(3)
@@ -234,7 +237,7 @@ def test_probe_placement_is_a_view_that_follows_the_part():
     session.undo()
     assert session.document.to_dict() == document_before  # přiložení se do modelu nepíše
     session.clear_ndt_placement()
-    assert session.ndt_placement is None
+    assert session.ndt_placement is None and session.ndt_beam is None
 
 
 def test_probe_placement_errors():

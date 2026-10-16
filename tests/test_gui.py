@@ -28,6 +28,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
+        self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
 
     def show_part(self, part, fit=False, accent=None):
@@ -37,6 +38,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.measurement = []
         self.thickness_map = None
         self.probe = None
+        self.beam = []
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -52,11 +54,13 @@ class FakeViewer(QtWidgets.QWidget):
     def hide_thickness_map(self):
         self.thickness_map = None
 
-    def show_probe(self, body, state, start, end, text):
+    def show_probe(self, body, state, start, end, text, beam=()):
         self.probe = (state, tuple(start), tuple(end), text, body.volume)
+        self.beam = [tuple(p) for p in beam]
 
     def hide_probe(self):
         self.probe = None
+        self.beam = []
 
     def clear_selection(self):
         self.picked_point = None
@@ -1200,15 +1204,21 @@ def test_place_turn_and_remove_probe(rib_window, slot_errors):
     assert state == "ok" and start == pytest.approx((22, 0, 20))
     assert end == pytest.approx((22 - 30, 0, 20))  # čára směru paprsku
     assert text == "přiloženo · volno 5.0 mm" and volume == pytest.approx(40 * 20 * 25)
+    assert len(w.viewer.beam) == 3  # výstup -> odraz u dna (x=2, z=0) -> stěna žebra (x=5)
+    assert w.viewer.beam[0] == pytest.approx((22, 0, 20))
+    assert w.viewer.beam[1] == pytest.approx((2, 0, 0), abs=1e-4)
     assert "Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm." in \
         panel.placement_label.text()
+    assert "Dráha paprsku (úhel lomu 45.0°" in panel.placement_label.text()
+    assert "půlkrok 20.00 mm, celý krok 40.00 mm" in panel.placement_label.text()
     panel.angle.setValue(0)  # otočit: zadní konec sondy zajede do žebra
     assert w.viewer.probe[0] == "collision"
     assert "Koliduje" in panel.placement_label.text()
     edit(w, "t", "25")  # silnější deska: sonda se přiloží znovu na posunutou plochu
     assert w.viewer.probe[1] == pytest.approx((22, 0, 25))
     panel.remove_probe_action.trigger()
-    assert w.viewer.probe is None and w.session.ndt_placement_request is None
+    assert w.viewer.probe is None and w.viewer.beam == []
+    assert w.session.ndt_placement_request is None
     assert slot_errors == []
 
 
@@ -1221,8 +1231,12 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
     assert "device" not in w.session.ndt_study("s1")
 
     def accept(self, dialog):
+        assert dialog.fields["beam_angle"].value() == 45
+        assert dialog.bounces.value() == 1
         dialog.kind.setCurrentIndex(dialog.kind.findData("straight"))
         assert not dialog.fields["length"].isVisibleTo(dialog)  # délka jen u úhlové
+        assert not dialog.fields["beam_angle"].isVisibleTo(dialog)  # úhel lomu jen u úhlové
+        assert dialog.bounces.value() == 0  # u přímé sondy výchozí 0 odrazů
         dialog.fields["diameter"].setValue(12)
         dialog.fields["reserve"].setValue(3)
         return QDialog.DialogCode.Accepted
@@ -1230,7 +1244,7 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
     monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
     panel.probe_action.trigger()
     assert w.session.ndt_study("s1")["device"] == {"kind": "straight", "diameter": 12,
-                                                   "height": 25, "max_gap": 0.5,
+                                                   "height": 25, "bounces": 0, "max_gap": 0.5,
                                                    "reserve": 3}
     assert panel.probe_label.text().startswith("Přímá sonda Ø 12 × 25 mm; mezera nejvýš 0.50")
     action(w, "Zpět").trigger()

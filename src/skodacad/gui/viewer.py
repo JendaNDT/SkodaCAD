@@ -331,10 +331,12 @@ class OccViewer(QWidget):
                                                           _rgb(0.0, 0.22, 0.07))
         self._view.Redraw()
 
-    def show_probe(self, body: Any, state: str, start: Any, end: Any, text: str) -> None:
+    def show_probe(self, body: Any, state: str, start: Any, end: Any, text: str,
+                   beam: Any = ()) -> None:
         """Virtuální NDT sonda: průhledné tělo v barvě stavu (zelená přiloženo, oranžová málo
-        místa / nedosedá / přesahuje, červená kolize) a čára směru paprsku z výstupního bodu
-        s popiskem. Kliknout na ni nejde – plochy dílu pod ní jdou dál vybírat."""
+        místa / nedosedá / přesahuje, červená kolize), čára směru paprsku z výstupního bodu
+        s popiskem a lomená dráha osy UT paprsku v dílu. Kliknout na ni nejde – plochy dílu
+        pod ní jdou dál vybírat."""
         if not self.ready:
             return
         self._remove_probe()
@@ -344,7 +346,8 @@ class OccViewer(QWidget):
         shown.SetTransparency(0.35)
         self._context.Display(shown, False)
         self._context.Deactivate(shown)
-        self._probe_objects = [shown, *self._marker_objects(start, end, text, color)]
+        self._probe_objects = [shown, *self._marker_objects(start, end, text, color),
+                               *self._beam_objects(beam, color)]
         self._view.Redraw()
 
     def hide_probe(self) -> None:
@@ -557,6 +560,29 @@ class OccViewer(QWidget):
             self._context.Deactivate(item)
             self._context.SetZLayer(item, Graphic3d_ZLayerId_Topmost)
         return shown
+
+    def _beam_objects(self, points: Any, color: Any) -> list[Any]:
+        """Lomená čára osy UT paprsku v dílu s kuličkami v bodech odrazu a dopadu."""
+        pts = list(points)
+        if len(pts) < 2:
+            return []
+        pnts = [gp_Pnt(*pt) for pt in pts]
+        compound = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(compound)
+        for a, b in zip(pnts, pnts[1:], strict=False):
+            if a.Distance(b) > 1e-6:
+                builder.Add(compound, BRepBuilderAPI_MakeEdge(a, b).Edge())
+        for pnt in pnts:
+            builder.Add(compound, BRepBuilderAPI_MakeVertex(pnt).Vertex())
+        line = AIS_Shape(compound)
+        line.SetColor(color)
+        line.SetWidth(2.5)
+        line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 2.0))
+        self._context.Display(line, False)
+        self._context.Deactivate(line)
+        self._context.SetZLayer(line, Graphic3d_ZLayerId_Topmost)
+        return [line]
 
     def _remove_measurement(self) -> None:
         for shown in self._measure_objects:

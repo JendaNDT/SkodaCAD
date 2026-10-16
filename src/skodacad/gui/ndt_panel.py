@@ -367,10 +367,10 @@ class NdtPanel(QWidget):
             self._apply("Studii nejde smazat",
                         lambda: self.window.session.remove_ndt_study(study_id))
 
-    # --- sonda (etapa 03) ------------------------------------------------------------------
+    # --- sonda a paprsek (etapy 03 a 04) -----------------------------------------------------
 
     def _show_probe(self) -> None:
-        """Sonda vybrané studie a výsledek přiložení."""
+        """Sonda vybrané studie, výsledek přiložení a geometrická dráha paprsku."""
         session = self.window.session
         record = self._record(self.current_id())
         if record is None:
@@ -380,13 +380,17 @@ class NdtPanel(QWidget):
         else:
             stored = "" if "device" in record else " (výchozí)"
             probe = session.ndt_probe(record["id"])
-            self.probe_label.setText(f"{probe.label}{stored}; mezera nejvýš "
-                                     f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm.")
+            beam_info = f", paprsek {probe.beam_angle:.0f}°" if probe.kind == "angle" else ""
+            self.probe_label.setText(f"{probe.label}{beam_info}{stored}; mezera nejvýš "
+                                     f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm, "
+                                     f"odrazy {probe.bounces}.")
         placement = session.ndt_placement
         if placement is not None:
             color = _PLACEMENT_COLORS.get(placement.state, "#b9770e")
+            beam = session.ndt_beam
+            beam_html = f"<br>{beam.text.replace(chr(10), '<br>')}" if beam is not None else ""
             self.placement_label.setText(f'<span style="color: {color};"><b>'
-                                         f"{placement.text}</b></span>")
+                                         f"{placement.text}</b></span>{beam_html}")
         elif session.ndt_placement_request is not None and session.ndt_placement_error:
             self.placement_label.setText(f'<span style="color: #c0392b;">'
                                          f"{session.ndt_placement_error}</span>")
@@ -425,11 +429,13 @@ class NdtPanel(QWidget):
 
 
 class ProbeDialog(QDialog):
-    """Nastavení virtuální sondy studie: druh, rozměry, výstupní bod, mezera a rezerva."""
+    """Nastavení virtuální sondy studie: druh, rozměry, výstupní bod, úhel paprsku, odrazy,
+    mezera a rezerva."""
 
     FIELDS = (("diameter", "Průměr [mm]", ("straight",)), ("length", "Délka [mm]", ("angle",)),
               ("width", "Šířka [mm]", ("angle",)), ("height", "Výška [mm]", None),
               ("front", "Výstupní bod od čela [mm]", ("angle",)),
+              ("beam_angle", "Úhel paprsku v materiálu β [°]", ("angle",)),
               ("max_gap", "Dovolená mezera pod sondou [mm]", None),
               ("reserve", "Manipulační rezerva [mm]", None))
 
@@ -447,7 +453,6 @@ class ProbeDialog(QDialog):
         for key, label in KINDS.items():
             self.kind.addItem(label.capitalize(), key)
         self.kind.setCurrentIndex(self.kind.findData(probe.kind))
-        self.kind.currentIndexChanged.connect(lambda _index: self._kind_changed())
         form.addRow("Druh", self.kind)
         self.fields: dict[str, QDoubleSpinBox] = {}
         self.labels: dict[str, QLabel] = {}
@@ -455,11 +460,19 @@ class ProbeDialog(QDialog):
             field = QDoubleSpinBox()
             field.setObjectName(f"probe_{key}")
             field.setDecimals(2)
-            field.setRange(0.0, 1000.0)
+            field.setRange(1.0 if key == "beam_angle" else 0.0,
+                           85.0 if key == "beam_angle" else 1000.0)
             field.setValue(float(getattr(probe, key)))
             self.fields[key] = field
             self.labels[key] = QLabel(label)
             form.addRow(self.labels[key], field)
+        self.bounces = QSpinBox()
+        self.bounces.setObjectName("probe_bounces")
+        self.bounces.setRange(0, 10)
+        self.bounces.setValue(int(probe.bounces))
+        form.addRow("Počet odrazů v dílu", self.bounces)
+        self.kind.currentIndexChanged.connect(
+            lambda _index: self._kind_changed(switched=True))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -467,17 +480,24 @@ class ProbeDialog(QDialog):
         form.addRow(buttons)
         self._kind_changed()
 
-    def _kind_changed(self) -> None:
+    def _kind_changed(self, switched: bool = False) -> None:
         kind = self.kind.currentData()
         for key, _label, kinds in self.FIELDS:
             shown = kinds is None or kind in kinds
             self.fields[key].setVisible(shown)
             self.labels[key].setVisible(shown)
+        if switched:
+            if kind == "straight" and self.bounces.value() == 1:
+                self.bounces.setValue(0)
+            elif kind == "angle" and self.bounces.value() == 0:
+                self.bounces.setValue(1)
 
     def values(self) -> dict:
         kind = self.kind.currentData()
-        return {"kind": kind, **{key: self.fields[key].value() for key, _label, kinds
-                                 in self.FIELDS if kinds is None or kind in kinds}}
+        return {"kind": kind,
+                **{key: self.fields[key].value() for key, _label, kinds in self.FIELDS
+                   if kinds is None or kind in kinds},
+                "bounces": self.bounces.value()}
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

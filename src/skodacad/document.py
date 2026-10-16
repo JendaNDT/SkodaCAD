@@ -39,9 +39,10 @@ FORMAT = "skodacad"
 # nastavení mapy tloušťky stěny („thickness_map“), verze 11 prvky „sweep“ (tažení po trase)
 # a „loft“ (přechod mezi skicami), verze 12 normalizované díly („standard“), ocelový profil
 # ve skice („steel“) a v tažení, verze 13 NDT studie („ndt“), verze 14 sonda ve studii
-# („device“). Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 14
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+# („device“), verze 15 úhel lomu a počet odrazů sondy („beam_angle“, „bounces“). Starší verze
+# jsou podmnožinou – načtou se beze změny.
+VERSION = 15
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
 
 
 class DocumentError(ValueError):

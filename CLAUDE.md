@@ -105,6 +105,13 @@
   Actions na macOS arm64, Windows beze změny. Stejné jádro, formát i NDT. Podepsání a
   notarizace až při rozhodnutí o distribuci. Kompatibilitu netvrdit, dokud ji uživatel neověří
   na skutečném Macu.
+- (16. 10. 2026, schváleno) **NDT etapa 04 – geometrický model UT paprsku** (`ndt/ut.py`, návrh
+  `docs/ndt/09-navrh-etapa-04.md`): přímá ($\beta = 0^\circ$) a úhlová ($\beta \in [1^\circ, 85^\circ]$)
+  sonda, lom podle Snellova zákona (`refract`) **jen s výslovně zadanými rychlostmi** $c_1, c_2$
+  a kritickým úhlem, zrcadlové odrazy na plochách (`trace_beam`, půlkrok `half_skip`, celý krok
+  `full_skip`, hloubka, jistota; nejistý dopad zastaví další odrazy). U sondy `beam_angle` a
+  `bounces` (**formát verze 15**), v `skodacad sonda` volby `--uhel`, `--snell`, `--vlna`,
+  `--odrazy`, `--dosah`; v okně vykreslení lomené dráhy paprsku ve 3D i v řezu.
 
 ## Architektura (`src/skodacad/`)
 
@@ -135,7 +142,8 @@
 | `section.py` | řez modelem: rovina řezu, přesný řez, plochy řezu, export DXF/SVG, ořez sítě mapy rovinou |
 | `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost a povinné upozornění UT (`UT_DISCLAIMER`, názvy `UT_ACCESS`, `UT_COVERAGE`); studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
 | `ndt/geometry.py` | NDT geometrické jádro (`PartGeometry`): `cast` (průsečíky, úseky v materiálu, jistota), `classify`, `surface_at` (normála, zakřivení), `visible`, `collision` (průnik, vůle), `faces_of`; konstanty `ALGORITHM`, tolerance |
-| `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
+| `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, `beam_angle`, `bounces`, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
+| `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
@@ -449,6 +457,13 @@
 - Při přiložené sondě okno nezvýrazňuje oblast studie (zvýraznění kreslené navrch přes celý
   díl by sondu přebilo). Prohlížeč maže sondu s dílem (`show_part`) → `_shown_probe = None`.
 - Self-test kreslí druh „probe“ (průhledné těleso) zvlášť a přikládá sondu na desku.
+- V `examples/ndt/tupy_svar.json` je kořenové převýšení ($k = 6\text{ mm}, p = 1\text{ mm}$)
+  součástí téhož tělesa (žádné vnitřní rozhraní na $z = 0$): paprsek dopadající do kořene
+  ($x \in [-3, 3]$) tak pokračuje až na spodní plochu kořene $z = -1\text{ mm}$ (hloubka 13 mm).
+- Odraz paprsku (`ut.trace_beam`) startuje v bodě dopadu `hit.point`; protože v `geometry.cast`
+  začíná 1. úsek v materiálu na `0.0 <= EDGE_TOL`, není potřeba bod odrazu posouvat. Při
+  nejistém dopadu (`THROUGH_EDGE`, `GRAZING`) nemá odraz jednoznačnou normálu a dráha skončí
+  se `STOPPED_UNCERTAIN`.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -548,8 +563,8 @@
 - [ ] **NDT modul** (plán `docs/ndt/03-implementacni-plan.md`) – [x] etapa 00 referenční díly,
   [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
-  [ ] 04–05 geometrický model UT svazku (lom jen se zadanými předpoklady) a ruční pohyb sondy
-  (milník M1) …
+  [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
+  [ ] 05 ruční pohyb sondy (milník M1) …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

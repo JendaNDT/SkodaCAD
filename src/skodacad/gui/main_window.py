@@ -489,7 +489,10 @@ class MainWindow(QMainWindow):
         else:
             direction, reach = placement.x_dir, 30.0
         end = tuple(o + d * reach for o, d in zip(origin, direction, strict=True))
-        self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short)
+        beam = self.session.ndt_beam
+        points = beam.points if beam is not None else ()
+        self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short,
+                               points)
 
     def show_ndt(self) -> None:
         self.ndt_dock.show()

@@ -35,9 +35,11 @@ def gap_at(distance, radius=57.15):
 
 def test_probe_defaults_label_and_round_trip():
     assert ANGLE.to_dict() == {"kind": "angle", "length": 40, "width": 20, "height": 25,
-                               "front": 12, "max_gap": 0.5, "reserve": 0}
+                               "front": 12, "beam_angle": 45, "bounces": 1,
+                               "max_gap": 0.5, "reserve": 0}
     assert Probe.from_dict(ANGLE.to_dict()) == ANGLE
     straight = Probe.from_dict({"kind": "straight", "diameter": 12})
+    assert straight.bounces == 0
     assert straight.label == "Přímá sonda Ø 12 × 25 mm"
     assert ANGLE.label == "Úhlová sonda 40 × 20 × 25 mm, výstupní bod 12 mm od čela"
     assert with_limits(ANGLE, reserve=5).reserve == 5
@@ -50,8 +52,11 @@ def test_probe_defaults_label_and_round_trip():
     ({"kind": "phased"}, "Druh sondy"),
     ({"kind": "angle", "length": -5}, "Délka sondy musí být číslo 1–500"),
     ({"kind": "angle", "front": 50}, "Výstupní bod .* musí ležet na sondě"),
+    ({"kind": "angle", "beam_angle": 89}, "Úhel lomu v materiálu musí být číslo 1–85 °"),
+    ({"kind": "angle", "bounces": 1.5}, "Počet odrazů musí být celé číslo 0–10"),
     ({"kind": "straight", "diameter": "deset"}, "Průměr sondy"),
     ({"kind": "straight", "length": 40}, "neznámá položka „length“"),
+    ({"kind": "straight", "beam_angle": 45}, "neznámá položka „beam_angle“"),
     ({"kind": "angle", "max_gap": -1}, "Dovolená mezera"),
     ([], "musí být objekt"),
 ])

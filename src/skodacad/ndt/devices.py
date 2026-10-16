@@ -38,10 +38,13 @@ KINDS = {"straight": "přímá sonda", "angle": "úhlová sonda"}
 STATES = {"ok": "přiloženo", "tight": "málo místa", "lift_off": "nedosedá",
           "overhang": "přesahuje", "collision": "koliduje", "uncertain": "nejisté"}
 _LIMITS = {"diameter": (1, 200), "length": (1, 500), "width": (1, 300), "height": (1, 1000),
-           "front": (0, 500), "max_gap": (0, 50), "reserve": (0, 500)}
+           "front": (0, 500), "beam_angle": (1, 85), "bounces": (0, 10), "max_gap": (0, 50),
+           "reserve": (0, 500)}
 _LABELS = {"diameter": "Průměr sondy", "length": "Délka sondy", "width": "Šířka sondy",
            "height": "Výška sondy", "front": "Výstupní bod od čela",
+           "beam_angle": "Úhel lomu v materiálu", "bounces": "Počet odrazů",
            "max_gap": "Dovolená mezera pod sondou", "reserve": "Manipulační rezerva"}
+_UNITS = {"beam_angle": "°", "bounces": ""}
 
 
 class DeviceError(ValueError):
@@ -53,7 +56,7 @@ class DeviceError(ValueError):
 
 @dataclass(frozen=True)
 class Probe:
-    """Virtuální sonda (rozměry v mm) a meze přiložení."""
+    """Virtuální sonda (rozměry v mm, úhel lomu v °) a meze přiložení."""
 
     kind: str = "angle"  # straight / angle
     diameter: float = 10.0  # přímá: průměr kontaktní plochy
@@ -61,6 +64,8 @@ class Probe:
     width: float = 20.0  # úhlová: šířka napříč
     height: float = 25.0  # výška těla
     front: float = 12.0  # úhlová: výstupní bod od čela
+    beam_angle: float = 45.0  # úhlová: úhel lomu v materiálu od kolmice [°]
+    bounces: int = -1  # počet odrazů (výchozí: 0 přímá, 1 úhlová)
     max_gap: float = DEFAULT_MAX_GAP
     reserve: float = DEFAULT_RESERVE
 
@@ -68,28 +73,39 @@ class Probe:
         if self.kind not in KINDS:
             raise DeviceError(f"Druh sondy musí být „straight“ (přímá) nebo „angle“ (úhlová), "
                               f"je {self.kind!r}.")
+        if self.bounces == -1:
+            object.__setattr__(self, "bounces", 0 if self.kind == "straight" else 1)
         for key in self._keys():
             value = getattr(self, key)
             low, high = _LIMITS[key]
+            unit = _UNITS.get(key, "mm")
+            suffix = f" {unit}" if unit else ""
+            if key == "bounces":
+                if not isinstance(value, int) or isinstance(value, bool) or not (
+                        low <= value <= high):
+                    raise DeviceError(f"{_LABELS[key]} musí být celé číslo {low}–{high} "
+                                      f"(je {value!r}).")
+                continue
             if not isinstance(value, int | float) or isinstance(value, bool) or not (
                     low <= value <= high):
-                raise DeviceError(f"{_LABELS[key]} musí být číslo {low:g}–{high:g} mm "
+                raise DeviceError(f"{_LABELS[key]} musí být číslo {low:g}–{high:g}{suffix} "
                                   f"(je {value!r}).")
         if self.kind == "angle" and self.front > self.length:
             raise DeviceError(f"Výstupní bod ({self.front:g} mm od čela) musí ležet na sondě "
                               f"dlouhé {self.length:g} mm.")
 
     def _keys(self) -> tuple[str, ...]:
-        shape = ("diameter",) if self.kind == "straight" else ("length", "width", "front")
-        return (*shape, "height", "max_gap", "reserve")
+        shape = ("diameter",) if self.kind == "straight" else (
+            "length", "width", "front", "beam_angle")
+        return (*shape, "height", "bounces", "max_gap", "reserve")
 
     @classmethod
-    def straight(cls, diameter: float = 10.0, height: float = 25.0, **limits: float) -> Probe:
+    def straight(cls, diameter: float = 10.0, height: float = 25.0, **limits: Any) -> Probe:
         return cls("straight", diameter=diameter, height=height, **limits)
 
     @classmethod
     def angle(cls, length: float = 40.0, width: float = 20.0, height: float = 25.0,
-              front: float = 12.0, **limits: float) -> Probe:
+              front: float = 12.0, **limits: Any) -> Probe:
         return cls("angle", length=length, width=width, height=height, front=front, **limits)
 
     @classmethod

@@ -10,6 +10,7 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 6. [Návrh etapy 02](06-navrh-etapa-02.md) – společné geometrické jádro: paprsek, bod plochy, uvnitř/vně, viditelnost, kolize (schváleno a provedeno 16. 10. 2026).
 7. [Návrh etapy 03](07-navrh-etapa-03.md) – virtuální sonda na povrchu dílu: přiložení, mezera, přesah, kolize, vůle, posun (schváleno a provedeno 16. 10. 2026).
 8. [Návrh první verze pro macOS](08-navrh-macos.md) – audit knihoven (vše má verzi pro Apple Silicon), Cocoa okno, `SkodaCAD.app` v ZIP, samostatné sestavení na GitHubu, ruční test na MacBooku (rozpracováno).
+9. [Návrh etapy 04](09-navrh-etapa-04.md) – geometrický model UT paprsku: přímá a úhlová sonda, lom podle Snellova zákona se zadanými předpoklady, odrazy (poloviční a celá rozteč), zobrazení ve 3D a v řezu (schváleno a provedeno 16. 10. 2026).
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 
@@ -18,6 +19,6 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 
 (Soubory 04 a 05 mají shodná čísla s návrhy etap – kvůli odkazům se nepřečíslovávají.)
 
-**Stav:** etapy 00 (referenční díly), 01 (NDT studie, formát verze 13, panel NDT), 02 (geometrické jádro, `skodacad paprsek`) a 03 (virtuální sonda `ndt/devices.py`, uložená ve studii – formát verze 14, Přiložit sondu sem v okně, `skodacad sonda`) jsou hotové a sladěné se závazným vymezením UT (povinné upozornění, skupina *Přístupnost UT sondy*). Podle `05-podpora-macos.md` je na řadě **první verze pro macOS**, potom etapa 04 – geometrický model UT svazku: dráha, odraz a lom jen s výslovně zadanými předpoklady (rychlosti), s testy proti ručním výpočtům. Etapa 16 (virtuální signály A/B-scan) je podle vymezení mimo schválený rozsah.
+**Stav:** etapy 00 (referenční díly), 01 (NDT studie, formát verze 13, panel NDT), 02 (geometrické jádro, `skodacad paprsek`), 03 (virtuální sonda `ndt/devices.py`, uložená ve studii, Přiložit sondu sem v okně, `skodacad sonda`) a 04 (geometrický model UT paprsku `ndt/ut.py`, formát verze 15, lom podle Snellova zákona se zadanými předpoklady, odrazy, vykreslení dráhy ve 3D a v řezu) jsou hotové a sladěné se závazným vymezením UT (povinné upozornění, skupina *Přístupnost UT sondy*). Další je etapa 05 – ruční pohyb sondy po povrchu se živou odezvou (milník M1). Etapa 16 (virtuální signály) je podle vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

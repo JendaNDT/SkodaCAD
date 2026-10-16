@@ -79,6 +79,17 @@ def main(argv: list[str] | None = None) -> int:
                        help="přímá sonda daného průměru [mm]")
     probe.add_argument("--uhlova", metavar="DxŠxV", help="úhlová sonda, např. 40x20x25 [mm]")
     probe.add_argument("--celo", type=float, help="výstupní bod úhlové sondy od čela [mm]")
+    probe.add_argument("--uhel", dest="beam_angle", type=float, metavar="STUPNĚ",
+                       help="úhel lomu paprsku v materiálu [°] (výchozí 45 u úhlové, 0 u přímé)")
+    probe.add_argument("--snell", metavar="ALFA,C1,C2",
+                       help="spočti úhel lomu ze Snellova zákona: úhel v předsádce [°], "
+                            "rychlost v předsádce a v materiálu [m/s]")
+    probe.add_argument("--vlna", default="shear", choices=("shear", "longitudinal"),
+                       help="druh vlny v materiálu pro --snell (shear = příčná, longitudinal)")
+    probe.add_argument("--odrazy", dest="bounces", type=int, metavar="POČET",
+                       help="maximální počet odrazů paprsku (výchozí 1 u úhlové, 0 u přímé)")
+    probe.add_argument("--dosah", dest="max_length", type=float, metavar="MM",
+                       help="maximální délka dráhy paprsku v materiálu [mm]")
     probe.add_argument("--mezera", type=float, help="dovolená mezera pod sondou [mm] (0.5)")
     probe.add_argument("--rezerva", type=float, help="manipulační rezerva [mm] (0)")
     probe.add_argument("--posun", dest="move", metavar="DX,DY,DZ",
@@ -136,9 +147,16 @@ def _probe(args: argparse.Namespace) -> int:
     from skodacad.ndt.devices import DeviceError, Probe, place, scan_line
     from skodacad.ndt.geometry import GeometryError, PartGeometry
     from skodacad.ndt.study import study_probe
+    from skodacad.ndt.ut import BeamError, refract, trace_beam
 
+    if args.beam_angle is not None and args.snell is not None:
+        raise ValueError("Zadej buď --uhel, nebo --snell, ne obojí.")
     point = _vector(args.point, "--bod")
     direction = _vector(args.direction, "--smer") if args.direction else None
+    refraction = None
+    if args.snell:
+        alpha, c1, c2 = _vector(args.snell, "--snell")
+        refraction = refract(alpha, c1, c2, args.vlna)
     document = Document.load(args.model)
     result = rebuild(document, _parse_overrides(args.overrides) or None)
     if result.part is None:
@@ -147,7 +165,9 @@ def _probe(args: argparse.Namespace) -> int:
         probe = _cli_probe(args, document, Probe, study_probe)
         geo = PartGeometry(result.part)
         placed = place(geo, probe, point, direction)
-    except (DeviceError, GeometryError) as exc:
+        beam = trace_beam(geo, placed, beta=args.beam_angle, bounces=args.bounces,
+                          max_length=args.max_length, refraction=refraction)
+    except (DeviceError, GeometryError, BeamError) as exc:
         raise ValueError(str(exc)) from None
     print(f"{probe.label} (mezera nejvýš {probe.max_gap:.2f} mm, rezerva "
           f"{probe.reserve:.2f} mm)")
@@ -166,6 +186,7 @@ def _probe(args: argparse.Namespace) -> int:
         problem = next(((offset, p) for offset, p in scan.positions if not p.ok), None)
         if problem is not None:
             print(f"  první potíž po {problem[0]:g} mm: {problem[1].text}")
+    print(beam.text)
     print(f"  ({UT_DISCLAIMER})")
     return 0
 
