@@ -232,7 +232,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     if viewer.ready:
         image = user_dir() / "self-test-3d.png"
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
-                     f"OpenGL: {viewer.graphics_info()})")
+                     f"OpenGL: {viewer.graphics_info()}; {viewer.scale_info()})")
         ok = (_self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
               and _self_test_map(window, lines) and _self_test_section(window, lines))
     elif viewer.failed_stage in ("display", "opengl"):

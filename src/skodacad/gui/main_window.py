@@ -64,9 +64,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé: posun  ·  Kolečko: zoom  ·  "
-             "Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  Pravý klik: co s výběrem  ·  "
-             "Dvojklik: celý díl")
+HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+levé: posun  ·  "
+             "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
+             "Pravý klik: co s výběrem  ·  Dvojklik: celý díl")
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {

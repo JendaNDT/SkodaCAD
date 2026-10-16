@@ -1255,3 +1255,16 @@ def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_erro
     assert panel.warning.text() == DISCLAIMER
     assert not panel.probe_action.isEnabled()
     assert slot_errors == []
+
+
+# --- macOS: souřadnice myši -------------------------------------------------------------------
+
+
+def test_pixel_ratio_measured_on_mac_only():
+    from skodacad.gui.viewer import pixel_ratio
+
+    assert pixel_ratio("win32", 1204, 803, 1.5) == 1.5  # Windows 150 %: jako dřív
+    assert pixel_ratio("linux", 600, 600, 1.0) == 1.0
+    assert pixel_ratio("darwin", 1600, 800, 2.0) == 2.0  # Retina, OCCT počítá v pixelech
+    assert pixel_ratio("darwin", 800, 800, 2.0) == 1.0  # OCCT v bodech – nenásobit
+    assert pixel_ratio("darwin", 0, 800, 2.0) == 2.0  # okno OCCT ještě nezná velikost

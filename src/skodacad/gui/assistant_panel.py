@@ -365,8 +365,8 @@ class AssistantSettingsDialog(QDialog):
             f"ho na <a href=\"{KEY_URL}\">console.anthropic.com</a> (účet s kreditem; "
             "předplatné Claude.ai API nezahrnuje). Úprava stojí orientačně 2–7 Kč u Opus, "
             "u Sonnet zhruba polovinu. Model (JSON) se posílá ke zpracování společnosti "
-            "Anthropic. Klíč se uloží jen do tvého profilu (SkodaCAD\\nastaveni.json); "
-            "funguje i proměnná ANTHROPIC_API_KEY.")
+            "Anthropic. Klíč se uloží jen do tvého profilu "
+            f"({Path('SkodaCAD', 'nastaveni.json')}); funguje i proměnná ANTHROPIC_API_KEY.")
         info.setWordWrap(True)
         info.setOpenExternalLinks(True)
         info.setTextFormat(Qt.TextFormat.RichText)
