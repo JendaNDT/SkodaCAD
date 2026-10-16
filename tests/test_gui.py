@@ -172,6 +172,29 @@ def test_coverage_panel_compute_hide_export_and_invalidation(ndt_window, tmp_pat
     assert session.ndt_coverage is None and w.viewer.coverage_map is None
 
 
+def test_scan_slider_clears_coverage_summary_and_export(ndt_window, slot_errors):
+    from skodacad.ndt.devices import Probe
+
+    w = ndt_window
+    session, panel = w.session, w.ndt_panel
+    session.set_ndt_target("s1", [face_at(session.result.part, 0, 0, 0).wrapped], (0, 0, 0))
+    session.set_ndt_device("s1", Probe.straight(10))
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    session.scan_ndt_line(20, 5)
+    session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    panel.select("s1")
+    w._refresh_all()
+    assert "Geometricky pokryto:" in panel.coverage_label.text()
+    assert panel.export_coverage_action.isEnabled()
+    assert panel.clear_coverage_action.isEnabled()
+    panel.scan_slider.setValue(1)
+    assert session.ndt_coverage is None and w.viewer.coverage_map is None
+    assert "Geometricky pokryto:" not in panel.coverage_label.text()
+    assert not panel.export_coverage_action.isEnabled()
+    assert not panel.clear_coverage_action.isEnabled()
+    assert slot_errors == []
+
+
 def test_parameter_change_rebuilds(window):
     volume_before = window.session.properties.volume_mm3
     edit(window, "n", "8")

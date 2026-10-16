@@ -594,6 +594,8 @@ class NdtPanel(QWidget):
             return
         self.window._refresh_probe()
         self._show_probe()
+        self._show_coverage()
+        self.refresh_actions()
 
     def on_probe_dragged(self, shapes: list, point: object) -> None:
         """Jízda sondou myší ve 3D: přesune (nebo poprvé přiloží) sondu bez vyskakovacích oken."""

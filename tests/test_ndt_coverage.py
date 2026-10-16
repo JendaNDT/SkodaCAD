@@ -117,6 +117,33 @@ def test_reflection_is_counted_only_when_allowed(parts):
     assert reflected.hits[0].distance == pytest.approx(40 * 2**0.5)
 
 
+@pytest.mark.parametrize("direction", [0, 180])
+@pytest.mark.parametrize("bounces", [1, 2])
+def test_intermediate_source_is_resolved_through_side_wall_reflections(parts, direction, bounces):
+    import math
+
+    geo = parts["deska"]
+    sign = 1 if direction == 0 else -1
+    placed = place(geo, Probe.angle(beam_angle=60), (sign * 80, 0, 20), angle=direction)
+    # Zrcadlení na boční stěně x = ±100 obrátí vliv posunu zdroje.
+    # Zdroj x = ±84 leží mezi uzly pojezdu; následuje případně druhý odraz ode dna.
+    target = (sign * (200 - 84 - 20 * bounces * math.tan(math.radians(60))),
+              0, 0 if bounces == 1 else 20)
+    settings = dict(points=[target], mode="line", length_mm=8, bounces=bounces,
+                    tolerance_mm=4.8, angle_deg=direction)
+    coarse = compute(geo, placed, scan_step=8, **settings)
+    fine = compute(geo, placed, scan_step=4, **settings)
+    assert coarse.valid_positions == 2
+    assert coarse.states == fine.states == ["covered"]
+    assert coarse.hits[0].origin == pytest.approx((sign * 84, 0, 20))
+    assert coarse.hits[0].leg == bounces + 1
+    assert coarse.hits[0].distance == pytest.approx(40 * bounces)
+    assert compute(geo, placed, scan_step=8, **{**settings, "bounces": bounces - 1}).states == [
+        "uncovered"]
+    assert compute(geo, placed, scan_step=8, **{**settings, "length_mm": 2}).states == [
+        "uncovered"]
+
+
 def test_explicit_geometric_spread_is_distinct_from_grid_tolerance(parts):
     geo = parts["deska"]
     placed = place(geo, Probe.straight(10), (0, 0, 20))

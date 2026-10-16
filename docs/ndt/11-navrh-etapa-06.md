@@ -92,6 +92,9 @@ tak zakrýt slepé místo u žebra tolerancí mřížky. U zakřiveného pojezdu
 v numerické toleranci označen nejistě, pokud neleží ve skutečně zadaném geometrickém svazku.
 Za konec ramene se svazek numerickou tolerancí neprodlužuje. Procento z bodových dotazů je
 podíl bodů, nikoli plocha; plochy se váží obsahy trojúhelníků.
+Při dopočtu mezilehlé polohy po odrazu se cíl postupně zrcadlí zpět přes odrazové roviny
+k přímému rameni; posun zdroje totiž nemusí posunout odražené rameno stejným směrem.
+Nalezená poloha i všechny odrazy se následně znovu ověří skutečným trasováním.
 U přímého osového pojezdu se hodnotí průnik paprsku se skutečnou trojúhelníkovou ploškou,
 nemusí projít přesně jejím těžištěm. Obarvený pás má šířku danou rozlišením cílové sítě;
 s jejím zjemňováním se zužuje. Podíl plochy z jediné osové čáry proto závisí na rozlišení.

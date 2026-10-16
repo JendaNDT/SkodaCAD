@@ -17,7 +17,7 @@ from typing import Any
 from skodacad.ndt import UT_COVERAGE, UT_DISCLAIMER
 from skodacad.ndt.devices import Placement, place
 from skodacad.ndt.geometry import PartGeometry, Point
-from skodacad.ndt.ut import Refraction, trace_beam
+from skodacad.ndt.ut import BeamLeg, BeamPath, Refraction, trace_beam
 from skodacad.thickness_map import _Surface
 
 ALGORITHM = "ndt-ut-pokryti 1"
@@ -164,22 +164,37 @@ def _grid_face(face: Any, step: float) -> list[Point]:
     return result
 
 
-def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, leg: Any,
-                      options: dict[str, Any], source: Point, mode: str, length: float,
-                      step: float, angle: float, cache: dict) -> tuple[CoverageHit, bool] | None:
+def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, beam: BeamPath,
+                      leg: BeamLeg, options: dict[str, Any], source: Point, mode: str,
+                      length: float, step: float, angle: float,
+                      cache: dict) -> tuple[CoverageHit, bool] | None:
     """Numerická blízkost sama nezakryje slepé místo u překážky.
 
     Na rovinném pojezdu dopočítá mezi uzly polohu osového paprsku, znovu ověří otisk,
     kolizi i celou dráhu. Na zakřivené ploše tento rovinný důkaz nelze použít.
     """
+    # Rozvinout odrazy zpět k přímému rameni. Posun zdroje neposouvá odražené
+    # rameno stejným vektorem (na boční stěně se znaménko obrací).
+    unfolded = point
+    for previous in reversed(beam.legs[:leg.index - 1]):
+        hit = previous.hit
+        if hit is None:
+            return None
+        distance = sum((t - a) * n
+                       for t, a, n in zip(unfolded, hit.point, hit.normal, strict=True))
+        unfolded = tuple(t - 2 * distance * n
+                         for t, n in zip(unfolded, hit.normal, strict=True))
+    # Tečné roviny zakřivených odrazů jsou jen návrh; rozhoduje opětovné trasování.
+    direction = beam.legs[0].direction
     normal = placed.z_dir
-    denominator = sum(d * n for d, n in zip(leg.direction, normal, strict=True))
+    denominator = sum(d * n for d, n in zip(direction, normal, strict=True))
     if abs(denominator) < 1e-9:
         return None
-    distance = sum((t - a) * n for t, a, n in zip(point, leg.start, normal, strict=True))
+    distance = sum((t - a) * n
+                   for t, a, n in zip(unfolded, placed.origin, normal, strict=True))
     distance /= denominator
     shift = tuple(t - a - d * distance
-                  for t, a, d in zip(point, leg.start, leg.direction, strict=True))
+                  for t, a, d in zip(unfolded, placed.origin, direction, strict=True))
     if math.sqrt(sum(v * v for v in shift)) > step * 1.5:
         return None
     origin = tuple(o + delta for o, delta in zip(placed.origin, shift, strict=True))
@@ -352,7 +367,7 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
                         if target is None:
                             continue
                     if placed.surface.kind == "plane":
-                        verified = _resolve_axis_hit(geo, placed, target, leg, beam_options,
+                        verified = _resolve_axis_hit(geo, placed, target, beam, leg, beam_options,
                                                      placement.origin, mode, length_mm,
                                                      scan_step, angle_deg, resolved)
                         if verified is None:
