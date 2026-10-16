@@ -352,8 +352,9 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
             feature["sketch"] = sketches[-1]
         feature["axis"] = "Z"
     elif feature_type == "sweep":  # trubkové koleno 90°
+        # šířka a výška jsou skryté, dokud se nepřepne na jekl – pak hned něco ukáže
         feature.update(path=[[0, 0, 0], [0, 0, 100], [100, 0, 100]], bend_radius=40,
-                       profile="circle", diameter=30, wall=2)
+                       profile="circle", diameter=30, width=40, height=20, wall=2)
     elif feature_type == "loft":
         feature["sketches"] = sketches[-2:]  # dvě poslední skici (třeba dole a nahoře)
     elif feature_type == "fillet":

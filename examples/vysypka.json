@@ -1,0 +1,17 @@
+{
+  "format": "skodacad",
+  "version": 11,
+  "name": "Výsypka čtverec – kruh",
+  "description": "Ukázka přechodu mezi skicami: plechová výsypka z čtverce A × A nahoře do kruhu d dole, výška H, stěna s. Přechod spojí skici v pořadí stromu, tloušťka stěny z něj udělá dutý díl s otevřenými konci. U přechodu kruh – hranatý tvar se stěna měří v rovinách skic (vodorovně), kolmo k šikmé stěně je o něco tenčí (tady asi 2,7 mm). Mezi dvěma kruhy nebo dvěma obdélníky je stěna přesně kolmá k povrchu. Rozměry jsou ilustrační.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"A": 400, "d": 150, "H": 300, "s": 3},
+  "features": [
+    {"id": "dole", "type": "sketch", "name": "Kruh dole", "plane": "XY",
+     "elements": [{"shape": "circle", "diameter": "d"}]},
+    {"id": "nahore", "type": "sketch", "name": "Čtverec nahoře", "plane": "XY", "offset": "H",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "A"}]},
+    {"id": "vysypka", "type": "loft", "name": "Výsypka", "sketches": ["dole", "nahore"],
+     "ruled": true, "wall": "s"}
+  ]
+}
