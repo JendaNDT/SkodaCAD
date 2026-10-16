@@ -109,3 +109,82 @@ def test_map_triangles_on_the_kept_side():
     triangles = [(0, 1, 2), (3, 4, 5)]
     assert keep_triangles(nodes, triangles, axis_plane("Z", 2)) == [(0, 1, 2)]
     assert keep_triangles(nodes, triangles, axis_plane("Z", 2, flipped=True)) == [(3, 4, 5)]
+
+
+# --- řez v ModelSession: jen pohled, výběr z rozříznutého dílu funguje na celém dílu -------
+
+
+def plate_session():
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.document = make_doc(box_features(40, 30, 10) + [
+        {"id": "ds", "type": "sketch", "plane": "top",
+         "elements": [{"shape": "circle", "diameter": 8}]},
+        {"id": "d", "type": "extrude", "sketch": "ds", "operation": "cut", "through_all": True},
+    ], {})
+    session.rebuild()
+    return session
+
+
+def test_session_section_is_only_a_view(tmp_path):
+    from skodacad.document import DocumentError
+
+    session = plate_session()
+    full = session.result.part
+    assert session.display_part is full and session.section is None
+    before = session.document.to_dict()
+    section = session.set_section_axis("Y")  # bez polohy: uprostřed dílu
+    assert session.section_range() == pytest.approx((-15, 15), abs=1e-6)
+    assert section.area == pytest.approx((40 - 8) * 10)
+    assert session.display_part is section.part
+    assert session.document.to_dict() == before and not session.dirty  # model beze změny
+    session.set_section_position(10)  # mimo díru, zbude zadní pruh y > 10
+    assert session.section.area == pytest.approx(40 * 10)
+    assert session.section.part.volume == pytest.approx(40 * 5 * 10)
+    session.flip_section()  # zbude přední část y < 10
+    assert session.section.part.volume == pytest.approx(full.volume - 40 * 5 * 10)
+    session.set_section_position(99)
+    assert session.section is None and "míjí" in session.section_error
+    assert session.display_part is full  # při chybě ukázat celý díl
+    with pytest.raises(DocumentError, match="míjí"):
+        session.export_section(tmp_path / "rez.dxf")
+    session.set_section_position(0)
+    assert session.export_section(tmp_path / "rez.svg").exists()
+    session.clear_section()
+    assert session.display_part is full and session.section is None
+
+
+def test_section_parallel_to_clicked_face():
+    from skodacad.document import DocumentError
+
+    session = plate_session()
+    top = face_at(session.result.part, 15, 10, 10)
+    section = session.set_section_face([top.wrapped], (15, 10, 10))
+    assert session.section_range() == pytest.approx((0, 10))
+    assert section.part.volume == pytest.approx((40 * 30 - math.pi * 16) * 5)  # v půlce
+    with pytest.raises(DocumentError, match="zakřivená"):
+        session.set_section_face([face_at(session.result.part, 4, 0, 5).wrapped])
+    with pytest.raises(DocumentError, match="právě jednu"):
+        session.set_section_face([])
+
+
+def test_selection_on_cut_part_works_on_the_whole_part():
+    from skodacad.document import DocumentError
+
+    session = plate_session()
+    session.set_section_axis("Y", 0)
+    cut_part = session.display_part
+    edge = min(cut_part.edges(), key=lambda e: e.distance_to((0, 15, 10)))  # zadní horní
+    fillet = session.add_from_selection("fillet", [edge.wrapped])
+    assert session.feature(fillet)["edges"] == {"between": ["top", "back"]}
+    assert session.result.ok  # zaoblení se postavilo na celém díle
+    mid = session.add_measurement([face_at(session.display_part, 15, 10, 0).wrapped],
+                                  "thickness", (15, 10, 0))
+    assert [m.value.value for m in session.measurements if m.id == mid] == [pytest.approx(10)]
+    on_cut = face_at(session.display_part, 15, 0, 5)  # plocha řezu (vznikla jen řezem)
+    with pytest.raises(DocumentError, match="vznikla jen řezem"):
+        session.add_from_selection("sketch", [on_cut.wrapped], (15, 0, 5))
+    # měřit na ploše řezu jde (jen uložit ne): tloušťka od řezu dozadu přes celou desku
+    values = session.measure_selection([on_cut.wrapped], (15, 0, 5))
+    assert values[0].kind == "thickness" and values[0].value == pytest.approx(15)

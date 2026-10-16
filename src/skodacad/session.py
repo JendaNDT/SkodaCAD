@@ -52,6 +52,18 @@ from skodacad.projection import refresh as refresh_references
 from skodacad.properties import PartProperties, compute
 from skodacad.rebuild import BuildResult, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
+from skodacad.section import (
+    Section,
+    SectionError,
+    SectionPlane,
+    axis_plane,
+    axis_range,
+    base_depth_range,
+    face_base,
+    offset_plane,
+)
+from skodacad.section import cut as cut_section
+from skodacad.section import export_2d as export_section_2d
 from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
 from skodacad.solver import SolveError, loops, solve
 from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
@@ -102,6 +114,8 @@ class ModelSession:
         self._job: int | None = None  # běžící přepočet na pozadí
         self._computed: Document | None = None  # model, ke kterému patří ``result``
         self.map_visible = False  # počítat i mapu tloušťky stěny (zapíná okno)
+        self.section_settings: SectionSettings | None = None  # řez modelem (jen pohled)
+        self._section_cache: tuple[Any, ...] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -422,6 +436,7 @@ class ModelSession:
         """
         document = self._require()
         part = self._final_part()
+        shapes = self._model_shapes(shapes)
         feature = new_feature(feature_type, document.features)
         self._fill_from_selection(feature, part, shapes, point, replace=True, new=True)
         self._change(lambda doc: doc.features.append(feature))
@@ -439,6 +454,7 @@ class ModelSession:
         if feature["type"] not in SELECTION_FEATURES:
             raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
         self._require_computed("převzetí výběru")
+        shapes = self._model_shapes(shapes)
         part = self.result.parts_before.get(feature_id) if self.result else None
         if part is None:
             raise DocumentError(f"{describe(feature)} se zatím nepočítá (je za chybou "
@@ -492,7 +508,7 @@ class ModelSession:
         self._require_computed("uložení měření")
         if self.result is None or self.result.part is None:
             raise DocumentError("Model zatím nemá těleso, není co měřit.")
-        faces, edges = split_shapes(shapes)
+        faces, edges = split_shapes(self._model_shapes(shapes))
         try:
             record = new_measurement(self.result.part, faces, edges, kind, point,
                                      document.measurements)
@@ -521,6 +537,148 @@ class ModelSession:
             if measurement.get("id") == measurement_id:
                 return index
         raise DocumentError(f"Měření „{measurement_id}“ v modelu není.")
+
+    # --- řez modelem (jen pohled, model se nemění) -----------------------------------------
+
+    def set_section_axis(self, axis: str, position: float | None = None,
+                         flipped: bool = False) -> Section | None:
+        """Řez kolmo na osu X/Y/Z; bez ``position`` uprostřed dílu."""
+        if axis not in ("X", "Y", "Z"):
+            raise DocumentError(f"Neznámá osa řezu „{axis}“ – umím X, Y nebo Z.")
+        part = self._section_source()
+        if position is None:
+            low, high = axis_range(part, axis)
+            position = (low + high) / 2
+        self.section_settings = SectionSettings(axis, float(position), flipped)
+        return self.section
+
+    def set_section_face(self, shapes: list[Any], point: Any = None) -> Section | None:
+        """Řez rovnoběžně s vybranou rovinnou plochou, napoprvé v polovině hloubky dílu."""
+        faces, _ = split_shapes(shapes)
+        if len(faces) != 1:
+            raise DocumentError("Pro řez rovnoběžně s plochou vyber ve 3D právě jednu rovinnou "
+                                "plochu.")
+        try:
+            base = face_base(faces[0], point)
+        except SectionError as exc:
+            raise DocumentError(str(exc)) from None
+        low, high = base_depth_range(self._section_source(), base)
+        self.section_settings = SectionSettings(None, (low + high) / 2, False, base)
+        return self.section
+
+    def set_section_position(self, position: float) -> Section | None:
+        settings = self._require_section()
+        self.section_settings = SectionSettings(settings.axis, float(position),
+                                                settings.flipped, settings.base)
+        return self.section
+
+    def flip_section(self) -> Section | None:
+        settings = self._require_section()
+        self.section_settings = SectionSettings(settings.axis, settings.position,
+                                                not settings.flipped, settings.base)
+        return self.section
+
+    def clear_section(self) -> None:
+        self.section_settings = None
+
+    @property
+    def section_plane(self) -> SectionPlane | None:
+        settings = self.section_settings
+        if settings is None:
+            return None
+        if settings.axis is not None:
+            return axis_plane(settings.axis, settings.position, settings.flipped)
+        return offset_plane(settings.base, settings.position, settings.flipped)
+
+    def section_range(self) -> tuple[float, float]:
+        """Rozsah posuvníku řezu (souřadnice v ose, nebo hloubka pod plochou) [mm]."""
+        settings = self._require_section()
+        part = self._section_source()
+        if settings.axis is not None:
+            return axis_range(part, settings.axis)
+        return base_depth_range(part, settings.base)
+
+    @property
+    def section(self) -> Section | None:
+        """Rozříznutý díl podle nastavení (spočítá se jednou pro každý díl a polohu)."""
+        return self._cut()[0]
+
+    @property
+    def section_error(self) -> str:
+        """Proč se řez nepovedl ("" = v pořádku nebo řez vypnutý)."""
+        return self._cut()[1]
+
+    @property
+    def display_part(self) -> Any:
+        """Díl, který okno ukáže: rozříznutý při zapnutém řezu, jinak celý."""
+        section = self.section
+        if section is not None:
+            return section.part
+        return self.result.part if self.result is not None else None
+
+    def export_section(self, path: str | Path) -> Path:
+        """Obrys řezu jako 2D výkres (.dxf pro CAD, .svg jako obrázek)."""
+        section = self.section
+        if section is None:
+            raise DocumentError(self.section_error or "Řez není zapnutý.")
+        try:
+            return export_section_2d(section, path)
+        except SectionError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def _cut(self) -> tuple[Section | None, str]:
+        plane = self.section_plane
+        part = self.result.part if self.result is not None else None
+        if plane is None or part is None:
+            return None, ""
+        key = (id(part), plane)
+        if self._section_cache is None or self._section_cache[0] != key:
+            try:
+                found: tuple[Section | None, str] = (cut_section(part, plane), "")
+            except SectionError as exc:
+                found = (None, str(exc))
+            self._section_cache = (key, found)
+        return self._section_cache[1]
+
+    def _section_source(self) -> Any:
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Řez potřebuje díl – model zatím nemá těleso.")
+        return self.result.part
+
+    def _require_section(self) -> SectionSettings:
+        if self.section_settings is None:
+            raise DocumentError("Řez není zapnutý.")
+        return self.section_settings
+
+    def _model_shapes(self, shapes: list[Any]) -> list[Any]:
+        """Plochy a hrany rozříznutého dílu (řez zapnutý) → tytéž na celém dílu."""
+        if self.section_settings is None or self.result is None or self.result.part is None:
+            return shapes
+        from build123d import Vertex
+
+        from skodacad.measure import inner_point
+
+        part = self.result.part
+        faces, edges = split_shapes(shapes)
+        mapped: list[Any] = []
+        for face in faces:
+            point = inner_point(face)
+            normal = face.normal_at(point)
+            here = Vertex(point)
+            same = [f for f in part.faces() if f.geom_type == face.geom_type]
+            best = min(same, key=lambda f: f.distance_to(here), default=None)
+            if (best is None or best.distance_to(here) > 1e-6
+                    or best.normal_at(point).dot(normal) < 1 - 1e-6):
+                raise DocumentError("Vybraná plocha vznikla jen řezem – na díl ji použít ani "
+                                    "uložit nejde. Vyber jinou plochu, nebo řez vypni.")
+            mapped.append(best.wrapped)
+        if edges:
+            try:
+                mapped += [edge.wrapped for edge in map_edges(edges, part)]
+            except SelectionError:
+                raise DocumentError("Vybraná hrana vznikla jen řezem – na díl ji použít ani "
+                                    "uložit nejde. Vyber jinou hranu, nebo řez vypni.") from None
+        return mapped
 
     # --- mapa tloušťky stěny ----------------------------------------------------------
 
@@ -786,6 +944,17 @@ class ProfileSolution:
     @property
     def ok(self) -> bool:
         return not self.message
+
+
+@dataclass(frozen=True)
+class SectionSettings:
+    """Nastavení řezu: osa (X/Y/Z), nebo rovina vybrané plochy ``base``; poloha je souřadnice
+    v ose, nebo hloubka pod plochou [mm]."""
+
+    axis: str | None
+    position: float
+    flipped: bool = False
+    base: SectionPlane | None = None
 
 
 @dataclass(frozen=True)

@@ -85,32 +85,44 @@ def axis_range(part: Part, axis: str) -> tuple[float, float]:
     return (box.min.X, box.min.Y, box.min.Z)[index], (box.max.X, box.max.Y, box.max.Z)[index]
 
 
-def face_plane(face: Face, depth: float, flipped: bool = False,
-               point: Any = None) -> SectionPlane:
-    """Řez rovnoběžně s rovinnou plochou ``face`` ve hloubce ``depth`` mm pod ní.
-
-    Odřízne se materiál mezi plochou a řezem (díváme se do dílu), s ``flipped`` naopak
-    zbude jen ta vrstva pod plochou.
-    """
+def face_base(face: Face, point: Any = None) -> SectionPlane:
+    """Rovina rovinné plochy ``face`` (bod na ní a směr ven) – základ řezu rovnoběžně s ní."""
     if face.geom_type != GeomType.PLANE:
         raise SectionError("Řez jde vést jen rovnoběžně s rovinnou plochou – vybraná plocha "
                            "je zakřivená.")
     at = Vector(*point) if point is not None else face.center()
-    normal = face.normal_at(at)
-    origin = at - normal * float(depth)
-    if flipped:
-        normal = -normal
-    return SectionPlane(_tuple(origin), _tuple(normal))
+    return SectionPlane(_tuple(at), _tuple(face.normal_at(at)))
 
 
-def depth_range(part: Part, face: Face, point: Any = None) -> tuple[float, float]:
+def offset_plane(base: SectionPlane, depth: float, flipped: bool = False) -> SectionPlane:
+    """Řez rovnoběžně s plochou ``base`` ve hloubce ``depth`` mm pod ní.
+
+    Odřízne se materiál mezi plochou a řezem (díváme se do dílu), s ``flipped`` naopak
+    zbude jen ta vrstva pod plochou.
+    """
+    normal = Vector(*base.normal).normalized()
+    origin = Vector(*base.origin) - normal * float(depth)
+    return SectionPlane(_tuple(origin), _tuple(-normal if flipped else normal))
+
+
+def face_plane(face: Face, depth: float, flipped: bool = False,
+               point: Any = None) -> SectionPlane:
+    """Řez rovnoběžně s rovinnou plochou ``face`` ve hloubce ``depth`` mm pod ní."""
+    return offset_plane(face_base(face, point), depth, flipped)
+
+
+def base_depth_range(part: Part, base: SectionPlane) -> tuple[float, float]:
     """Jak hluboko pod plochu může řez jít (0 = na ploše, až po druhý konec dílu) [mm]."""
-    at = Vector(*point) if point is not None else face.center()
-    normal = face.normal_at(at)
+    at, normal = Vector(*base.origin), Vector(*base.normal).normalized()
     box = part.bounding_box()
     corners = [Vector(x, y, z) for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
                for z in (box.min.Z, box.max.Z)]
     return 0.0, max(0.0, max((at - corner).dot(normal) for corner in corners))
+
+
+def depth_range(part: Part, face: Face, point: Any = None) -> tuple[float, float]:
+    """Jak hluboko pod plochu ``face`` může řez jít [mm]."""
+    return base_depth_range(part, face_base(face, point))
 
 
 def cut(part: Part | None, plane: SectionPlane) -> Section:
