@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 8 – Obtížný přístup",
   "description": "Referenční díl NDT č. 8: deska se dvěma žebry blízko sebe. Sonda 40 × 20 mm se do mezery m = 30 mm vejde jen podélně (vůle 10 mm), napříč koliduje se žebry – paprsek napříč mezerou proto nejde, podél žeber ano. Zespodu je přístup volný (dráha t = 15 mm pod mezerou). Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × t = deska, s × v = tloušťka × výška žeber, m = světlá mezera mezi žebry.",
   "units": "mm",
@@ -15,5 +15,12 @@
                   {"shape": "rectangle", "width": "s", "height": "B", "center": ["(m + s)/2", 0]}]},
     {"id": "zebra", "type": "extrude", "name": "Žebra", "sketch": "zebra_obrys",
      "distance": "v"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT dna mezery mezi žebry", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 15], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Plocha mezi žebry – sonda se vejde jen podélně.",
+     "created": "2026-10-16", "part": "a7c4907b6640c3b9"}
+  ]}
 }

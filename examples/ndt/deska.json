@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 1 – Deska",
   "description": "Referenční díl NDT č. 1: rovná deska. Přímá sonda shora: dráha k protější stěně = t. Úhlová sonda 45°: půlkrok t·tg 45° = 20 mm, dráha k dolní ploše t / cos 45° = 28,28 mm. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B = rozměry desky, t = tloušťka.",
   "units": "mm",
@@ -10,5 +10,12 @@
     {"id": "obrys", "type": "sketch", "name": "Obrys desky", "plane": "XY",
      "elements": [{"shape": "rectangle", "width": "A", "height": "B"}]},
     {"id": "deska", "type": "extrude", "name": "Deska", "sketch": "obrys", "distance": "t"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT desky shora", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Přímá sonda z horní plochy, dráha k dolní ploše.",
+     "created": "2026-10-16", "part": "d2adca0f544474d6"}
+  ]}
 }

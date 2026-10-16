@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 2 – Blok s kapsou",
   "description": "Referenční díl NDT č. 2: blok s kapsou shora. Přímá sonda ze spodu pod kapsou: dráha H − h = 15 mm, mimo kapsu H = 40 mm. Na dno kapsy a × b se vejde sonda Ø 20 (střed v poli 20 × 10 mm), Ø 32 ne. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × H = blok, a × b × h = kapsa.",
   "units": "mm",
@@ -14,5 +14,12 @@
      "elements": [{"shape": "rectangle", "width": "a", "height": "b"}]},
     {"id": "kapsa", "type": "extrude", "name": "Kapsa", "sketch": "kapsa_obrys",
      "operation": "cut", "distance": "h"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT dna kapsy", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 15], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Stěna pod kapsou, přímá sonda zespodu (dráha 15 mm).",
+     "created": "2026-10-16", "part": "763df241f51dc800"}
+  ]}
 }

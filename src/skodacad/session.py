@@ -18,6 +18,7 @@ pozadí v pomocném procesu: úprava se přijme hned, ``result`` zůstane do dok
 from __future__ import annotations
 
 import copy
+import datetime
 import re
 import time
 from collections.abc import Callable
@@ -39,6 +40,16 @@ from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
+from skodacad.ndt.study import METHODS as NDT_METHODS
+from skodacad.ndt.study import (
+    StudyError,
+    StudyResult,
+    new_study,
+    part_fingerprint,
+    refresh_target,
+    target_for,
+)
+from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -65,7 +76,13 @@ from skodacad.section import (
 )
 from skodacad.section import cut as cut_section
 from skodacad.section import export_2d as export_section_2d
-from skodacad.selectors import SelectionError, describe_edges, select_edges, select_faces
+from skodacad.selectors import (
+    SelectionError,
+    describe_edges,
+    find_face,
+    select_edges,
+    select_faces,
+)
 from skodacad.solver import SolveError, loops, solve
 from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
 
@@ -785,6 +802,165 @@ class ModelSession:
                                 "výsledek.")
         return found.write_csv(path)
 
+    # --- NDT studie (nemění těleso) ------------------------------------------------------
+
+    @property
+    def ndt_studies(self) -> list[StudyResult]:
+        """Stavy NDT studií na posledním dílu (spočítá je přepočet)."""
+        return list(self.result.ndt) if self.result is not None else []
+
+    def ndt_study(self, study_id: str) -> dict[str, Any]:
+        """Záznam studie v modelu (kopie)."""
+        return copy.deepcopy(_studies(self._require())[self._study_index(study_id)])
+
+    def add_ndt_study(self, method: str, shapes: list[Any] | None = None, point: Any = None,
+                      name: str | None = None) -> str:
+        """Nová studie; vybrané plochy (``shapes``) budou kontrolovaná oblast. Vrátí id."""
+        document = self._require()
+        target = self._ndt_target(shapes, point) if shapes else None
+        try:
+            record = new_study(method, _studies(document), part_fingerprint(document), target,
+                               name)
+        except StudyError as exc:
+            raise DocumentError(str(exc)) from None
+        self._change(lambda doc: _studies(doc, create=True).append(record))
+        return record["id"]
+
+    def rename_ndt_study(self, study_id: str, name: str) -> BuildResult:
+        name = name.strip()
+        if not name:
+            raise DocumentError("Název NDT studie nesmí být prázdný.")
+        return self._edit_study(study_id, lambda study: study.update(name=name))
+
+    def set_ndt_note(self, study_id: str, note: str) -> BuildResult:
+        return self._edit_study(study_id, lambda study: study.update(note=note.strip()))
+
+    def set_ndt_method(self, study_id: str, method: str) -> BuildResult:
+        if method not in NDT_METHODS:
+            raise DocumentError(f"Metoda musí být jedna z {', '.join(NDT_METHODS)}.")
+        return self._edit_study(study_id, lambda study: study.update(method=method),
+                                setup=True)
+
+    def set_ndt_target(self, study_id: str, shapes: list[Any], point: Any = None) -> BuildResult:
+        """Kontrolovaná oblast studie z ploch vybraných ve 3D."""
+        index = self._study_index(study_id)
+        target = self._ndt_target(shapes, point)
+        return self._edit_study(_studies(self._require())[index]["id"],
+                                lambda study: study.update(target=target), setup=True)
+
+    def confirm_ndt_study(self, study_id: str) -> BuildResult:
+        """Potvrdí studii pro aktuální díl (po kontrole zastaralé studie): nový otisk dílu a
+        plochy oblasti ukotvené tam, kde teď jsou. Ověření pro starší díl tím zanikne."""
+        document = self._require()
+        self._require_computed("potvrzení studie")
+        study = _studies(document)[self._study_index(study_id)]
+        fingerprint = part_fingerprint(document)
+        target = study.get("target")
+        if target and target.get("faces"):
+            if self.result is None or self.result.part is None or self._computed != document:
+                raise DocumentError("Model nemá spočítané těleso – studii teď nejde potvrdit.")
+            try:
+                target = refresh_target(self.result.part, target)
+            except (SelectionError, StudyError) as exc:
+                raise DocumentError(f"Studii nejde potvrdit – {exc} Vyber kontrolovanou oblast "
+                                    "znovu.") from None
+
+        def confirm(study: dict[str, Any]) -> None:
+            study["part"] = fingerprint
+            if target:
+                study["target"] = target
+            if (study.get("verified") or {}).get("part") != fingerprint:
+                study.pop("verified", None)
+
+        return self._edit_study(study_id, confirm)
+
+    def verify_ndt_study(self, study_id: str, by: str) -> BuildResult:
+        """Zapíše odborné ověření studie (kdo, dnes, pro aktuální díl)."""
+        by = by.strip()
+        if not by:
+            raise DocumentError("Napiš, kdo studii ověřil.")
+        self._require_computed("ověření studie")
+        index = self._study_index(study_id)
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
+        if state != "ok":
+            reasons = {"stale": "je zastaralá – nejdřív ji zkontroluj a potvrď pro aktuální díl",
+                       "incomplete": "je neúplná – nejdřív vyber kontrolovanou oblast",
+                       "broken": "má neplatnou vazbu na díl – nejdřív ji oprav"}
+            raise DocumentError(f"Studie {reasons.get(state, 'ještě není vyhodnocená')}.")
+        verified = {"by": by, "date": datetime.date.today().isoformat(),
+                    "part": _studies(self._require())[index]["part"]}
+        return self._edit_study(study_id, lambda study: study.update(verified=verified))
+
+    def unverify_ndt_study(self, study_id: str) -> BuildResult:
+        return self._edit_study(study_id, lambda study: study.pop("verified", None))
+
+    def duplicate_ndt_study(self, study_id: str) -> str:
+        """Kopie studie hned za originálem (bez ověření). Vrátí id kopie."""
+        index = self._study_index(study_id)
+        record = duplicate_study(_studies(self._require())[index], _studies(self._require()))
+        self._change(lambda doc: _studies(doc).insert(index + 1, record))
+        return record["id"]
+
+    def remove_ndt_study(self, study_id: str) -> BuildResult:
+        index = self._study_index(study_id)
+
+        def remove(doc: Document) -> None:
+            del _studies(doc)[index]
+            if not _studies(doc):
+                doc.ndt = None  # bez studií se sekce do souboru nepíše
+
+        return self._change(remove)
+
+    def ndt_highlight(self, study_id: str) -> list[Any]:
+        """Plochy kontrolované oblasti na dílu (OCCT) pro zvýraznění; co chybí, vynechá."""
+        if self.result is None or self.result.part is None or self.document is None:
+            return []
+        try:
+            study = _studies(self.document)[self._study_index(study_id)]
+        except DocumentError:
+            return []
+        shapes = []
+        for reference in (study.get("target") or {}).get("faces", []):
+            try:
+                face, _ = find_face(self.result.part, reference["face"])
+            except SelectionError:
+                continue
+            shapes.append(face.wrapped)
+        return shapes
+
+    def _study_index(self, study_id: str) -> int:
+        for index, study in enumerate(_studies(self._require())):
+            if study.get("id") == study_id:
+                return index
+        raise DocumentError(f"NDT studie „{study_id}“ v modelu není.")
+
+    def _edit_study(self, study_id: str, update: Callable[[dict[str, Any]], Any],
+                    setup: bool = False) -> BuildResult:
+        """Úprava studie; ``setup`` = mění zadání (metoda, oblast) → ověření zanikne.
+        Otisk dílu mění jen založení a potvrzení – přejmenování zastaralou studii neopraví."""
+        index = self._study_index(study_id)
+
+        def mutate(doc: Document) -> None:
+            study = _studies(doc)[index]
+            update(study)
+            if setup:
+                study.pop("verified", None)
+
+        return self._change(mutate)
+
+    def _ndt_target(self, shapes: list[Any], point: Any) -> dict[str, Any]:
+        self._require_computed("výběr kontrolované oblasti")
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if edges or not faces:
+            raise DocumentError("Kontrolovaná oblast jsou plochy dílu – vyber ve 3D jednu nebo "
+                                "víc ploch (hrany ne).")
+        try:
+            return target_for(self.result.part, faces, point)
+        except StudyError as exc:
+            raise DocumentError(str(exc)) from None
+
     def _final_part(self) -> Any:
         self._require_computed("přidání prvku z výběru")
         result = self.result
@@ -1041,3 +1217,12 @@ def _uses_name(value: Any, name: str) -> bool:
     if isinstance(value, list):
         return any(_uses_name(item, name) for item in value)
     return name in referenced_names(value)
+
+
+def _studies(document: Document, create: bool = False) -> list[dict[str, Any]]:
+    """Seznam NDT studií modelu (``create`` založí sekci „ndt“, když chybí)."""
+    if document.ndt is None:
+        if not create:
+            return []
+        document.ndt = {"studies": []}
+    return document.ndt.setdefault("studies", [])

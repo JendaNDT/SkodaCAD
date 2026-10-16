@@ -18,6 +18,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
+from skodacad.ndt import DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -100,6 +101,11 @@ def _build(args: argparse.Namespace) -> int:
         print("Měření:")
         for measurement in result.measurements:
             print(f"  {measurement.text}")
+    if result.ndt:
+        print("NDT studie:")
+        for study in result.ndt:
+            print("  " + study.text.replace("\n", "\n  "))
+        print(f"  ({DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

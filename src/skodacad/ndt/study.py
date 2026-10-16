@@ -264,6 +264,19 @@ def target_for(part: Part, faces: list[Face], point: Any = None) -> dict[str, An
     return {"kind": "faces", "faces": references}
 
 
+def refresh_target(part: Part, target: dict[str, Any]) -> dict[str, Any]:
+    """Kontrolovaná oblast znovu ukotvená na aktuálním dílu (při potvrzení studie): body
+    a směry ploch tam, kde plochy teď jsou. Plocha, která zmizela → ``SelectionError``."""
+    references = []
+    for reference in target.get("faces", []):
+        face, on_face = find_face(part, reference["face"])
+        try:
+            references.append(reference_for(part, face, on_face))
+        except MeasureError as exc:
+            raise StudyError(str(exc).replace("uložené měření", "NDT studii")) from None
+    return {**target, "faces": references}
+
+
 def new_id(existing: list[dict[str, Any]]) -> str:
     used = {study.get("id") for study in existing}
     number = 1

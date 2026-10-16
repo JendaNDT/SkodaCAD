@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 7 – Koutový svar (T-spoj)",
   "description": "Referenční díl NDT č. 7: pásnice se stojinou a oboustrannými koutovými svary (rameno z = 7 mm, účinná tloušťka a ≈ 4,95 mm). Díl je jedno těleso. Přímá sonda zespodu pod stojinou: rovina styku stojiny s pásnicí v hloubce t = 10 mm. Sonda na pásnici jen ≥ s/2 + z = 12 mm od osy stojiny (paty svarů). Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × t = pásnice, s × v = tloušťka × výška stojiny, z = rameno svaru.",
   "units": "mm",
@@ -20,5 +20,13 @@
        {"shape": "polygon", "points": [["-s/2", "t"], ["-s/2", "t + z"], ["-s/2 - z", "t"]]}]},
     {"id": "svary", "type": "extrude", "name": "Koutové svary", "sketch": "svary_prurez",
      "operation": "add", "distance": "B", "direction": "both"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "PT koutových svarů", "method": "PT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [8.5, 0, 13.5], "normal": [0.7071, 0, 0.7071], "type": "plane"}},
+                   {"face": {"at": [-8.5, 0, 13.5], "normal": [-0.7071, 0, 0.7071], "type": "plane"}}]},
+     "note": "Povrch obou koutových svarů.",
+     "created": "2026-10-16", "part": "6b1f544564e63cd7"}
+  ]}
 }

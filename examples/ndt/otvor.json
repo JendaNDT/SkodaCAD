@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 4 – Deska s otvorem",
   "description": "Referenční díl NDT č. 4: deska s průchozím otvorem uprostřed. Přímá sonda Ø 10 dosedne celou plochou až ve vzdálenosti d/2 + 5 = 15 mm od osy otvoru; paprsek blíž než d/2 = 10 mm od osy materiál nenajde. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × t = deska, d = průměr otvoru.",
   "units": "mm",
@@ -11,5 +11,12 @@
      "elements": [{"shape": "rectangle", "width": "A", "height": "B"},
                   {"shape": "circle", "diameter": "d", "mode": "subtract"}]},
     {"id": "deska", "type": "extrude", "name": "Deska", "sketch": "obrys", "distance": "t"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT okolí otvoru", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [10, 0, 10], "normal": [-1, 0, 0], "type": "cylinder", "radius": 10}}]},
+     "note": "Stěna otvoru Ø 20, sonda na horní ploše.",
+     "created": "2026-10-16", "part": "30081f12af1d9d7b"}
+  ]}
 }

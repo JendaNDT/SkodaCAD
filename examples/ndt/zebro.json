@@ -1,6 +1,6 @@
 {
   "format": "skodacad",
-  "version": 12,
+  "version": 13,
   "name": "NDT 3 – Deska se žebrem",
   "description": "Referenční díl NDT č. 3 (první milník UT): deska se žebrem uprostřed. Virtuální úhlová sonda 40 × 20 × 25 mm s výstupním bodem 12 mm od čela: pod osu žebra na dně desky musí výstupní bod stát aspoň s/2 + 12 = 17 mm od osy. 45° (půlkrok 20 mm) ano jen s rezervou 3 mm, 60° (34,64 mm) ano. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md. A × B × t = deska, s × v = tloušťka × výška žebra.",
   "units": "mm",
@@ -14,5 +14,12 @@
      "elements": [{"shape": "rectangle", "width": "s", "height": "B"}]},
     {"id": "zebro", "type": "extrude", "name": "Žebro", "sketch": "zebro_obrys",
      "distance": "v"}
-  ]
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "UT pod žebrem – úhlová sonda", "method": "UT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [40, 0, 0], "normal": [0, 0, -1], "type": "plane"}}]},
+     "note": "Cíl: dno desky pod osou žebra, sonda na horní ploše vedle žebra.",
+     "created": "2026-10-16", "part": "e0907462f58b4736"}
+  ]}
 }
