@@ -260,6 +260,18 @@ ale hlídá, jestli ještě platí pro aktuální díl. Díl samotný nikdy nem�
   tělesa (budoucí sonda) s dílem. Hraniční případy – přímka po povrchu, přes hranu nebo
   tečně – jsou **nejisté** s vysvětlením a nikdy se nezapočítají jako materiál. Vyzkoušet
   jde příkazem `skodacad paprsek` (viz *Příkazová řádka*).
+* **Virtuální sonda** (etapa 03, UT studie): ve skupině *Sonda* v panelu NDT nastavíš sondu
+  (*Sonda…* – přímá Ø D × výška, nebo úhlová délka × šířka × výška s výstupním bodem od čela,
+  dovolená mezera pod sondou a manipulační rezerva; uloží se do studie). Klikni ve 3D na plochu
+  a dej **Přiložit sondu sem**: sonda se nakreslí **zeleně** (přiloženo), **oranžově** (málo
+  místa, nedosedá, přesahuje přes okraj či otvor) nebo **červeně** (koliduje) a pod ní je
+  vysvětlení s čísly (mezera, průnik v mm³, volno k překážkám). *Směr paprsku [°]* sondu
+  natočí (0° = osa +X, 90° = +Y), *Odebrat sondu* ji schová. Přiložení je jen pohled – do
+  souboru se neukládá a po změně dílu se přepočítá.
+* Sonda vždy dosedá kontaktní plochou do tečné roviny. Mezera pod ní se měří přesně (na trubce
+  Ø 114,3 dá přímá sonda Ø 20 mezeru 0,88 mm → nedosedá; výchozí mez 0,5 mm odpovídá
+  EN ISO 17640). Vůle se počítá jen k překážkám **nad** rovinou přiložení. Tažení sondy myší
+  a paprsek s lomem přijdou v etapách 04–05.
 
 ### Tažení a přechod
 
@@ -400,6 +412,7 @@ skodacad build examples/krabicka.json --format 3mf,svg
 skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → priruba-ai.json
 skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
 skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
+skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
 ```
 
 `skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
@@ -412,6 +425,19 @@ Paprsek z [0; 0; 100] směrem [0; 0; -1] (algoritmus ndt-geometrie 1):
   úsek 1: 42.85 → 48.85 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
   úsek 2: 151.15 → 157.15 mm, v materiálu 6.00 mm (vstup 0.0°, výstup 0.0°)
   celkem v materiálu: 12.00 mm (jen jisté úseky), jistota: ok
+```
+
+`skodacad sonda` přiloží virtuální sondu do bodu `--bod` (na povrchu) se směrem paprsku
+`--smer`: výchozí úhlová 40 × 20 × 25 mm, jiná přes `--prima 10`, `--uhlova 40x20x25`,
+`--celo 12`, sonda ze studie `--studie s1`; meze `--mezera 0.5` a `--rezerva 5`. S `--posun`
+(a `--delka`, `--krok`) sondu posouvá a vypíše, odkud kam volně jede:
+
+```
+Úhlová sonda 40 × 20 × 25 mm, výstupní bod 12 mm od čela (mezera nejvýš 0.50 mm, rezerva 0.00 mm)
+Přiložení v [22; 0; 20], paprsek [-1; 0; 0]:
+  Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm.
+Posun směrem [-1; 0; 0] o 10 mm po 1 mm: volně 0–5 mm
+  první potíž po 6 mm: Koliduje. Průnik těla sondy s dílem 500 mm³.
 ```
 
 `skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako
@@ -472,7 +498,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 13,
+  "version": 14,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -617,7 +643,7 @@ vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = ho
 škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
-(`ndt`); starší soubory se načtou beze změny.
+(`ndt`), verze 14 sonda ve studii (`device`); starší soubory se načtou beze změny.
 
 ### NDT studie (`ndt`)
 
@@ -639,6 +665,11 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
   pro jaký otisk dílu. `name`, `note`, `created` jsou texty.
 * Stav studie se do souboru neukládá – spočítá se při každém přepočtu. Neznámé položky
   ve studii jsou chyba (překlep se tak nepřehlédne). Sekce bez studií se nezapisuje.
+* **`device`** (verze 14, nepovinné) – sonda studie, bez ní výchozí úhlová:
+  `{"kind": "angle", "length": 40, "width": 20, "height": 25, "front": 12, "max_gap": 0.5,
+  "reserve": 0}` nebo `{"kind": "straight", "diameter": 10, "height": 25, "max_gap": 0.5,
+  "reserve": 0}` (mm; `front` = výstupní bod od čela, `max_gap` = dovolená mezera pod sondou,
+  `reserve` = manipulační rezerva). Přiložení sondy se do souboru neukládá.
 
 ### Materiály
 

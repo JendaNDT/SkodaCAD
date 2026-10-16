@@ -3,7 +3,7 @@
 > Etapa 03 plánu `03-implementacni-plan.md`: polohování a obálky NDT zařízení. Zatím **jen
 > návrh**. Geometrie přiložení – ne paprsek s lomem (etapa 04) ani pohyb myší (etapa 05).
 
-Stav: návrh 16. 10. 2026 · navazuje na etapu 02 (`ndt/geometry.py`)
+Stav: návrh 16. 10. 2026 · **schváleno a provedeno** (okno: Přiložit sondu sem; sonda ve studii – formát v14; výchozí rezerva 0 mm)
 
 ## 1. Co etapa přinese
 
@@ -104,3 +104,7 @@ ploše a omezení sklonu plochy (např. „jen shora“) – přidám, až bude 
 
 Zdroj meze 0,5 mm: ISO 17640:2018 (a 2005), kap. o zakřivených plochách – mezera mezi
 zkoušeným povrchem a spodkem sondy nesmí být větší než 0,5 mm.
+
+*Provedeno navíc:* směr paprsku jde v okně zadat úhlem (0° = osa +X sklopená do plochy, 90° =
++Y); při přiložené sondě se oblast studie nezvýrazňuje, aby sondu nepřebila; sonda se po změně
+dílu přiloží znovu na stejné místo (plocha se najde významem).
