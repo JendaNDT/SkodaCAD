@@ -2,6 +2,8 @@
 
 Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného posouzení kontrolovatelnosti metodami UT, PT, MT a RT.
 
+Pro dalšího AI agenta: stav, pracovní postup a výchozí bod etapy 04 jsou v [předávacím dokumentu](../PREDANI.md); pravidla v [AGENTS.md](../../AGENTS.md).
+
 1. [Návrh v0.1](01-navrh-v0.1.md) – základní koncept, čtyři metody a hranice geometrické simulace.
 2. [Rozšířený návrh v0.2](02-navrh-v0.2.md) – svary, virtuální vady, plánování drah, srovnávání konstrukčních variant a ověřování.
 3. [Kompletní implementační plán](03-implementacni-plan.md) – integrované pořadí etap, závislosti, výstupy a ověřování.

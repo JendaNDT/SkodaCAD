@@ -71,7 +71,7 @@ self-test v zabaleném .app, včetně zastavení.
 2. Balení `.app` (`packaging/skodacad.spec`) a `macos.yml` → první běh na GitHubu, opravy podle
    logu (self-test zapisuje ovladač OpenGL a zásobník při pádu).
 3. README: stažení a první spuštění na Macu, známá omezení.
-4. **Tvůj ruční test na MacBooku** (seznam níže); výsledky a omezení zapíšu sem a do CLAUDE.md.
+4. **Tvůj ruční test na MacBooku** (seznam níže); výsledky a omezení zapíšu sem a do AGENTS.md (dříve CLAUDE.md).
 
 ## 5. Ruční test na MacBooku (podmínky dokončení z `05-podpora-macos.md`)
 

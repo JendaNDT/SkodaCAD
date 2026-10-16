@@ -1,7 +1,8 @@
 # ŠkodaCAD
 
 Osobní parametrický 3D CAD postavený na jádře **Open CASCADE** (přes knihovnu
-[build123d](https://github.com/gumyr/build123d)). Vyvíjený vibecodingem v Claude Code.
+[build123d](https://github.com/gumyr/build123d)). Vyvíjený vibecodingem s AI (do 16. 10. 2026
+v Claude Code, dál v Google Antigravity).
 
 **Stav:** jádro + první okno pro Windows. Díl se popíše v čitelném souboru JSON
 (parametry + seznam prvků), jádro z něj postaví přesné těleso, spočítá objem a hmotnost
@@ -722,13 +723,16 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
 
 ## Pro vývoj
 
-Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladové výzkumy
-jsou ve složce [docs/](docs/).
+Pravidla projektu pro AI (rozhodnutí, architektura, známé pasti, plán) jsou v
+[AGENTS.md](AGENTS.md) – čte ho Antigravity/Gemini i Claude Code (`GEMINI.md` a `CLAUDE.md` na něj
+odkazují). Stav projektu, nastavení prostředí na Macu a ve Windows a další krok jsou
+v předávacím dokumentu [docs/PREDANI.md](docs/PREDANI.md). Podkladové výzkumy jsou v [docs/](docs/).
 
 ```bash
-pip install -e ".[dev,gui]"   # jádro, okno a nástroje pro vývoj
-pytest -q                     # testy (ověřují geometrii výpočtem objemu)
-ruff check src tests          # kontrola kódu
-skodacad-gui                  # spustí okno (bez argumentu otevře ukázku příruby)
+uv venv --python 3.13 .venv           # Python 3.13 (slvs nemá balíček pro 3.14)
+uv pip install -e ".[dev,gui,build]"  # jádro, okno, nástroje pro vývoj a sestavení
+pytest -q                             # testy (ověřují geometrii výpočtem objemu)
+ruff check src tests                  # kontrola kódu
+skodacad-gui                          # spustí okno (bez argumentu otevře ukázku příruby)
 skodacad-gui --self-test zprava.txt   # kontrola aplikace bez obsluhy
 ```

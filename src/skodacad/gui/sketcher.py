@@ -417,7 +417,7 @@ class SketcherDialog(QDialog):
             action.setShortcut(QKeySequence(shortcut))
             action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         action.setToolTip(f"{tip or text} ({shortcut})" if shortcut else (tip or text))
-        action.triggered.connect(lambda _checked=False: slot())  # bez „checked“ (viz CLAUDE.md)
+        action.triggered.connect(lambda _checked=False: slot())  # bez „checked“ (viz AGENTS.md)
         self.addAction(action)
         return action
 
