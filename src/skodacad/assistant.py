@@ -334,7 +334,10 @@ class ModelTools:
         after = data.get("after")
         if after is not None and not isinstance(after, str):
             raise ToolInputError("„after“ musí být id prvku nebo null.")
-        new_id = self.session.add_feature(kind, after or None, feature)
+        wanted = feature.get("id")
+        if wanted is not None and not isinstance(wanted, str):
+            raise ToolInputError("„id“ prvku musí být text.")
+        new_id = self.session.add_feature(kind, after or None, feature, feature_id=wanted)
         return ToolOutput(f"Prvek přidán s id „{new_id}“.", changed=True)
 
     def _tool_update_feature(self, data: dict[str, Any]) -> ToolOutput:

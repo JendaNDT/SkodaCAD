@@ -344,23 +344,24 @@ class ModelSession:
         return copy.deepcopy(self._require().features[self.feature_index(feature_id)])
 
     def add_feature(self, feature_type: str, after_id: str | None = None,
-                    values: dict[str, Any] | None = None) -> str:
+                    values: dict[str, Any] | None = None,
+                    feature_id: str | None = None) -> str:
         """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec).
 
         ``values`` přepíše výchozí hodnoty (např. skica rovnou s nakresleným obrysem) –
-        pořád jde o jeden krok pro Zpět."""
+        pořád jde o jeden krok pro Zpět. Id z ``values`` se nepřebírá; vlastní id jde
+        zadat ``feature_id`` (jinak se vytvoří, např. „sketch2“)."""
         if feature_type not in FEATURE_SCHEMAS:
             raise DocumentError(f"Neznámý typ prvku „{feature_type}“.")
         features = self._require().features
         index = self.feature_index(after_id) + 1 if after_id else len(features)
         feature = new_feature(feature_type, features, index)
-        wanted = (values or {}).get("id")
-        if wanted is not None:  # vlastní čitelné id (AI asistent, např. „zaklad“)
-            if not isinstance(wanted, str) or not wanted.strip():
+        if feature_id is not None:  # vlastní čitelné id (AI asistent, např. „zaklad“)
+            if not isinstance(feature_id, str) or not feature_id.strip():
                 raise DocumentError("Id prvku musí být neprázdný text.")
-            if any(f.get("id") == wanted for f in features):
-                raise DocumentError(f"Prvek s id „{wanted}“ už v modelu je – zvol jiné id.")
-            feature["id"] = wanted
+            if any(f.get("id") == feature_id for f in features):
+                raise DocumentError(f"Prvek s id „{feature_id}“ už v modelu je – zvol jiné id.")
+            feature["id"] = feature_id
         feature.update(copy.deepcopy({k: v for k, v in (values or {}).items()
                                       if k not in ("id", "type")}))
         self._change(lambda doc: doc.features.insert(index, feature))
