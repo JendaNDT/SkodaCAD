@@ -18,12 +18,15 @@ from build123d import (
     Circle,
     Cone,
     Cylinder,
+    FilletPolyline,
+    Kind,
     Line,
     Location,
     Part,
     Plane,
     PolarLocations,
     Polygon,
+    Polyline,
     Pos,
     Rectangle,
     RectangleRounded,
@@ -32,13 +35,16 @@ from build123d import (
     Sketch,
     SlotCenterToCenter,
     ThreePointArc,
+    Transition,
     Vector,
     chamfer,
     extrude,
     fillet,
+    loft,
     make_face,
     offset,
     revolve,
+    sweep,
 )
 
 from skodacad.expressions import evaluate
@@ -390,6 +396,158 @@ def build_revolve(ctx: BuildContext, feature: dict[str, Any]) -> None:
     ctx.apply(solid, operation, "Rotace")
 
 
+# --- Tažení po trase a přechod mezi profily -------------------------------------
+
+SWEEP_PROFILES = ("circle", "rectangle", "sketch")
+
+
+@feature("sweep", "Tažení")
+def build_sweep(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Profil (kruh/trubka, obdélník/jekl, skica) tažený po trase z bodů s ohyby.
+
+    Trasa je jako ohýbaná trubka: body [x, y, z] a poloměr ohybu v rozích (0 = ostrý
+    roh, spoj na pokos). Profil se postaví kolmo na začátek trasy: střed (počátek skici)
+    v prvním bodě, šířka vodorovně (u svislého začátku podél osy X).
+    """
+    path, sharp = _sweep_path(ctx, feature)
+    start, tangent = path @ 0, path % 0
+    x_dir = Vector(0, 0, 1).cross(tangent)
+    if x_dir.length < 1e-9:  # trasa začíná svisle
+        x_dir = Vector(1, 0, 0)
+    plane = Plane(origin=start, x_dir=x_dir.normalized(), z_dir=tangent)
+    shape = _sweep_profile(ctx, feature)
+    operation = _choice(
+        feature, "operation", ("new", "add", "cut"), "new" if ctx.part is None else "add"
+    )
+    try:
+        solid = sweep(plane * shape, path,
+                      transition=Transition.RIGHT if sharp else Transition.TRANSFORMED)
+    except Exception as exc:  # noqa: BLE001 – chyby jádra převádíme na lidskou zprávu
+        raise FeatureError(f"Tažení se nepodařilo ({type(exc).__name__}) – profil je asi "
+                           "větší než poloměr ohybu, nebo se trasa kříží sama se sebou.") from None
+    if not solid.is_valid or solid.volume <= 0:
+        raise FeatureError("Tažení dalo poškozené těleso – profil je nejspíš větší než "
+                           "poloměr ohybu (zvětši poloměr nebo zmenši profil).")
+    ctx.apply(solid, operation, "Tažení", empty_cut="zkontroluj trasu a velikost profilu")
+
+
+def _sweep_path(ctx: BuildContext, feature: dict[str, Any]) -> tuple[Any, bool]:
+    raw = required(feature, "path")
+    if not isinstance(raw, list) or len(raw) < 2:
+        raise FeatureError("Trasa tažení potřebuje aspoň 2 body [x, y, z].")
+    points = []
+    for index, point in enumerate(raw, start=1):
+        if not isinstance(point, list) or len(point) != 3:
+            raise FeatureError(f"Bod trasy č. {index} musí být [x, y, z].")
+        vector = Vector(*(ctx.num(v) for v in point))
+        if points and (vector - points[-1]).length < 1e-6:
+            raise FeatureError(f"Body trasy č. {index - 1} a {index} jsou stejné – odstraň "
+                               "jeden z nich.")
+        points.append(vector)
+    radius = ctx.num(feature.get("bend_radius", 0))
+    if radius < 0:
+        raise FeatureError(f"Poloměr ohybu nesmí být záporný (je {radius:g}).")
+    if len(points) == 2 or radius == 0:
+        return Polyline(*points), len(points) > 2
+    try:
+        return FilletPolyline(*points, radius=radius), False
+    except Exception:  # noqa: BLE001
+        raise FeatureError(f"Ohyb R{radius:g} se nevejde mezi body trasy – zmenši poloměr "
+                           "ohybu nebo body oddal.") from None
+
+
+def _sweep_profile(ctx: BuildContext, feature: dict[str, Any]) -> Sketch:
+    kind = _choice(feature, "profile", SWEEP_PROFILES, "circle")
+    wall = ctx.num(feature["wall"]) if feature.get("wall") not in (None, 0) else 0.0
+    if wall < 0:
+        raise FeatureError(f"Tloušťka stěny nesmí být záporná (je {wall:g}).")
+    if kind == "sketch":
+        _, sketch = ctx.sketch(feature)
+        return sketch
+    if kind == "circle":
+        diameter = ctx.positive(feature, "diameter", "Průměr profilu")
+        if wall and wall >= diameter / 2:
+            raise FeatureError(f"Stěna {wall:g} mm je pro trubku Ø{diameter:g} moc tlustá "
+                               "(musí být menší než poloměr).")
+        shape = Circle(diameter / 2)
+        return shape - Circle(diameter / 2 - wall) if wall else shape
+    width = ctx.positive(feature, "width", "Šířka profilu")
+    height = ctx.positive(feature, "height", "Výška profilu")
+    if wall and 2 * wall >= min(width, height):
+        raise FeatureError(f"Stěna {wall:g} mm je pro jekl {width:g} × {height:g} moc tlustá.")
+    shape = Rectangle(width, height)
+    return shape - Rectangle(width - 2 * wall, height - 2 * wall) if wall else shape
+
+
+@feature("loft", "Přechod")
+def build_loft(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Plynulý přechod mezi dvěma a více skicami (v pořadí), plný nebo dutý se stěnou."""
+    sections = _loft_sections(ctx, feature)
+    ruled = bool(feature.get("ruled", False))
+    operation = _choice(
+        feature, "operation", ("new", "add", "cut"), "new" if ctx.part is None else "add"
+    )
+    try:
+        solid = loft(sections, ruled=ruled)
+    except Exception as exc:  # noqa: BLE001
+        raise FeatureError(f"Přechod se nepodařil ({type(exc).__name__}) – skici musí ležet "
+                           "v různých rovinách a nesmí se křížit.") from None
+    if not solid.is_valid or solid.volume <= 0:
+        raise FeatureError("Přechod dal poškozené těleso – zkontroluj pořadí a polohu skic.")
+    if feature.get("wall") not in (None, 0):
+        solid = _hollow_loft(ctx, feature, sections, solid, ruled)
+    ctx.apply(solid, operation, "Přechod", empty_cut="zkontroluj polohu skic")
+
+
+def _loft_sections(ctx: BuildContext, feature: dict[str, Any]) -> list[Any]:
+    ids = required(feature, "sketches")
+    if not isinstance(ids, list) or len(ids) < 2:
+        raise FeatureError("Přechod potřebuje aspoň 2 skici (v pořadí, třeba dole a nahoře).")
+    sections = []
+    for sketch_id in ids:
+        if sketch_id not in ctx.sketches:
+            raise FeatureError(f"Skica „{sketch_id}“ neexistuje nebo je v modelu až později.")
+        plane, sketch = ctx.sketches[sketch_id]
+        faces = sketch.faces()
+        if len(faces) != 1 or faces[0].inner_wires():
+            raise FeatureError(f"Skica „{sketch_id}“ pro přechod musí mít jeden obrys bez děr "
+                               "(dutý přechod zadej tloušťkou stěny).")
+        sections.append(plane * faces[0])
+    return sections
+
+
+def _hollow_loft(ctx: BuildContext, feature: dict[str, Any], sections: list[Any],
+                 solid: Part, ruled: bool) -> Part:
+    """Dutý přechod s otevřenými konci. Stěna je kolmá k povrchu (jako plech); kde to jádro
+    neumí (přechod kruh ↔ hranatý tvar), měří se v rovinách skic."""
+    wall = ctx.positive(feature, "wall", "Tloušťka stěny")
+    ends = [face for face in solid.faces() if face.geom_type.name == "PLANE"
+            and any(_coplanar(face, section) for section in (sections[0], sections[-1]))]
+    lateral = solid.area - sum(face.area for face in ends)
+    try:
+        shell = offset(solid, amount=-wall, openings=ends)
+        if (shell.is_valid and 0 < shell.volume < solid.volume
+                and abs(shell.volume - lateral * wall) < 0.25 * lateral * wall):
+            return shell
+    except Exception:  # noqa: BLE001 – jádro neumí, zkusí se stěna v rovinách skic
+        pass
+    try:
+        inner = [offset(section, amount=-wall, kind=Kind.INTERSECTION) for section in sections]
+        hollow = solid - loft([face for shape in inner for face in shape.faces()], ruled=ruled)
+    except Exception:  # noqa: BLE001
+        hollow = None
+    if hollow is None or not hollow.is_valid or not 0 < hollow.volume < solid.volume:
+        raise FeatureError(f"Dutý přechod se stěnou {wall:g} mm se nepodařil – stěna je asi "
+                           "tlustší než nejužší místo skic.")
+    return hollow
+
+
+def _coplanar(face: Any, section: Any) -> bool:
+    normal = section.normal_at()
+    return (abs(abs(face.normal_at().dot(normal)) - 1) < 1e-6
+            and abs((face.center() - section.center()).dot(normal)) < 1e-6)
+
+
 # --- Úpravy hran a stěn ----------------------------------------------------------
 
 
@@ -523,7 +681,7 @@ def _depth_through(part: Part, plane: Plane) -> float:
 # --- Pole a zrcadlení ----------------------------------------------------------------
 
 # Prvky, které přidávají nebo ubírají materiál – jen ty jde opakovat v poli a zrcadlit.
-REPEATABLE_FEATURES = ("extrude", "revolve", "hole", "pattern", "mirror")
+REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "hole", "pattern", "mirror")
 PATTERN_KINDS = ("circular", "linear")
 MAX_COPIES = 500
 _AXES = {"X": Vector(1, 0, 0), "Y": Vector(0, 1, 0), "Z": Vector(0, 0, 1)}
@@ -661,6 +819,29 @@ def describe(feature: dict[str, Any], params: dict[str, float] | None = None) ->
             text += f" – v řadě, {count} ks"
     elif feature["type"] == "mirror" and not feature.get("features"):
         text += " – celý díl"
+    elif feature["type"] == "sweep":
+        kind = feature.get("profile", "circle")
+        hollow = feature.get("wall") not in (None, 0)
+        if kind == "circle":
+            diameter = _plain(feature.get("diameter", "?"), params)
+            text += f" – {'trubka' if hollow else 'kruh'} Ø{diameter}"
+        elif kind == "rectangle":
+            text += (f" – {'jekl' if hollow else 'obdélník'} "
+                     f"{_plain(feature.get('width', '?'), params)} × "
+                     f"{_plain(feature.get('height', '?'), params)}")
+        else:
+            text += f" – skica {feature.get('sketch', '?')}"
+        if hollow and kind != "sketch":
+            text += f" × {_plain(feature['wall'], params)}"
+        points = feature.get("path")
+        if isinstance(points, list):
+            text += f", trasa z {len(points)} {'bodu' if len(points) == 1 else 'bodů'}"
+    elif feature["type"] == "loft":
+        sketches = feature.get("sketches")
+        count = len(sketches) if isinstance(sketches, list) else "?"
+        text += f" – mezi {count} {'skicou' if count == 1 else 'skicami'}"
+        if feature.get("wall") not in (None, 0):
+            text += f", dutý {_plain(feature['wall'], params)} mm"
     return text
 
 

@@ -220,6 +220,38 @@ class FieldsForm(QWidget):
 
         return combo, read
 
+    def _build_sketches(self, field: Field, value: Any):
+        """Zaškrtávací seznam dřívějších skic – pořadí je pořadí ve stromu (přechod)."""
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        selected = [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+        choices = list(self._sketches)
+        known = {key for key, _ in choices}
+        choices += [(key, f"{key} (není před tímto prvkem)") for key in selected
+                    if key not in known]
+        boxes: dict[str, QCheckBox] = {}
+        for key, label in choices:
+            box = QCheckBox(label)
+            box.setObjectName(f"sketch_{key}")
+            box.setChecked(key in selected)
+            box.toggled.connect(self._commit)
+            column.addWidget(box)
+            boxes[key] = box
+        if len(choices) < field.min_count:
+            note = QLabel(f"Přechod potřebuje aspoň {field.min_count} skici před sebou – "
+                          "přidej je (třeba dole a o kus výš s posunem roviny).")
+            note.setWordWrap(True)
+            column.addWidget(note)
+
+        def read() -> Any:
+            checked = [key for key, box in boxes.items() if box.isChecked()]
+            if len(checked) < field.min_count:
+                raise InvalidValue(f"{field.label}: zaškrtni aspoň {field.min_count} skici.")
+            return checked
+
+        return holder, read
+
     def _build_bool(self, field: Field, value: Any):
         box = QCheckBox(field.label)
         box.setChecked(bool(value))
@@ -351,11 +383,16 @@ class FieldsForm(QWidget):
 
         return holder, read
 
-    def _build_points(self, field: Field, value: Any):
+    def _build_points3(self, field: Field, value: Any):
+        return self._build_points(field, value, ("x", "y", "z"))
+
+    def _build_points(self, field: Field, value: Any, axes: tuple[str, ...] = ("x", "y")):
         edit = _PlainTextEdit()
-        lines = [f"{_number_text(x)}; {_number_text(y)}" for x, y in (value or [])]
+        valid = [p for p in (value or []) if isinstance(p, list | tuple) and len(p) == len(axes)]
+        lines = ["; ".join(_number_text(v) for v in point) for point in valid]
         edit.setPlainText("\n".join(lines))
-        edit.setToolTip("Jeden bod na řádek ve tvaru  x; y  (např. 10; 0). Stačí 3 body.")
+        pattern = "; ".join(axes)
+        edit.setToolTip(field.help or f"Jeden bod na řádek ve tvaru  {pattern}.")
         edit.setFixedHeight(110)
         edit.editingFinished.connect(self._commit)
 
@@ -366,8 +403,8 @@ class FieldsForm(QWidget):
                 if not line.strip():
                     continue
                 parts = line.split(";")
-                if len(parts) != 2:
-                    raise InvalidValue(f"Řádek {number_}: napiš bod jako  x; y")
+                if len(parts) != len(axes):
+                    raise InvalidValue(f"Řádek {number_}: napiš bod jako  {pattern}")
                 points.append([parse_number(part, coordinate) for part in parts])
             if len(points) < field.min_count:
                 raise InvalidValue(f"{field.label}: potřeba aspoň {field.min_count} "
@@ -421,7 +458,15 @@ class FieldsForm(QWidget):
     def _commit(self) -> None:
         new = copy.deepcopy(self._data)
         problems = []
-        for field, widget, read in self._rows:
+        defaults = {field.key: field.default for field, _, _ in self._rows}
+        # Nejdřív pole bez podmínky (třeba druh profilu), pak ta, která se podle nich ukazují –
+        # skrytá pole (patří k jiné volbě) se nečtou, zůstanou, jak byla.
+        ordered = sorted(self._rows, key=lambda row: bool(row[0].when))
+        for field, widget, read in ordered:
+            if field.when:
+                key, wanted = field.when
+                if new.get(key, defaults.get(key)) != wanted:
+                    continue
             try:
                 value = read()
             except InvalidValue as exc:

@@ -16,6 +16,8 @@ Druhy polí (``Field.kind``):
 * ``point3`` – bod v prostoru [x, y, z]
 * ``features`` – seznam dřívějších prvků, které přidávají či ubírají materiál (pole, zrcadlení)
 * ``points`` – seznam bodů [[x, y], …]
+* ``points3`` – seznam bodů v prostoru [[x, y, z], …] (trasa tažení)
+* ``sketches`` – seznam dřívějších skic v pořadí stromu (přechod)
 * ``shapes`` – seznam tvarů skici
 * ``profile`` – obrys z úseček a oblouků s vazbami (upravuje se ve skicáři)
 * ``text`` – obyčejný text
@@ -60,6 +62,8 @@ HOLE_SIZE_CHOICES = tuple((size, size) for size in SIZES)
 HOLE_FIT_CHOICES = tuple(zip(FITS, ("jemná", "střední", "hrubá"), strict=True))
 PATTERN_KIND_CHOICES = (("circular", "kruhové – dokola kolem osy"),
                         ("linear", "lineární – v řadě nebo mřížka"))
+SWEEP_PROFILE_CHOICES = (("circle", "kruh / trubka"), ("rectangle", "obdélník / jekl"),
+                         ("sketch", "tvar ze skici"))
 
 
 @dataclass(frozen=True)
@@ -71,7 +75,7 @@ class Field:
     choices: tuple[tuple[str, str], ...] = ()
     help: str = ""
     default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
-    min_count: int = 1  # u „points“: nejmenší počet bodů
+    min_count: int = 1  # u „points“, „points3“, „sketches“: nejmenší počet
     when: tuple[str, str] = ()  # pole se ukáže, jen když má jiné pole tuto hodnotu
 
 
@@ -112,6 +116,40 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("angle", "Úhel [°]", "number", required=False),
             Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
         ), "Orotuje skicu kolem osy (skica musí ležet v rovině s osou)."),
+        Schema("sweep", "Tažení", (
+            _NAME,
+            Field("path", "Trasa – body [x; y; z]", "points3", min_count=2,
+                  help="Jeden bod na řádek ve tvaru  x; y; z  (i s parametry). Profil se "
+                       "táhne od prvního bodu k poslednímu."),
+            Field("bend_radius", "Poloměr ohybu [mm]", "number", required=False,
+                  help="Zaoblení v rozích trasy jako u ohýbané trubky. Prázdné nebo 0 = "
+                       "ostrý roh, spoj na pokos (rám z jeklu)."),
+            Field("profile", "Profil", "choice", choices=SWEEP_PROFILE_CHOICES,
+                  default="circle"),
+            Field("diameter", "Průměr [mm]", "number", required=False,
+                  when=("profile", "circle")),
+            Field("width", "Šířka [mm]", "number", required=False,
+                  help="Vodorovně (u svislého začátku trasy podél osy X).",
+                  when=("profile", "rectangle")),
+            Field("height", "Výška [mm]", "number", required=False,
+                  when=("profile", "rectangle")),
+            Field("wall", "Tloušťka stěny [mm]", "number", required=False,
+                  help="Dutá trubka nebo jekl. Prázdné = plný profil (u skici se nepoužije)."),
+            Field("sketch", "Skica profilu", "sketch", required=False,
+                  help="Tvar skici se postaví kolmo na začátek trasy, počátek skici do "
+                       "prvního bodu.", when=("profile", "sketch")),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
+        ), "Profil tažený po trase z bodů s ohyby – trubky, kolena, madla, rámy."),
+        Schema("loft", "Přechod", (
+            _NAME,
+            Field("sketches", "Skici v pořadí", "sketches", min_count=2,
+                  help="Zaškrtni aspoň dvě skici – přechod jde v pořadí stromu."),
+            Field("ruled", "Rovné stěny (bez zaoblení mezi skicami)", "bool", required=False),
+            Field("wall", "Tloušťka stěny [mm]", "number", required=False,
+                  help="Dutý přechod s otevřenými konci (plech). Stěna je kolmá k povrchu; "
+                       "u přechodu kruh ↔ hranatý tvar se měří v rovinách skic."),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
+        ), "Plynulý přechod mezi skicami – výsypka, redukce, násypka."),
         Schema("fillet", "Zaoblení", (
             _NAME,
             Field("edges", "Hrany", "edges"),
@@ -286,7 +324,7 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     """
     schema = FEATURE_SCHEMAS[feature_type]
     before = existing if index is None else existing[:index]
-    has_solid = any(f.get("type") in ("extrude", "revolve") for f in before)
+    has_solid = any(f.get("type") in ("extrude", "revolve", "sweep", "loft") for f in before)
     sketches = [f["id"] for f in before if f.get("type") == "sketch"]
 
     ids = {f.get("id") for f in existing}
@@ -313,6 +351,11 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         if sketches:
             feature["sketch"] = sketches[-1]
         feature["axis"] = "Z"
+    elif feature_type == "sweep":  # trubkové koleno 90°
+        feature.update(path=[[0, 0, 0], [0, 0, 100], [100, 0, 100]], bend_radius=40,
+                       profile="circle", diameter=30, wall=2)
+    elif feature_type == "loft":
+        feature["sketches"] = sketches[-2:]  # dvě poslední skici (třeba dole a nahoře)
     elif feature_type == "fillet":
         feature.update(edges={"face": "top"}, radius=2)
     elif feature_type == "chamfer":
