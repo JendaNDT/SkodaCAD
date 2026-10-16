@@ -69,6 +69,12 @@
   ISO 2338, pera DIN 6885, tyče z ocelových profilů (IPE, UPN, L, jekl, trubka); ocelový
   profil i jako tvar skici `steel` a profil tažení. Prvek tělesa (ne sestava), závit
   vyznačený, odebrání = kapsa s vůlí. Tabulky ověřené z více zdrojů. Formát verze 12.
+- (16. 10. 2026, schváleno) **AI asistent** – `assistant.py` + panel `gui/assistant_panel.py`
+  a `skodacad ai`: Claude API (oficiální knihovna **`anthropic==1.15.0`**), výchozí
+  `claude-opus-5-5` (v nastavení i `claude-sonnet-5-5`), důkladnost `high`. Mění model
+  rovnou nástroji nad `ModelSession`, celá odpověď = jeden krok Zpět. Klíč v profilu
+  (`~/SkodaCAD/nastaveni.json`) nebo `ANTHROPIC_API_KEY`. Umí nový díl z popisu, vysvětlit
+  a opravit chyby, prohlédnout si díl (snímek 3D) a příkazovou řádku. Formát se nemění.
 
 ## Architektura (`src/skodacad/`)
 
@@ -88,7 +94,8 @@
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build` |
+| `cli.py` | příkazová řádka `skodacad build` a `skodacad ai` |
+| `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
@@ -100,6 +107,7 @@
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
+| `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
 
@@ -319,6 +327,35 @@
   uvnitř (EN 10219-2, výpočtové hodnoty).
 - Ložisko 688 otevřené je 8 × 16 × **4** (688ZZ se krytkami 5 mm) – zdroje se v tom pletou.
 
+## Známé pasti (AI asistent)
+
+- API se volá **jen přes knihovnu `anthropic`** (žádné ruční HTTP). Proudově
+  (`client.beta.messages.stream` + `get_final_message`), `max_tokens` 64000, `output_config`
+  s důkladností, horní `cache_control` (celá historie se ukládá do mezipaměti),
+  `fallbacks="default"` s betou `server-side-fallback-2026-07-01` (odmítnutý dotaz zkusí
+  záložní model). U Opus 5.5 / Sonnet 5.5 **nejde vynutit nástroj** (`tool_choice` any/tool
+  = chyba 400) a parametr `thinking` se neposílá (myšlení je vždy zapnuté).
+- Historie rozhovoru je **jen přidávací**: odpověď se ukládá celá (`response.content`, i bloky
+  myšlení a „fallback“), nic se zpětně neupravuje. Useknutý nebo odmítnutý tah s nástroji
+  se uzavře `tool_result` s chybou (`_close_tools`), jinak by další dotaz vrátil 400.
+- Nástroje mají `eager_input_streaming` – vstup se nekontroluje na serveru, proto ho
+  kontrolují handlery (`ToolInputError`) a `stop_reason == "max_tokens"` se nástroje nespouští.
+- Model se Claudovi posílá jen v prvním dotazu a pak, když ho uživatel mezitím změnil
+  (`Assistant.seen`); po každém kroku dostane souhrn přepočtu (`build_report`).
+- Okno: síť běží v `QThread`, ale **každý krok s modelem v hlavním vlákně**
+  (`_MainThread.call` přes `BlockingQueuedConnection`) a vlákno čeká, až okno převezme
+  přepočet z pozadí (`session.computing`). Hlavní vlákno nesmí na vlákno čekat blokujícím
+  `wait()` bez zpracování událostí – zablokovalo by se (`AssistantPanel.shutdown`).
+- Během práce AI se zamknou panely, nabídky **i zkratky** (`MainWindow._assistant_lock`,
+  hlídá i `_refresh_actions`) – jinak by Delete/Ctrl+Z mezi kroky AI rozbily skupinu Zpět
+  (`ModelSession.begin_group`/`end_group`).
+- Testy a self-test nevolají síť: `assistant.offline_client` je skutečný klient knihovny
+  s `httpx2.MockTransport`, který přehraje připravené proudové odpovědi a zapíše dotazy.
+  Self-test tak ve Windows ověří, že je `anthropic` (+ httpx2, pydantic, jiter) v exe celá.
+- V exe musí být `README.md` (popis formátu pro AI) – `skodacad.spec` ho přibaluje.
+- Vlastní id nového prvku jde jen parametrem `feature_id` (`add_feature`); id v hodnotách
+  se dál nepřebírá (hlídá test skicáře).
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -374,4 +411,5 @@
   měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [x] řez modelem
   (jen pohled, export DXF/SVG), [x] tažení a přechod (formát verze 11),
   [x] normalizované díly (formát verze 12).
-- [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.
+- [ ] **Fáze 4** – [x] AI asistent upravující model (Claude API, panel v okně, `skodacad ai`),
+  [ ] omezené přímé úpravy ploch.
