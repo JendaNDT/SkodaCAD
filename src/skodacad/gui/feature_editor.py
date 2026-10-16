@@ -39,6 +39,7 @@ from skodacad.schema import (
     FEATURE_SCHEMAS,
     SHAPE_SCHEMAS,
     Field,
+    field_shown,
     new_shape,
 )
 from skodacad.selectors import describe_edges, describe_plane
@@ -150,7 +151,10 @@ class FieldsForm(QWidget):
         return copy.deepcopy(self._data)
 
     def widget(self, key: str) -> QWidget:
-        return next(widget for field, widget, _ in self._rows if field.key == key)
+        """Pole formuláře; když je pod jedním klíčem víc polí (velikost podle druhu dílu),
+        to, které je právě vidět."""
+        widgets = [widget for field, widget, _ in self._rows if field.key == key]
+        return next((w for w in widgets if self._layout.isRowVisible(w)), widgets[0])
 
     def is_shown(self, key: str) -> bool:
         """Je pole vidět? (Některá pole patří jen k jedné volbě, např. k druhu pole.)"""
@@ -160,8 +164,7 @@ class FieldsForm(QWidget):
         defaults = {field.key: field.default for field, _, _ in self._rows}
         for field, widget, _ in self._rows:
             if field.when:
-                key, value = field.when
-                self._layout.setRowVisible(widget, self._data.get(key, defaults.get(key)) == value)
+                self._layout.setRowVisible(widget, field_shown(field, self._data, defaults))
 
     # --- stavba polí -----------------------------------------------------------------
 
@@ -463,10 +466,8 @@ class FieldsForm(QWidget):
         # skrytá pole (patří k jiné volbě) se nečtou, zůstanou, jak byla.
         ordered = sorted(self._rows, key=lambda row: bool(row[0].when))
         for field, widget, read in ordered:
-            if field.when:
-                key, wanted = field.when
-                if new.get(key, defaults.get(key)) != wanted:
-                    continue
+            if not field_shown(field, new, defaults):
+                continue
             try:
                 value = read()
             except InvalidValue as exc:

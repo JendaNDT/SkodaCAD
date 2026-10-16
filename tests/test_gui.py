@@ -645,6 +645,53 @@ def test_sweep_form_path_and_profile(empty_window):
     assert w.session.feature("sweep1")["profile"] == "rectangle"
 
 
+def test_standard_part_form_switches_sizes_by_kind(empty_window):
+    from skodacad.standards import BEARING, SOCKET_HEAD
+
+    w = empty_window
+    action(w, "Normalizovaný díl").trigger()  # bez dílu: samotný imbus M6 × 20
+    form = w.feature_editor.form
+    dk, k, s, t = SOCKET_HEAD["M6"]
+    hexagon = math.sqrt(3) / 2
+    assert w.session.properties.volume_mm3 == pytest.approx(
+        math.pi * dk**2 / 4 * k - hexagon * s**2 * t + math.pi * 9 * 20)
+    assert form.is_shown("length") and not form.is_shown("clearance")
+    kind = form_field(w, "kind")
+    kind.setCurrentIndex(kind.findData("bearing"))  # jiný druh → jiný seznam velikostí
+    assert not form.is_shown("length")
+    assert w.session.feature("standard1")["size"] == "623"
+    size = form_field(w, "size")
+    size.setCurrentIndex(size.findData("608"))
+    d, big, width = BEARING["608"]
+    assert w.session.properties.volume_mm3 == pytest.approx(
+        math.pi / 4 * (big**2 - d**2) * width)
+    assert selected_text(w) == ("✓  Normalizovaný díl „Normalizovaný díl 1“ – ložisko 608 "
+                                "(8 × 22 × 7)")
+
+
+def test_nut_pocket_from_form(empty_window):
+    from skodacad.standards import NUT
+
+    w = empty_window
+    build_box(w)  # kvádr 40 × 30 × 10
+    action(w, "Normalizovaný díl").trigger()  # na horní ploše dílu
+    assert w.session.feature("standard1")["plane"] == "top"
+    form = w.feature_editor.form
+    kind = form_field(w, "kind")
+    kind.setCurrentIndex(kind.findData("nut"))
+    operation = form_field(w, "operation")
+    operation.setCurrentIndex(operation.findData("cut"))
+    assert "otoč do materiálu" in w.session.result.first_error.message
+    direction = form_field(w, "direction")
+    direction.setCurrentIndex(direction.findData("reverse"))
+    assert form.is_shown("clearance")
+    set_text(form_field(w, "clearance"), "0,2")
+    s, m = NUT["M6"]
+    assert w.session.properties.volume_mm3 == pytest.approx(
+        40 * 30 * 10 - math.sqrt(3) / 2 * (s + 0.4)**2 * (m + 0.2))
+    assert selected_text(w) == "✓  Normalizovaný díl „Normalizovaný díl 1“ – ISO 4032 M6 (kapsa)"
+
+
 def test_loft_form_picks_sketches_in_order(empty_window):
     w = empty_window
     action(w, "Skica").trigger()  # obdélník 40 × 30 v XY

@@ -62,6 +62,9 @@ from skodacad.selectors import (
     select_faces,
 )
 from skodacad.solver import SolveError, arc_midpoint, loops, solve
+from skodacad.standards import KINDS as STANDARD_KINDS
+from skodacad.standards import StandardError, part_shape, section_sketch
+from skodacad.standards import summary as standard_summary
 from skodacad.threads import thread_groove
 
 
@@ -242,10 +245,20 @@ def _element(ctx: BuildContext, element: dict[str, Any], plane: Plane | None = N
         return Sketch() + place * Polygon(*points, align=None)
     if shape == "profile":
         return Sketch() + place * _profile_face(ctx, element, plane, (x, y, angle))
+    if shape == "steel":
+        return Sketch() + place * _steel_section(element)
     raise FeatureError(
         f"Neznámý tvar „{shape}“, povolené: rectangle, circle, circle_pattern, "
-        "regular_polygon, slot, polygon, profile."
+        "regular_polygon, slot, polygon, profile, steel."
     )
+
+
+def _steel_section(data: dict[str, Any]) -> Sketch:
+    """Průřez ocelového profilu podle tabulek („section“: „IPE 100“, „L 50x5“ …)."""
+    try:
+        return section_sketch(str(required(data, "section")))
+    except StandardError as exc:
+        raise FeatureError(str(exc)) from None
 
 
 def _profile_face(ctx: BuildContext, element: dict[str, Any], plane: Plane | None = None,
@@ -398,7 +411,7 @@ def build_revolve(ctx: BuildContext, feature: dict[str, Any]) -> None:
 
 # --- Tažení po trase a přechod mezi profily -------------------------------------
 
-SWEEP_PROFILES = ("circle", "rectangle", "sketch")
+SWEEP_PROFILES = ("circle", "rectangle", "steel", "sketch")
 
 
 @feature("sweep", "Tažení")
@@ -464,6 +477,8 @@ def _sweep_profile(ctx: BuildContext, feature: dict[str, Any]) -> Sketch:
     if kind == "sketch":
         _, sketch = ctx.sketch(feature)
         return sketch
+    if kind == "steel":
+        return _steel_section(feature)
     if kind == "circle":
         diameter = ctx.positive(feature, "diameter", "Průměr profilu")
         if wall and wall >= diameter / 2:
@@ -596,6 +611,43 @@ def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
         ) from None
 
 
+# --- Normalizované díly ----------------------------------------------------------------
+
+
+@feature("standard", "Normalizovaný díl")
+def build_standard(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Šroub, matice, podložka, ložisko, kolík, pero nebo tyč z ocelového profilu podle
+    tabulek – stojí na rovině v zadaných polohách. Odebrání vyřízne kapsu (obrys bez děr,
+    o vůli větší); „reverse“ díl otočí do materiálu (kapsa na matici)."""
+    kind = _choice(feature, "kind", tuple(STANDARD_KINDS), "socket_screw")
+    spec = STANDARD_KINDS[kind]
+    length = ctx.num(required(feature, "length")) if spec.length else None
+    operation = _choice(
+        feature, "operation", ("new", "add", "cut"), "new" if ctx.part is None else "add"
+    )
+    clearance = ctx.num(feature.get("clearance", 0)) if operation == "cut" else 0.0
+    plane = _resolve_plane(ctx, feature)
+    positions = feature.get("positions", [[0, 0]])
+    if not isinstance(positions, list) or not positions:
+        raise FeatureError("Normalizovaný díl potřebuje aspoň jednu polohu v „positions“, "
+                           "např. [[0, 0]].")
+    points = [_point(ctx, point, "Poloha dílu") for point in positions]
+    flipped = _choice(feature, "direction", ("normal", "reverse"), "normal") == "reverse"
+    angle = ctx.num(feature.get("angle", 0))
+    try:
+        shape = part_shape(kind, str(required(feature, "size")), length,
+                           pocket=operation == "cut", clearance=clearance)
+    except StandardError as exc:
+        raise FeatureError(str(exc)) from None
+    if flipped:
+        shape = shape.mirror(Plane.XY)
+    shape = Rot(0, 0, angle) * shape
+    tools = [plane * Pos(x, y) * shape for x, y in points]
+    ctx.apply(tools[0] if len(tools) == 1 else Part() + tools, operation, "Normalizovaný díl",
+              empty_cut="díl leží mimo materiál – pro kapsu ho otoč do materiálu "
+                        "(„Otočit do materiálu“) nebo zkontroluj rovinu a polohy")
+
+
 # --- Díry --------------------------------------------------------------------------
 
 _TOP = (Align.CENTER, Align.CENTER, Align.MAX)  # horní podstava v z = 0, těleso jde do −Z
@@ -681,7 +733,8 @@ def _depth_through(part: Part, plane: Plane) -> float:
 # --- Pole a zrcadlení ----------------------------------------------------------------
 
 # Prvky, které přidávají nebo ubírají materiál – jen ty jde opakovat v poli a zrcadlit.
-REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "hole", "pattern", "mirror")
+REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "standard", "hole", "pattern",
+                       "mirror")
 PATTERN_KINDS = ("circular", "linear")
 MAX_COPIES = 500
 _AXES = {"X": Vector(1, 0, 0), "Y": Vector(0, 1, 0), "Z": Vector(0, 0, 1)}
@@ -829,13 +882,23 @@ def describe(feature: dict[str, Any], params: dict[str, float] | None = None) ->
             text += (f" – {'jekl' if hollow else 'obdélník'} "
                      f"{_plain(feature.get('width', '?'), params)} × "
                      f"{_plain(feature.get('height', '?'), params)}")
+        elif kind == "steel":
+            text += f" – {STANDARD_KINDS['profile'].sizes.get(feature.get('section'), '?')}"
         else:
             text += f" – skica {feature.get('sketch', '?')}"
-        if hollow and kind != "sketch":
+        if hollow and kind in ("circle", "rectangle"):
             text += f" × {_plain(feature['wall'], params)}"
         points = feature.get("path")
         if isinstance(points, list):
             text += f", trasa z {len(points)} {'bodu' if len(points) == 1 else 'bodů'}"
+    elif feature["type"] == "standard":
+        count = len(feature.get("positions") or [None])
+        length = _plain(feature["length"], params) if "length" in feature else None
+        part = standard_summary(feature.get("kind", "socket_screw"),
+                                str(feature.get("size", "?")), length, count)
+        text += f" – {part}"
+        if feature.get("operation") == "cut":
+            text += " (kapsa)"
     elif feature["type"] == "loft":
         sketches = feature.get("sketches")
         count = len(sketches) if isinstance(sketches, list) else "?"

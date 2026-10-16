@@ -32,6 +32,8 @@ from typing import Any
 from skodacad.features import REPEATABLE_FEATURES
 from skodacad.holes import FITS, KINDS, SIZES
 from skodacad.selectors import FACE_NAMES_CZ
+from skodacad.standards import KINDS as STANDARD_KINDS
+from skodacad.standards import SECTIONS
 
 PLANE_CHOICES = (
     ("XY", "XY – vodorovná rovina"),
@@ -63,7 +65,20 @@ HOLE_FIT_CHOICES = tuple(zip(FITS, ("jemná", "střední", "hrubá"), strict=Tru
 PATTERN_KIND_CHOICES = (("circular", "kruhové – dokola kolem osy"),
                         ("linear", "lineární – v řadě nebo mřížka"))
 SWEEP_PROFILE_CHOICES = (("circle", "kruh / trubka"), ("rectangle", "obdélník / jekl"),
+                         ("steel", "ocelový profil podle tabulek"),
                          ("sketch", "tvar ze skici"))
+SECTION_CHOICES = tuple(SECTIONS.items())
+STANDARD_KIND_CHOICES = tuple((key, kind.label) for key, kind in STANDARD_KINDS.items())
+STANDARD_DIRECTION_CHOICES = (("normal", "jak sedí na ploše"),
+                              ("reverse", "otočit do materiálu (kapsa)"))
+_LENGTH_KINDS = tuple(key for key, kind in STANDARD_KINDS.items() if kind.length)
+
+
+def _standard_sizes(*kinds: str) -> Field:
+    """Seznam velikostí pro jeden či více druhů normalizovaného dílu (se stejnou tabulkou)."""
+    return Field("size", "Velikost", "choice",
+                 choices=tuple(STANDARD_KINDS[kinds[0]].sizes.items()),
+                 when=("kind", kinds if len(kinds) > 1 else kinds[0]))
 
 
 @dataclass(frozen=True)
@@ -76,7 +91,17 @@ class Field:
     help: str = ""
     default: Any = None  # co jádro použije, když hodnota chybí (ukáže se ve formuláři)
     min_count: int = 1  # u „points“, „points3“, „sketches“: nejmenší počet
-    when: tuple[str, str] = ()  # pole se ukáže, jen když má jiné pole tuto hodnotu
+    # pole se ukáže, jen když má jiné pole tuto hodnotu (nebo jednu z n-tice hodnot)
+    when: tuple[str, Any] = ()
+
+
+def field_shown(field: Field, data: dict[str, Any], defaults: dict[str, Any]) -> bool:
+    """Patří pole k aktuální volbě? (``when`` – např. průměr jen u kruhového profilu.)"""
+    if not field.when:
+        return True
+    key, wanted = field.when
+    value = data.get(key, defaults.get(key))
+    return value in wanted if isinstance(wanted, tuple) else value == wanted
 
 
 @dataclass(frozen=True)
@@ -134,7 +159,12 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("height", "Výška [mm]", "number", required=False,
                   when=("profile", "rectangle")),
             Field("wall", "Tloušťka stěny [mm]", "number", required=False,
-                  help="Dutá trubka nebo jekl. Prázdné = plný profil (u skici se nepoužije)."),
+                  help="Dutá trubka nebo jekl. Prázdné = plný profil.",
+                  when=("profile", ("circle", "rectangle"))),
+            Field("section", "Profil podle tabulek", "choice", required=False,
+                  choices=SECTION_CHOICES, default="IPE 100",
+                  help="Ocelový profil (IPE, U, L, jekl, trubka) – stojí na výšku, střed "
+                       "obalového obdélníku v prvním bodě trasy.", when=("profile", "steel")),
             Field("sketch", "Skica profilu", "sketch", required=False,
                   help="Tvar skici se postaví kolmo na začátek trasy, počátek skici do "
                        "prvního bodu.", when=("profile", "sketch")),
@@ -150,6 +180,35 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                        "u přechodu kruh ↔ hranatý tvar se měří v rovinách skic."),
             Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
         ), "Plynulý přechod mezi skicami – výsypka, redukce, násypka."),
+        Schema("standard", "Normalizovaný díl", (
+            _NAME,
+            Field("kind", "Druh", "choice", choices=STANDARD_KIND_CHOICES,
+                  default="socket_screw"),
+            _standard_sizes("socket_screw", "hex_screw", "nut", "washer"),
+            _standard_sizes("countersunk_screw"),
+            _standard_sizes("bearing"),
+            _standard_sizes("pin"),
+            _standard_sizes("key"),
+            _standard_sizes("profile"),
+            Field("length", "Délka [mm]", "number", when=("kind", _LENGTH_KINDS),
+                  help="Šroub s válcovou či šestihrannou hlavou: dřík pod hlavou; zápustný "
+                       "šroub: celková délka i s hlavou; kolík, pero, tyč: celá délka."),
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+            Field("positions", "Polohy [x; y]", "points",
+                  help="Jedna poloha na řádek ve tvaru  x; y  (souřadnice jako ve skice)."),
+            Field("angle", "Natočení kolem osy [°]", "number", required=False,
+                  help="Natočí šestihran, pero (délka jde podél osy X skici) nebo profil."),
+            Field("direction", "Směr", "choice", required=False,
+                  choices=STANDARD_DIRECTION_CHOICES, default="normal",
+                  help="Šroub má hlavu nad plochou a dřík v materiálu, matice, podložka, "
+                       "ložisko, kolík a tyč leží na ploše. Pro kapsu je otoč do materiálu."),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
+            Field("clearance", "Vůle kapsy [mm]", "number", required=False,
+                  help="O kolik je kapsa větší na každou stranu (3D tisk: 0,1–0,2 mm).",
+                  when=("operation", "cut")),
+        ), "Šroub, matice, podložka, ložisko, kolík, pero nebo tyč z ocelového profilu podle "
+           "tabulek. Odebráním vznikne kapsa (třeba na matici pro 3D tisk)."),
         Schema("fillet", "Zaoblení", (
             _NAME,
             Field("edges", "Hrany", "edges"),
@@ -272,6 +331,11 @@ SHAPE_SCHEMAS: dict[str, Schema] = {
             Field("points", "Body", "points", min_count=3),
             *_COMMON_SHAPE_FIELDS,
         )),
+        Schema("steel", "Ocelový profil", (
+            Field("section", "Profil", "choice", choices=SECTION_CHOICES),
+            *_COMMON_SHAPE_FIELDS,
+        ), "Průřez podle tabulek (IPE, U, L, jekl, trubka), střed obalového obdélníku "
+           "v bodě středu."),
         Schema("profile", "Obrys z čar (s vazbami)", (
             Field("segments", "Obrys", "profile"),
             *_COMMON_SHAPE_FIELDS,
@@ -307,6 +371,7 @@ SHAPE_DEFAULTS: dict[str, dict[str, Any]] = {
     "regular_polygon": {"shape": "regular_polygon", "sides": 6, "diameter": 20},
     "slot": {"shape": "slot", "length": 20, "width": 6},
     "polygon": {"shape": "polygon", "points": [[0, 0], [30, 0], [0, 20]]},
+    "steel": {"shape": "steel", "section": "IPE 100"},
     "profile": _rectangle_profile(40, 30),
 }
 
@@ -324,7 +389,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     """
     schema = FEATURE_SCHEMAS[feature_type]
     before = existing if index is None else existing[:index]
-    has_solid = any(f.get("type") in ("extrude", "revolve", "sweep", "loft") for f in before)
+    has_solid = any(f.get("type") in ("extrude", "revolve", "sweep", "loft", "standard")
+                    for f in before)
     sketches = [f["id"] for f in before if f.get("type") == "sketch"]
 
     ids = {f.get("id") for f in existing}
@@ -357,6 +423,9 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
                        profile="circle", diameter=30, width=40, height=20, wall=2)
     elif feature_type == "loft":
         feature["sketches"] = sketches[-2:]  # dvě poslední skici (třeba dole a nahoře)
+    elif feature_type == "standard":  # imbus M6 × 20 na ploše dílu (bez dílu samostatně)
+        feature.update(kind="socket_screw", size="M6", length=20,
+                       plane="top" if has_solid else "XY", positions=[[0, 0]])
     elif feature_type == "fillet":
         feature.update(edges={"face": "top"}, radius=2)
     elif feature_type == "chamfer":
