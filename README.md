@@ -20,12 +20,37 @@ parametry.
 Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 (postup [.github/workflows/windows.yml](.github/workflows/windows.yml)).
 
+## Aplikace pro macOS (Apple Silicon) – zkušební
+
+Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. **Zatím neověřeno na skutečném Macu** –
+sestavuje a testuje ji GitHub na svém Macu, ruční zkouška na MacBooku Air M4 teprve přijde
+(postup a seznam zkoušek v [docs/ndt/08-navrh-macos.md](docs/ndt/08-navrh-macos.md)).
+
+1. Stáhni **[SkodaCAD-macos.zip](https://github.com/JendaNDT/SkodaCAD/releases/download/nejnovejsi-mac/SkodaCAD-macos.zip)**
+   (vydání „nejnovejsi-mac“, označené jako předběžné).
+2. Rozbal ho (dvojklik ve Finderu) a **SkodaCAD** přetáhni do složky *Aplikace*.
+3. Při prvním spuštění macOS napíše, že aplikaci nejde ověřit – není podepsaná certifikátem
+   Apple ani notarizovaná. Otevři *Nastavení systému → Soukromí a zabezpečení*, sjeď dolů
+   a u SkodaCAD klikni na **Přesto otevřít** (od macOS 15 už nefunguje pravý klik → Otevřít).
+   Kdyby to nešlo, v Terminálu: `xattr -dr com.apple.quarantine /Applications/SkodaCAD.app`.
+4. Ovládání je stejné jako ve Windows, jen místo `Ctrl` používej **`Cmd` (⌘)**: `Cmd`+klik
+   přidá plochu do výběru, `Cmd`+`Z` je Zpět. Na trackpadu posouváš pohled **`Shift` + tažením**,
+   zoom dvěma prsty.
+5. Nastavení, log (`skodacad.log`) a výchozí místo pro modely je složka **`SkodaCAD`** ve tvé
+   domovské složce – stejně jako ve Windows.
+
+AI asistent posílá model společnosti Anthropic **jen** po tvém dotazu v panelu *AI asistent*
+a jen s vloženým API klíčem. Bez klíče (např. při prezentaci) z aplikace nic neodchází.
+
+Mac sestavuje samostatný postup [.github/workflows/macos.yml](.github/workflows/macos.yml);
+sestavení pro Windows se tím nemění.
+
 ### Ovládání
 
 | Akce | Jak |
 |---|---|
 | Otáčení | levé tlačítko + táhnout |
-| Posun | prostřední nebo pravé tlačítko + táhnout |
+| Posun | prostřední nebo pravé tlačítko + táhnout, nebo `Shift` + levé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
 | Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku a **změří se** (panel *Měření* vpravo) |
 | Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere – u dvou věcí se změří vzdálenost a úhel |

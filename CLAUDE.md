@@ -143,7 +143,8 @@
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
-| `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` |
+| `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
+| `.github/workflows/` | `windows.yml` (vydání „nejnovejsi“) a samostatný `macos.yml` (Apple Silicon, předběžné vydání „nejnovejsi-mac“) |
 
 ## Pravidla
 
@@ -181,7 +182,7 @@
 - Kontrola okna i 3D: `xvfb-run -a skodacad-gui --self-test out/self-test.txt`
 - Sestavení aplikace lokálně: `uv pip install -e ".[build]"` a
   `pyinstaller packaging/skodacad.spec --noconfirm`; pak self-test `dist/SkodaCAD/SkodaCAD`.
-- Stav sestavení pro Windows sleduj v GitHub Actions (workflow „Windows aplikace“).
+- Stav sestavení sleduj v GitHub Actions (workflow „Windows aplikace“ a „macOS aplikace“).
 
 ## Známé pasti (OCCT prohlížeč)
 
@@ -486,6 +487,24 @@
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
+
+## Známé pasti (macOS)
+
+- 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
+  ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
+- Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
+  v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
+  (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
+- Trackpad nemá prostřední tlačítko → posun pohledu i **Shift + levé tažení** (všude).
+  Qt na Macu bere `Cmd` jako `Ctrl` (Cmd+klik, Cmd+Z); fyzický Control+klik je pravý klik.
+- `.app` se balí **`ditto -c -k --keepParent`** – `upload-artifact` by ztratil práva
+  a symbolické odkazy uvnitř balíčku. Kontrola stažení rozbalí ZIP přes `ditto -x -k`.
+- Vydání „nejnovejsi-mac“ je `--prerelease --latest=false` – jinak by `releases/latest`
+  (odkaz pro Windows v README) ukázal na Mac a stažení Windows by přestalo fungovat.
+- Aplikace je podepsaná jen „ad-hoc“ (PyInstaller, bez certifikátu): u uživatele ji
+  Gatekeeper zablokuje, povolí se v *Soukromí a zabezpečení → Přesto otevřít*
+  (macOS 15+ už bez pravého kliku). Notarizace až při rozhodnutí o distribuci.
+- Kompatibilita platí, až ji uživatel ověří na MacBooku (seznam v `docs/ndt/08-navrh-macos.md`).
 
 ## Jak přidat nový prvek
 

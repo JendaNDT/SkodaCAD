@@ -1,7 +1,9 @@
-# PyInstaller: sestavení ŠkodaCAD jako samostatné aplikace (složka s SkodaCAD.exe).
-# Spuštění z kořene repozitáře:  pyinstaller packaging/skodacad.spec --noconfirm
+# PyInstaller: sestavení ŠkodaCAD jako samostatné aplikace (Windows: složka s SkodaCAD.exe,
+# macOS: SkodaCAD.app). Spuštění z kořene repozitáře:
+#   pyinstaller packaging/skodacad.spec --noconfirm
 # -*- mode: python ; coding: utf-8 -*-
 import sys
+import tomllib
 from pathlib import Path
 
 from PyInstaller.utils.hooks import (
@@ -53,3 +55,19 @@ exe = EXE(  # noqa: F821
     upx=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="SkodaCAD", upx=False)  # noqa: F821
+
+# macOS (Apple Silicon): SkodaCAD.app; podpis „ad-hoc“ (bez certifikátu) dělá PyInstaller.
+if sys.platform == "darwin":
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"]
+    app = BUNDLE(  # noqa: F821
+        coll,
+        name="SkodaCAD.app",
+        bundle_identifier="io.github.jendandt.skodacad",
+        info_plist={
+            "CFBundleDisplayName": "ŠkodaCAD",
+            "CFBundleShortVersionString": version,
+            "LSMinimumSystemVersion": "13.0",  # PySide6 6.11 potřebuje macOS 13+
+            "NSHighResolutionCapable": True,  # ostré písmo na Retina displeji
+        },
+    )

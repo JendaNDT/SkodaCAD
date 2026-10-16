@@ -1,0 +1,115 @@
+# Sestavení ŠkodaCAD pro macOS (Apple Silicon): testy → SkodaCAD.app → kontroly → ke stažení.
+# Samostatně vedle „Windows aplikace“ (ten se nemění). Druhá úloha stáhne přesně ten ZIP, který
+# dostane uživatel, rozbalí ho a spustí self-test aplikace z něj.
+# Z větve main se zveřejní jako předběžné vydání „nejnovejsi-mac“ – odkaz pro Windows
+# (releases/latest) zůstává na vydání „nejnovejsi“.
+name: macOS aplikace
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "examples/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  sestaveni:
+    runs-on: macos-15  # Apple Silicon (arm64) jako MacBook Air M4
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Počítač a Python
+        run: |
+          sw_vers
+          uname -m
+          python -c "import platform, sys; print(sys.version, platform.machine())"
+
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui,build]"
+
+      - name: Kontrola kódu
+        run: ruff check src tests
+
+      - name: Testy
+        timeout-minutes: 15  # zaseknutý dialog v testu nesmí blokovat celé sestavení
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Sestavení SkodaCAD.app
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+
+      - name: Architektura a podpis
+        run: |
+          file dist/SkodaCAD.app/Contents/MacOS/SkodaCAD
+          codesign --verify --deep --verbose=2 dist/SkodaCAD.app
+          du -sh dist/SkodaCAD.app
+
+      # ditto zachová práva a odkazy uvnitř .app (artefakt GitHubu by je ztratil).
+      - name: Zabalení do ZIP
+        run: ditto -c -k --sequesterRsrc --keepParent dist/SkodaCAD.app SkodaCAD-macos.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkodaCAD-macos
+          path: SkodaCAD-macos.zip
+          retention-days: 7
+
+  kontrola-stazeni:
+    needs: sestaveni
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SkodaCAD-macos
+          path: stazeno
+
+      - name: Rozbalení jako u uživatele
+        run: ditto -x -k stazeno/SkodaCAD-macos.zip rozbaleno
+
+      - name: Self-test staženého balíčku
+        timeout-minutes: 8
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/skodacad-home
+        run: |
+          set +e
+          ./rozbaleno/SkodaCAD.app/Contents/MacOS/SkodaCAD --self-test "$PWD/self-test.txt"
+          code=$?
+          cat self-test.txt || echo "Zpráva self-testu nevznikla"
+          if [ $code -ne 0 ]; then
+            echo "--- skodacad.log ---"
+            cat "$SKODACAD_HOME/skodacad.log" || echo "Log nevznikl"
+          fi
+          exit $code
+
+      - name: Zveřejnění ke stažení (jen z main)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete nejnovejsi-mac --yes --cleanup-tag || true
+          gh release create nejnovejsi-mac stazeno/SkodaCAD-macos.zip \
+            --target "${{ github.sha }}" \
+            --title "ŠkodaCAD – zkušební verze pro macOS (Apple Silicon)" \
+            --notes "Sestaveno automaticky z commitu ${{ github.sha }}. Stáhni SkodaCAD-macos.zip, rozbal, přetáhni SkodaCAD do Aplikací a při prvním spuštění povol v Nastavení systému → Soukromí a zabezpečení → Přesto otevřít. Zatím neověřeno na skutečném Macu." \
+            --prerelease \
+            --latest=false
