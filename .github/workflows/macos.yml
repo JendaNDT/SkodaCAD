@@ -100,6 +100,29 @@ jobs:
           fi
           exit $code
 
+      # Při pádu (segfault) zapíše macOS hlášení s nativním zásobníkem – vypsat spadlé vlákno.
+      - name: Hlášení macOS o pádu (jen při chybě)
+        if: failure()
+        run: |
+          sleep 15
+          python3 - <<'EOF'
+          import glob, json, os
+          folder = os.path.expanduser("~/Library/Logs/DiagnosticReports")
+          files = sorted(glob.glob(f"{folder}/SkodaCAD*.ips"), key=os.path.getmtime)
+          if not files:
+              print("Žádné hlášení o pádu:", os.listdir(folder) if os.path.isdir(folder) else "")
+              raise SystemExit
+          body = json.loads(open(files[-1], encoding="utf-8").read().split("\n", 1)[1])
+          images = body.get("usedImages", [])
+          print(files[-1], body.get("exception"), body.get("termination"))
+          for thread in body.get("threads", []):
+              if thread.get("triggered"):
+                  for frame in thread.get("frames", [])[:60]:
+                      index = frame.get("imageIndex", -1)
+                      image = images[index].get("name", "?") if 0 <= index < len(images) else "?"
+                      print(f"  {image}: {frame.get('symbol', hex(frame.get('imageOffset', 0)))}")
+          EOF
+
       - name: Zveřejnění ke stažení (jen z main)
         if: github.ref == 'refs/heads/main'
         env:

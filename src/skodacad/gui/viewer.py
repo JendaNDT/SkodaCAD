@@ -222,6 +222,8 @@ class OccViewer(QWidget):
         self._last: QPoint | None = None
         self._dragging = False
         self._known_size: tuple[int, int] | None = None
+        self.software = False  # macOS bez grafické karty: OpenGL kreslí procesor
+        self._failed: list[Any] = []  # nepovedený pokus o OpenGL – na Macu se neruší dřív než okno
 
     # --- veřejné API ------------------------------------------------------------
 
@@ -605,12 +607,15 @@ class OccViewer(QWidget):
                 window = Xw_Window(display, handle)
 
             stage = "opengl"
-            driver = OpenGl_GraphicDriver(display, True)
-            viewer = V3d_Viewer(driver)
-            viewer.SetDefaultLights()
-            viewer.SetLightOn()
-            view = viewer.CreateView()
-            view.SetWindow(window)
+            try:
+                viewer, view = self._open_view(display, window, software=False)
+            except Exception as exc:  # noqa: BLE001
+                if sys.platform != "darwin":
+                    raise
+                # Mac bez grafické karty (virtuál, vzdálená plocha): zkusit softwarové OpenGL.
+                log.warning("OpenGL s grafickou kartou nejde (%s) – zkouším softwarové", exc)
+                viewer, view = self._open_view(display, window, software=True)
+                self.software = True
             if not window.IsMapped():
                 window.Map()
             context = AIS_InteractiveContext(viewer)
@@ -626,6 +631,21 @@ class OccViewer(QWidget):
             part, fit, accent = self._pending
             self._pending = None
             self.show_part(part, fit=fit, accent=accent)
+
+    def _open_view(self, display: Any, window: Any, software: bool) -> tuple[Any, Any]:
+        """Grafický ovladač, prohlížeč a pohled OCCT napojený na okno. ``software`` = bez
+        hardwarové akcelerace (OpenGL_Caps.contextNoAccel, na Macu softwarový renderer Apple)."""
+        driver = OpenGl_GraphicDriver(display, True)
+        if software:
+            driver.ChangeOptions().contextNoAccel = True
+        viewer = V3d_Viewer(driver)
+        viewer.SetDefaultLights()
+        viewer.SetLightOn()
+        view = viewer.CreateView()
+        self._failed.append((driver, viewer, view))  # při chybě zůstanou až do zavření okna
+        view.SetWindow(window)
+        self._failed.pop()
+        return viewer, view
 
     def _style(self) -> None:
         view, context = self._view, self._context
