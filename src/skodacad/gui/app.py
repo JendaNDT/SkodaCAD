@@ -234,9 +234,59 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
         lines.append(f"✕ 3D prohlížeč: {viewer.failed_stage or 'nespuštěn'}: "
                      f"{viewer.error or 'okno se nezobrazilo'}")
     ok = _self_test_sketcher(window, lines) and ok
+    ok = _self_test_assistant(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_assistant(window, lines: _Report) -> bool:
+    """AI asistent bez sítě: skutečná knihovna anthropic s přehranými odpověďmi, pomocné
+    vlákno, krok s modelem v hlavním vlákně, obrázek dílu pro AI a celá odpověď jedním Zpět."""
+    import time
+
+    import anthropic
+
+    from skodacad.assistant import offline_client
+
+    lines.stream.write("  … AI asistent (bez sítě)\n")
+    lines.stream.flush()
+    session = window.session
+    if session.document is None:
+        session.new_document()
+    original = session.document.name
+    requests: list[dict] = []
+    turns = [
+        ([{"type": "tool_use", "id": "t1", "name": "set_part_info",
+           "input": {"name": "Self-test AI"}}], "tool_use"),
+        ([{"type": "tool_use", "id": "t2", "name": "view_part", "input": {"view": "current"}}],
+         "tool_use"),
+        ([{"type": "text", "text": "Hotovo."}], "end_turn"),
+    ]
+    panel = window.assistant_panel
+    panel.client_factory = lambda settings: offline_client(turns, requests)
+    panel.prompt.setPlainText("přejmenuj díl")
+    panel.send()
+    end = time.monotonic() + 60
+    while panel.busy and time.monotonic() < end:
+        QApplication.processEvents()
+        time.sleep(0.01)
+    if panel.busy or len(requests) != 3:
+        lines.append(f"✕ AI asistent: nedoběhl ({panel.history_text()[-300:]})")
+        return False
+    renamed = session.document.name == "Self-test AI"
+    image = requests[2]["body"]["messages"][-1]["content"][0]
+    picture = (f"obrázek dílu {len(image['content'][0]['source']['data'])} znaků"
+               if not image.get("is_error") else "bez obrázku (3D tady nejde)")
+    window.undo_action.trigger()
+    undone = session.document.name == original
+    panel.new_conversation()
+    if not (renamed and undone):
+        lines.append(f"✕ AI asistent: přejmenování {renamed}, Zpět {undone}")
+        return False
+    lines.append(f"✓ AI asistent (bez sítě): OK (anthropic {anthropic.__version__}, krok "
+                 f"s modelem, {picture}, Zpět)")
+    return True
 
 
 def _self_test_background(models: list[Path], lines: list[str]) -> bool:

@@ -21,13 +21,13 @@ import copy
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from build123d import Vector
 
-from skodacad.document import Document, DocumentError
+from skodacad.document import FORMAT, VERSION, Document, DocumentError
 from skodacad.export import export
 from skodacad.expressions import (
     ExpressionError,
@@ -111,6 +111,7 @@ class ModelSession:
         self.failure = ""  # proč se poslední přepočet na pozadí nepovedl ("" = v pořádku)
         self._undo: list[Document] = []
         self._redo: list[Document] = []
+        self._group: int | None = None  # skupina změn = jeden krok Zpět (AI asistent)
         self._runner = runner
         self._job: int | None = None  # běžící přepočet na pozadí
         self._computed: Document | None = None  # model, ke kterému patří ``result``
@@ -246,11 +247,36 @@ class ModelSession:
         except ExpressionError as exc:
             raise DocumentError(str(exc)) from None
         self._undo.append(current)
-        del self._undo[:-_UNDO_LIMIT]
+        overflow = max(0, len(self._undo) - _UNDO_LIMIT)
+        del self._undo[:overflow]
+        if self._group is not None:
+            self._group = max(0, self._group - overflow)
         self._redo.clear()
         self.document = candidate
         self.dirty = True
         return self.rebuild()
+
+    def begin_group(self) -> None:
+        """Další změny (až do ``end_group``) půjdou vrátit jedním krokem Zpět."""
+        self._group = len(self._undo)
+
+    def end_group(self) -> None:
+        mark, self._group = self._group, None
+        if mark is not None and len(self._undo) > mark + 1:
+            del self._undo[mark + 1:]  # zůstane jen stav před první změnou skupiny
+
+    def replace_document(self, data: dict[str, Any]) -> BuildResult:
+        """Nahradí celý model (nový díl z popisu) – jako jeden krok pro Zpět."""
+        if not isinstance(data, dict):
+            raise DocumentError("Model musí být JSON objekt.")
+        data = {"format": FORMAT, "version": VERSION, **data}
+        new = Document.from_dict(data)
+
+        def mutate(doc: Document) -> None:
+            for item in fields(Document):
+                setattr(doc, item.name, copy.deepcopy(getattr(new, item.name)))
+
+        return self._change(mutate)
 
     # --- parametry -----------------------------------------------------------------
 
@@ -318,16 +344,24 @@ class ModelSession:
         return copy.deepcopy(self._require().features[self.feature_index(feature_id)])
 
     def add_feature(self, feature_type: str, after_id: str | None = None,
-                    values: dict[str, Any] | None = None) -> str:
+                    values: dict[str, Any] | None = None,
+                    feature_id: str | None = None) -> str:
         """Přidá nový prvek s výchozími hodnotami (za ``after_id``, jinak na konec).
 
         ``values`` přepíše výchozí hodnoty (např. skica rovnou s nakresleným obrysem) –
-        pořád jde o jeden krok pro Zpět."""
+        pořád jde o jeden krok pro Zpět. Id z ``values`` se nepřebírá; vlastní id jde
+        zadat ``feature_id`` (jinak se vytvoří, např. „sketch2“)."""
         if feature_type not in FEATURE_SCHEMAS:
             raise DocumentError(f"Neznámý typ prvku „{feature_type}“.")
         features = self._require().features
         index = self.feature_index(after_id) + 1 if after_id else len(features)
         feature = new_feature(feature_type, features, index)
+        if feature_id is not None:  # vlastní čitelné id (AI asistent, např. „zaklad“)
+            if not isinstance(feature_id, str) or not feature_id.strip():
+                raise DocumentError("Id prvku musí být neprázdný text.")
+            if any(f.get("id") == feature_id for f in features):
+                raise DocumentError(f"Prvek s id „{feature_id}“ už v modelu je – zvol jiné id.")
+            feature["id"] = feature_id
         feature.update(copy.deepcopy({k: v for k, v in (values or {}).items()
                                       if k not in ("id", "type")}))
         self._change(lambda doc: doc.features.insert(index, feature))

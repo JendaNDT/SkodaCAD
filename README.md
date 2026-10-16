@@ -289,6 +289,36 @@ Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se děl�
 Rozměry jsou z tabulek ověřených porovnáním více zdrojů (normy jsou placené) – zdroje jsou
 v `src/skodacad/standards.py`. Plochy průřezů IPE, U a L souhlasí s tabulkovými.
 
+### AI asistent
+
+**Model → AI asistent** (`Ctrl+I`, tlačítko v liště) otevře rozhovor s Claude (Anthropic).
+Napiš česky, co s modelem udělat – AI ho upraví sama:
+
+* „zvětši přírubu na průměr 200 a přidej jednu díru se závitem M8 na roztečnou kružnici“
+* „udělej krabičku 100 × 60 × 40, stěna 2 mm, 4 sloupky se závitem M3“ (nový díl od nuly)
+* „proč je vysunutí červeně?“, „kolik díl váží?“ (vysvětlí a navrhne opravu)
+
+Jak to funguje:
+
+* AI mění model **stejnými kroky jako formulář** (parametry, prvky, název a materiál) a po
+  každém kroku vidí výsledek přepočtu – chyby, objem, rozměry. Úpravu si tak sama ověří,
+  případně opraví, a může si díl i prohlédnout (snímek 3D pohledu).
+* V panelu průběžně vidíš, co dělá („→ Nastavuji parametry: D = 200“), a na konci shrnutí.
+  **Celou úpravu vrátíš jedním Zpět** (`Ctrl+Z`). Během práce AI jsou ruční úpravy
+  zamčené; *Zastavit AI* ji přeruší (co stihla, zůstane – vrátíš jedním Zpět).
+* *Nová konverzace* – AI zapomene předchozí dotazy (při otevření jiného modelu samo).
+
+**Nastavení AI…** (tlačítko v panelu nebo menu Model):
+
+* **API klíč** – vytvoř ho na [console.anthropic.com](https://console.anthropic.com/settings/keys)
+  (účet s kreditem – předplatné Claude.ai API nezahrnuje). Uloží se jen do tvého profilu
+  (`C:\Users\<jméno>\SkodaCAD\nastaveni.json`); funguje i proměnná `ANTHROPIC_API_KEY`.
+* **Model** – *Claude Opus 5.5* (výchozí, nejschopnější) nebo *Claude Sonnet 5.5* (poloviční
+  cena). **Důkladnost** – rychle a levně / vyváženě / důkladně (výchozí).
+* **Cena**: jedna úprava stojí orientačně 2–7 Kč u Opus, u Sonnet zhruba polovinu; spotřebu
+  konverzace ukazuje panel. Model (JSON) se posílá ke zpracování společnosti Anthropic.
+  Kdyby bezpečnostní filtr dotaz odmítl, zkusí ho automaticky záložní model Claude.
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
@@ -328,7 +358,14 @@ zapisuje soubor `skodacad.log` – při potížích ho pošli, je v něm popis c
 skodacad build examples/priruba.json            # postaví přírubu, exporty do out/
 skodacad build examples/priruba.json --set n=8  # totéž s 8 dírami místo 4
 skodacad build examples/krabicka.json --format 3mf,svg
+skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → priruba-ai.json
+skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
 ```
+
+`skodacad ai` průběžně vypíše kroky AI, výsledek uloží vedle původního modelu jako
+`<model>-ai.json` (`-o` jinam, `--prepsat` do původního) a ukáže spotřebu. Klíč a model bere
+z nastavení okna (nebo `ANTHROPIC_API_KEY`), `--claude claude-sonnet-5-5` a
+`--dukladnost low|medium|high` je přepíšou.
 
 Výstup:
 
