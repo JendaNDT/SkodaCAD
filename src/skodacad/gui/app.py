@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import logging
 import os
 import sys
@@ -126,9 +127,37 @@ def _screenshot(window, path: Path) -> None:
     log.info("Snímek okna uložen do %s", path)
 
 
+class _Report(list):
+    """Řádky zprávy self-testu – každý se hned zapíše do souboru, aby po pádu procesu
+    (pád v knihovně OCCT nebo OpenGL) bylo vidět, kam test došel."""
+
+    def __init__(self, stream) -> None:
+        super().__init__()
+        self.stream = stream
+
+    def append(self, line: str) -> None:
+        super().append(line)
+        self.stream.write(line + "\n")
+        self.stream.flush()
+        log.info("Self-test: %s", line)
+
+    def __iadd__(self, lines):
+        for line in lines:
+            self.append(line)
+        return self
+
+
 def run_self_test(report_path: Path) -> int:
     """Kontrola sestavené aplikace: jádro, exporty, ukázky a 3D prohlížeč."""
-    lines: list[str] = []
+    with open(report_path, "w", encoding="utf-8") as stream:
+        faulthandler.enable(stream, all_threads=True)  # pád procesu → kde se to stalo
+        try:
+            return _run_self_test(_Report(stream))
+        finally:
+            faulthandler.disable()
+
+
+def _run_self_test(lines: _Report) -> int:
     ok = True
     try:
         import build123d
@@ -149,7 +178,7 @@ def run_self_test(report_path: Path) -> int:
             models = []
         else:
             models = sorted(folder.glob("*.json"))
-        last_part = None
+        last_model = None
         with tempfile.TemporaryDirectory() as tmp:
             for model in models:
                 session = ModelSession()
@@ -162,22 +191,21 @@ def run_self_test(report_path: Path) -> int:
                     session.export(Path(tmp) / f"{model.stem}.{fmt}")
                 volume = session.properties.volume_mm3
                 lines.append(f"✓ {model.name}: objem {volume:.0f} mm³, export STEP/STL/3MF")
-                last_part = result.part
+                last_model = model
 
-        ok = _self_test_window(lines, last_part) and ok
+        ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
     except Exception:  # noqa: BLE001 – zpráva musí vzniknout i při nečekané chybě
         ok = False
         lines.append("✕ Neočekávaná chyba:\n" + traceback.format_exc())
 
     lines.append("VÝSLEDEK: OK" if ok else "VÝSLEDEK: CHYBA")
-    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    log.info("Self-test: %s", "OK" if ok else "CHYBA")
     return 0 if ok else 1
 
 
-def _self_test_window(lines: list[str], part) -> bool:
-    """Otevře hlavní okno se skutečným 3D prohlížečem. Selhání OpenGL není chyba aplikace."""
+def _self_test_window(lines: list[str], model: Path | None) -> bool:
+    """Otevře hlavní okno se skutečným 3D prohlížečem a v něm ukázku ``model`` (jako
+    uživatel – přes ModelSession). Selhání OpenGL není chyba aplikace."""
     from skodacad.gui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication(["skodacad-gui"])
@@ -187,13 +215,17 @@ def _self_test_window(lines: list[str], part) -> bool:
     for _ in range(20):
         app.processEvents()
     viewer = window.viewer
-    viewer.show_part(part, fit=True)
+    if model is not None:
+        window.open_model(model, template=True)
+    part = window.session.result.part if window.session.result else None
     app.processEvents()
     ok = True
     if viewer.ready:
         image = user_dir() / "self-test-3d.png"
-        lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))})")
-        ok = _self_test_pick(window, part, lines)
+        lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
+                     f"OpenGL: {viewer.graphics_info()})")
+        ok = (_self_test_drawing(viewer, lines) and _self_test_pick(window, part, lines)
+              and _self_test_map(window, lines) and _self_test_section(window, lines))
     elif viewer.failed_stage in ("display", "opengl"):
         reason = "chybí obrazovka" if viewer.failed_stage == "display" else "OpenGL nejde spustit"
         lines.append(f"! Okno OK, 3D zobrazení tady nejde ({reason}): {viewer.error}")
@@ -270,6 +302,58 @@ def _self_test_sketcher(window, lines: list[str]) -> bool:
     return True
 
 
+def _self_test_drawing(viewer, lines: _Report) -> bool:
+    """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
+    OpenGL spadne, poslední řádek ukáže, na čem."""
+    done = []
+    for variant in ("line", "point", "ball", "label", "arial", "map", "accent"):
+        lines.stream.write(f"  … kreslení „{variant}“\n")
+        lines.stream.flush()
+        viewer.probe_drawing(variant)
+        done.append(variant)
+    lines.append(f"✓ Kreslení značek měření: OK ({', '.join(done)})")
+    return True
+
+
+def _self_test_map(window, lines: _Report) -> bool:
+    """Mapa tloušťky stěny celé ukázky: výpočet i nakreslení desítek tisíc barevných bodů."""
+    lines.stream.write("  … mapa tloušťky\n")
+    lines.stream.flush()
+    window.thickness_map_action.trigger()
+    QApplication.processEvents()
+    found = window.session.thickness_map
+    if found is None:
+        error = window.session.result.map_error if window.session.result else "?"
+        lines.append(f"✕ Mapa tloušťky: nespočítala se ({error})")
+        return False
+    image = user_dir() / "self-test-mapa.png"
+    lines.append(f"✓ Mapa tloušťky: OK (nejtenčí {found.minimum:.2f} mm, {len(found.values)} "
+                 f"bodů za {found.seconds:.1f} s, snímek {image}: "
+                 f"{window.viewer.dump(str(image))})")
+    window.thickness_map_action.trigger()  # vypnout
+    return True
+
+
+def _self_test_section(window, lines: _Report) -> bool:
+    """Řez ukázky (přesný řez jádrem, barevné plochy řezu) – i s mapou tloušťky v řezu."""
+    lines.stream.write("  … řez modelem\n")
+    lines.stream.flush()
+    window.section_action.trigger()
+    QApplication.processEvents()
+    section = window.session.section
+    if section is None:
+        lines.append(f"✕ Řez modelem: {window.session.section_error or 'nezapnul se'}")
+        return False
+    window.thickness_map_action.trigger()  # mapa jen na zbylé polovině
+    QApplication.processEvents()
+    image = user_dir() / "self-test-rez.png"
+    lines.append(f"✓ Řez modelem: OK (plocha řezu {section.area:.0f} mm², i s mapou, snímek "
+                 f"{image}: {window.viewer.dump(str(image))})")
+    window.thickness_map_action.trigger()
+    window.section_action.trigger()
+    return True
+
+
 def _self_test_pick(window, part, lines: list[str]) -> bool:
     """Klik doprostřed nejdelší hrany dílu musí něco vybrat (hranu nebo plochu u ní)."""
     viewer = window.viewer
@@ -283,6 +367,13 @@ def _self_test_pick(window, part, lines: list[str]) -> bool:
         lines.append(f"✕ Výběr kliknutím: na hraně dílu (pixel {x}, {y}) se nic nevybralo")
         return False
     lines.append(f"✓ Výběr kliknutím: OK ({window.session.selection_info(picked).text})")
+    # Výběr se hned změří (panel Měření) a čára s popiskem se nakreslí do 3D.
+    if window.measure_list.count() == 0:
+        lines.append("✕ Měření: na vybrané hraně/ploše se nic nezměřilo")
+        return False
+    image = user_dir() / "self-test-mereni.png"
+    lines.append(f"✓ Měření: OK ({window.measure_list.item(0).text()}, čára ve 3D: "
+                 f"{bool(viewer._measure_objects)}, snímek {image}: {viewer.dump(str(image))})")
     return True
 
 

@@ -15,7 +15,10 @@ from build123d import Part, Plane, Sketch
 from skodacad.document import Document, DocumentError
 from skodacad.expressions import ExpressionError, resolve_parameters
 from skodacad.features import FEATURE_TYPES, BuildContext, FeatureError, describe
+from skodacad.measure import SavedResult, evaluate
 from skodacad.selectors import SelectionError
+from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
+from skodacad.thickness_map import compute as compute_map
 
 Status = Literal["ok", "error", "skipped"]
 
@@ -38,6 +41,9 @@ class BuildResult:
     # hrany a plochy. Okno podle toho zvýrazní, co prvek zasahuje.
     parts_before: dict[str, Part | None] = field(default_factory=dict)
     sketches: dict[str, tuple[Plane, Sketch]] = field(default_factory=dict)  # id → umístění
+    measurements: list[SavedResult] = field(default_factory=list)  # uložená měření na dílu
+    thickness_map: ThicknessMap | None = None  # mapa tloušťky stěny (jen když se chtěla)
+    map_error: str = ""  # proč mapa nejde spočítat
 
     @property
     def ok(self) -> bool:
@@ -48,8 +54,10 @@ class BuildResult:
         return next((s for s in self.statuses if s.status == "error"), None)
 
 
-def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> BuildResult:
-    """Postaví díl z dokumentu. ``overrides`` dočasně mění hodnoty parametrů."""
+def rebuild(document: Document, overrides: dict[str, Any] | None = None,
+            with_map: bool = False) -> BuildResult:
+    """Postaví díl z dokumentu. ``overrides`` dočasně mění hodnoty parametrů, ``with_map``
+    spočítá i mapu tloušťky stěny (nastavení z ``document.thickness_map``)."""
     if overrides:
         document = document.with_parameters(overrides)
     try:
@@ -82,6 +90,15 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None) -> Buil
 
     result.part = ctx.part
     result.sketches = ctx.sketches
+    result.measurements = [evaluate(ctx.part, m) for m in document.measurements]
+    if with_map:
+        try:
+            result.thickness_map = compute_map(ctx.part,
+                                               MapSettings.from_dict(document.thickness_map))
+        except MapError as exc:
+            result.map_error = str(exc)
+        except Exception as exc:  # noqa: BLE001 – mapa nesmí shodit přepočet
+            result.map_error = f"Neočekávaná chyba mapy ({type(exc).__name__}: {exc})."
     return result
 
 

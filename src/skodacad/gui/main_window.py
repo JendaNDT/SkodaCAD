@@ -26,11 +26,14 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
     QProgressBar,
     QScrollArea,
+    QSlider,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -45,9 +48,13 @@ from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
+from skodacad.measure import SavedResult, Value, format_value
 from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
+from skodacad.section import AXIS_NAMES
+from skodacad.section import describe as describe_section
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
+from skodacad.thickness_map import BELOW_LIMIT, NO_MATERIAL, SCALE, ThicknessMap
 
 if TYPE_CHECKING:
     from skodacad.worker import BackgroundRebuilder
@@ -67,6 +74,12 @@ SELECTION_ACTIONS = {
     "shell": "Skořepina – otevřít vybrané plochy",
 }
 
+MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost a tloušťka stěny "
+                "v místě kliknutí. Ctrl+klik na druhou změří vzdálenost a úhel mezi nimi.")
+_MEASURE_COLOR = QColor("#1b7f3b")
+
+_SLIDER_STEPS = 1000  # jemnost posuvníku řezu
+
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888"),
                   "pending": QColor("#8a8a8a")}
@@ -81,6 +94,11 @@ EXPORT_FORMATS = [
 ]
 
 
+def _swatch(color: tuple[float, float, float]) -> str:
+    r, g, b = (int(c * 255) for c in color)
+    return f'<span style="color: rgb({r}, {g}, {b});">■</span>'
+
+
 class MainWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
                  examples_dir: Path | None = None, user_dir: Path | None = None,
@@ -90,12 +108,14 @@ class MainWindow(QMainWindow):
         self._runner = runner
         self.session = ModelSession(runner)
         self._pending_shown = False  # okno ukazuje „Přepočítávám…“
-        self._shown_result = None  # výsledek, jehož díl je právě v prohlížeči
+        self._shown_key: tuple | None = None  # (výsledek, řez) právě v prohlížeči
         self.examples_dir = examples_dir
         self.user_dir = user_dir or Path.home()
         self._param_fields: dict[str, QLineEdit] = {}
         self._selected_id: str | None = None
         self._picked: list = []  # plochy a hrany vybrané ve 3D (tvary OCCT z prohlížeče)
+        self._measured: list[Value] = []  # co jde na výběru změřit (panel Měření)
+        self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -109,10 +129,18 @@ class MainWindow(QMainWindow):
         self._create_actions()
         self._build_side_panel()
         self._build_editor_panel()
+        self._build_measure_panel()
+        self._build_map_panel()
+        self._build_section_panel()
         self._build_menus()
         self.resize(1400, 860)
         self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
                          Qt.Orientation.Horizontal)
+        self.resizeDocks([self.editor_dock, self.measure_dock], [420, 400],
+                         Qt.Orientation.Vertical)
+        self.tabifyDockWidget(self.measure_dock, self.map_dock)
+        self.tabifyDockWidget(self.map_dock, self.section_dock)
+        self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -177,6 +205,37 @@ class MainWindow(QMainWindow):
         self.stop_action.setToolTip("Zastaví pomalý přepočet a vrátí model do posledního "
                                     "spočítaného stavu (Znovu změnu vrátí)")
         self.stop_action.setEnabled(False)
+        self.save_measurement_action = self._action("Uložit měření do modelu",
+                                                    self.save_measurement)
+        self.rename_measurement_action = self._action("Přejmenovat měření…",
+                                                      self.rename_measurement)
+        self.delete_measurement_action = self._action("Smazat měření",
+                                                      self.delete_measurement)
+        self.thickness_map_action = self._action("Mapa tloušťky stěny",
+                                                 self.toggle_thickness_map, "M")
+        self.thickness_map_action.setCheckable(True)
+        self.thickness_map_action.setToolTip("Obarví celý díl podle tloušťky stěny (NDT) – "
+                                             "červeně nejtenčí místa")
+        self.section_action = self._action("Řez modelem", self.toggle_section, "R")
+        self.section_action.setCheckable(True)
+        self.section_action.setToolTip("Rozřízne díl rovinou a ukáže, jak vypadá uvnitř "
+                                       "(model se nemění)")
+        self.section_face_action = self._action("Řez rovnoběžně s vybranou plochou",
+                                                self.section_from_face)
+        self.flip_section_action = self._action("Otočit stranu řezu", self.flip_section)
+        self.flip_section_action.setIconText("Otočit stranu")
+        self.export_section_action = self._action("Export řezu do DXF/SVG…",
+                                                  self.export_section)
+        self.export_section_action.setIconText("Export DXF/SVG…")
+        self.export_map_action = self._action("Export bodů mapy do CSV…", self.export_map)
+        self.export_map_action.setIconText("Export CSV…")
+        self.export_map_action.setEnabled(False)
+        for action, short in ((self.save_measurement_action, "Uložit do modelu"),
+                              (self.rename_measurement_action, "Přejmenovat…"),
+                              (self.delete_measurement_action, "Smazat")):
+            action.setIconText(short)
+            action.setToolTip(action.text())
+            action.setEnabled(False)
 
     # --- stavba okna ---------------------------------------------------------------
 
@@ -261,6 +320,126 @@ class MainWindow(QMainWindow):
         self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
                                           Qt.DockWidgetArea.RightDockWidgetArea)
 
+    def _build_measure_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        self.measure_hint = QLabel(MEASURE_HINT)
+        self.measure_hint.setWordWrap(True)
+        self.measure_hint.setStyleSheet("color: #555;")
+        layout.addWidget(self.measure_hint)
+        self.measure_list = QListWidget()
+        self.measure_list.setObjectName("measure_list")
+        self.measure_list.setMaximumHeight(96)
+        self.measure_list.currentRowChanged.connect(lambda _row: self._measure_row_changed())
+        layout.addWidget(self.measure_list)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self._tool_button(self.save_measurement_action))
+        buttons.addStretch()
+        layout.addLayout(buttons)
+
+        saved_box = QGroupBox("Uložená měření (počítají se při každé změně)")
+        saved_layout = QVBoxLayout(saved_box)
+        self.saved_list = QListWidget()
+        self.saved_list.setObjectName("saved_measurements")
+        self.saved_list.currentRowChanged.connect(lambda _row: self._saved_row_changed())
+        self.saved_list.itemDoubleClicked.connect(lambda _item: self.rename_measurement())
+        saved_buttons = QHBoxLayout()  # nad seznamem, aby byla vidět i na malé obrazovce
+        for action in (self.rename_measurement_action, self.delete_measurement_action):
+            saved_buttons.addWidget(self._tool_button(action))
+        saved_buttons.addStretch()
+        saved_layout.addLayout(saved_buttons)
+        self.saved_list.setMinimumHeight(60)
+        saved_layout.addWidget(self.saved_list)
+        layout.addWidget(saved_box, stretch=1)
+        self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
+                                           Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def _build_map_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        top = QHBoxLayout()
+        top.addWidget(self._tool_button(self.thickness_map_action))
+        top.addWidget(self._tool_button(self.export_map_action))
+        top.addStretch()
+        layout.addLayout(top)
+        form = QFormLayout()
+        self.map_fields: dict[str, QLineEdit] = {}
+        for key, label, hint in (
+                ("limit", "Minimální tloušťka [mm]", "bez hranice"),
+                ("step", "Krok bodů [mm]", "automaticky"),
+                ("scale_max", "Horní mez škály [mm]", "nejčastější tloušťka")):
+            field = QLineEdit()
+            field.setObjectName(f"map_{key}")
+            field.setPlaceholderText(hint)
+            field.editingFinished.connect(lambda k=key: self._map_field_edited(k))
+            self.map_fields[key] = field
+            form.addRow(label, field)
+        layout.addLayout(form)
+        self.map_legend = QLabel()
+        self.map_legend.setObjectName("map_legend")
+        self.map_legend.setMinimumHeight(18)
+        stops = ", ".join(f"stop:{t} rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})"
+                          for t, (r, g, b) in SCALE)
+        self.map_legend.setStyleSheet("border: 1px solid #777; background: qlineargradient("
+                                      f"x1:0, y1:0, x2:1, y2:0, {stops});")
+        layout.addWidget(self.map_legend)
+        self.map_scale_label = QLabel()
+        layout.addWidget(self.map_scale_label)
+        swatches = QLabel(f"{_swatch(BELOW_LIMIT)} pod minimem &nbsp; {_swatch(NO_MATERIAL)} "
+                          "nejde změřit (u okraje jamky či hrany)")
+        swatches.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(swatches)
+        self.map_summary = QLabel()
+        self.map_summary.setObjectName("map_summary")
+        self.map_summary.setWordWrap(True)
+        self.map_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.map_summary)
+        layout.addStretch()
+        self.map_dock = self._add_dock("Mapa tloušťky", "map_dock", panel,
+                                       Qt.DockWidgetArea.RightDockWidgetArea)
+
+    def _build_section_panel(self) -> None:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        top = QHBoxLayout()
+        for action in (self.section_action, self.flip_section_action,
+                       self.export_section_action):
+            top.addWidget(self._tool_button(action))
+        top.addStretch()
+        layout.addLayout(top)
+        form = QFormLayout()
+        self.section_combo = QComboBox()
+        self.section_combo.setObjectName("section_plane")
+        for axis, name in AXIS_NAMES.items():
+            self.section_combo.addItem(name[0].upper() + name[1:], axis)
+        self.section_combo.addItem("Rovnoběžně s vybranou plochou", "face")
+        self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
+        self.section_combo.activated.connect(lambda _index: self._section_kind_chosen())
+        form.addRow("Rovina", self.section_combo)
+        self.section_slider = QSlider(Qt.Orientation.Horizontal)
+        self.section_slider.setObjectName("section_slider")
+        self.section_slider.setRange(0, _SLIDER_STEPS)
+        self.section_slider.valueChanged.connect(lambda _value: self._section_slider_moved())
+        self.section_slider.sliderReleased.connect(self._section_slider_released)
+        form.addRow("Poloha", self.section_slider)
+        self.section_field = QLineEdit()
+        self.section_field.setObjectName("section_position")
+        self.section_field.editingFinished.connect(self._section_field_edited)
+        self.section_position_label = QLabel("Poloha [mm]")
+        form.addRow(self.section_position_label, self.section_field)
+        self.section_range_label = QLabel()
+        self.section_range_label.setStyleSheet("color: #555;")
+        form.addRow("", self.section_range_label)
+        layout.addLayout(form)
+        self.section_info = QLabel()
+        self.section_info.setObjectName("section_info")
+        self.section_info.setWordWrap(True)
+        self.section_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.section_info)
+        layout.addStretch()
+        self.section_dock = self._add_dock("Řez", "section_dock", panel,
+                                           Qt.DockWidgetArea.RightDockWidgetArea)
+
     def _add_dock(self, title: str, name: str, content: QWidget,
                   area: Qt.DockWidgetArea) -> QDockWidget:
         scroll = QScrollArea()
@@ -326,7 +505,17 @@ class MainWindow(QMainWindow):
         model_menu = bar.addMenu("&Model")
         model_menu.addAction(self.rebuild_action)
         model_menu.addAction(self.stop_action)
+        model_menu.addSeparator()
+        model_menu.addAction(self.thickness_map_action)
+        model_menu.addAction(self.export_map_action)
+        model_menu.addSeparator()
+        model_menu.addAction(self.section_action)
+        model_menu.addAction(self.section_face_action)
+        model_menu.addAction(self.flip_section_action)
+        model_menu.addAction(self.export_section_action)
         toolbar.addAction(self.rebuild_action)
+        toolbar.addAction(self.thickness_map_action)
+        toolbar.addAction(self.section_action)
         toolbar.addSeparator()
         selection_menu = model_menu.addMenu("Z výběru ve 3D")
         self._fill_selection_menu(selection_menu)
@@ -351,6 +540,8 @@ class MainWindow(QMainWindow):
         menu.addAction(self.add_to_feature_action)
         menu.addAction(self.replace_in_feature_action)
         menu.addSeparator()
+        menu.addAction(self.save_measurement_action)
+        menu.addAction(self.section_face_action)
         menu.addAction(self.clear_selection_action)
 
     # --- práce se souborem -------------------------------------------------------
@@ -509,7 +700,7 @@ class MainWindow(QMainWindow):
 
     def add_from_selection(self, feature_type: str) -> None:
         """Nový prvek z výběru ve 3D (zaoblení kliknutých hran, skica na ploše …)."""
-        picked, point = list(self._picked), getattr(self.viewer, "picked_point", None)
+        picked, point = list(self._picked), self.viewer.picked_point
         new_id: list[str] = []
         if self._apply(lambda: new_id.append(
                 self.session.add_from_selection(feature_type, picked, point)),
@@ -641,16 +832,22 @@ class MainWindow(QMainWindow):
         self._refresh_tree()
         self._refresh_properties()
         result = self.session.result
-        if result is not self._shown_result or fit:  # díl se kreslí znovu jen když je nový
+        section = self.session.section
+        if (result, section) != self._shown_key or fit:  # kreslit znovu jen nový díl či řez
             self._picked = []  # → starý výběr ve 3D už neplatí
-            part = result.part if result else None
+            part = self.session.display_part
             # Když těleso vznikne poprvé (nový díl), přizpůsobit pohled – jinak zůstane kamera.
-            self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part))
+            self.viewer.show_part(part, fit=fit or (part is not None and not self._had_part),
+                                  accent=section.faces if section is not None else None)
             self._had_part = part is not None
-            self._shown_result = result
+            self._shown_key = (result, section)
+            self._shown_map = None  # prohlížeč mapu s dílem smazal
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
+        self._refresh_saved_measurements()
+        self._refresh_thickness_map()
+        self._refresh_section_panel()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -696,6 +893,8 @@ class MainWindow(QMainWindow):
     def stop_rebuild(self) -> None:
         if self.session.cancel():
             self._pending_shown = False
+            if self.session.map_visible and self.session.thickness_map is None:
+                self.session.map_visible = False  # nedopočítaná mapa se vypne
             self._reload_all()
             self.statusBar().showMessage("Přepočet zastaven – model je zpět v posledním "
                                          "spočítaném stavu (Znovu změnu vrátí).", 10000)
@@ -847,20 +1046,411 @@ class MainWindow(QMainWindow):
         self.props_label.setText("\n".join(lines))
 
     def _selection_changed(self, shapes: list) -> None:
-        """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, akce povolit."""
+        """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, měření, akce povolit."""
         self._picked = list(shapes)
         self._refresh_selection_actions()
+        self._refresh_measure_list()
+        self.section_face_action.setEnabled(
+            self.session.display_part is not None
+            and self.session.selection_info(self._picked).faces == 1)
         info = self.session.selection_info(self._picked)
         if not info.text:
             self.statusBar().showMessage(HELP_HINT)
             return
+        text = info.text
+        if self._measured and (info.faces + info.edges == 2 or self.session.map_visible):
+            text += f"  ·  {self._measured[0].text}"  # hlavní hodnota měření
         hints = []
         if info.edges:
             hints.append("pravým tlačítkem zaoblit nebo srazit")
         if info.faces == 1:
             hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
-        self.statusBar().showMessage(f"{info.text}  ·  " + ", ".join(hints))
+        self.statusBar().showMessage(f"{text}  ·  " + ", ".join(hints))
+
+    # --- měření ----------------------------------------------------------------------
+
+    def _refresh_measure_list(self) -> None:
+        """Panel Měření: hodnoty pro aktuální výběr ve 3D (první je hned vybraná)."""
+        self._measured = self.session.measure_selection(self._picked, self.viewer.picked_point)
+        self.measure_list.blockSignals(True)
+        self.measure_list.clear()
+        for value in self._measured:
+            self.measure_list.addItem(value.text)
+        self.measure_list.blockSignals(False)
+        info = self.session.selection_info(self._picked)
+        if self._measured:
+            self.measure_hint.setText("Vyber řádek – jeho čára se ukáže ve 3D. Uložené měření "
+                                      "se přepočítá při každé změně modelu.")
+        elif info.faces + info.edges > 2:
+            self.measure_hint.setText("Měřit jde jednu nebo dvě věci – zruš část výběru "
+                                      "(Ctrl+klik vybranou věc odebere).")
+        else:
+            self.measure_hint.setText(MEASURE_HINT)
+        if self._measured:
+            self.measure_list.setCurrentRow(0)  # → čára ve 3D
+        else:
+            self._show_measure_line(None)
+        self._refresh_measure_actions()
+
+    def _measure_row_changed(self) -> None:
+        row = self.measure_list.currentRow()
+        value = self._measured[row] if 0 <= row < len(self._measured) else None
+        if value is not None:
+            self.saved_list.blockSignals(True)
+            self.saved_list.setCurrentRow(-1)
+            self.saved_list.blockSignals(False)
+        self._show_measure_line(value)
+        self._refresh_measure_actions()
+
+    def _saved_row_changed(self) -> None:
+        result = self._current_saved()
+        if result is not None:
+            self.measure_list.blockSignals(True)
+            self.measure_list.setCurrentRow(-1)
+            self.measure_list.blockSignals(False)
+            self._show_measure_line(result.value)
+        self._refresh_measure_actions()
+
+    def _show_measure_line(self, value: Value | None) -> None:
+        lines = []
+        if value is not None and value.points is not None:
+            lines = [(*value.points, format_value(value.value, value.unit))]
+        self.viewer.show_measurement(lines)
+
+    def _refresh_saved_measurements(self) -> None:
+        """Seznam uložených měření s hodnotami z posledního přepočtu."""
+        document = self.session.document
+        records = document.measurements if document is not None else []
+        selected = self._current_saved_id()
+        results = {m.id: m for m in self.session.measurements}
+        self.saved_list.blockSignals(True)
+        self.saved_list.clear()
+        for record in records:
+            result = results.get(record["id"])
+            if self.session.computing or result is None:
+                text = f"⏳ {record.get('name') or record['id']}"
+            else:
+                text = result.text
+            item = QListWidgetItem(text)
+            item.setData(_FEATURE_ID, record["id"])
+            if result is not None and result.value is None:
+                item.setForeground(_STATUS_COLORS["error"])
+                item.setToolTip(result.error)
+            elif result is not None:
+                item.setForeground(_MEASURE_COLOR)
+            self.saved_list.addItem(item)
+            if record["id"] == selected:
+                self.saved_list.setCurrentItem(item)
+        self.saved_list.blockSignals(False)
+        if self._current_saved() is not None and not self._measured:
+            self._show_measure_line(self._current_saved().value)  # díl je nový – čáru znovu
+        self._refresh_measure_actions()
+
+    def _current_saved_id(self) -> str | None:
+        item = self.saved_list.currentItem()
+        return item.data(_FEATURE_ID) if item is not None else None
+
+    def _current_saved(self) -> SavedResult | None:
+        measurement_id = self._current_saved_id()
+        return next((m for m in self.session.measurements if m.id == measurement_id), None)
+
+    def _refresh_measure_actions(self) -> None:
+        row = self.measure_list.currentRow()
+        value = self._measured[row] if 0 <= row < len(self._measured) else None
+        self.save_measurement_action.setEnabled(value is not None and not self.session.computing)
+        self.save_measurement_action.setText(
+            f"Uložit měření do modelu: {value.text}" if value is not None
+            else "Uložit měření do modelu")
+        has_saved = self._current_saved_id() is not None
+        self.rename_measurement_action.setEnabled(has_saved)
+        self.delete_measurement_action.setEnabled(has_saved)
+
+    def save_measurement(self) -> None:
+        """Uloží vybranou hodnotu z panelu Měření do modelu."""
+        row = self.measure_list.currentRow()
+        if not 0 <= row < len(self._measured):
+            return
+        value = self._measured[row]
+        picked, point = list(self._picked), self.viewer.picked_point
+        try:
+            measurement_id = self._busy(
+                lambda: self.session.add_measurement(picked, value.kind, point))
+        except DocumentError as exc:
+            self._error("Měření nejde uložit", str(exc))
+            return
+        self._refresh_all()
+        for i in range(self.saved_list.count()):
+            if self.saved_list.item(i).data(_FEATURE_ID) == measurement_id:
+                self.saved_list.setCurrentRow(i)
+        self.statusBar().showMessage(f"Měření uloženo do modelu: {value.text}", 8000)
+
+    def rename_measurement(self) -> None:
+        measurement_id = self._current_saved_id()
+        if measurement_id is None:
+            return
+        record = next(m for m in self.session.document.measurements
+                      if m["id"] == measurement_id)
+        name, ok = QInputDialog.getText(self, "Přejmenovat měření", "Název měření:",
+                                        text=record.get("name", ""))
+        if not ok:
+            return
+        try:
+            self._busy(lambda: self.session.rename_measurement(measurement_id, name))
+        except DocumentError as exc:
+            self._error("Měření nejde přejmenovat", str(exc))
+            return
+        self._refresh_all()
+
+    def delete_measurement(self) -> None:
+        measurement_id = self._current_saved_id()
+        if measurement_id is None:
+            return
+        self._busy(lambda: self.session.remove_measurement(measurement_id))
+        self._show_measure_line(None)
+        self._refresh_all()
+
+    # --- mapa tloušťky stěny -------------------------------------------------------------
+
+    def toggle_thickness_map(self) -> None:
+        """Zapne/vypne barevnou mapu tloušťky stěny (počítá se na pozadí)."""
+        visible = self.thickness_map_action.isChecked()
+        if self.session.document is None:
+            self.thickness_map_action.setChecked(False)
+            return
+        if visible:
+            self.map_dock.raise_()
+        self._busy(lambda: self.session.show_thickness_map(visible))
+        self._refresh_all()
+
+    def _map_field_edited(self, key: str) -> None:
+        field = self.map_fields[key]
+        document = self.session.document
+        if document is None:
+            return
+        saved = (document.thickness_map or {}).get(key)
+        if field.text().strip() == ("" if saved is None else format_parameter_value(saved)):
+            field.setStyleSheet("")
+            return  # beze změny
+        try:
+            self._busy(lambda: self.session.set_map_setting(key, field.text()))
+        except DocumentError as exc:
+            field.setStyleSheet(_INVALID_STYLE)
+            field.setToolTip(str(exc))
+            self.statusBar().showMessage(f"Mapa tloušťky: {exc}", 10000)
+            return
+        field.setStyleSheet("")
+        field.setToolTip("")
+        self._refresh_all()
+
+    def _refresh_thickness_map(self) -> None:
+        """Mapa ve 3D a panel: nastavení z modelu, legenda, souhrn."""
+        session = self.session
+        found = session.thickness_map if session.map_visible else None
+        if found is not self._shown_map:
+            if found is None:
+                self.viewer.hide_thickness_map()
+            else:
+                x, y, z = found.thinnest or (0.0, 0.0, 0.0)
+                marker = ((x, y, z), f"min {number(found.minimum)} mm") \
+                    if found.thinnest is not None else None
+                nodes, triangles, colors = session.visible_map()
+                section = session.section
+                self.viewer.show_thickness_map(nodes, triangles, colors, marker,
+                                               fill=section.faces if section else None)
+            self._shown_map = found
+        settings = session.map_settings if session.document is not None else None
+        for key, field in self.map_fields.items():
+            field.setEnabled(session.document is not None)
+            if field.hasFocus() or settings is None:
+                continue
+            value = getattr(settings, key)
+            text = "" if value is None else format_parameter_value(
+                int(value) if float(value).is_integer() else value)
+            if field.text() != text:
+                field.setText(text)
+        self.thickness_map_action.setChecked(session.map_visible)
+        self.export_map_action.setEnabled(found is not None and not session.computing)
+        if found is not None:
+            low, high = found.scale
+            self.map_scale_label.setText(f"{number(low)} mm  ←  tenčí   ·   tlustší  →  "
+                                         f"{number(high)} mm a víc")
+            self.map_summary.setText("\n".join(found.summary()))
+        elif session.map_visible and session.computing:
+            self.map_scale_label.setText("")
+            self.map_summary.setText("⏳ Počítám mapu tloušťky stěny…")
+        elif session.map_visible and session.result is not None and session.result.map_error:
+            self.map_scale_label.setText("")
+            self.map_summary.setText(f"✕ {session.result.map_error}")
+        else:
+            self.map_scale_label.setText("")
+            self.map_summary.setText("Zapni mapu tlačítkem nahoře (nebo klávesou M): díl se "
+                                     "obarví podle tloušťky stěny. Kliknutím na místo ve 3D "
+                                     "změříš přesnou tloušťku (panel Měření).")
+
+    # --- řez modelem -----------------------------------------------------------------------
+
+    def toggle_section(self) -> None:
+        """Zapne/vypne řez (výchozí kolmo na osu Y uprostřed dílu)."""
+        if not self.section_action.isChecked():
+            self.session.clear_section()
+        else:
+            self.section_dock.raise_()
+            axis = self.section_combo.currentData()
+            try:
+                self._busy(lambda: self.session.set_section_axis(
+                    axis if axis in ("X", "Y", "Z") else "Y"))
+            except DocumentError as exc:
+                self.statusBar().showMessage(str(exc), 10000)
+                self.section_action.setChecked(False)
+                return
+        self._refresh_all()
+
+    def section_from_face(self) -> None:
+        """Řez rovnoběžně s plochou vybranou ve 3D."""
+        try:
+            self._busy(lambda: self.session.set_section_face(self._picked,
+                                                             self.viewer.picked_point))
+        except DocumentError as exc:
+            self._error("Řez nejde vést", str(exc))
+            self._refresh_section_panel()
+            return
+        self.section_dock.raise_()
+        self._refresh_all()
+
+    def flip_section(self) -> None:
+        if self.session.section_settings is None:
+            return
+        self._busy(self.session.flip_section)
+        self._refresh_all()
+
+    def export_section(self) -> None:
+        """Obrys řezu jako 2D výkres (DXF pro CAD a laser, SVG jako obrázek)."""
+        name = self.session.document.name if self.session.document else "rez"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export řezu", str(self.user_dir / f"{name}-rez.dxf"),
+            "DXF – 2D výkres pro CAD (*.dxf);;SVG – obrázek do protokolu (*.svg)")
+        if not path:
+            return
+        try:
+            written = self.session.export_section(path)
+        except (DocumentError, OSError) as exc:
+            self._error("Export řezu se nepovedl", str(exc))
+            return
+        self.statusBar().showMessage(f"Řez uložen: {written}", 8000)
+
+    def _section_kind_chosen(self) -> None:
+        kind = self.section_combo.currentData()
+        if kind == "face":
+            self.section_from_face()
+            return
+        if self.session.section_settings is None and not self.section_action.isChecked():
+            self.section_action.setChecked(True)
+        try:
+            self._busy(lambda: self.session.set_section_axis(kind))
+        except DocumentError as exc:
+            self.statusBar().showMessage(str(exc), 10000)
+        self._refresh_all()
+
+    def _section_slider_moved(self) -> None:
+        """Táhnutí jen ukazuje číslo; řez se spočítá po puštění (u klávesnice hned)."""
+        if self.session.section_settings is None:
+            return
+        low, high = self.session.section_range()
+        value = low + (high - low) * self.section_slider.value() / _SLIDER_STEPS
+        self.section_field.setText(format_parameter_value(round(value, 2)))
+        if not self.section_slider.isSliderDown():
+            self._apply_section_position(value)
+
+    def _section_slider_released(self) -> None:
+        if self.session.section_settings is None:
+            return
+        low, high = self.session.section_range()
+        self._apply_section_position(
+            low + (high - low) * self.section_slider.value() / _SLIDER_STEPS)
+
+    def _section_field_edited(self) -> None:
+        if self.session.section_settings is None:
+            return
+        text = self.section_field.text().strip().replace(",", ".")
+        try:
+            value = float(text)
+        except ValueError:
+            self.section_field.setStyleSheet(_INVALID_STYLE)
+            self.statusBar().showMessage(f"„{text}“ není číslo – napiš polohu řezu v mm.",
+                                         10000)
+            return
+        self.section_field.setStyleSheet("")
+        if abs(value - self.session.section_settings.position) > 1e-9:
+            self._apply_section_position(value)
+
+    def _apply_section_position(self, value: float) -> None:
+        if abs(value - self.session.section_settings.position) < 1e-9:
+            return
+        self._busy(lambda: self.session.set_section_position(value))
+        self._refresh_all()
+
+    def _refresh_section_panel(self) -> None:
+        session = self.session
+        settings = session.section_settings
+        has_part = session.result is not None and session.result.part is not None
+        self.section_action.setEnabled(has_part or settings is not None)
+        self.section_action.setChecked(settings is not None)
+        self.flip_section_action.setEnabled(settings is not None)
+        self.export_section_action.setEnabled(session.section is not None)
+        self.section_face_action.setEnabled(
+            has_part and session.selection_info(self._picked).faces == 1)
+        for widget in (self.section_slider, self.section_field):
+            widget.setEnabled(settings is not None)
+        if settings is None:
+            self.section_position_label.setText("Poloha [mm]")
+            self.section_range_label.setText("")
+            self.section_info.setText("Zapni řez tlačítkem nahoře (nebo klávesou R): díl se "
+                                      "rozřízne a uvidíš ho uvnitř. Model se nemění. Na "
+                                      "plochy řezu jde klikat a měřit.")
+            return
+        kind = settings.axis or "face"
+        index = self.section_combo.findData(kind)
+        if index >= 0 and self.section_combo.currentIndex() != index:
+            self.section_combo.setCurrentIndex(index)
+        try:
+            low, high = session.section_range()
+        except DocumentError:
+            low, high = settings.position, settings.position
+        word = "Hloubka" if settings.axis is None else f"Poloha {settings.axis}"
+        self.section_position_label.setText(f"{word} [mm]")
+        self.section_range_label.setText(f"od {number(low)} do {number(high)} mm")
+        if not self.section_field.hasFocus():
+            self.section_field.setText(format_parameter_value(round(settings.position, 2)))
+        if not self.section_slider.isSliderDown() and high > low:
+            self.section_slider.blockSignals(True)
+            self.section_slider.setValue(round((settings.position - low) / (high - low)
+                                               * _SLIDER_STEPS))
+            self.section_slider.blockSignals(False)
+        section = session.section
+        if section is None:
+            self.section_info.setText(f"✕ {session.section_error}")
+            return
+        where = describe_section(section.plane)
+        if settings.axis is None:
+            where = f"rovnoběžně s plochou, {number(settings.position)} mm pod ní"
+        self.section_info.setText(f"Řez {where}\nPlocha řezu: {number(section.area)} mm² "
+                                  "(cihlově)\nKlikni na plochu řezu a změříš ji v panelu "
+                                  "Měření.")
+
+    def export_map(self) -> None:
+        """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""
+        default = self.user_dir / f"{self.session.document.name or 'mapa'}-tloustka.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Export bodů mapy tloušťky", str(default),
+                                              "CSV pro Excel (*.csv)")
+        if not path:
+            return
+        try:
+            written = self.session.export_thickness_map(path)
+        except (DocumentError, OSError) as exc:
+            self._error("Export mapy se nepovedl", str(exc))
+            return
+        self.statusBar().showMessage(f"Body mapy uložené: {written}", 8000)
 
     def _show_context_menu(self, position: QPoint | None = None) -> None:
         """Pravý klik do 3D: co jde s výběrem udělat."""

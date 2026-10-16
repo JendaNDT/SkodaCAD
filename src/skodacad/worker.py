@@ -64,6 +64,9 @@ def encode_result(result: BuildResult) -> dict[str, Any]:
         "sketches": {key: (tuple(plane.origin), tuple(plane.x_dir), tuple(plane.z_dir),
                            _shape_bytes(sketch))
                      for key, (plane, sketch) in result.sketches.items()},
+        "measurements": list(result.measurements),  # jen čísla a texty
+        "thickness_map": result.thickness_map,  # seznamy čísel
+        "map_error": result.map_error,
     }
 
 
@@ -77,6 +80,9 @@ def decode_result(data: dict[str, Any]) -> BuildResult:
         parts_before={key: _shape_from(raw) for key, raw in data["parts_before"].items()},
         sketches={key: (Plane(origin, x_dir, z_dir), _shape_from(raw))
                   for key, (origin, x_dir, z_dir, raw) in data["sketches"].items()},
+        measurements=data["measurements"],
+        thickness_map=data["thickness_map"],
+        map_error=data["map_error"],
     )
 
 
@@ -95,9 +101,10 @@ def _worker_main(conn: Any) -> None:
             return  # okno skončilo
         if message[0] != "rebuild":
             return
-        _, job, data = message
+        _, job, data, with_map = message
         try:
-            reply = ("result", job, encode_result(rebuild(Document.from_dict(data))))
+            reply = ("result", job, encode_result(rebuild(Document.from_dict(data),
+                                                          with_map=with_map)))
         except DocumentError as exc:
             reply = ("error", job, str(exc))
         except Exception as exc:  # noqa: BLE001 – chybu pošleme oknu, proces běží dál
@@ -155,13 +162,13 @@ class BackgroundRebuilder:
     def busy(self) -> bool:
         return self._active is not None
 
-    def submit(self, document: dict[str, Any]) -> int:
-        """Spustí přepočet modelu (slovník z ``Document.to_dict``). Rozpočítaný starší
-        přepočet se ukončí – jeho výsledek by už neplatil."""
+    def submit(self, document: dict[str, Any], with_map: bool = False) -> int:
+        """Spustí přepočet modelu (slovník z ``Document.to_dict``), s ``with_map`` i mapu
+        tloušťky stěny. Rozpočítaný starší přepočet se ukončí – jeho výsledek by už neplatil."""
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
         self._job += 1
-        worker.conn.send(("rebuild", self._job, document))
+        worker.conn.send(("rebuild", self._job, document, with_map))
         self._active = worker
         self.started = time.monotonic()
         if not self._idle:

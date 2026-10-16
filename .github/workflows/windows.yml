@@ -88,6 +88,10 @@ jobs:
           ./stazeno/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
           code=$?
           cat self-test.txt || echo "Zpráva self-testu nevznikla"
+          if [ $code -ne 0 ]; then
+            echo "--- skodacad.log ---"
+            cat "$SKODACAD_HOME/skodacad.log" || echo "Log nevznikl"
+          fi
           exit $code
 
       - name: Zabalení do ZIP pro vydání (jen z main)

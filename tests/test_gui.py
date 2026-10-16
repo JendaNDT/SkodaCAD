@@ -25,15 +25,30 @@ class FakeViewer(QtWidgets.QWidget):
         self.parts = []
         self.views = []
         self.highlighted = []
+        self.measurement = []  # čáry měření (od, do, popisek)
+        self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.picked_point = None
 
-    def show_part(self, part, fit=False):
+    def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
+        self.accent = list(accent or [])  # plochy jinou barvou (plochy řezu)
         self.picked_point = None
+        self.measurement = []
+        self.thickness_map = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
         self.highlighted = list(shapes)
+
+    def show_measurement(self, lines):
+        self.measurement = list(lines)
+
+    def show_thickness_map(self, nodes, triangles, colors, marker=None, fill=None):
+        self.thickness_map = (len(nodes), len(triangles), list(colors), marker)
+        self.map_fill = list(fill or [])
+
+    def hide_thickness_map(self):
+        self.thickness_map = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -237,6 +252,8 @@ def test_every_action_runs_without_error(window, slot_errors, no_dialogs):
 
     actions = [a for a in window.findChildren(QAction) if a.text() and a.text() != "Konec"]
     assert len(actions) >= 15
+    # Zapnutá mapa tloušťky by se počítala znovu s každou další změnou – stisknout až nakonec.
+    actions.sort(key=lambda a: a is window.thickness_map_action)
     for item in actions:
         item.trigger()
     assert slot_errors == []
@@ -640,3 +657,170 @@ def test_hole_on_shaft_surface_from_click(empty_window):
     w.viewer.click([face_at(shown_part(w), 0, -10, 0)], point=(0, -10, 0))
     w.add_to_feature_action.trigger()  # na boku hřídele je jiná tečná rovina → jen hláška
     assert len(session.feature("hole1")["positions"]) == 2
+
+
+# --- měření -----------------------------------------------------------------------------
+
+
+def measure_rows(w):
+    return [w.measure_list.item(i).text() for i in range(w.measure_list.count())]
+
+
+def saved_rows(w):
+    return [w.saved_list.item(i).text() for i in range(w.saved_list.count())]
+
+
+def test_measuring_on_click_and_saving_into_the_model(window, no_dialogs, slot_errors,
+                                                      monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    w = window
+    assert measure_rows(w) == [] and "Klikni ve 3D" in w.measure_hint.text()
+    assert not w.save_measurement_action.isEnabled()
+    top = face_at(shown_part(w), 60, 0, 18)
+    w.viewer.click([top], point=(60, 0, 18))
+    assert measure_rows(w)[0] == "Tloušťka stěny: 18.00 mm"  # deska příruby t = 18
+    [(start, end, label)] = w.viewer.measurement  # čára od kliknutí skrz desku
+    assert start == pytest.approx((60, 0, 18)) and end == pytest.approx((60, 0, 0))
+    assert label == "18.00 mm"
+    assert w.save_measurement_action.text() == \
+        "Uložit měření do modelu: Tloušťka stěny: 18.00 mm"
+    w.save_measurement_action.trigger()
+    assert saved_rows(w) == ["Tloušťka stěny: 18.00 mm"]
+    assert w.session.document.measurements[0]["kind"] == "thickness"
+    assert w.viewer.measurement  # uložené měření je vybrané a jeho čára vidět
+    edit(w, "t", "20")
+    assert saved_rows(w) == ["Tloušťka stěny: 20.00 mm"]  # přepočítalo se s dílem
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Stěna příruby", True))
+    w.saved_list.setCurrentRow(0)
+    action(w, "Přejmenovat měření…").trigger()
+    assert saved_rows(w) == ["Stěna příruby: 20.00 mm"]
+    w.saved_list.setCurrentRow(0)
+    action(w, "Smazat měření").trigger()
+    assert saved_rows(w) == [] and w.viewer.measurement == []
+    action(w, "Zpět").trigger()
+    assert saved_rows(w) == ["Stěna příruby: 20.00 mm"]
+    assert slot_errors == []
+
+
+def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
+    w = window
+    part = shown_part(w)
+    pitch = 125 / 2 * math.sqrt(2)  # sousední díry na roztečné kružnici k = 125, n = 4
+    corner = 125 / 2 / math.sqrt(2)  # díry jsou pootočené o 45°
+    holes = [face_at(part, sx * corner + sx * 9, corner, 9) for sx in (1, -1)]
+    assert all(h.geom_type.name == "CYLINDER" for h in holes)
+    w.viewer.click(holes)
+    assert measure_rows(w)[0] == f"Rozteč os: {number(pitch)} mm"
+    assert f"Rozteč os: {number(pitch)} mm" in w.statusBar().currentMessage()
+    shown = []
+    monkeypatch.setattr(w, "_exec_menu", lambda menu, position: shown.append(
+        [item.text() for item in menu.actions() if item.isEnabled()]))
+    w.viewer.context_menu_requested.emit(QPoint(10, 10))
+    assert f"Uložit měření do modelu: Rozteč os: {number(pitch)} mm" in shown[-1]
+    w.measure_list.setCurrentRow(len(measure_rows(w)) - 1)  # nejkratší vzdálenost
+    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm"  # mezi stěnami děr Ø18
+    w.viewer.click(list(part.faces())[:3])
+    assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()
+
+
+# --- mapa tloušťky stěny ------------------------------------------------------------------
+
+
+def test_thickness_map_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    w = window  # příruba: deska 18 mm s dírami
+    assert w.viewer.thickness_map is None and not w.export_map_action.isEnabled()
+    assert "Zapni mapu" in w.map_summary.text()
+    action(w, "Mapa tloušťky stěny").trigger()
+    nodes, triangles, colors, (point, label) = w.viewer.thickness_map
+    assert nodes > 1000 and triangles > 1000 and len(colors) == nodes
+    found = w.session.thickness_map
+    assert label == f"min {number(found.minimum)} mm"
+    assert "Nejčastější tloušťka: 18.00 mm" in w.map_summary.text()
+    assert w.map_scale_label.text().endswith("18.00 mm a víc")
+    # klik na mapu = přesná tloušťka v bodě i ve stavovém řádku
+    w.viewer.click([face_at(shown_part(w), 60, 0, 18)], point=(60, 0, 18))
+    assert "Tloušťka stěny: 18.00 mm" in w.statusBar().currentMessage()
+
+    set_text(w.map_fields["limit"], "20")  # minimum nad tloušťkou desky → skoro vše pod ním
+    assert w.session.document.thickness_map == {"limit": 20}
+    assert "Pod minimem 20.00 mm" in w.map_summary.text()
+    set_text(w.map_fields["step"], "nic")
+    assert "c0392b" in w.map_fields["step"].styleSheet()  # neplatné číslo → červeně
+    assert w.session.document.thickness_map == {"limit": 20}
+    set_text(w.map_fields["step"], "8")
+    assert w.session.thickness_map.step == 8 and w.map_fields["step"].styleSheet() == ""
+    action(w, "Zpět").trigger()
+    assert w.map_fields["step"].text() == "" and w.session.thickness_map.step != 8
+
+    target = tmp_path / "mapa.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    action(w, "Export bodů mapy do CSV…").trigger()
+    assert target.read_text(encoding="utf-8-sig").startswith("x [mm];y [mm];z [mm]")
+
+    action(w, "Mapa tloušťky stěny").trigger()  # vypnout
+    assert w.viewer.thickness_map is None and not w.session.map_visible
+    edit(w, "t", "20")
+    assert w.session.thickness_map is None  # vypnutá mapa se nepočítá
+    assert slot_errors == []
+
+
+# --- řez modelem ---------------------------------------------------------------------------
+
+
+def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    w = window  # příruba Ø165 × 18 s otvorem Ø62 a čtyřmi děrami Ø18
+    full = w.session.result.part
+    assert not w.flip_section_action.isEnabled() and "Zapni řez" in w.section_info.text()
+    action(w, "Řez modelem").trigger()  # výchozí kolmo na Y uprostřed (středem otvoru)
+    shown, _fit = w.viewer.parts[-1]
+    assert shown is w.session.section.part and shown.volume == pytest.approx(full.volume / 2)
+    assert len(w.viewer.accent) == 2  # dvě plochy řezu vedle otvoru
+    area = 2 * (165 - 62) / 2 * 18 - 4 * 2  # bez sražení obvodu 2 a otvoru 1 mm (2 × 2 rohy)
+    assert w.session.section.area == pytest.approx(area, rel=0.02)
+    assert "Plocha řezu" in w.section_info.text()
+    assert w.session.document.to_dict() == w.session.document.to_dict() and not \
+        w.session.dirty  # řez model nemění
+
+    set_text(w.section_field, "40")  # poloha číslem
+    assert w.session.section_settings.position == 40
+    w.section_slider.setValue(1000)  # posuvník na konec dílu → řez díl míjí
+    assert w.session.section is None and "✕" in w.section_info.text()
+    w.section_slider.setValue(500)
+    assert w.session.section is not None
+    action(w, "Otočit stranu řezu").trigger()
+    assert w.session.section_settings.flipped
+    w.section_combo.setCurrentIndex(w.section_combo.findData("Z"))
+    w.section_combo.activated.emit(w.section_combo.currentIndex())
+    assert w.session.section_settings.axis == "Z"
+    assert w.session.section.area == pytest.approx(math.pi * (82.5**2 - 31**2)
+                                                   - 4 * math.pi * 81, rel=1e-3)
+
+    # řez rovnoběžně s plochou kliknutím (horní plocha → do hloubky)
+    top = face_at(shown_part(w), 60, 0, 18)
+    w.viewer.click([top], point=(60, 0, 18))
+    action(w, "Řez rovnoběžně s vybranou plochou").trigger()
+    assert w.session.section_settings.axis is None
+    assert w.section_combo.currentData() == "face"
+
+    target = tmp_path / "rez.dxf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    action(w, "Export řezu do DXF/SVG…").trigger()
+    assert target.exists() and target.stat().st_size > 0
+
+    # mapa tloušťky v řezu: kreslí se jen trojúhelníky zbylé poloviny
+    action(w, "Mapa tloušťky stěny").trigger()
+    nodes, triangles, colors, marker = w.viewer.thickness_map
+    assert 0 < triangles < len(w.session.thickness_map.triangles)
+    assert len(colors) == nodes > len(w.session.thickness_map.nodes)  # uzly na řezu navíc
+    assert w.viewer.map_fill == w.session.section.faces  # plochy řezu vyplněné
+    action(w, "Mapa tloušťky stěny").trigger()
+
+    action(w, "Řez modelem").trigger()  # vypnout → zase celý díl
+    assert w.viewer.parts[-1][0] is w.session.result.part and w.session.section is None
+    assert slot_errors == []

@@ -27,8 +27,8 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 | Otáčení | levé tlačítko + táhnout |
 | Posun | prostřední nebo pravé tlačítko + táhnout |
 | Zoom | kolečko (ke kurzoru) |
-| Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku |
-| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere |
+| Výběr plochy / hrany | klik – popis (typ, obsah, průměr…) se ukáže dole ve stavovém řádku a **změří se** (panel *Měření* vpravo) |
+| Více hran / ploch | `Ctrl`+klik (nebo `Shift`+klik) přidá nebo ubere – u dvou věcí se změří vzdálenost a úhel |
 | Co s výběrem | pravé tlačítko (bez tažení): Zaoblit, Srazit, Skica na ploše, Skořepina… |
 | Zrušit výběr | `Esc` |
 | Celý díl | dvojklik nebo `F` |
@@ -147,6 +147,81 @@ a případně zadej *Vlastní průměr*. Tabulky a zdroje jsou v
 [src/skodacad/holes.py](src/skodacad/holes.py) (normy samotné jsou placené; hodnoty jsou
 ověřené porovnáním více zdrojů – u průchozí díry M16 jeden zdroj uvádí 18 místo 17,5).
 
+### Měření
+
+Ukázka: *Soubor → Otevřít ukázku → trubka* (trubka s korozní jamkou a uloženými měřeními
+tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo v panelu **Měření**.
+
+| Vybráno | Co se změří |
+|---|---|
+| jedna plocha | **tloušťka stěny v místě kliknutí** (jako ultrazvukový tloušťkoměr: kolmo do materiálu až k protější ploše), u válce a koule průměr, obsah plochy |
+| jedna hrana | délka, u kružnice průměr, u oblouku poloměr |
+| dvě rovnoběžné plochy | jejich kolmá vzdálenost (tloušťka desky, šířka drážky) |
+| dvě díry (válce nebo jejich hrany) | **rozteč os**, u hran i vzdálenost středů |
+| díra a plocha | vzdálenost osy díry od plochy (je-li s ní rovnoběžná) |
+| dvě plochy / hrany pod úhlem | úhel mezi nimi (sražení 45°, šikmá hrana a plocha …) |
+| vždy u dvou věcí | nejkratší vzdálenost |
+
+* Vybraný řádek se ve 3D ukáže jako **zelená čára** s hodnotou (odkud kam se měřilo).
+  Hlavní hodnota dvou věcí je i dole ve stavovém řádku.
+* **Uložit do modelu** (nebo pravé tlačítko → *Uložit měření do modelu*) uloží vybraný řádek
+  do souboru. Uložené měření se **přepočítá při každé změně** modelu – změníš tloušťku
+  stěny a hned vidíš novou zbytkovou tloušťku. Přejmenovat (i dvojklikem) a smazat jde pod
+  seznamem *Uložená měření*, Zpět/Znovu funguje i tady.
+* Uložené měření si plochy a hrany pamatuje **významem**, ne číslem: plochu bodem, směrem,
+  druhem a poloměrem (díra se najde, i když se posune), hranu jako zaoblení. Když plocha
+  zmizí, měření se zbarví červeně a napíše proč.
+* Měří se vždy jedna nebo dvě věci; u víc vybraných se nic nezměří.
+
+### Mapa tloušťky stěny (NDT)
+
+Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tloušťky stěny** (klávesa
+`M` nebo tlačítko v horní liště). Celý povrch dílu se obarví podle tloušťky stěny:
+
+| Barva | Význam |
+|---|---|
+| červená → žlutá → zelená → modrá | od nejtenčího místa po horní mez škály (výchozí = nejčastější tloušťka dílu, tedy jmenovitá stěna); tlustší místa jsou modrá |
+| fialová | pod **minimální dovolenou tloušťkou** (zadáš ji v panelu) |
+| šedá | tloušťku tu nejde jednoznačně změřit – okraj jamky, drážky nebo ostrá hrana |
+
+* Tloušťka se měří jako ultrazvukovým tloušťkoměrem: v hustě rozmístěných bodech po celém
+  povrchu kolmo do materiálu až k protější stěně. Platí jen stěna, která k paprsku stojí
+  zhruba kolmo („koncové echo“) – jinak je místo šedé, ne s nesmyslně malým číslem.
+* Nejtenčí místo má ve 3D fialovou značku s hodnotou. Klikem kamkoli na mapu změříš přesnou
+  tloušťku v tom bodě (stavový řádek a panel *Měření*).
+* Panel **Mapa tloušťky** (záložka vedle *Měření*): minimální tloušťka, krok bodů (prázdné
+  = automaticky, asi 30 000 bodů) a horní mez škály. Nastavení se **ukládá do modelu**
+  (Zpět/Znovu funguje). Pod nimi legenda a souhrn: nejtenčí místo se souřadnicemi,
+  nejčastější tloušťka, kolik procent povrchu je pod minimem.
+* Zapnutá mapa se **přepočítá s modelem** – změníš tloušťku stěny nebo hloubku jamky a mapa
+  se na pozadí spočítá znovu (okno nezamrzne, výpočet trvá pár sekund).
+* **Export CSV…** uloží body mapy (x, y, z, tloušťka, pod minimem) pro Excel – se
+  středníkem a desetinnou čárkou, jak je zvyklý český Excel. Hodí se k porovnání
+  s naměřenými hodnotami z ultrazvuku.
+* Pod mapou je díl jen v obrysech hran, aby byly vidět barvy.
+
+### Řez modelem
+
+**Model → Řez modelem** (klávesa `R` nebo tlačítko v horní liště) díl přesně rozřízne rovinou
+a ukáže jednu polovinu – vidíš dovnitř (stěny, díry, závity, jamky). Model se přitom
+**nemění**, řez je jen pohled a do souboru se neukládá.
+
+* Panel **Řez** (záložka vedle *Měření* a *Mapy tloušťky*):
+  * **Rovina** – kolmo na osu X, Y nebo Z (výchozí podélně kolmo na Y, uprostřed dílu),
+    nebo **rovnoběžně s vybranou plochou**: klikni na rovinnou plochu (i šikmou) a zvol tuto
+    možnost (nebo pravé tlačítko → *Řez rovnoběžně s vybranou plochou*) – posuvník pak
+    posouvá řez do hloubky pod plochu.
+  * **Poloha** posuvníkem (řez se spočítá po puštění) nebo přesně číslem v mm.
+  * **Otočit stranu** – zbude druhá polovina.
+  * **Export DXF/SVG…** – obrys plochy řezu jako 2D výkres: DXF pro jiné CADy či laser,
+    SVG (vyplněný řez) jako obrázek do protokolu.
+* Plochy řezu jsou **cihlové** a pod panelem je jejich obsah (průřez dílu v té rovině).
+* Na rozříznutý díl jde klikat jako jindy: měření (i na ploše řezu – vzdálenosti, tloušťka),
+  zaoblení, sražení, skica a díra na ploše. Prvek se přidá na celý díl. Co vzniklo jen řezem
+  (plocha řezu), na díl použít ani uložit nejde – okno to česky řekne.
+* Se zapnutou **mapou tloušťky** zůstane barevná i rozříznutá – mapa se ořízne přesně
+  rovinou řezu a uvidíš i vnitřek (třeba korozi uvnitř trubky).
+
 ### Pole a zrcadlení
 
 Ukázka: *Soubor → Otevřít ukázku → kryt*. **Pole** zopakuje vybrané prvky (díru, výřez,
@@ -201,6 +276,22 @@ Vlastnosti dílu:
 Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```
 
+Model s uloženými měřeními je vypíše taky a s nastavenou mapou tloušťky (nebo s volbou
+`--mapa`) i její souhrn – body mapy uloží do `out/<model>-tloustka.csv`
+(`skodacad build examples/trubka.json --set h=4`):
+
+```
+Měření:
+  Jmenovitá tloušťka stěny: 6.00 mm
+  Zbytková tloušťka pod jamkou: 2.00 mm
+  Vnější průměr: 114.30 mm
+Mapa tloušťky stěny:
+  Nejtenčí místo: 2.00 mm (X 49.24  Y 0.00  Z 53.15)
+  Nejčastější tloušťka: 6.00 mm, největší: 300.00 mm
+  Pod minimem 4.00 mm: 0.30 % povrchu (619 mm²)
+  27940 bodů po 12.4 mm, výpočet 3.9 s
+```
+
 | Formát | K čemu |
 |---|---|
 | `step` | přesná geometrie pro jiné CAD programy (Inventor, Solid Edge, Fusion …) |
@@ -213,11 +304,13 @@ Uloženo: out/priruba.step, out/priruba.stl, out/priruba.3mf, out/priruba.svg
 ```json
 {
   "format": "skodacad",
-  "version": 8,
+  "version": 10,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
-  "features": [ ... ]
+  "features": [ ... ],
+  "measurements": [ ... ],
+  "thickness_map": {"limit": 4}
 }
 ```
 
@@ -319,6 +412,37 @@ Hrany se vybírají **významem, ne číslem** – výběr tak platí i po změn
 Výběr kliknutím ve 3D vytváří tyto popisy sám: zkusí nejjednodušší, který vybere přesně
 kliknuté hrany. `near` (nejbližší k bodu) použije jen tam, kde nic jiného nestačí – třeba jedna
 ze čtyř stejných děr. Soubory verze 1 (bez `between`, `near` a seznamu) se načtou dál.
+
+### Uložená měření (`measurements`)
+
+```json
+{"id": "m1", "name": "Tloušťka desky", "kind": "thickness",
+ "a": {"face": {"at": [60, 0, 18], "normal": [0, 0, 1], "type": "plane"}}}
+{"id": "m2", "name": "Rozteč os", "kind": "parallel",
+ "a": {"edge": {"face": "top", "radius": 9, "near": [37.83, 37.83, 18]}},
+ "b": {"edge": {"face": "top", "radius": 9, "near": [-37.83, 37.83, 18]}}}
+```
+
+* **`kind`** – co se měří: `thickness` (tloušťka stěny v bodě `at`), `parallel` (kolmá
+  vzdálenost rovnoběžných ploch/hran, rozteč os), `distance` (nejkratší vzdálenost),
+  `angle` (úhel), `centers` (vzdálenost středů), `diameter`, `radius`, `length`, `area`.
+* **`a`**, **`b`** – plocha `{"face": {"at", "normal", "type", "radius"}}` (nejbližší
+  plocha toho druhu k bodu `at`, rovina přednostně se stejným směrem, válec se stejným
+  poloměrem) nebo hrana `{"edge": …}` popsaná jako u zaoblení. Druhou věc má jen měření
+  dvou věcí.
+* Hodnota se do souboru neukládá – spočítá se při každém přepočtu (okno, příkazová řádka).
+  Soubory verze 1–8 (bez měření) se načtou dál.
+
+### Mapa tloušťky stěny (`thickness_map`)
+
+```json
+"thickness_map": {"limit": 4, "step": 2.5, "scale_max": 8}
+```
+
+Vše je nepovinné: `limit` = minimální dovolená tloušťka [mm] (pod ní fialově), `step` =
+vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = horní mez barevné
+škály [mm] (bez ní nejčastější tloušťka dílu). Samotná mapa se do souboru neukládá – spočítá
+se znovu. Soubory verze 1–9 se načtou dál.
 
 ### Materiály
 

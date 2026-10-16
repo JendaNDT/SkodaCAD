@@ -47,6 +47,19 @@
 - (15. 10. 2026, schváleno) **Skica na šikmé a zakřivené ploše** – `plane` může být
   `{"at", "normal"}` (`selectors.face_plane_at`): šikmá plocha nese skicu přímo, zakřivená
   tečnou rovinou v místě kliknutí. Obtočení skici kolem válce zatím ne. Formát verze 8.
+- (15. 10. 2026, schváleno) **Měření ve 3D** – `measure.py`: měří se samo při výběru (panel
+  *Měření*, čára s hodnotou ve 3D), tloušťka stěny v bodě paprskem kolmo do materiálu (jako UT
+  tloušťkoměr). Měření jde uložit do modelu (`measurements`, plochy a hrany významem) a
+  přepočítá se s každou změnou. Formát verze 9.
+- (15. 10. 2026, schváleno) **Mapa tloušťky stěny (NDT)** – `thickness_map.py`: povrch se
+  rozdělí na trojúhelníky do zvoleného kroku, v každém těžišti tloušťka paprskem (pravidlo
+  koncového echa). Škála červená → modrá + minimum fialově, nejtenčí místo, export CSV.
+  Nastavení (`limit`, `step`, `scale_max`) se ukládá do modelu, zapnutá mapa se počítá na
+  pozadí s každou změnou, příkazová řádka vypíše souhrn. Formát verze 10.
+- (16. 10. 2026, schváleno) **Řez modelem** – `section.py`: přesný řez jádrem (díl minus
+  velký kvádr za rovinou), rovina X/Y/Z nebo rovnoběžně s vybranou plochou, posuvník,
+  otočení, export obrysu řezu DXF/SVG, mapa tloušťky oříznutá rovinou. Řez je **jen pohled**
+  (`ModelSession.section_settings`), do modelu se neukládá – formát se nemění.
 
 ## Architektura (`src/skodacad/`)
 
@@ -70,8 +83,11 @@
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
+| `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
+| `thickness_map.py` | mapa tloušťky stěny: síť povrchu (půlení nejdelší strany v u, v), tloušťka v těžištích, barvy, souhrn, CSV |
+| `section.py` | řez modelem: rovina řezu, přesný řez, plochy řezu, export DXF/SVG, ořez sítě mapy rovinou |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
-| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu |
+| `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
@@ -200,6 +216,60 @@
 - Objem drážky z plošek se od přesné šroubovice liší řádově o desetiny procenta; testy
   ho porovnávají s Pappovou větou s tolerancí, ne přesně.
 
+## Známé pasti (měření a mapa tloušťky)
+
+- Tloušťka stěny = paprsek (`IntCurvesFace_ShapeIntersector`) z bodu proti normále plochy;
+  první průsečík dál než 1e-4 je protější stěna. `Face.normal_at` už počítá s orientací
+  plochy (u díry míří do díry, ven z materiálu) – neotáčet.
+- Uložená plocha se hledá `selectors.find_face` s `type`/`radius`: rovina přednostně mezi
+  plochami se **stejnou normálou** (posunutá plocha po změně tloušťky je daleko od `at`),
+  válec mezi stejným poloměrem (posunutá díra). Bez `type` (rovina skici v8) jako dřív:
+  nejbližší plocha + kontrola směru 60°.
+- Bod `at`, který po změně parametru už na ploše neleží (posunutá jamka), nahradí
+  `measure.inner_point` – bod uvnitř plochy co nejdál od hran (střed plochy může být v díře).
+- Hodnota uloženého měření se do JSON neukládá. `BuildResult.measurements` (`SavedResult`,
+  jen čísla a texty) se počítá na konci `rebuild` – tedy i v pomocném procesu – a přenáší se
+  obyčejně (pickle).
+- Popisek ve 3D (`AIS_TextLabel`) chce `TCollection_ExtendedString(text, True)` (UTF-8 –
+  jinak se rozbije „°“) a `SetFont("Arial")`, jinak OCCT kreslí patkovým písmem.
+- **Žádný podklad pod popiskem** (`Aspect_TODT_SUBTITLE`): základní ovladač Windows bez
+  grafické karty (GDI Generic, OpenGL 1.1 – sestavovací počítač GitHubu, vzdálená plocha,
+  virtuál) při překreslení spadne (access violation, celý program). Čára, kuličky
+  (`Aspect_TOM_BALL`) a prostý text fungují. Self-test (`_self_test_drawing`) kreslí každý
+  použitý druh značky zvlášť a do zprávy píše ovladač OpenGL – nový druh kreslení přidej i tam.
+- Zpráva self-testu se zapisuje průběžně a `faulthandler` k ní při pádu připíše zásobník
+  Pythonu – v logu GitHubu je pak vidět řádek, kde proces spadl.
+- Mapa tloušťky (`AIS_Triangulation` s barvou v uzlech) se kreslí jen v režimu 0
+  (`SetDisplayMode(0)`, okno má výchozí 1 = nic se nenakreslí) a **bez osvětlení**
+  (`Graphic3d_TypeOfShadingModel_Unlit`) – jinak OCCT přimíchá výchozí materiál mosaz a
+  modrá vyjde olivově. Barva uzlu je `R + G<<8 + B<<16` (`HArray1_int`, bez alfa – int32).
+- Díl se pod mapou kreslí drátově (`AIS_WireFrame`, izočáry vypnuté) a zvýraznění výběru
+  jen obtahuje – plochy jde dál vybírat kliknutím a měřit, ale barvy mapy zůstanou vidět.
+- `ThicknessMap` počítá souhrn (`scale`, `nominal` …) přes `cached_property` – barvení
+  uzlů ho volá pro každý uzel a bez paměti by řadilo všechny body pořád dokola (minuty).
+- Paprsek tloušťky platí jen při „koncovém echu“ (`measure.RayCaster`): první protější stěna
+  musí být k paprsku natočená do 60°. Jinak (okraj jamky, drážky) by vyšlo nesmyslně malé
+  číslo – místo zůstane šedé („nejde změřit“), měření v bodě to řekne česky.
+- Self-test okna musí otevřít ukázku přes `MainWindow.open_model` (ne jen `show_part`) –
+  měření i výběr jdou přes `ModelSession`, bez výsledku přepočtu se nic nezměří.
+
+## Známé pasti (řez modelem)
+
+- Řez = díl minus kvádr za rovinou (`section.cut`), ne `split` – výsledek je obyčejné těleso,
+  plochy řezu jsou rovinné plochy s normálou rovnou `normal` řezu ležící v rovině.
+- Řez je pohled: okno ukazuje `session.display_part` (rozříznutý díl), ale **model, měření,
+  mapa i prvky pracují s celým dílem**. Kliknuté plochy/hrany rozříznutého dílu převádí
+  `ModelSession._model_shapes` na celý díl (plocha: bod uvnitř + stejný směr, hrana:
+  `map_edges`); plocha řezu tak neprojde → česká chyba.
+- Rozříznutý díl se pamatuje podle (díl, rovina) – posuvník ho počítá až po puštění
+  (`sliderReleased`), při tažení jen ukazuje číslo.
+- Okno kreslí díl znovu, když se změní výsledek **nebo řez** (`_shown_key`); prohlížeč přitom
+  smaže mapu, proto `_shown_map = None`.
+- Mapa v řezu: `section.clip_mesh` trojúhelníky přes rovinu rozdělí přesně na ní (nové uzly
+  s dopočtenou barvou) – jen vyhazování trojúhelníků dávalo zubatý okraj.
+- `AIS_ColoredShape` (barva po plochách) se chová jako `AIS_Shape` – výběr ploch a hran,
+  drátěný režim pod mapou; self-test ho kreslí jako druh „accent“.
+
 ## Známé pasti (přepočet na pozadí)
 
 - Vlákno nepomůže: OCCT během výpočtu drží GIL (změřeno – okno stálo až 2 s). Proto proces
@@ -251,5 +321,7 @@
   zaoblení/sražení/skica/skořepina z výběru, zvýraznění hran vybraného prvku. Formát verze 2.
 - [x] **Fáze 2d** – [x] přepočet na pozadí u pomalých modelů, [x] šikmé a zakřivené plochy
   pro skicu (tečná rovina).
-- [ ] **Fáze 3** – sweep/loft, řezy modelem, měření, normalizované díly, NDT (mapa tloušťky stěny).
+- [ ] **Fáze 3** – [x] měření ve 3D (vzdálenost, rozteč, úhel, tloušťka stěny v bodě, uložená
+  měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [x] řez modelem
+  (jen pohled, export DXF/SVG), [ ] sweep/loft, [ ] normalizované díly.
 - [ ] **Fáze 4** – AI asistent upravující JSON model, omezené přímé úpravy ploch.

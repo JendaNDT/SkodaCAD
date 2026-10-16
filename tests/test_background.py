@@ -52,6 +52,15 @@ def test_rebuild_in_worker_matches_direct_rebuild(runner, examples_dir):
     assert not runner.busy
 
 
+def test_thickness_map_is_computed_in_worker(runner):
+    runner.submit(make_doc(box_features(20, 30, 6)).to_dict(), with_map=True)
+    finished = runner.wait()
+    assert finished.result.thickness_map.minimum == pytest.approx(6)  # deska 6 mm
+    assert finished.result.thickness_map.nominal == pytest.approx(6)
+    runner.submit(make_doc(box_features(20, 30, 6)).to_dict())  # bez mapy
+    assert runner.wait().result.thickness_map is None
+
+
 def test_new_change_cancels_running_rebuild(runner):
     runner.submit(threaded_plate("M4").to_dict())
     time.sleep(0.5)

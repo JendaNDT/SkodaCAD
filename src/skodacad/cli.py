@@ -1,7 +1,8 @@
 """Příkazová řádka: ``skodacad build model.json``.
 
-Postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu
-a uloží exporty do složky ``out/``.
+Postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená měření,
+mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty do
+složky ``out/``.
 """
 
 from __future__ import annotations
@@ -34,6 +35,9 @@ def main(argv: list[str] | None = None) -> int:
                        metavar="NÁZEV=HODNOTA", help="dočasně změň parametr, např. --set D=200")
     build.add_argument("--format", default="step,stl,3mf,svg",
                        help=f"formáty exportu oddělené čárkou ({', '.join(FORMATS)})")
+    build.add_argument("--mapa", action="store_true",
+                       help="spočítej mapu tloušťky stěny i bez nastavení v modelu "
+                            "(souhrn + body do CSV)")
     args = parser.parse_args(argv)
 
     try:
@@ -60,7 +64,8 @@ def _build(args: argparse.Namespace) -> int:
         raise ValueError(f"Neznámý formát: {', '.join(unknown)}; umím: {', '.join(FORMATS)}.")
 
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides))
+    with_map = args.mapa or document.thickness_map is not None
+    result = rebuild(document, _parse_overrides(args.overrides), with_map=with_map)
 
     print(f"Model: {document.name} ({args.model})")
     print("Parametry: " + ", ".join(f"{k}={v:g}" for k, v in result.parameters.items()))
@@ -76,9 +81,22 @@ def _build(args: argparse.Namespace) -> int:
         return 1
 
     _print_properties(result, document.material)
+    if result.measurements:
+        print("Měření:")
+        for measurement in result.measurements:
+            print(f"  {measurement.text}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]
+    if with_map:
+        print("Mapa tloušťky stěny:")
+        if result.thickness_map is None:
+            print(f"  ✕ {result.map_error}")
+        else:
+            for line in result.thickness_map.summary():
+                print(f"  {line}")
+            written.append(result.thickness_map.write_csv(
+                args.out / f"{args.model.stem}-tloustka.csv"))
     if written:
         print("Uloženo: " + ", ".join(str(path) for path in written))
     return 0 if result.ok else 1

@@ -4,7 +4,7 @@ Příklad souboru::
 
     {
       "format": "skodacad",
-      "version": 8,
+      "version": 10,
       "name": "Příruba",
       "units": "mm",
       "material": "ocel",
@@ -13,6 +13,10 @@ Příklad souboru::
         {"id": "obrys", "type": "sketch", "plane": "XY",
          "elements": [{"shape": "circle", "diameter": "D"}]},
         {"id": "deska", "type": "extrude", "sketch": "obrys", "distance": "t"}
+      ],
+      "measurements": [
+        {"id": "m1", "name": "Tloušťka desky", "kind": "thickness",
+         "a": {"face": {"at": [60, 0, 18], "normal": [0, 0, 1], "type": "plane"}}}
       ]
     }
 """
@@ -31,9 +35,11 @@ FORMAT = "skodacad"
 # (díry podle strojnických tabulek), verze 5 prvky „pattern“ (pole) a „mirror“ (zrcadlení),
 # verze 6 kružnice, víc smyček (díry) a nové vazby v obrysu „profile“, verze 7 promítnuté
 # hrany dílu v obrysu („references“), verze 8 rovina skici/díry na šikmé či zakřivené ploše
-# („plane“: {"at": …, "normal": …}). Starší verze jsou podmnožinou – načtou se beze změny.
-VERSION = 8
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8)
+# („plane“: {"at": …, "normal": …}), verze 9 uložená měření („measurements“), verze 10
+# nastavení mapy tloušťky stěny („thickness_map“). Starší verze jsou podmnožinou – načtou se
+# beze změny.
+VERSION = 10
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
 
 class DocumentError(ValueError):
@@ -48,6 +54,8 @@ class Document:
     material: str = "ocel"
     parameters: dict[str, Any] = field(default_factory=dict)
     features: list[dict[str, Any]] = field(default_factory=list)
+    measurements: list[dict[str, Any]] = field(default_factory=list)  # uložená měření
+    thickness_map: dict[str, Any] | None = None  # nastavení mapy tloušťky stěny (NDT)
 
     @classmethod
     def from_dict(cls, data: Any) -> Document:
@@ -86,6 +94,31 @@ class Document:
             if not isinstance(feature.get("type"), str):
                 raise DocumentError(f"Prvek „{feature_id}“ nemá „type“.")
 
+        measurements = data.get("measurements", [])
+        if not isinstance(measurements, list):
+            raise DocumentError("„measurements“ musí být seznam měření.")
+        seen.clear()
+        for index, measurement in enumerate(measurements, start=1):
+            if not isinstance(measurement, dict):
+                raise DocumentError(f"Měření č. {index} musí být objekt.")
+            measurement_id = measurement.get("id")
+            if not isinstance(measurement_id, str) or not measurement_id:
+                raise DocumentError(f"Měření č. {index} nemá textové „id“.")
+            if measurement_id in seen:
+                raise DocumentError(f"Id měření „{measurement_id}“ je v modelu dvakrát.")
+            seen.add(measurement_id)
+            if not isinstance(measurement.get("kind"), str):
+                raise DocumentError(f"Měření „{measurement_id}“ nemá „kind“ (druh měření).")
+
+        thickness_map = data.get("thickness_map")
+        if thickness_map is not None:
+            from skodacad.thickness_map import MapError, MapSettings
+
+            try:
+                MapSettings.from_dict(thickness_map)
+            except MapError as exc:
+                raise DocumentError(str(exc)) from None
+
         return cls(
             name=str(data.get("name", "Bez názvu")),
             description=str(data.get("description", "")),
@@ -93,10 +126,12 @@ class Document:
             material=str(data.get("material", "ocel")),
             parameters=copy.deepcopy(parameters),
             features=copy.deepcopy(features),
+            measurements=copy.deepcopy(measurements),
+            thickness_map=copy.deepcopy(thickness_map),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "format": FORMAT,
             "version": VERSION,
             "name": self.name,
@@ -105,7 +140,11 @@ class Document:
             "material": self.material,
             "parameters": copy.deepcopy(self.parameters),
             "features": copy.deepcopy(self.features),
+            "measurements": copy.deepcopy(self.measurements),
         }
+        if self.thickness_map is not None:
+            data["thickness_map"] = copy.deepcopy(self.thickness_map)
+        return data
 
     @classmethod
     def load(cls, path: str | Path) -> Document:
