@@ -9,7 +9,7 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 5. [Referenční díly](05-referencni-dily.md) – osm modelů v `examples/ndt/` s ručně spočítanými očekávanými výsledky (čeká na ověření NDT technikem).
 6. [Návrh etapy 02](06-navrh-etapa-02.md) – společné geometrické jádro: paprsek, bod plochy, uvnitř/vně, viditelnost, kolize (schváleno a provedeno 16. 10. 2026).
 7. [Návrh etapy 03](07-navrh-etapa-03.md) – virtuální sonda na povrchu dílu: přiložení, mezera, přesah, kolize, vůle, posun (schváleno a provedeno 16. 10. 2026).
-8. [Návrh první verze pro macOS](08-navrh-macos.md) – audit knihoven (vše má verzi pro Apple Silicon), Cocoa okno, `SkodaCAD.app` v ZIP, samostatné sestavení na GitHubu, ruční test na MacBooku (rozpracováno).
+8. [Návrh první verze pro macOS](08-navrh-macos.md) – audit knihoven (vše má verzi pro Apple Silicon), Cocoa okno, `SkodaCAD.app` v ZIP, samostatné sestavení na GitHubu, ruční test na MacBooku (hotovo, ověřeno autorem 16. 10. 2026).
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 
@@ -18,6 +18,6 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 
 (Soubory 04 a 05 mají shodná čísla s návrhy etap – kvůli odkazům se nepřečíslovávají.)
 
-**Stav:** etapy 00 (referenční díly), 01 (NDT studie, formát verze 13, panel NDT), 02 (geometrické jádro, `skodacad paprsek`) a 03 (virtuální sonda `ndt/devices.py`, uložená ve studii – formát verze 14, Přiložit sondu sem v okně, `skodacad sonda`) jsou hotové a sladěné se závazným vymezením UT (povinné upozornění, skupina *Přístupnost UT sondy*). Podle `05-podpora-macos.md` je na řadě **první verze pro macOS**, potom etapa 04 – geometrický model UT svazku: dráha, odraz a lom jen s výslovně zadanými předpoklady (rychlosti), s testy proti ručním výpočtům. Etapa 16 (virtuální signály A/B-scan) je podle vymezení mimo schválený rozsah.
+**Stav:** etapy 00 (referenční díly), 01 (NDT studie, formát verze 13, panel NDT), 02 (geometrické jádro, `skodacad paprsek`) a 03 (virtuální sonda `ndt/devices.py`, uložená ve studii – formát verze 14, Přiložit sondu sem v okně, `skodacad sonda`) jsou hotové a sladěné se závazným vymezením UT (povinné upozornění, skupina *Přístupnost UT sondy*). První verze pro macOS podle `05-podpora-macos.md` je hotová a ověřená na MacBooku Air M4 (16. 10. 2026). Na řadě je etapa 04 – geometrický model UT svazku: dráha, odraz a lom jen s výslovně zadanými předpoklady (rychlosti), s testy proti ručním výpočtům. Etapa 16 (virtuální signály A/B-scan) je podle vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

@@ -513,7 +513,9 @@
   jestli pád spravila tahle pojistka, nebo jen to, že se OpenGL podaří, zatím nevíme (cesta
   „OpenGL nejde vůbec“ se na Macu netestuje). Při pádu vypíše workflow nativní zásobník
   z hlášení macOS (`~/Library/Logs/DiagnosticReports/SkodaCAD*.ips`).
-- Kompatibilita platí, až ji uživatel ověří na MacBooku (seznam v `docs/ndt/08-navrh-macos.md`).
+- **Ověřeno autorem na MacBooku Air M4 a ve Windows 16. 10. 2026** (seznam zkoušek
+  v `docs/ndt/08-navrh-macos.md`). Od teď každou novou funkci hlídají oba workflow; vydání pro
+  Mac zůstává `--prerelease --latest=false` jen kvůli odkazu `releases/latest` pro Windows.
 
 ## Jak přidat nový prvek
 
@@ -550,6 +552,6 @@
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
   [ ] 04–05 geometrický model UT svazku (lom jen se zadanými předpoklady) a ruční pohyb sondy
   (milník M1) …
-- [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
+- [x] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
-  softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
+  softwarové OpenGL), [x] ruční test na MacBooku Air M4 (16. 10. 2026, vše funguje).

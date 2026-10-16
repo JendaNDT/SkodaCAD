@@ -20,16 +20,17 @@ parametry.
 Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 (postup [.github/workflows/windows.yml](.github/workflows/windows.yml)).
 
-## Aplikace pro macOS (Apple Silicon) – zkušební
+## Aplikace pro macOS (Apple Silicon)
 
-Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. **Zatím neověřeno na skutečném Macu** –
-sestavuje a testuje ji GitHub na svém Macu, ruční zkouška na MacBooku Air M4 teprve přijde
-(postup a seznam zkoušek v [docs/ndt/08-navrh-macos.md](docs/ndt/08-navrh-macos.md)).
+Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. Sestavuje a testuje ji GitHub na svém Macu;
+**ověřeno ručně na MacBooku Air M4 (16. 10. 2026)** – postup a seznam zkoušek
+v [docs/ndt/08-navrh-macos.md](docs/ndt/08-navrh-macos.md).
 
 1. Stáhni **[SkodaCAD-macos.zip](https://github.com/JendaNDT/SkodaCAD/releases/download/nejnovejsi-mac/SkodaCAD-macos.zip)**
    (vydání „nejnovejsi-mac“, označené jako předběžné).
 2. Rozbal ho (dvojklik ve Finderu) a **SkodaCAD** přetáhni do složky *Aplikace*.
-3. Při prvním spuštění macOS napíše, že aplikaci nejde ověřit – není podepsaná certifikátem
+3. Při prvním spuštění macOS napíše *„Soubor SkodaCAD nebyl otevřen“* – dej **Hotovo**
+   (ne *Přesunout do koše*). Aplikace není podepsaná certifikátem
    Apple ani notarizovaná. Otevři *Nastavení systému → Soukromí a zabezpečení*, sjeď dolů
    a u SkodaCAD klikni na **Přesto otevřít** (od macOS 15 už nefunguje pravý klik → Otevřít).
    Kdyby to nešlo, v Terminálu: `xattr -dr com.apple.quarantine /Applications/SkodaCAD.app`.

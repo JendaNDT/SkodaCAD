@@ -132,7 +132,7 @@ jobs:
           gh release delete nejnovejsi-mac --yes --cleanup-tag || true
           gh release create nejnovejsi-mac stazeno/SkodaCAD-macos.zip \
             --target "${{ github.sha }}" \
-            --title "ŠkodaCAD – zkušební verze pro macOS (Apple Silicon)" \
-            --notes "Sestaveno automaticky z commitu ${{ github.sha }}. Stáhni SkodaCAD-macos.zip, rozbal, přetáhni SkodaCAD do Aplikací a při prvním spuštění povol v Nastavení systému → Soukromí a zabezpečení → Přesto otevřít. Zatím neověřeno na skutečném Macu." \
+            --title "ŠkodaCAD – nejnovější verze pro macOS (Apple Silicon)" \
+            --notes "Sestaveno automaticky z commitu ${{ github.sha }}. Stáhni SkodaCAD-macos.zip, rozbal, přetáhni SkodaCAD do Aplikací a při prvním spuštění povol v Nastavení systému → Soukromí a zabezpečení → Přesto otevřít." \
             --prerelease \
             --latest=false

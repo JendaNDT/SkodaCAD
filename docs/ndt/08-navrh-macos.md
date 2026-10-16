@@ -1,12 +1,12 @@
 # Návrh: první verze ŠkodaCAD pro macOS (Apple Silicon)
 
 > Provedení závazného požadavku `05-podpora-macos.md`. Cíl: MacBook Air M4 (16 GB), stažení
-> z GitHub Releases a spuštění bez instalace Pythonu. **Dokud to neověříš na skutečném Macu,
-> kompatibilita není zajištěná.**
+> z GitHub Releases a spuštění bez instalace Pythonu. **Ověřeno autorem na MacBooku Air M4
+> a ve Windows 16. 10. 2026 – „vše funguje“.**
 
 Stav: návrh 16. 10. 2026 · **rozhodnuto:** nejdřív sladit UT, pak Mac; balíček **ZIP se
-`SkodaCAD.app`**; nastavení a log v **`~/SkodaCAD`** jako ve Windows · **kroky 1–3 hotové**,
-čeká se na ruční test na MacBooku.
+`SkodaCAD.app`**; nastavení a log v **`~/SkodaCAD`** jako ve Windows · **kroky 1–4 hotové**,
+první etapa macOS dokončená (vydání `nejnovejsi-mac` z commitu cf9c945).
 
 ## 0. Výsledek na Macu GitHubu (16. 10. 2026, `macos-15`, Apple Silicon)
 
@@ -75,12 +75,19 @@ self-test v zabaleném .app, včetně zastavení.
 
 ## 5. Ruční test na MacBooku (podmínky dokončení z `05-podpora-macos.md`)
 
-- [ ] stáhnout ZIP, rozbalit, přetáhnout do Aplikací, povolit v Nastavení a spustit
-- [ ] otevřít ukázku (příruba), otočit, přiblížit, posunout (Shift + tažení)
-- [ ] kliknout na plochu – vybere se ta pod kurzorem (Retina)
-- [ ] změnit parametr, přepočet, Zpět
-- [ ] měření (tloušťka stěny), export STEP
-- [ ] mapa tloušťky (trubka), řez modelem
-- [ ] NDT: Deska se žebrem → panel NDT → Přiložit sondu sem
-- [ ] dlouhý přepočet a Zastavit
-- [ ] stejný model otevřený na Windows i Macu dává stejný objem
+**16. 10. 2026 autor na MacBooku Air M4 i ve Windows: „Ok, vše funguje.“** První spuštění
+zablokoval Gatekeeper („Soubor SkodaCAD nebyl otevřen … nepodařilo ověřit“) – povolení přes
+*Soukromí a zabezpečení → Přesto otevřít* podle README fungovalo.
+
+- [x] stáhnout ZIP, rozbalit, přetáhnout do Aplikací, povolit v Nastavení a spustit
+- [x] otevřít ukázku (příruba), otočit, přiblížit, posunout (Shift + tažení)
+- [x] kliknout na plochu – vybere se ta pod kurzorem (Retina)
+- [x] změnit parametr, přepočet, Zpět
+- [x] měření (tloušťka stěny), export STEP
+- [x] mapa tloušťky (trubka), řez modelem
+- [x] NDT: Deska se žebrem → panel NDT → Přiložit sondu sem
+- [x] dlouhý přepočet a Zastavit
+- [x] stejný model otevřený na Windows i Macu dává stejný objem
+
+Další nové funkce se od teď zkouší na Windows i na Macu (oba workflow, self-test staženého
+balíčku); systémově specifické změny jen ve větvích podle systému (`viewer`, `macos.yml`).
