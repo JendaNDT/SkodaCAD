@@ -101,7 +101,7 @@ def _worker_main(conn: Any) -> None:
             message = conn.recv()
         except (EOFError, OSError):
             return  # okno skončilo
-        if message[0] not in ("rebuild", "coverage"):
+        if message[0] not in ("rebuild", "coverage", "presentation"):
             return
         kind, job, data, *options = message
         try:
@@ -112,7 +112,12 @@ def _worker_main(conn: Any) -> None:
                 session.document = Document.from_dict(data)
                 session.rebuild()
                 session.ndt_placement_request = options[0]
-                reply = ("coverage", job, session.compute_ndt_coverage(**options[1]))
+                result = session.compute_ndt_coverage(**options[1])
+                reply = ("coverage", job, (result, session._volume_source))
+            elif kind == "presentation":
+                from skodacad.ndt.presentation import execute
+
+                reply = ("presentation", job, execute(data))
             else:
                 reply = ("result", job, encode_result(rebuild(Document.from_dict(data),
                                                               with_map=options[0])))
@@ -149,6 +154,8 @@ class Finished:
     result: BuildResult | None = None
     error: str = ""
     coverage: Any = None
+    display: Any = None
+    presentation: Any = None
 
 
 class BackgroundRebuilder:
@@ -182,6 +189,9 @@ class BackgroundRebuilder:
     def submit_coverage(self, document: dict[str, Any], placement: Any,
                         options: dict[str, Any]) -> int:
         return self._submit(("coverage", document, placement, options))
+
+    def submit_presentation(self, payload: dict) -> int:
+        return self._submit(("presentation", payload))
 
     def _submit(self, message: tuple) -> int:
         self.cancel()
@@ -218,7 +228,9 @@ class BackgroundRebuilder:
                 if kind == "result":
                     return Finished(job, result=decode_result(payload))
                 if kind == "coverage":
-                    return Finished(job, coverage=payload)
+                    return Finished(job, coverage=payload[0], display=payload[1])
+                if kind == "presentation":
+                    return Finished(job, presentation=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass

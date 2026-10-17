@@ -141,16 +141,28 @@ seznamy souřadnic mohou tiše vytvořit nulovou plochu. Jen číselné rozměry
 studie drží jen JSON, výsledek přepočtu jen číselné objemy, nikdy pomocný OCCT tvar.
 Změna dílu vyžaduje potvrzení, cíl se sám neposouvá; změna cíle ruší mapu a ověření.
 Ověření objemu nese i `verified.target` (otisk cíle), kontroluje se i při načtení souboru.
-07B (schváleno 17. 10. 2026, implementace ve vývojové větvi): `ndt/volume_coverage.py`
+07B (schváleno a sloučeno 17. 10. 2026 v PR #17, `main` / `35f1507`): `ndt/volume_coverage.py`
 dělí skutečný cíl na oříznuté buňky a oddělené kusy, váhy v mm³. `VolumeCoverageMap`
 nikdy nezaměňovat za `CoverageMap.areas`; ověřuje se součet vah bez přenormování.
 Neurčený vnitřní bod ponechá známý objem nejistý. Zásahy sdílí Etapu 06, výsledek
 je přenosný pomocným procesem, CLI/CSV a citlivost mají úplná upozornění UT.
 Pojezd `line` s nulovým rozevřením objem odmítne (osy nevymezují kladný objem).
-07C (editor/náhled) zatím není implementované ani schválené; objemový výpočet v panelu
-nepovolovat a `visible_ndt_coverage` pro objem vrací prázdnou kresbu. Formát zůstává 16.
-Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
-balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
+07C autor schválil 17. 10. 2026, implementace je ve vývojové větvi ke kontrole,
+sloučení zatím neschválil. `gui/ndt_target_dialog.py` drží pracovní kopii; náhled
+a validace běží v procesu (`ndt/presentation.py`). Použít přijme pouze odpovídající
+ověřenou kopii dokumentu a její StudyResults jako jeden krok `_change`, bez OCCT v GUI.
+`ndt/volume_display.py` zachytí původní kusy buněk přes BinTools při vzorkování,
+ModelSession soukromě drží bytes; nikdy neodvozovat vazbu na stav z pořadí nově
+vytvořených kusů ani z paměti konkrétního procesu. CLI bez zachycení kresby zůstává stejné.
+Barvy objemu patří pouze skutečným plochám aktivního řezu; bez něj je cíl neutrální.
+Řez napříč cílem je jen pohled se study id, libovolným rámcem a polohou 0–délka.
+Kresba má oddělené uzly stavů, zdroj+síť do 128 MiB, síť do 500 000 trojúhelníků,
+jemnost min(0,1 mm; krok cíle/10); chyba kresby nesmí ztratit číselnou mapu/CSV.
+Citlivost v panelu zachovává jemnou mapu a stejnou toleranci pro hrubý běh.
+Podrobnosti: `docs/ndt/13-navrh-etapa-07b.md`, `docs/ndt/14-navrh-etapa-07c.md`.
+Formát zůstává 16, nové závislosti nejsou.
+Ukázky jsou v `examples/ndt/cilove_objemy/`, balíček a self-test je musí přibalit/prověřit.
+Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
 
 | Soubor | Úloha |
@@ -604,7 +616,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
-  [x] 07B objemové pokrytí (vývojová větev), [ ] 07C ovládání a demonstrace …
+  [x] 07B objemové pokrytí (sloučeno v PR #17), [ ] 07C ovládání a demonstrace …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

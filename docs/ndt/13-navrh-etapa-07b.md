@@ -1,7 +1,9 @@
 # NDT – návrh etapy 07B: geometrické pokrytí cílového objemu
 
-Stav: **autor schválil implementaci 17. 10. 2026; provedeno ve vývojové větvi
-`codex/ndt-etapa-07b`, před sloučením do `main`**.
+Stav: **autor schválil implementaci i sloučení 17. 10. 2026; provedeno a sloučeno
+do `main` v [PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17), commit `35f1507`**.
+Navazující [07C – ovládání a barevný řez](14-navrh-etapa-07c.md) autor schválil
+k implementaci 17. 10. 2026; probíhá ověření vývojové větve před kontrolou.
 Výchozí stav: `main`, commit `0dea6f8`, [sloučené PR #16](https://github.com/JendaNDT/SkodaCAD/pull/16).
 Navazuje na [Etapu 07 a provedený krok 07A](12-navrh-etapa-07.md),
 [Etapu 06](11-navrh-etapa-06.md) a [závazné vymezení UT](04-zavazne-vymezeni-ut.md).
@@ -197,7 +199,7 @@ Příkaz pro implementaci 07B, spouštěný z kořene repozitáře:
 skodacad pokryti examples/ndt/cilove_objemy/tupy_svar_objem.json --studie s1 --plocha 50,0,12 --smer 180 --sklon 70 --odrazy 0 --rezim face --krok 5 --krok-cile 2 --konvergence --csv out/tupy-svar-07b.csv
 ```
 
-Adresář `out` musí před exportem existovat. Příkaz je v této vývojové větvi provedený:
+Adresář `out` musí před exportem existovat. Příkaz byl při implementaci 07B provedený:
 účinný objem i součet vah **14 613,843876 mm³**, jemný běh 5/2 mm dal **12,22 %**,
 hrubý 10/4 mm **5,59 %**, rozdíl **6,63 p. b.**. Tolerance zůstala 3,535534 mm,
 rozevření 0°, odrazy 0, sklon 70°, pojezd po pravé horní ploše.
@@ -308,5 +310,6 @@ u kořene neurčuje procento celého svaru; toto procento se nyní neslibuje.
 **Autor schválil pouze implementaci 07B v uvedeném rozsahu:** vážené objemové
 vzorkování nad skutečným cílem, sdílené ověřování zásahů, mm³/procenta, souhrn,
 CSV a porovnání kroků, bez změny formátu a bez nových knihoven.
-07C, slučování studií a sloučení implementace do `main` vyžadují další pokyn.
-Souhlas autora ze 17. 10. 2026 navazuje na předložení tohoto návrhu.
+Sloučení 07B bylo následně výslovně schváleno a provedeno v PR #17.
+07C a slučování studií tím schválené nejsou. Souhlas autora ze 17. 10. 2026
+navazuje na předložení tohoto návrhu a následné předání ověřené implementace.

@@ -155,11 +155,21 @@ class ModelSession:
         self._geometry_cache: tuple[Any, Any] | None = None
         self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
+        self._volume_source: Any = None
+        self._volume_view: Any = None
+        self._volume_view_key: Any = None
+        self._presentation_pending: Any = None
+        self._target_preview: Any = None
+        self._target_outline: Any = None
+        self.presentation_error = ""
+        self.display_revision = 0
 
     # --- otevření a přepočet ---------------------------------------------------
 
     def open(self, path: str | Path) -> BuildResult | None:
         document = Document.load(path)
+        if self.section_settings is not None and self.section_settings.study is not None:
+            self.clear_section()
         self.path = Path(path)
         self.document = document
         self.result = self._computed = None  # výsledek starého modelu už neplatí
@@ -171,6 +181,8 @@ class ModelSession:
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
         """Prázdný model bez prvků (zatím bez souboru)."""
+        if self.section_settings is not None and self.section_settings.study is not None:
+            self.clear_section()
         self.document = Document(name=name)
         self.result = self._computed = None
         self.path = None
@@ -194,6 +206,8 @@ class ModelSession:
         self.failure = ""
         self.clear_ndt_coverage()
         self._coverage_pending = None
+        self._presentation_pending = None
+        self._target_preview = self._target_outline = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -220,9 +234,13 @@ class ModelSession:
         if finished is None or finished.job != self._job:
             return False
         self._job = None
-        if self._coverage_pending is not None:
+        if self._presentation_pending is not None:
+            pending, self._presentation_pending = self._presentation_pending, None
+            self._accept_presentation(pending, finished.presentation, finished.error)
+        elif self._coverage_pending is not None:
             if finished.coverage is not None:
                 self._coverage_cache = (self._coverage_pending, finished.coverage)
+                self._volume_source = finished.display
             else:
                 self.failure = finished.error
             self._coverage_pending = None
@@ -249,6 +267,12 @@ class ModelSession:
         self._runner.cancel()
         self._job = None
         self._coverage_pending = None
+        if self._presentation_pending is not None:
+            kind = self._presentation_pending[0]
+            self.presentation_error = ("Barevný průřez byl zastaven; pro obnovení posuň řez. "
+                                       "Čísla a CSV zůstávají platné." if kind == "slice" else
+                                       "Ověření bylo zastaveno; můžeš ho spustit znovu.")
+        self._presentation_pending = None
         document, computed = self._require(), self._computed
         if computed is None:
             self.failure = ("Přepočet zastaven – model zatím není spočítaný. Uprav ho "
@@ -282,7 +306,8 @@ class ModelSession:
             raise DocumentError("Není otevřený žádný model.")
         return self.document
 
-    def _change(self, mutate: Callable[[Document], None]) -> BuildResult:
+    def _change(self, mutate: Callable[[Document], None], *,
+                validated_ndt: Any = None) -> BuildResult:
         """Provede úpravu na kopii, zkontroluje ji a přijme (s možností Zpět)."""
         current = self._require()
         candidate = copy.deepcopy(current)
@@ -302,6 +327,14 @@ class ModelSession:
         self._redo.clear()
         self.document = candidate
         self.dirty = True
+        if validated_ndt is not None:
+            # Cíl byl geometricky ověřen na stejné kopii dokumentu v pomocném procesu.
+            # Výrobní těleso a měření se nezměnily; žádné OCCT při potvrzení dialogu.
+            self.result.ndt = validated_ndt
+            self._computed = candidate
+            self.clear_ndt_coverage()
+            self._target_outline = None
+            return self.result
         return self.rebuild()
 
     def begin_group(self) -> None:
@@ -652,23 +685,43 @@ class ModelSession:
     def set_section_position(self, position: float) -> Section | None:
         settings = self._require_section()
         self.section_settings = SectionSettings(settings.axis, float(position),
-                                                settings.flipped, settings.base)
+                                                settings.flipped, settings.base, settings.study)
         return self.section
 
     def flip_section(self) -> Section | None:
         settings = self._require_section()
         self.section_settings = SectionSettings(settings.axis, settings.position,
-                                                not settings.flipped, settings.base)
+                                                not settings.flipped, settings.base, settings.study)
         return self.section
 
     def clear_section(self) -> None:
         self.section_settings = None
+        self._volume_view = self._volume_view_key = None
+        if self._presentation_pending is not None and self._presentation_pending[0] == "slice":
+            if self._runner is not None:
+                self._runner.cancel()
+            self._job = self._presentation_pending = None
 
     @property
     def section_plane(self) -> SectionPlane | None:
         settings = self.section_settings
         if settings is None:
             return None
+        if settings.study is not None:
+            try:
+                target = normalize_target(self.ndt_study(settings.study)["target"])
+                state = next(s for s in self.ndt_studies if s.id == settings.study)
+                if state.state != "ok":
+                    raise ValueError
+                f = target["frame"]
+                origin = tuple(a + settings.position * b
+                               for a, b in zip(f["origin"], f["axis"], strict=True))
+                normal = tuple(v * (-1 if settings.flipped else 1) for v in f["axis"])
+                return SectionPlane(origin, normal)
+            except (DocumentError, ValueError, KeyError, StopIteration):
+                self.section_settings = None
+                self.presentation_error = "Řez cílem byl vypnut: studie nebo cíl již neplatí."
+                return None
         if settings.axis is not None:
             return axis_plane(settings.axis, settings.position, settings.flipped)
         return offset_plane(settings.base, settings.position, settings.flipped)
@@ -676,6 +729,8 @@ class ModelSession:
     def section_range(self) -> tuple[float, float]:
         """Rozsah posuvníku řezu (souřadnice v ose, nebo hloubka pod plochou) [mm]."""
         settings = self._require_section()
+        if settings.study is not None:
+            return 0.0, self.ndt_study(settings.study)["target"]["length_mm"]
         part = self._section_source()
         if settings.axis is not None:
             return axis_range(part, settings.axis)
@@ -1123,7 +1178,8 @@ class ModelSession:
         žádná, nebo nejde přiložit (důvod v ``ndt_placement_error``)."""
         request = self.ndt_placement_request
         result = self.result
-        if request is None or result is None or result.part is None or self.computing:
+        if (request is None or result is None or result.part is None
+                or (self.computing and self._presentation_pending is None)):
             return None
         study_id, reference, angle = request
         try:
@@ -1172,21 +1228,23 @@ class ModelSession:
     @property
     def ndt_coverage(self) -> CoverageMap | VolumeCoverageMap | None:
         """Mapa platí pouze pro původní díl, zadání studie a přiložení sondy."""
-        if self.computing or self._coverage_cache is None:
+        if (self.computing and self._presentation_pending is None) or self._coverage_cache is None:
             return None
         key, result = self._coverage_cache
         try:
             current = self._coverage_context()
         except DocumentError:
-            self._coverage_cache = None
+            self.clear_ndt_coverage()
             return None
         if key[0] is not current[0] or key[1:] != current[1:]:
-            self._coverage_cache = None
+            self.clear_ndt_coverage()
             return None
         return result
 
     def clear_ndt_coverage(self) -> None:
         self._coverage_cache = None
+        self._volume_source = self._volume_view = self._volume_view_key = None
+        self.display_revision += 1
 
     def _coverage_inputs(self) -> tuple[PartGeometry, Placement, list[Any] | dict, float]:
         self._require_computed("výpočet pokrytí")
@@ -1209,7 +1267,8 @@ class ModelSession:
     def compute_ndt_coverage(self, mode: str = "face", step_mm: float = 5.0,
                              bounces: int | None = None, spread_deg: float = 0.0,
                              length_mm: float = 50.0, *, target_step_mm: float | None = None,
-                             tolerance_mm: float | None = None) -> CoverageMap | VolumeCoverageMap:
+                             tolerance_mm: float | None = None,
+                             capture_display: bool = False) -> CoverageMap | VolumeCoverageMap:
         """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
         geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
@@ -1217,15 +1276,23 @@ class ModelSession:
         try:
             compute = compute_volume if isinstance(target, dict) else compute_coverage
             inputs = {"target": target} if isinstance(target, dict) else {"faces": target}
+            if isinstance(target, dict) and capture_display:
+                from skodacad.ndt.volume_display import DisplaySource
+
+                self._volume_source = DisplaySource()
+                inputs["display"] = self._volume_source
             result = compute(geo, placed, **inputs, mode=mode, scan_step=step_mm,
                              target_step=step_mm if target_step_mm is None else target_step_mm,
                              tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
                              spread_deg=spread_deg, length_mm=length_mm)
+            if self._volume_source is not None:
+                self._volume_source.finish()
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
             raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
         result.assumptions.update(study_id=self.ndt_placement_request[0],
                                   part_fingerprint=part_fingerprint(self._require()),
-                                  parameters=dict(self.result.parameters))
+                                  parameters=dict(self.result.parameters),
+                                  tolerance_manual=tolerance_mm is not None)
         self._coverage_cache = (key, result)
         return result
 
@@ -1244,7 +1311,11 @@ class ModelSession:
 
     def visible_ndt_coverage(self) -> tuple[list, list, list]:
         result = self.ndt_coverage
-        if result is None or isinstance(result, VolumeCoverageMap):
+        if isinstance(result, VolumeCoverageMap):
+            key = (id(result), self.section_plane)
+            return (self._volume_view.mesh() if self._volume_view is not None
+                    and self._volume_view_key == key else ([], [], []))
+        if result is None:
             return [], [], []
         nodes, triangles, colors = result.mesh()
         plane = self.section_plane
@@ -1258,6 +1329,187 @@ class ModelSession:
             return result.write_csv(path)
         except OSError as exc:
             raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    def _start_presentation(self, payload: dict, context: Any) -> None:
+        self.presentation_error = ""
+        self._presentation_pending = (payload["kind"], copy.deepcopy(self._require().to_dict()),
+                                      context)
+        if self._runner is None:
+            from skodacad.ndt.presentation import execute
+
+            pending, self._presentation_pending = self._presentation_pending, None
+            try:
+                self._accept_presentation(pending, execute(payload), "")
+            except Exception as exc:  # noqa: BLE001 – stejná cesta jako chyba procesu
+                self._accept_presentation(pending, None, str(exc))
+        else:
+            self._job = self._runner.submit_presentation(payload)
+
+    def cancel_ndt_preview(self) -> None:
+        if self._presentation_pending is not None and self._presentation_pending[0] == "preview":
+            if self._runner is not None:
+                self._runner.cancel()
+            self._job = self._presentation_pending = None
+        self._target_preview = None
+
+    def start_ndt_target_preview(self, target: dict, study_id: str | None = None) -> None:
+        """Ověří kopii zadání; dokument a historie se změní až explicitním přijetím."""
+        self.cancel_ndt_preview()
+        self._require_computed("náhled cíle")
+        self._final_part()
+        candidate = copy.deepcopy(self._require())
+        try:
+            saved = normalize_target(target)
+        except TargetError as exc:
+            raise DocumentError(str(exc)) from None
+        if study_id is None:
+            record = new_study("UT", _studies(candidate), part_fingerprint(candidate), saved)
+            if candidate.ndt is None:
+                candidate.ndt = {"studies": []}
+            candidate.ndt.setdefault("studies", []).append(record)
+            study_id = record["id"]
+        else:
+            record = _studies(candidate)[self._study_index(study_id)]
+            if record["method"] != "UT":
+                raise DocumentError("Objemový editor je určen pro UT studii.")
+            if target_fingerprint(record.get("target", {})) != target_fingerprint(saved):
+                record["target"] = saved
+                record.pop("verified", None)
+        candidate = Document.from_dict(candidate.to_dict())
+        self._start_presentation({"kind": "preview", "document": candidate.to_dict(),
+                                  "target": record["target"]}, (study_id, candidate.to_dict()))
+
+    @property
+    def ndt_target_preview(self) -> Any:
+        return self._target_preview
+
+    def apply_ndt_target_preview(self) -> str:
+        preview = self._target_preview
+        if preview is None or preview[0] != self._require().to_dict():
+            raise DocumentError("Zadání nebo díl se změnily – znovu ověř náhled.")
+        original, context, response = preview
+        study_id, candidate = context
+
+        def mutate(doc: Document) -> None:
+            doc.ndt = copy.deepcopy(candidate["ndt"])
+
+        self._change(mutate, validated_ndt=response["ndt"])
+        self._target_preview = None
+        return study_id
+
+    def _accept_presentation(self, pending: tuple, response: Any, error: str) -> None:
+        kind, original, context = pending
+        if self.document is None or self.document.to_dict() != original:
+            return  # pozdní odpověď starého dokumentu
+        if error:
+            self.presentation_error = error.partition(" Zkus poslední")[0]
+            if kind == "slice":
+                self.presentation_error += (" Čísla a CSV zůstávají platné; "
+                                            "pro obnovení posuň řez nebo přepočítej mapu.")
+            return
+        if kind == "preview":
+            self._target_preview = (original, context, response)
+        elif kind == "outline":
+            self._target_outline = (context, response["mesh"])
+        elif kind == "slice":
+            if context == (id(self.ndt_coverage), self.section_plane):
+                self._volume_view = response
+                self.display_revision += 1
+            elif self._volume_view_key == context:
+                self._volume_view_key = None
+        elif kind == "convergence":
+            key, current_key = context[0], self._coverage_context()
+            if key[0] is not current_key[0] or key[1:] != current_key[1:]:
+                return
+            fine = response["fine"]
+            current = self.ndt_coverage
+            if current is not None and context[1] is current:
+                current.assumptions.update(fine.assumptions)
+            else:
+                self._coverage_cache = (context[0], fine)
+                self._volume_source = response["source"]
+            self.display_revision += 1
+
+    def request_ndt_outline(self, study_id: str | None) -> Any:
+        if study_id is None or self.result is None or self.document is None:
+            return None
+        try:
+            record = self.ndt_study(study_id)
+            target = record.get("target", {})
+            if target.get("kind") not in ("volume", "weld"):
+                return None
+            key = (part_fingerprint(self.document), study_id, repr(target))
+            if self._target_outline is not None and self._target_outline[0] == key:
+                return self._target_outline[1]
+            if self.computing:
+                return None
+            self._target_outline = (key, None)  # chyba se neopakuje při každém překreslení
+            self._start_presentation({"kind": "outline", "document": self.document.to_dict(),
+                                      "target": target}, key)
+            return self._target_outline[1]
+        except DocumentError:
+            return None
+
+    def request_ndt_volume_view(self) -> None:
+        result, plane = self.ndt_coverage, self.section_plane
+        if not isinstance(result, VolumeCoverageMap) or plane is None:
+            return
+        key = (id(result), plane)
+        if key == self._volume_view_key:
+            return
+        if self.computing:
+            if self._presentation_pending is None or self._presentation_pending[0] != "slice":
+                return
+            self._runner.cancel()  # novější poloha řezu má přednost
+            self._job = self._presentation_pending = None
+        self._volume_view_key, self._volume_view = key, None
+        if self._volume_source is None:
+            self.presentation_error = "Chybí zdroj kresby – znovu spočítej mapu v panelu."
+            return
+        self._start_presentation({"kind": "slice", "source": self._volume_source.for_plane(plane),
+                                  "states": result.states, "plane": plane,
+                                  "step": result.assumptions["target_step_mm"]}, key)
+
+    @property
+    def ndt_volume_view_message(self) -> str:
+        if self._volume_source is not None and self._volume_source.error:
+            return self._volume_source.error
+        if self._volume_view is not None and self._volume_view_key == (
+                id(self.ndt_coverage), self.section_plane):
+            return self._volume_view.message
+        return self.presentation_error
+
+    def set_section_target(self, study_id: str) -> Section | None:
+        record = self.ndt_study(study_id)
+        target = record.get("target", {})
+        state = next((s for s in self.ndt_studies if s.id == study_id), None)
+        if (target.get("kind") not in ("volume", "weld") or state is None
+                or state.state != "ok"):
+            raise DocumentError("Řez napříč cílem potřebuje platnou objemovou studii.")
+        self.section_settings = SectionSettings(None, target["length_mm"] / 2,
+                                                study=study_id)
+        return self.section
+
+    def start_ndt_convergence(self, **options: Any) -> None:
+        """Hrubý běh nesmí přepsat jemnou mapu ani její zdroj geometrie."""
+        _, _, target, _ = self._coverage_inputs()
+        if not isinstance(target, dict):
+            raise DocumentError("Citlivost v tomto panelu je určená pro objemový cíl.")
+        fine = self.ndt_coverage
+        if fine is not None:
+            a = fine.assumptions
+            match = {"mode": "mode", "step_mm": "scan_step_mm",
+                     "target_step_mm": "target_step_mm", "spread_deg": "spread_deg",
+                     "length_mm": "length_mm"}
+            if (any(a.get(key) != options.get(option) for option, key in match.items())
+                    or (options["tolerance_mm"] is not None
+                        and options["tolerance_mm"] != a["tolerance_mm"])
+                    or (options["tolerance_mm"] is None and a.get("tolerance_manual", False))):
+                fine = None
+        context = (self._coverage_context(), fine)
+        self._start_presentation({"kind": "convergence", "document": self.document.to_dict(),
+                                  "placement": self.ndt_placement_request,
+                                  "options": options, "fine": fine}, context)
 
     def ndt_highlight(self, study_id: str) -> list[Any]:
         """Plochy kontrolované oblasti na dílu (OCCT) pro zvýraznění; co chybí, vynechá."""
@@ -1525,6 +1777,7 @@ class SectionSettings:
     position: float
     flipped: bool = False
     base: SectionPlane | None = None
+    study: str | None = None
 
 
 @dataclass(frozen=True)

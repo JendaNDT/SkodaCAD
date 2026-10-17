@@ -11,6 +11,7 @@ bez výběru metoda nové studie) je nahoře povinné upozornění ``UT_DISCLAIM
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QVBoxLayout,
@@ -54,6 +56,23 @@ HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a 
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
 
 
+class CoverageSummary(QLabel):
+    """Souhrn ve scrollovacím panelu se nesmí smrštit a uříznout výsledná čísla."""
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self._fit_text()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_text()
+
+    def _fit_text(self) -> None:
+        height = self.heightForWidth(max(100, self.width()))
+        if height > 0:
+            self.setMinimumHeight(height)
+
+
 class NdtPanel(QWidget):
     def __init__(self, window: MainWindow) -> None:
         super().__init__()
@@ -61,6 +80,8 @@ class NdtPanel(QWidget):
         action = window._action
         self.new_action = action("Nová NDT studie z výběru", self.new_study)
         self.new_action.setToolTip("Nová studie; vybrané plochy budou kontrolovaná oblast")
+        self.new_volume_action = action("Nová objemová studie UT…", lambda: self.edit_target(True))
+        self.edit_target_action = action("Cílová oblast…", self.edit_target)
         self.rename_action = action("Přejmenovat…", self.rename)
         self.target_action = action("Oblast z výběru", self.set_target)
         self.target_action.setToolTip("Kontrolovaná oblast = plochy vybrané ve 3D")
@@ -92,6 +113,8 @@ class NdtPanel(QWidget):
         self.coverage_action = action("Spočítat pokrytí", self.compute_coverage)
         self.clear_coverage_action = action("Skrýt mapu", self.clear_coverage)
         self.export_coverage_action = action("Export CSV…", self.export_coverage)
+        self.convergence_action = action("Ověřit citlivost", self.check_convergence)
+        self.target_section_action = action("Řez napříč cílem", self.section_target)
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -113,6 +136,7 @@ class NdtPanel(QWidget):
         new_row.addWidget(window._tool_button(self.new_action))
         new_row.addStretch()
         layout.addLayout(new_row)
+        layout.addWidget(window._tool_button(self.new_volume_action))
         self.hint = QLabel(HINT)
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: #555;")
@@ -125,6 +149,7 @@ class NdtPanel(QWidget):
         self.studies.itemDoubleClicked.connect(lambda _item: self.rename())
         layout.addWidget(self.studies)
         for row in ((self.rename_action, self.target_action, self.method_action),
+                    (self.edit_target_action,),
                     (self.confirm_action, self.verify_action, self.unverify_action),
                     (self.note_action, self.duplicate_action, self.delete_action)):
             buttons = QHBoxLayout()
@@ -206,17 +231,46 @@ class NdtPanel(QWidget):
         form.addRow("Zdroj poloh sondy:", self.coverage_mode)
         self.coverage_step = QDoubleSpinBox()
         self.coverage_step.setObjectName("ndt_coverage_step")
-        self.coverage_step.setRange(0.5, 100)
-        self.coverage_step.setDecimals(1)
+        self.coverage_step.setRange(0.1, 1000)
+        self.coverage_step.setDecimals(3)
         self.coverage_step.setValue(5.0)
-        form.addRow("Krok výpočtu [mm]:", self.coverage_step)
+        form.addRow("Krok pojezdu [mm]:", self.coverage_step)
+        self.target_step = QDoubleSpinBox()
+        self.target_step.setRange(.1, 1000)
+        self.target_step.setDecimals(3)
+        self.target_step.setValue(2)
+        form.addRow("Krok cíle [mm]:", self.target_step)
         self.coverage_spread = QDoubleSpinBox()
         self.coverage_spread.setRange(0, 45)
         self.coverage_spread.setValue(0)
         form.addRow("Rozevření (poloviční úhel) [°]:", self.coverage_spread)
         coverage_layout.addLayout(form)
+        advanced = QGroupBox("Pokročilé – numerická tolerance")
+        advanced_form = QFormLayout(advanced)
+        self.tolerance_mode = QComboBox()
+        self.tolerance_mode.addItems(["Automaticky z kroku pojezdu", "Ručně"])
+        self.tolerance = QDoubleSpinBox()
+        self.tolerance.setRange(0, 1000)
+        self.tolerance.setDecimals(6)
+        self.tolerance.setValue(3.535534)
+        self._manual_tolerance = self.tolerance.value()
+        self.tolerance.setEnabled(False)
+        self.tolerance_mode.currentIndexChanged.connect(self._tolerance_mode_changed)
+        self.coverage_step.valueChanged.connect(self._update_auto_tolerance)
+        self.coverage_mode.currentIndexChanged.connect(self._update_auto_tolerance)
+        advanced_form.addRow(self.tolerance_mode)
+        advanced_form.addRow("Tolerance [mm]:", self.tolerance)
+        tolerance_note = QLabel("Tolerance je číselná blízkost osy; není šířkou svazku. "
+                                "Rozevření zůstává samostatným výslovným předpokladem.")
+        tolerance_note.setWordWrap(True)
+        advanced_form.addRow(tolerance_note)
+        coverage_layout.addWidget(advanced)
         row = QHBoxLayout()
         for item in (self.coverage_action, self.clear_coverage_action, self.export_coverage_action):
+            row.addWidget(window._tool_button(item))
+        coverage_layout.addLayout(row)
+        row = QHBoxLayout()
+        for item in (self.convergence_action, self.target_section_action):
             row.addWidget(window._tool_button(item))
         coverage_layout.addLayout(row)
         legend = QLabel('<span style="color:#26b340">■ Pokryto</span> · '
@@ -224,9 +278,10 @@ class NdtPanel(QWidget):
                         '<span style="color:#e6bf26">■ Nelze spolehlivě vyhodnotit</span>')
         legend.setWordWrap(True)
         coverage_layout.addWidget(legend)
-        self.coverage_label = QLabel(PERCENT_NOTE)
+        self.coverage_label = CoverageSummary(PERCENT_NOTE)
         self.coverage_label.setObjectName("ndt_coverage_summary")
         self.coverage_label.setWordWrap(True)
+        self.coverage_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self.coverage_label.setTextFormat(Qt.TextFormat.PlainText)
         self.coverage_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         coverage_layout.addWidget(self.coverage_label)
@@ -299,13 +354,14 @@ class NdtPanel(QWidget):
         self._show_coverage()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
+        self.window._refresh_coverage()
 
     def _show_warning(self) -> None:
         """UT studie (nebo nová UT bez výběru) = povinné upozornění UT, jinak obecné."""
         record = self._record(self.current_id())
         method = record.get("method") if record else self.method_combo.currentData()
         self.warning.setText(UT_DISCLAIMER if method == "UT"
-                             or self.window.session.ndt_coverage is not None else DISCLAIMER)
+                             or self.selected_coverage() is not None else DISCLAIMER)
 
     def _show_details(self) -> None:
         result = self.current()
@@ -333,6 +389,7 @@ class NdtPanel(QWidget):
         info = session.selection_info(self.window._picked)
         has_part = ready and session.result is not None and session.result.part is not None
         self.new_action.setEnabled(ready)
+        self.new_volume_action.setEnabled(bool(has_part and not self.window.ai_busy))
         self.target_action.setEnabled(selected and has_part and info.faces > 0
                                       and info.edges == 0)
         for action in (self.rename_action, self.method_action, self.note_action,
@@ -344,6 +401,7 @@ class NdtPanel(QWidget):
         record = self._record(self.current_id())
         self.unverify_action.setEnabled(selected and record is not None and "verified" in record)
         ut = selected and (self._record(self.current_id()) or {}).get("method") == "UT"
+        self.edit_target_action.setEnabled(bool(ut and has_part and not self.window.ai_busy))
         placed = ready and session.ndt_placement is not None
         self.probe_action.setEnabled(ut)
         self.place_action.setEnabled(ut and has_part and info.faces == 1 and info.edges == 0)
@@ -360,9 +418,12 @@ class NdtPanel(QWidget):
                     and session.ndt_placement_request[0] == self.current_id())
         self.coverage_action.setEnabled(bool(ut and placed and matching
                                              and result is not None and result.state == "ok"
-                                             and result.target_kind == "faces"
                                              and not self.window.ai_busy))
-        has_coverage = session.ndt_coverage is not None
+        volume = result is not None and result.target_kind in ("volume", "weld")
+        self.convergence_action.setEnabled(self.coverage_action.isEnabled() and volume)
+        self.target_section_action.setEnabled(bool(ut and volume and result.state == "ok"
+                                                   and not self.window.ai_busy))
+        has_coverage = self.selected_coverage() is not None
         self.clear_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.export_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.coverage_box.setVisible(bool(ut or has_coverage or session._coverage_pending))
@@ -397,6 +458,29 @@ class NdtPanel(QWidget):
             self.select(study_id)
             self.window.statusBar().showMessage(
                 f"NDT studie založena: {self.window.session.ndt_study(study_id)['name']}", 8000)
+
+    def edit_target(self, new: bool = False) -> None:
+        from skodacad.gui.ndt_target_dialog import TargetDialog
+
+        dialog = TargetDialog(self.window, None if new else self.current_id())
+        self.window._target_dialog = dialog
+        try:
+            self.window._exec_dialog(dialog)
+        finally:
+            self.window._target_dialog = None
+            self.window._shown_target = None
+        self.window._refresh_all()
+        if dialog.applied_id:
+            self.select(dialog.applied_id)
+            self.window.show_ndt()
+
+    def section_target(self) -> None:
+        study_id = self.current_id()
+        if study_id:
+            self._apply("Řez cílem nejde vést",
+                        lambda: self.window.session.set_section_target(study_id))
+            self.window.section_dock.show()
+            self.window.section_dock.raise_()
 
     def rename(self) -> None:
         study_id = self.current_id()
@@ -479,10 +563,21 @@ class NdtPanel(QWidget):
 
     # --- sonda a paprsek (etapy 03 až 05) ----------------------------------------------------
 
-    def _show_coverage(self) -> None:
+    def selected_coverage(self):
         result = self.window.session.ndt_coverage
+        return (result if result is not None and result.assumptions.get("study_id")
+                == self.current_id() else None)
+
+    def _show_coverage(self) -> None:
+        result = self.selected_coverage()
         if result is not None:
-            self.coverage_label.setText("\n".join(result.summary()))
+            lines = result.summary()
+            if result.assumptions.get("quantity") == "volume":
+                lines.append("Barvy ukazují pouze aktivní průřez; čísla patří celému objemu.")
+                if self.window.session.section_plane is None:
+                    lines.append("Pro barevný průřez použij Řez napříč cílem.")
+                lines.append(self.window.session.ndt_volume_view_message)
+            self.coverage_label.setText("\n".join(lines))
         elif self.window.session._coverage_pending is not None:
             self.coverage_label.setText("Počítám mapu… Výpočet můžeš zastavit dole v okně.")
         else:
@@ -490,9 +585,34 @@ class NdtPanel(QWidget):
                                         + PERCENT_NOTE)
 
     def compute_coverage(self) -> None:
+        result = self.current()
+        volume = result is not None and result.target_kind in ("volume", "weld")
         self._apply("Pokrytí nejde spočítat", lambda: self.window.session.start_ndt_coverage(
-            mode=self.coverage_mode.currentData(), step_mm=self.coverage_step.value(),
-            spread_deg=self.coverage_spread.value(), length_mm=self.scan_length.value()))
+            **self.coverage_options(), capture_display=volume))
+
+    def coverage_options(self) -> dict:
+        return {"mode": self.coverage_mode.currentData(), "step_mm": self.coverage_step.value(),
+                "target_step_mm": self.target_step.value(),
+                "tolerance_mm": (None if self.tolerance_mode.currentIndex() == 0
+                                 else self.tolerance.value()),
+                "spread_deg": self.coverage_spread.value(), "length_mm": self.scan_length.value()}
+
+    def _update_auto_tolerance(self, *args) -> None:
+        if self.tolerance_mode.currentIndex() == 0:
+            factor = math.sqrt(.5) if self.coverage_mode.currentData() == "face" else .6
+            self.tolerance.setValue(self.coverage_step.value() * factor)
+
+    def _tolerance_mode_changed(self, index: int) -> None:
+        self.tolerance.setEnabled(index == 1)
+        if index == 0:
+            self._manual_tolerance = self.tolerance.value()
+            self._update_auto_tolerance()
+        else:
+            self.tolerance.setValue(self._manual_tolerance)
+
+    def check_convergence(self) -> None:
+        self._apply("Citlivost nejde ověřit", lambda: self.window.session.start_ndt_convergence(
+            **self.coverage_options()))
 
     def clear_coverage(self) -> None:
         self.window.session.clear_ndt_coverage()

@@ -218,6 +218,7 @@ class OccViewer(QWidget):
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
+        self._target_objects: list[Any] = []
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
@@ -252,6 +253,7 @@ class OccViewer(QWidget):
         self._remove_map()
         self._remove_probe()
         self._remove_coverage()
+        self._remove_target()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -522,7 +524,8 @@ class OccViewer(QWidget):
         self._remove_map()
         self._view.Redraw()
 
-    def show_coverage_map(self, nodes: list, triangles: list, colors: list) -> None:
+    def show_coverage_map(self, nodes: list, triangles: list, colors: list,
+                          volume: bool = False) -> None:
         """Tři diskrétní barvy cílových plošek UT, nezávisle na sondě a měřeních."""
         if not self.ready:
             return
@@ -543,14 +546,55 @@ class OccViewer(QWidget):
         shown = AIS_Triangulation(mesh)
         shown.SetColors(packed)
         shown.SetDisplayMode(0)
+        if volume:
+            from OCP.Aspect import Aspect_POM_Fill
+
+            shown.SetPolygonOffsets(Aspect_POM_Fill, 1.0, -1.0)
         _unlit(shown)
         self._context.Display(shown, False)
         self._context.Deactivate(shown)
         self._coverage_objects.append(shown)
-        if self._ais is not None:
+        if self._ais is not None and not volume:
             self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
         self._highlight_fill(False)
         self._view.Redraw()
+
+    def show_target_preview(self, nodes: list, triangles: list, colors: list,
+                            frame: dict | None = None) -> None:
+        """Neutrální pomocný cíl a osy; nikdy výběr výrobních ploch ani barvy pokrytí."""
+        if not self.ready:
+            return
+        self._remove_target()
+        if triangles:
+            mesh = Poly_Triangulation(len(nodes), len(triangles), False)
+            for i, point in enumerate(nodes, 1):
+                mesh.SetNode(i, gp_Pnt(*point))
+            for i, triangle in enumerate(triangles, 1):
+                mesh.SetTriangle(i, Poly_Triangle(*(j + 1 for j in triangle)))
+            shown = AIS_Triangulation(mesh)
+            shown.SetColor(_rgb(.2, .55, .95))
+            shown.SetTransparency(.65)
+            _unlit(shown)
+            self._context.Display(shown, False)
+            self._context.Deactivate(shown)
+            self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+            self._target_objects.append(shown)
+        if frame:
+            a, b = frame["across"], frame["axis"]
+            height = (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+                      a[0] * b[1] - a[1] * b[0])
+            for vector, text, color in ((b, "osa", (.85, .2, .2)),
+                                        (a, "napříč", (.2, .65, .3)),
+                                        (height, "výška", (.2, .4, .95))):
+                end = tuple(o + 12 * v for o, v in zip(frame["origin"], vector, strict=True))
+                self._target_objects.extend(self._marker_objects(frame["origin"], end,
+                                                                  text + " →", _rgb(*color)))
+        self._view.Redraw()
+
+    def _remove_target(self) -> None:
+        for shown in self._target_objects:
+            self._context.Remove(shown, False)
+        self._target_objects = []
 
     def hide_coverage_map(self) -> None:
         if self.ready:

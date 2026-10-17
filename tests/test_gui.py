@@ -30,6 +30,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.coverage_map = None
+        self.target_preview = None
         self.probe = None  # (stav, výstupní bod, konec čáry paprsku, popisek, objem těla)
         self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
@@ -59,8 +60,12 @@ class FakeViewer(QtWidgets.QWidget):
     def hide_thickness_map(self):
         self.thickness_map = None
 
-    def show_coverage_map(self, nodes, triangles, colors):
+    def show_coverage_map(self, nodes, triangles, colors, volume=False):
         self.coverage_map = (list(nodes), list(triangles), list(colors))
+        self.coverage_volume = volume
+
+    def show_target_preview(self, nodes, triangles, colors, frame=None):
+        self.target_preview = (nodes, triangles, colors, frame) if triangles or frame else None
 
     def hide_coverage_map(self):
         self.coverage_map = None
@@ -195,7 +200,7 @@ def test_scan_slider_clears_coverage_summary_and_export(ndt_window, slot_errors)
     assert slot_errors == []
 
 
-def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_window):
+def test_volume_target_panel_requires_probe_before_coverage(ndt_window):
     from test_ndt_volume_session import target
 
     session = ndt_window.session
@@ -204,6 +209,149 @@ def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_w
     ndt_window._refresh_all()
     assert "objem 2000 mm³" in ndt_window.ndt_panel.details.text()
     assert not ndt_window.ndt_panel.coverage_action.isEnabled()
+
+
+@pytest.mark.parametrize("kind,volume", [("volume", 1000), ("fillet", 245),
+                                         ("butt_v", 20 * 10 + 1000 * math.tan(math.pi / 6))])
+def test_new_volume_action_uses_draft_preview_and_one_undo(ndt_window, monkeypatch,
+                                                         slot_errors, kind, volume):
+    from skodacad.gui.ndt_target_dialog import TargetDialog
+
+    w = ndt_window
+    before, undo = w.session.document.to_dict(), len(w.session._undo)
+
+    def accept(dialog):
+        assert isinstance(dialog, TargetDialog)
+        dialog.kind.setCurrentIndex(dialog.kind.findData(kind))
+        dialog.length.setText("10,0")
+        dialog.preview_button.click()
+        dialog._poll()
+        assert dialog.apply_button.isEnabled(), dialog.status.text()
+        assert w.viewer.target_preview and w.session.document.to_dict() == before
+        dialog.apply_button.click()
+        return dialog.result()
+
+    monkeypatch.setattr(w, "_exec_dialog", accept)
+    w.ndt_panel.new_volume_action.trigger()
+    assert w.ndt_panel.current_id() == "s2"
+    assert w.session.ndt_studies[-1].volume_mm3 == pytest.approx(volume)
+    assert len(w.session._undo) == undo + 1
+    w.session.undo()
+    assert w.session.document.to_dict() == before
+    assert slot_errors == []
+
+
+def test_volume_editor_cancel_noop_precision_invalid_and_modified_draft(ndt_window, monkeypatch):
+    from skodacad.gui.ndt_target_dialog import TargetDialog
+    from test_ndt_volume_session import target
+
+    w = ndt_window
+    saved = target() | {"length_mm": 7.123456789012345}
+    w.session.set_ndt_volume_target("s1", saved)
+    w.ndt_panel.select("s1")
+    w._refresh_all()
+    before, undo = w.session.document.to_dict(), len(w.session._undo)
+
+    def cancel(dialog):
+        dialog.length.setText("9")
+        dialog.preview()
+        dialog._poll()
+        dialog.reject()
+        return dialog.result()
+
+    monkeypatch.setattr(w, "_exec_dialog", cancel)
+    w.ndt_panel.edit_target_action.trigger()
+    assert w.session.document.to_dict() == before and len(w.session._undo) == undo
+    dialog = TargetDialog(w, "s1")
+    assert dialog.values()["length_mm"] == saved["length_mm"]
+    dialog.preview()
+    dialog._poll()
+    assert dialog.apply_button.isEnabled()
+    dialog.length.setText("nan")
+    assert not dialog.apply_button.isEnabled() and not w.session.ndt_target_preview
+    dialog.preview()
+    assert not dialog.apply_button.isEnabled() and "číslo" in dialog.status.text()
+    dialog.length.setText(repr(saved["length_mm"]))
+    dialog.preview()
+    dialog._poll()
+    dialog.apply()
+    assert w.session.document.to_dict() == before and len(w.session._undo) == undo
+
+
+def test_volume_coverage_and_section_and_convergence_actions(ndt_window, slot_errors):
+    from skodacad.ndt.devices import Probe
+    from test_ndt_07c_session import small_target
+
+    w, session = ndt_window, ndt_window.session
+    session.set_ndt_volume_target("s1", small_target())
+    session.set_ndt_device("s1", Probe.straight(10))
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    panel = w.ndt_panel
+    panel.select("s1")
+    w._refresh_all()
+    assert panel.coverage_action.isEnabled()
+    panel.coverage_step.setValue(25)
+    assert panel.tolerance.value() == pytest.approx(25 * math.sqrt(.5), abs=1e-6)
+    panel.tolerance_mode.setCurrentIndex(1)
+    panel.tolerance.setValue(8)
+    panel.tolerance_mode.setCurrentIndex(0)
+    panel.tolerance_mode.setCurrentIndex(1)
+    assert panel.tolerance.value() == 8
+    panel.tolerance_mode.setCurrentIndex(0)
+    panel.target_step.setValue(5)
+    panel.coverage_action.trigger()
+    fine, source = session.ndt_coverage, session._volume_source
+    assert fine.total_volume == pytest.approx(1000) and source.pieces
+    w.resize(1400, 900)
+    w.show()
+    QtWidgets.QApplication.processEvents()
+    assert panel.coverage_label.height() >= panel.coverage_label.heightForWidth(
+        panel.coverage_label.width())
+    assert not w.viewer.coverage_map[1] and "Řez napříč cílem" in panel.coverage_label.text()
+    panel.target_section_action.trigger()
+    assert session.section_settings.study == "s1" and w.viewer.coverage_map[1]
+    assert w.viewer.coverage_volume
+    assert session.ndt_placement is not None and w.viewer.probe is not None
+    panel.convergence_action.trigger()
+    assert session.ndt_coverage is fine and session._volume_source is source
+    assert "Citlivost na krok:" in panel.coverage_label.text()
+    w._apply_section_position(15)
+    assert not w.viewer.coverage_map[1] and "neprotíná" in panel.coverage_label.text()
+    assert session.ndt_coverage is fine
+    second = session.add_ndt_study("PT")
+    w._refresh_all()
+    panel.select(second)
+    assert w.viewer.coverage_map is None
+    assert slot_errors == []
+
+
+def test_target_editor_polygon_custom_frame_and_invalid_weld(ndt_window):
+    from skodacad.gui.ndt_target_dialog import TargetDialog
+
+    w = ndt_window
+    dialog = TargetDialog(w)
+    dialog.profile_mode.setCurrentIndex(1)
+    dialog.width.setText("2,5")
+    dialog.height.setText("4")
+    dialog.length.setText("10")
+    dialog.directions["axis"][0].setCurrentText("Vlastní vektor")
+    for edit, text in zip(dialog.directions["axis"][1], ("0", "2", "0"), strict=True):
+        edit.setText(text)
+    dialog.preview()
+    dialog._poll()
+    assert dialog.apply_button.isEnabled(), dialog.status.text()
+    assert w.session.ndt_target_preview[2]["numbers"]["volume_mm3"] == pytest.approx(100)
+    # Nekolmá osa se nesmí ani předat k drahému sestavení.
+    dialog.directions["axis"][1][0].setText("1")
+    dialog.preview()
+    assert not dialog.apply_button.isEnabled() and "kolmé" in dialog.status.text()
+    dialog.directions["axis"][0].setCurrentText("+Y")
+    dialog.kind.setCurrentIndex(dialog.kind.findData("butt_v"))
+    dialog.dimensions["thickness_mm"].setText("200")
+    dialog.preview()
+    dialog._poll()
+    assert not dialog.apply_button.isEnabled() and "není celý" in dialog.status.text()
+    dialog.reject()
 
 
 def test_parameter_change_rebuilds(window):

@@ -440,6 +440,7 @@ class MainWindow(QMainWindow):
         for axis, name in AXIS_NAMES.items():
             self.section_combo.addItem(name[0].upper() + name[1:], axis)
         self.section_combo.addItem("Rovnoběžně s vybranou plochou", "face")
+        self.section_combo.addItem("Napříč cílem UT studie", "target")
         self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
         self.section_combo.activated.connect(lambda _index: self._section_kind_chosen())
         form.addRow("Rovina", self.section_combo)
@@ -501,16 +502,31 @@ class MainWindow(QMainWindow):
                                points)
 
     def _refresh_coverage(self) -> None:
-        found = self.session.ndt_coverage
-        if found is self._shown_coverage:
+        from skodacad.ndt.volume_coverage import VolumeCoverageMap
+
+        found = self.ndt_panel.selected_coverage()
+        if found is not None:
+            self.session.request_ndt_volume_view()
+        if not getattr(self, "_target_dialog", None):
+            target = (self.session.request_ndt_outline(self.ndt_panel.current_id())
+                      if self.session.section_plane is None else None)
+            if target is not getattr(self, "_shown_target", None):
+                self.viewer.show_target_preview(*(target.mesh() if target else ([], [], [])), None)
+                self._shown_target = target
+        key = (id(found), self.session.section_plane, self.session.display_revision)
+        if key == self._shown_coverage:
             return
         if found is None:
             self.viewer.hide_coverage_map()
             if self.session.map_visible:
                 self._refresh_thickness_map()
         else:
-            self.viewer.show_coverage_map(*self.session.visible_ndt_coverage())
-        self._shown_coverage = found
+            mesh = self.session.visible_ndt_coverage()
+            if isinstance(found, VolumeCoverageMap):
+                self.viewer.show_coverage_map(*mesh, volume=True)
+            else:
+                self.viewer.show_coverage_map(*mesh)
+        self._shown_coverage = key
 
     def show_ndt(self) -> None:
         self.ndt_dock.show()
@@ -657,6 +673,8 @@ class MainWindow(QMainWindow):
         ndt_menu = bar.addMenu("&NDT")
         ndt_menu.addAction(self.ndt_action)
         ndt_menu.addAction(self.ndt_panel.new_action)
+        ndt_menu.addAction(self.ndt_panel.new_volume_action)
+        ndt_menu.addAction(self.ndt_panel.edit_target_action)
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.confirm_action, self.ndt_panel.verify_action,
                      self.ndt_panel.duplicate_action, self.ndt_panel.delete_action):
@@ -668,7 +686,8 @@ class MainWindow(QMainWindow):
             ndt_menu.addAction(item)
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.coverage_action, self.ndt_panel.clear_coverage_action,
-                     self.ndt_panel.export_coverage_action):
+                     self.ndt_panel.export_coverage_action, self.ndt_panel.convergence_action,
+                     self.ndt_panel.target_section_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -988,6 +1007,8 @@ class MainWindow(QMainWindow):
         self._refresh_properties()
         result = self.session.result
         section = self.session.section
+        if self.session.presentation_error.startswith("Řez cílem byl vypnut"):
+            self.statusBar().showMessage(self.session.presentation_error, 10000)
         if (result, section) != self._shown_key or fit:  # kreslit znovu jen nový díl či řez
             self._picked = []  # → starý výběr ve 3D už neplatí
             part = self.session.display_part
@@ -998,6 +1019,7 @@ class MainWindow(QMainWindow):
             self._shown_key = (result, section)
             self._shown_map = None  # prohlížeč mapu s dílem smazal
             self._shown_coverage = None
+            self._shown_target = None
             self._shown_probe = None  # … i sondu
         self._refresh_actions()
         self._refresh_progress()
@@ -1419,7 +1441,8 @@ class MainWindow(QMainWindow):
     def _refresh_thickness_map(self) -> None:
         """Mapa ve 3D a panel: nastavení z modelu, legenda, souhrn."""
         session = self.session
-        found = (session.thickness_map if session.map_visible and session.ndt_coverage is None
+        found = (session.thickness_map if session.map_visible
+                 and self.ndt_panel.selected_coverage() is None
                  else None)
         if found is not self._shown_map:
             if found is None:
@@ -1515,6 +1538,9 @@ class MainWindow(QMainWindow):
 
     def _section_kind_chosen(self) -> None:
         kind = self.section_combo.currentData()
+        if kind == "target":
+            self.ndt_panel.section_target()
+            return
         if kind == "face":
             self.section_from_face()
             return
@@ -1566,6 +1592,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_section_panel(self) -> None:
         session = self.session
+        _ = session.section_plane  # zruší případnou vazbu na již neplatný cíl
         settings = session.section_settings
         has_part = session.result is not None and session.result.part is not None
         self.section_action.setEnabled(has_part or settings is not None)
@@ -1583,7 +1610,7 @@ class MainWindow(QMainWindow):
                                       "rozřízne a uvidíš ho uvnitř. Model se nemění. Na "
                                       "plochy řezu jde klikat a měřit.")
             return
-        kind = settings.axis or "face"
+        kind = "target" if settings.study else settings.axis or "face"
         index = self.section_combo.findData(kind)
         if index >= 0 and self.section_combo.currentIndex() != index:
             self.section_combo.setCurrentIndex(index)
@@ -1591,7 +1618,8 @@ class MainWindow(QMainWindow):
             low, high = session.section_range()
         except DocumentError:
             low, high = settings.position, settings.position
-        word = "Hloubka" if settings.axis is None else f"Poloha {settings.axis}"
+        word = ("Vzdálenost podél cíle" if settings.study else
+                "Hloubka" if settings.axis is None else f"Poloha {settings.axis}")
         self.section_position_label.setText(f"{word} [mm]")
         self.section_range_label.setText(f"od {number(low)} do {number(high)} mm")
         if not self.section_field.hasFocus():
@@ -1606,7 +1634,9 @@ class MainWindow(QMainWindow):
             self.section_info.setText(f"✕ {session.section_error}")
             return
         where = describe_section(section.plane)
-        if settings.axis is None:
+        if settings.study:
+            where = f"napříč cílem, {number(settings.position)} mm od počátku"
+        elif settings.axis is None:
             where = f"rovnoběžně s plochou, {number(settings.position)} mm pod ní"
         self.section_info.setText(f"Řez {where}\nPlocha řezu: {number(section.area)} mm² "
                                   "(cihlově)\nKlikni na plochu řezu a změříš ji v panelu "

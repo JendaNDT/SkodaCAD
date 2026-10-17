@@ -338,6 +338,24 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT cílový objem (07A): {volume.volume_mm3:.6f} mm³; "
                  "načtení v okně a oddělení od pokrytí OK")
+    from skodacad.gui.ndt_target_dialog import TargetDialog
+
+    before, history = session.document.to_dict(), len(session._undo)
+    dialog = TargetDialog(window, "s1")
+    dialog.preview()
+    dialog._poll()
+    QApplication.processEvents()
+    if (not dialog.apply_button.isEnabled() or not window.viewer._target_objects
+            or session.document.to_dict() != before):
+        lines.append("✕ NDT editor cíle (07C): náhled nebo oddělení pracovní kopie selhalo")
+        return False
+    image = user_dir() / "self-test-cil-07c.png"
+    shown = window.viewer.dump(str(image))
+    dialog.reject()
+    if session.document.to_dict() != before or len(session._undo) != history or not shown:
+        lines.append("✕ NDT editor cíle (07C): zrušení změn nebo snímek selhal")
+        return False
+    lines.append(f"✓ NDT editor cíle (07C): ověřený náhled a Zrušit OK, snímek {image}")
     from skodacad.ndt.volume_coverage import VolumeCoverageMap
 
     lines.stream.write("  … NDT objemové pokrytí (07B)\n")
@@ -351,7 +369,8 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     session.set_ndt_device("s1", Probe.straight(10))
     top = max(session.result.part.faces(), key=lambda face: face.center().Z)
     session.place_ndt_probe("s1", [top.wrapped], (0, 0, 20))
-    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0)
+    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0,
+                                          capture_display=True)
     if (not isinstance(covered, VolumeCoverageMap)
             or abs(covered.total_volume - 1000) > 1e-6
             or abs(covered.volume("covered") - 1000) > 1e-6
@@ -360,8 +379,24 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT objemové pokrytí (07B): {covered.volume('covered'):.6f} / "
                  f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
-                 "objemová mapa v okně čeká na 07C")
+                 "objemové váhy a osové zásahy OK")
     lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
+    session.set_section_target("s1")
+    session.flip_section()  # strana viditelná z výchozí izometrie
+    session.request_ndt_volume_view()
+    panel.select("s1")
+    window._refresh_all()
+    QApplication.processEvents()
+    image = user_dir() / "self-test-prurez-07c.png"
+    shown = window.viewer.dump(str(image))
+    if (not session.visible_ndt_coverage()[1] or not window.viewer._coverage_objects
+            or abs(session._volume_view.area_mm2 - 100) > 1e-6 or not shown
+            or session.ndt_coverage is not covered):
+        lines.append("✕ NDT barevný průřez (07C): kresba, obsah nebo zachování mapy selhalo")
+        return False
+    lines.append(f"✓ NDT barevný průřez (07C): 100 mm², celý objem 1000 mm³ beze změny; "
+                 f"snímek {image}")
+    session.clear_section()
     session.dirty = False
     window.open_model(volume_model, template=True)
     return True
@@ -431,6 +466,39 @@ def _self_test_background(models: list[Path], lines: list[str]) -> bool:
         started = time.monotonic()
         runner.submit(document.to_dict())
         finished = runner.wait(timeout=180)
+        if finished is not None and not finished.error:
+            volume_document = Document.load(models[0].parent / "ndt/deska.json").to_dict()
+            target = {"kind": "volume", "frame": {"origin": [-5, -5, 5],
+                      "axis": [0, 1, 0], "across": [1, 0, 0]}, "length_mm": 10,
+                      "profile_mm": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+            runner.submit_presentation({"kind": "preview", "document": volume_document,
+                                         "target": target})
+            preview = runner.wait(timeout=120)
+            if (preview is None or preview.error or preview.presentation is None
+                    or abs(preview.presentation["numbers"]["volume_mm3"] - 1000) > 1e-6):
+                lines.append("✕ Náhled 07C v pomocném procesu selhal")
+                return False
+            from skodacad.ndt.volume_display import DisplaySource
+            from skodacad.section import SectionPlane
+
+            # Zdroj se přenáší do dalšího procesu; žádná vazba na paměť prvního.
+            source = DisplaySource()
+            from skodacad.ndt.geometry import PartGeometry
+            from skodacad.ndt.volume_coverage import _sample_volume
+            from skodacad.ndt.welds import normalize_target
+
+            samples, _, _ = _sample_volume(PartGeometry(rebuild(
+                Document.from_dict(volume_document)).part), normalize_target(target), 5, 1, 1,
+                                          source)
+            runner.submit_presentation({"kind": "slice", "source": source,
+                                         "states": ["covered"] * len(samples),
+                                         "plane": SectionPlane((0, 0, 0), (0, 1, 0)), "step": 5})
+            sliced = runner.wait(timeout=120)
+            if (sliced is None or sliced.error or sliced.presentation is None
+                    or abs(sliced.presentation.area_mm2 - 100) > 1e-6):
+                lines.append("✕ Přenos zdroje a průřez 07C v pomocném procesu selhal")
+                return False
+            lines.append("✓ Náhled a průřez 07C v pomocných procesech: 1000 mm³ / 100 mm² OK")
     finally:
         runner.close()
     if finished is None or finished.error:

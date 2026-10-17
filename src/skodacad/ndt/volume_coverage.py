@@ -171,7 +171,7 @@ def _check_volume(samples: list[VolumeSample], expected: float) -> float:
 
 
 def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
-                   legs: int) -> tuple[list[VolumeSample], Any, dict]:
+                   legs: int, display: Any = None) -> tuple[list[VolumeSample], Any, dict]:
     from build123d import Align, Box, Location, Plane
 
     f = target["frame"]
@@ -220,6 +220,8 @@ def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
                           "Objem je známý, ale spolehlivý vnitřní bod nebyl nalezen "
                           "nebo byl dosažen limit jeho hledání.")
                 samples.append(VolumeSample(indices, i, (lo, hi), point, volume, reason))
+                if display is not None:
+                    display.capture(len(samples) - 1, solid, plane)
         except CoverageError:
             raise
         except Exception as exc:  # noqa: BLE001 – neznámou váhu nesmíme nahradit nulou
@@ -242,7 +244,8 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
                    tolerance_mm: float | None = None, spread_deg: float = 0.0,
                    beta: float | None = None, bounces: int | None = None,
                    max_length: float | None = None,
-                   refraction: Refraction | None = None) -> VolumeCoverageMap:
+                   refraction: Refraction | None = None,
+                   display: Any = None) -> VolumeCoverageMap:
     started = time.monotonic()
     scan_step = _number(scan_step, "Krok pojezdu [mm]", 0.1, 1000)
     target_step = _number(target_step, "Krok cíle [mm]", 0.1, 1000)
@@ -263,7 +266,7 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
     candidates = _scan_positions(placement, mode, scan_step, length_mm)
     try:
         samples, resolved, metadata = _sample_volume(geo, target, target_step,
-                                                    len(candidates), beam.bounces + 1)
+                                                    len(candidates), beam.bounces + 1, display)
     except CoverageError:
         raise
     except Exception as exc:  # noqa: BLE001 – i příprava geometrie musí mít českou chybu
