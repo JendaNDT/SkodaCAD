@@ -163,6 +163,7 @@ class ModelSession:
         self._target_outline: Any = None
         self.presentation_error = ""
         self.display_revision = 0
+        self._beam_limits: dict[str, float] = {}  # dráha osy: pouze pohled, nikoli JSON sondy
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -171,6 +172,7 @@ class ModelSession:
         if self.section_settings is not None and self.section_settings.study is not None:
             self.clear_section()
         self.path = Path(path)
+        self._beam_limits.clear()
         self.document = document
         self.result = self._computed = None  # výsledek starého modelu už neplatí
         self.dirty = False
@@ -184,6 +186,7 @@ class ModelSession:
         if self.section_settings is not None and self.section_settings.study is not None:
             self.clear_section()
         self.document = Document(name=name)
+        self._beam_limits.clear()
         self.result = self._computed = None
         self.path = None
         self.dirty = False
@@ -326,6 +329,8 @@ class ModelSession:
             self._group = max(0, self._group - overflow)
         self._redo.clear()
         self.document = candidate
+        ids = {s["id"] for s in _studies(candidate)}
+        self._beam_limits = {sid: v for sid, v in self._beam_limits.items() if sid in ids}
         self.dirty = True
         if validated_ndt is not None:
             # Cíl byl geometricky ověřen na stejné kopii dokumentu v pomocném procesu.
@@ -1047,6 +1052,28 @@ class ModelSession:
         record = probe.to_dict()
         return self._edit_study(study_id, lambda study: study.update(device=record), setup=True)
 
+    def ndt_beam_limit(self, study_id: str) -> float | None:
+        return self._beam_limits.get(study_id)
+
+    def set_ndt_probe_options(self, study_id: str, device: dict | Probe,
+                              max_length_mm: float | None = None) -> BuildResult:
+        """Nastaví sondu jedním krokem historie a volitelné omezení dráhy jako pohled."""
+        self._require_computed("nastavení dráhy osy")
+        if max_length_mm is not None:
+            if (isinstance(max_length_mm, bool) or not isinstance(max_length_mm, int | float)
+                    or not math.isfinite(max_length_mm) or not 0 < max_length_mm <= 100000):
+                raise DocumentError("Maximální dráha osy musí být kladné číslo do 100 000 mm.")
+        old_limit = self.ndt_beam_limit(study_id)
+        result = self.set_ndt_device(study_id, device)  # nejprve validace a přijetí sondy
+        if max_length_mm is None:
+            self._beam_limits.pop(study_id, None)
+        else:
+            self._beam_limits[study_id] = float(max_length_mm)
+        if old_limit != max_length_mm:
+            self._placement_cache = None
+            self.clear_ndt_coverage()
+        return result
+
     def place_ndt_probe(self, study_id: str, shapes: list[Any], point: Any = None,
                         angle: float = 0.0) -> Placement:
         """Přiloží sondu studie na plochu vybranou ve 3D (jen pohled, do modelu se neukládá;
@@ -1187,7 +1214,7 @@ class ModelSession:
         except DocumentError:
             self.ndt_placement_error = "Studie se sondou už v modelu není."
             return None
-        key = (study_id, repr(reference), angle, probe)
+        key = (study_id, repr(reference), angle, probe, self.ndt_beam_limit(study_id))
         cache = self._placement_cache
         if cache is not None and cache[0] is result and cache[1] == key:
             return cache[2]
@@ -1197,7 +1224,7 @@ class ModelSession:
             face, at = find_face(result.part, reference["face"])
             geo = self._ndt_geometry()
             placement = place(geo, probe, (at.X, at.Y, at.Z), angle=angle, face=face)
-            beam = trace_beam(geo, placement)
+            beam = trace_beam(geo, placement, max_length=self.ndt_beam_limit(study_id))
             self.ndt_placement_error = ""
         except (SelectionError, DeviceError, GeometryError, BeamError) as exc:
             self.ndt_placement_error = f"Sondu nejde přiložit: {exc}"
@@ -1223,7 +1250,8 @@ class ModelSession:
     def _coverage_context(self) -> tuple[Any, ...]:
         request = self.ndt_placement_request
         record = self.ndt_study(request[0]) if request else None
-        return (self.result, repr(request), repr(record))
+        return (self.result, repr(request), repr(record),
+                self.ndt_beam_limit(request[0]) if request else None)
 
     @property
     def ndt_coverage(self) -> CoverageMap | VolumeCoverageMap | None:
@@ -1268,10 +1296,13 @@ class ModelSession:
                              bounces: int | None = None, spread_deg: float = 0.0,
                              length_mm: float = 50.0, *, target_step_mm: float | None = None,
                              tolerance_mm: float | None = None,
-                             capture_display: bool = False) -> CoverageMap | VolumeCoverageMap:
+                             capture_display: bool = False,
+                             max_length_mm: float | None = None) -> CoverageMap | VolumeCoverageMap:
         """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
         geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
+        if max_length_mm is None:
+            max_length_mm = self.ndt_beam_limit(self.ndt_placement_request[0])
         self.clear_ndt_coverage()
         try:
             compute = compute_volume if isinstance(target, dict) else compute_coverage
@@ -1284,7 +1315,7 @@ class ModelSession:
             result = compute(geo, placed, **inputs, mode=mode, scan_step=step_mm,
                              target_step=step_mm if target_step_mm is None else target_step_mm,
                              tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
-                             spread_deg=spread_deg, length_mm=length_mm)
+                             spread_deg=spread_deg, length_mm=length_mm, max_length=max_length_mm)
             if self._volume_source is not None:
                 self._volume_source.finish()
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
@@ -1299,6 +1330,7 @@ class ModelSession:
     def start_ndt_coverage(self, **options: Any) -> CoverageMap | VolumeCoverageMap | None:
         """Okno použije existující pomocný proces: zůstává živé a výpočet jde zastavit."""
         self._coverage_inputs()
+        options.setdefault("max_length_mm", self.ndt_beam_limit(self.ndt_placement_request[0]))
         if self._runner is None:
             return self.compute_ndt_coverage(**options)
         key = self._coverage_context()
@@ -1493,6 +1525,7 @@ class ModelSession:
     def start_ndt_convergence(self, **options: Any) -> None:
         """Hrubý běh nesmí přepsat jemnou mapu ani její zdroj geometrie."""
         _, _, target, _ = self._coverage_inputs()
+        options.setdefault("max_length_mm", self.ndt_beam_limit(self.ndt_placement_request[0]))
         if not isinstance(target, dict):
             raise DocumentError("Citlivost v tomto panelu je určená pro objemový cíl.")
         fine = self.ndt_coverage
@@ -1500,7 +1533,7 @@ class ModelSession:
             a = fine.assumptions
             match = {"mode": "mode", "step_mm": "scan_step_mm",
                      "target_step_mm": "target_step_mm", "spread_deg": "spread_deg",
-                     "length_mm": "length_mm"}
+                     "length_mm": "length_mm", "max_length_mm": "max_length_mm"}
             if (any(a.get(key) != options.get(option) for option, key in match.items())
                     or (options["tolerance_mm"] is not None
                         and options["tolerance_mm"] != a["tolerance_mm"])

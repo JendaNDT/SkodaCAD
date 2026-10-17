@@ -396,6 +396,12 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT barevný průřez (07C): 100 mm², celý objem 1000 mm³ beze změny; "
                  f"snímek {image}")
+    session.set_ndt_probe_options("s1", Probe.straight(10), 10)
+    limited = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, capture_display=True)
+    if abs(limited.volume("covered") - 500) > 1e-6 or session.ndt_beam.max_length != 10:
+        lines.append("✕ Omezení dráhy osy (07C): kresba a objemové pokrytí nesouhlasí")
+        return False
+    lines.append("✓ Omezení dráhy osy (07C): 10 mm, pokryto 500 / 1000 mm³ OK")
     session.clear_section()
     session.dirty = False
     window.open_model(volume_model, template=True)

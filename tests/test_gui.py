@@ -1472,6 +1472,8 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
         assert dialog.bounces.value() == 0  # u přímé sondy výchozí 0 odrazů
         dialog.fields["diameter"].setValue(12)
         dialog.fields["reserve"].setValue(3)
+        dialog.reach_enabled.setChecked(True)
+        dialog.reach_limit.setValue(12.5)
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
@@ -1480,6 +1482,8 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
                                                    "height": 25, "bounces": 0, "max_gap": 0.5,
                                                    "reserve": 3}
     assert panel.probe_label.text().startswith("Přímá sonda Ø 12 × 25 mm; mezera nejvýš 0.50")
+    assert w.session.ndt_beam_limit("s1") == 12.5
+    assert "Dráha osy nejvýš 12.5 mm" in panel.probe_label.text()
     action(w, "Zpět").trigger()
     assert "device" not in w.session.ndt_study("s1")
     assert slot_errors == []

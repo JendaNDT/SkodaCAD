@@ -159,6 +159,9 @@ Barvy objemu patří pouze skutečným plochám aktivního řezu; bez něj je c�
 Kresba má oddělené uzly stavů, zdroj+síť do 128 MiB, síť do 500 000 trojúhelníků,
 jemnost min(0,1 mm; krok cíle/10); chyba kresby nesmí ztratit číselnou mapu/CSV.
 Citlivost v panelu zachovává jemnou mapu a stejnou toleranci pro hrubý běh.
+Dialog Sonda doplňuje volitelnou maximální dráhu osy v materiálu, nikoli fyzikální
+dosah přístroje. ModelSession ji drží pro studii jen jako pohled (`_beam_limits`),
+kresba a oba běhy ji sdílejí; nepatří do JSON Probe a po otevření modelu zaniká.
 Podrobnosti: `docs/ndt/13-navrh-etapa-07b.md`, `docs/ndt/14-navrh-etapa-07c.md`.
 Formát zůstává 16, nové závislosti nejsou.
 Ukázky jsou v `examples/ndt/cilove_objemy/`, balíček a self-test je musí přibalit/prověřit.

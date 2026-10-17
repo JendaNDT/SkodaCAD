@@ -122,6 +122,10 @@ Zpřístupní se objemové cíle tlačítku **Spočítat pokrytí** až po dokon
 zobrazení a jeho ověření. Pro platnou UT studii musí být přiložena její vlastní sonda.
 Neplatné či zastaralé studie dostanou vysvětlení; pouhé zobrazení starého cíle
 nezpřístupní výpočet. Rozměry, sklon, odrazy a dosah sondy dál patří do dialogu Sonda….
+Omezení dosahu zde znamená **maximální celkovou dráhu osy v materiálu**, nikoli
+fyzikální dosah přístroje. Tato volba v dosavadním dialogu chyběla a 07C ji doplňuje
+jako nastavení otevřeného okna pro každou studii. Platí stejně pro kresbu, jemný
+i hrubý běh; do JSON sondy se neukládá a po otevření modelu se nastavuje znovu.
 
 - **Krok pojezdu [mm]** a **Krok cíle [mm]** samostatně; pro objem výchozí 5 a 2 mm.
   Vstup umožní například 1,25 mm a respektuje rozsah jádra 0,1–1 000 mm.
@@ -329,9 +333,12 @@ Limity kresby a pád/zastavení procesu ponechají číselný výsledek a CSV.
 
 Místní automatické a vývojářské zkoušky:
 
-- `ruff check src tests` a celá sada **834 testů**. Nové zkoušky zahrnují vlastní
+- `ruff check src tests` a celá sada **835 testů**. Nové zkoušky zahrnují vlastní
   rámec, čárku/tečku, zachování přesných čísel, neplatný svar, Zrušit, beze změny,
   jeden krok Zpět, zastaralou studii a odmítnutí náhledu jiného dokumentu.
+- Volitelná maximální dráha osy v dialogu Sonda: geometrická kresba, jemný i hrubý
+  běh používají stejné omezení, při změně se stará mapa zruší. Samotné omezení je
+  pohled, bez nového pole v JSON; zkouška analyticky odlišuje 500 a 1 000 mm³.
 - Analytická plocha hranolu a šikmého řezu, kruhová díra, konkávní průřez,
   dva kusy v jedné buňce, natočený rámec, tečný dotyk a vlastnictví přesné hranice.
 - Skutečné střídání pomocných procesů, pád, zrušení, pozdní odpověď a limity;

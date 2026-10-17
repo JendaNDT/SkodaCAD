@@ -35,6 +35,7 @@ def execute(payload: dict) -> Any:
                                  mode=options["mode"], scan_step=options["step_mm"],
                                  target_step=options["target_step_mm"],
                                  tolerance_mm=options["tolerance_mm"], angle_deg=angle,
-                                 spread_deg=options["spread_deg"], length_mm=options["length_mm"])
+                                 spread_deg=options["spread_deg"], length_mm=options["length_mm"],
+                                 max_length=options.get("max_length_mm"))
         return {"fine": fine, "source": session._volume_source}
     raise ValueError("Neznámý druh náhledu.")

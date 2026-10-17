@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -595,6 +596,7 @@ class NdtPanel(QWidget):
                 "target_step_mm": self.target_step.value(),
                 "tolerance_mm": (None if self.tolerance_mode.currentIndex() == 0
                                  else self.tolerance.value()),
+                "max_length_mm": self.window.session.ndt_beam_limit(self.current_id()),
                 "spread_deg": self.coverage_spread.value(), "length_mm": self.scan_length.value()}
 
     def _update_auto_tolerance(self, *args) -> None:
@@ -639,6 +641,10 @@ class NdtPanel(QWidget):
             self.probe_label.setText(f"{probe.label}{beam_info}{stored}; mezera nejvýš "
                                      f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm, "
                                      f"odrazy {probe.bounces}.")
+            reach = session.ndt_beam_limit(record["id"])
+            if reach is not None:
+                self.probe_label.setText(self.probe_label.text()
+                                         + f" Dráha osy nejvýš {reach:g} mm.")
         if session.ndt_placement_request is not None:
             self.angle.blockSignals(True)
             self.angle.setValue(round(session.ndt_placement_request[2]))
@@ -675,12 +681,14 @@ class NdtPanel(QWidget):
         study_id = self.current_id()
         if study_id is None:
             return
-        dialog = ProbeDialog(self.window.session.ndt_probe(study_id), self)
+        dialog = ProbeDialog(self.window.session.ndt_probe(study_id), self,
+                              max_length_mm=self.window.session.ndt_beam_limit(study_id))
         if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
         self._apply("Sondu nejde nastavit",
-                    lambda: self.window.session.set_ndt_device(study_id, values))
+                    lambda: self.window.session.set_ndt_probe_options(
+                        study_id, values, dialog.max_length()))
 
     def place_probe(self) -> None:
         study_id = self.current_id()
@@ -766,7 +774,8 @@ class ProbeDialog(QDialog):
               ("max_gap", "Dovolená mezera pod sondou [mm]", None),
               ("reserve", "Manipulační rezerva [mm]", None))
 
-    def __init__(self, probe: Probe, parent: QWidget | None = None) -> None:
+    def __init__(self, probe: Probe, parent: QWidget | None = None, *,
+                  max_length_mm: float | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Sonda NDT studie")
         form = QFormLayout(self)
@@ -798,6 +807,20 @@ class ProbeDialog(QDialog):
         self.bounces.setRange(0, 10)
         self.bounces.setValue(int(probe.bounces))
         form.addRow("Počet odrazů v dílu", self.bounces)
+        self.reach_enabled = QCheckBox("Omezit celkovou dráhu osy v materiálu")
+        self.reach_enabled.setChecked(max_length_mm is not None)
+        self.reach_limit = QDoubleSpinBox()
+        self.reach_limit.setRange(.001, 100000)
+        self.reach_limit.setDecimals(3)
+        self.reach_limit.setValue(100 if max_length_mm is None else max_length_mm)
+        self.reach_limit.setEnabled(max_length_mm is not None)
+        self.reach_enabled.toggled.connect(self.reach_limit.setEnabled)
+        form.addRow(self.reach_enabled)
+        form.addRow("Maximální dráha osy [mm]", self.reach_limit)
+        note = QLabel("Omezení dráhy je pouze nastavení tohoto okna pro kresbu a pokrytí; "
+                      "do souboru modelu se neukládá. Nejde o fyzikální dosah přístroje.")
+        note.setWordWrap(True)
+        form.addRow(note)
         self.kind.currentIndexChanged.connect(
             lambda _index: self._kind_changed(switched=True))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
@@ -825,6 +848,9 @@ class ProbeDialog(QDialog):
                 **{key: self.fields[key].value() for key, _label, kinds in self.FIELDS
                    if kinds is None or kind in kinds},
                 "bounces": self.bounces.value()}
+
+    def max_length(self) -> float | None:
+        return self.reach_limit.value() if self.reach_enabled.isChecked() else None
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

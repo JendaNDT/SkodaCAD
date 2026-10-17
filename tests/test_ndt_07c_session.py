@@ -110,6 +110,30 @@ def test_background_capture_does_not_change_numeric_volume_results():
     assert session.ndt_coverage is None and session._volume_source is None
 
 
+def test_beam_limit_is_view_only_and_is_shared_by_fine_coarse_and_display():
+    session = coverage_session()
+    session.set_ndt_volume_target("s1", small_target())
+    before = session.document.to_dict()
+    session.set_ndt_probe_options("s1", session.ndt_probe("s1"), 12.5)
+    assert session.document.to_dict() == before and session.ndt_beam.max_length == 12.5
+    result = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, capture_display=True)
+    assert result.volume("covered") == pytest.approx(500)
+    assert result.volume("uncovered") == pytest.approx(500)
+    session.start_ndt_convergence(mode="face", step_mm=25, target_step_mm=5,
+                                  tolerance_mm=None, spread_deg=0, length_mm=50)
+    assert session.ndt_coverage is result
+    assert result.assumptions["max_length_mm"] == 12.5 and "convergence" in result.assumptions
+    assert session.ndt_coverage.volume("covered") == pytest.approx(500)
+    assert result.assumptions["convergence"]["coarse_pct"]["covered"] == 0
+    session.set_ndt_probe_options("s1", session.ndt_probe("s1"), 12.5)
+    assert session.ndt_coverage is result  # beze změny se hotová mapa neztratí
+    session.set_ndt_probe_options("s1", session.ndt_probe("s1"))
+    assert session.ndt_beam_limit("s1") is None and session.ndt_coverage is None
+    with pytest.raises(DocumentError, match="kladné"):
+        session.set_ndt_probe_options("s1", session.ndt_probe("s1"), -1)
+    assert session.document.to_dict() == before
+
+
 def test_worker_preview_slice_cancel_crash_and_new_process_keep_numeric_map():
     runner = BackgroundRebuilder()
     try:
@@ -117,6 +141,7 @@ def test_worker_preview_slice_cancel_crash_and_new_process_keep_numeric_map():
         session.start_ndt_target_preview(small_target(), "s1")
         assert session.wait(60) and session.ndt_target_preview
         session.apply_ndt_target_preview()
+        session.set_ndt_probe_options("s1", session.ndt_probe("s1"), 12.5)
         before = copy.deepcopy(session.document.to_dict())
         session.start_ndt_coverage(step_mm=25, target_step_mm=5, capture_display=True)
         coverage_pid = runner._active.process.pid
@@ -124,6 +149,8 @@ def test_worker_preview_slice_cancel_crash_and_new_process_keep_numeric_map():
         result = session.ndt_coverage
         source = session._volume_source
         assert result.total_volume == pytest.approx(1000) and source.pieces
+        assert result.volume("covered") == pytest.approx(500)
+        assert result.assumptions["max_length_mm"] == 12.5
         session.set_section_target("s1")
         session.request_ndt_volume_view()
         assert runner._active.process.pid != coverage_pid
