@@ -16,6 +16,7 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 12. [Návrh etapy 07](12-navrh-etapa-07.md) – svar a cílový objem: rovný V a koutový svar, pomocný objem a formát JSON 16; 07A sloučeno v PR #16, 07B sloučeno v PR #17, 07C schváleno a implementováno ve vývojové větvi.
 13. [Návrh etapy 07B](13-navrh-etapa-07b.md) – geometrické pokrytí skutečného cílového objemu: váhy v mm³, tři stavy, zachování objemu, limity, CSV a citlivost na krok; bez nového ovládání (schváleno, sloučeno v PR #17).
 14. [Návrh etapy 07C](14-navrh-etapa-07c.md) – cílový objem a jeho pokrytí v okně: editor svaru/objemu s nákresem průřezu, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok, barevný povrch cíle a průřez svarem (schváleno 17. 10. 2026, implementováno ve vývojové větvi; ruční zkouška autorem čeká).
+15. [Rozbor citlivosti V svaru](15-rozbor-citlivosti-v-svaru.md) – proč objemové pokrytí V svaru „skákalo“ s krokem: správná hodnota 12,2 % nezávisle na mřížce, porovnávací běh hledal s příliš malou tolerancí, buňky 4 mm jsou pro 12mm plech příliš velké; návrh oprav čeká na schválení.
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 

@@ -163,7 +163,11 @@ krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad p�
 výsledek a napíše „nepodařilo ověřit“. 07C.3 hotovo: `ndt/volume_drawing.py` obarví povrch
 cíle (i rozříznutého) podle buněk 07B, `VolumeSample.piece_bounds` rozliší kusy v buňce,
 nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Ruční
-zkouška 07C autorem a sloučení do `main` zatím neproběhly.
+zkouška 07C autorem a sloučení do `main` zatím neproběhly. Rozbor citlivosti V svaru
+(`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
+tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
+z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy čekají
+na schválení – do té doby pravidlo 07B §6 ani výchozí kroky neměnit.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
