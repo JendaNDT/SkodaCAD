@@ -43,6 +43,7 @@ from skodacad.ndt.coverage import PERCENT_NOTE, STATES
 from skodacad.ndt.devices import KINDS, Probe
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
+from skodacad.ndt.volume_drawing import UNRESOLVED_LABEL
 from skodacad.ndt.welds import WELD_TYPES
 from skodacad.session import CoverageEstimate
 
@@ -73,6 +74,10 @@ class NdtPanel(QWidget):
         self.volume_action = action("Cílový objem…", self.edit_volume_target)
         self.volume_action.setToolTip("Svar nebo kontrolovaný objem uvnitř dílu (místo ploch); "
                                       "díl se nemění")
+        self.cross_section_action = action("Průřez svarem", self.cross_section)
+        self.cross_section_action.setToolTip(
+            "Řez kolmo na osu cílového objemu uprostřed jeho délky; posuvníkem v panelu Řez "
+            "jedeš podél svaru (jen pohled)")
         self.method_action = action("Metoda…", self.change_method)
         self.note_action = action("Poznámka…", self.edit_note)
         self.confirm_action = action("Potvrdit pro aktuální díl", self.confirm)
@@ -133,7 +138,7 @@ class NdtPanel(QWidget):
         self.studies.currentRowChanged.connect(lambda _row: self._row_changed())
         self.studies.itemDoubleClicked.connect(lambda _item: self.rename())
         layout.addWidget(self.studies)
-        for row in ((self.target_action, self.volume_action),
+        for row in ((self.target_action, self.volume_action, self.cross_section_action),
                     (self.rename_action, self.method_action, self.note_action),
                     (self.confirm_action, self.verify_action, self.unverify_action),
                     (self.duplicate_action, self.delete_action)):
@@ -288,6 +293,12 @@ class NdtPanel(QWidget):
                         '<span style="color:#e6bf26">■ Nelze spolehlivě vyhodnotit</span>')
         legend.setWordWrap(True)
         coverage_layout.addWidget(legend)
+        self.volume_legend = QLabel(  # jen u objemového cíle (07C)
+            f'<span style="color:#9e9e9e">■ {UNRESOLVED_LABEL}</span> (jen kresba – buňka s více '
+            "kusy, které nejde rozlišit; čísla to nemění)")
+        self.volume_legend.setObjectName("ndt_volume_legend")
+        self.volume_legend.setWordWrap(True)
+        coverage_layout.addWidget(self.volume_legend)
         self.coverage_label = QLabel(PERCENT_NOTE)
         self.coverage_label.setObjectName("ndt_coverage_summary")
         self.coverage_label.setWordWrap(True)
@@ -400,6 +411,7 @@ class NdtPanel(QWidget):
         self.target_action.setEnabled(selected and has_part and info.faces > 0
                                       and info.edges == 0)
         self.volume_action.setEnabled(selected and has_part)
+        self.cross_section_action.setEnabled(selected and has_part and self._volume_target())
         for action in (self.rename_action, self.method_action, self.note_action,
                        self.duplicate_action, self.delete_action):
             action.setEnabled(selected)
@@ -436,7 +448,7 @@ class NdtPanel(QWidget):
         self.coverage_box.setVisible(bool(ut or has_coverage or session.coverage_pending))
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
-                           self.rename_action,
+                           self.cross_section_action, self.rename_action,
                            self.method_action, self.note_action, self.duplicate_action,
                            self.delete_action, self.confirm_action, self.verify_action,
                            self.unverify_action, self.probe_action, self.place_action,
@@ -580,6 +592,9 @@ class NdtPanel(QWidget):
                 lines[:0] = ["<b>" + " · ".join(f"{label} {result.percent(state):.2f} %"
                                                 for state, label in STATES.items()) + "</b>",
                              _sensitivity_html(result)]
+                if session.section_settings is None:
+                    lines.insert(2, "Barevný je jen povrch cíle. Dovnitř se podívej tlačítkem "
+                                    "<b>Průřez svarem</b>.")
             self.coverage_label.setText("<br>".join(lines))
         elif session.coverage_pending:
             self.coverage_label.setText(
@@ -588,6 +603,22 @@ class NdtPanel(QWidget):
         else:
             self.coverage_label.setText("Zelená: pokryto · červená: nepokryto · žlutá: "
                                         f"nejisté.<br>{escape(PERCENT_NOTE)}")
+
+    def cross_section(self) -> None:
+        """Průřez svarem: řez kolmo na osu cílového objemu vybrané studie (jen pohled)."""
+        target = (self._record(self.current_id()) or {}).get("target") or {}
+        if target.get("kind") not in ("volume", "weld"):
+            self.window.statusBar().showMessage("Průřez svarem jde jen u studie s cílovým "
+                                                "objemem (Cílový objem…).", 8000)
+            return
+        try:
+            self.window._busy(lambda: self.window.session.set_section_target(target))
+        except DocumentError as exc:
+            self.window._error("Průřez svarem nejde ukázat", str(exc))
+            return
+        self.window._refresh_all()
+        self.window.statusBar().showMessage("Průřez svarem: posuvníkem v panelu Řez jedeš "
+                                            "podél cíle; model se nemění.", 10000)
 
     def _volume_target(self) -> bool:
         target = (self._record(self.current_id()) or {}).get("target") or {}
@@ -625,6 +656,7 @@ class NdtPanel(QWidget):
         form.labelForField(self.coverage_step).setText(
             "Krok pojezdu [mm]:" if volume else "Krok výpočtu [mm]:")
         self.coverage_estimate.setVisible(volume)
+        self.volume_legend.setVisible(volume)
         if estimate is None:
             self.coverage_estimate.setStyleSheet("color: #555;")
             self.coverage_estimate.setText("Odhad velikosti výpočtu se ukáže po přiložení "

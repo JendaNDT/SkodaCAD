@@ -52,6 +52,7 @@ from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
 from skodacad.measure import SavedResult, Value, format_value
+from skodacad.ndt.volume_coverage import VolumeCoverageMap
 from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.section import AXIS_NAMES
@@ -441,6 +442,7 @@ class MainWindow(QMainWindow):
         for axis, name in AXIS_NAMES.items():
             self.section_combo.addItem(name[0].upper() + name[1:], axis)
         self.section_combo.addItem("Rovnoběžně s vybranou plochou", "face")
+        self.section_combo.addItem("Kolmo na osu cíle (průřez svarem)", "target")
         self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
         self.section_combo.activated.connect(lambda _index: self._section_kind_chosen())
         form.addRow("Rovina", self.section_combo)
@@ -509,6 +511,11 @@ class MainWindow(QMainWindow):
             self.viewer.hide_coverage_map()
             if self.session.map_visible:
                 self._refresh_thickness_map()
+        elif isinstance(found, VolumeCoverageMap):  # objem uvnitř dílu: navrch, řez šedě
+            section = self.session.section
+            self.viewer.show_coverage_map(*self.session.visible_ndt_coverage(),
+                                          fill=section.faces if section is not None else None,
+                                          topmost=True)
         else:
             self.viewer.show_coverage_map(*self.session.visible_ndt_coverage())
         self._shown_coverage = found
@@ -1547,6 +1554,10 @@ class MainWindow(QMainWindow):
         if kind == "face":
             self.section_from_face()
             return
+        if kind == "target":
+            self.ndt_panel.cross_section()
+            self._refresh_section_panel()
+            return
         if self.session.section_settings is None and not self.section_action.isChecked():
             self.section_action.setChecked(True)
         try:
@@ -1612,7 +1623,7 @@ class MainWindow(QMainWindow):
                                       "rozřízne a uvidíš ho uvnitř. Model se nemění. Na "
                                       "plochy řezu jde klikat a měřit.")
             return
-        kind = settings.axis or "face"
+        kind = "target" if settings.target is not None else settings.axis or "face"
         index = self.section_combo.findData(kind)
         if index >= 0 and self.section_combo.currentIndex() != index:
             self.section_combo.setCurrentIndex(index)
@@ -1620,7 +1631,8 @@ class MainWindow(QMainWindow):
             low, high = session.section_range()
         except DocumentError:
             low, high = settings.position, settings.position
-        word = "Hloubka" if settings.axis is None else f"Poloha {settings.axis}"
+        word = ("Od začátku cíle" if settings.target is not None else "Hloubka"
+                if settings.axis is None else f"Poloha {settings.axis}")
         self.section_position_label.setText(f"{word} [mm]")
         self.section_range_label.setText(f"od {number(low)} do {number(high)} mm")
         if not self.section_field.hasFocus():
@@ -1635,10 +1647,14 @@ class MainWindow(QMainWindow):
             self.section_info.setText(f"✕ {session.section_error}")
             return
         where = describe_section(section.plane)
-        if settings.axis is None:
+        if settings.target is not None:
+            where = f"kolmo na osu cíle, {number(settings.position)} mm od jeho začátku"
+        elif settings.axis is None:
             where = f"rovnoběžně s plochou, {number(settings.position)} mm pod ní"
+        color = ("šedě pod mapou pokrytí" if isinstance(session.ndt_coverage, VolumeCoverageMap)
+                 else "cihlově")
         self.section_info.setText(f"Řez {where}\nPlocha řezu: {number(section.area)} mm² "
-                                  "(cihlově)\nKlikni na plochu řezu a změříš ji v panelu "
+                                  f"({color})\nKlikni na plochu řezu a změříš ji v panelu "
                                   "Měření.")
 
     def export_map(self) -> None:

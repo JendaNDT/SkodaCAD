@@ -51,6 +51,9 @@ class VolumeSample:
     point: Point | None
     volume_mm3: float
     reason: str = ""
+    # Ohraničující kvádr kusu v místních souřadnicích (07C): jen pro kresbu, když má buňka
+    # víc kusů. Nejde o tvar kusu a do výpočtu ani CSV nevstupuje.
+    piece_bounds: tuple[Point, Point] | None = None
 
 
 @dataclass(frozen=True)
@@ -227,7 +230,11 @@ def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
                 reason = ("" if point is not None else
                           "Objem je známý, ale spolehlivý vnitřní bod nebyl nalezen "
                           "nebo byl dosažen limit jeho hledání.")
-                samples.append(VolumeSample(indices, i, (lo, hi), point, volume, reason))
+                box = solid.bounding_box()  # rovina má Y = −výška
+                piece_bounds = ((box.min.X, -box.max.Y + 0.0, box.min.Z),  # bez −0.0
+                                (box.max.X, -box.min.Y + 0.0, box.max.Z))
+                samples.append(VolumeSample(indices, i, (lo, hi), point, volume, reason,
+                                            piece_bounds))
         except CoverageError:
             raise
         except Exception as exc:  # noqa: BLE001 – neznámou váhu nesmíme nahradit nulou

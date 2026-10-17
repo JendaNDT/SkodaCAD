@@ -342,6 +342,18 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   python -m skodacad pokryti examples/ndt/deska.json --plocha 0,0,20 --prima 10 --cil-plocha 0,0,0 --krok 5 --konvergence --csv pokryti.csv
   python -m skodacad pokryti examples/ndt/zebro.json --plocha 60,0,20 --cil 0,0,0 --sklon 45 --smer 180 --odrazy 0 --rezim line --delka 50 --krok 2
   ```
+* **Svar a cílový objem v okně (etapa 07C):** v panelu NDT tlačítko **Cílový objem…** otevře
+  editor: *Tupý svar V*, *Koutový svar* nebo *Obecný hranol*, počátek X/Y/Z, směr podél a
+  napříč (±X/±Y/±Z; šikmý směr ze souboru zůstane), délka a rozměry. Vedle je nákres průřezu
+  a zadaný objem ze vzorce, **Zkontrolovat v dílu** spočítá účinný objem v materiálu bez
+  změny modelu. *Podle vybrané hrany* převezme směr a délku z rovné hrany vybrané ve 3D.
+  Cíl se ve 3D ukáže průhledně modře (i skrz díl). U objemového cíle má mapa pokrytí navíc
+  **krok cíle** (výchozí 4 mm, pojezd 5 mm), toleranci zachycení (automaticky) a zapnuté
+  **Ověřit citlivost na krok**; před spuštěním je vidět odhad (buňky, polohy sondy). Výsledek:
+  tučná procenta tří stavů v mm³, citlivost nahlas (oranžově „zjemni krok“), barevný povrch
+  cíle a tlačítko **Průřez svarem** – řez kolmo na osu cíle, posuvník v panelu *Řez* jede
+  podél svaru. Šedá barva = *nerozlišeno v kresbě* (buňka s více kusy), čísla to nemění.
+  Ukázky: *Soubor → Otevřít ukázku → NDT – cílové objemy*.
 
 ### Tažení a přechod
 
@@ -755,8 +767,9 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
 
 ### Cílové objemy a svary (07A, verze 16)
 
-Krok 07A ukládá a geometricky ověřuje pomocné objemy. **07B přidává výpočet objemového
-pokrytí přes CLI a ModelSession; editor a náhled objemové mapy v okně patří až do 07C**.
+Krok 07A ukládá a geometricky ověřuje pomocné objemy, 07B přidává výpočet objemového
+pokrytí (CLI a ModelSession) a **07C editor, náhled a objemovou mapu v okně** (popis ovládání
+výše, návrh [Etapa 07C](docs/ndt/14-navrh-etapa-07c.md)).
 Podrobnosti a meze výpočtu: [Etapa 07B](docs/ndt/13-navrh-etapa-07b.md).
 Plošné mapy Etapy 06 fungují dál. Objemový cíl
 se do výrobního dílu nepřidává a nemění jeho hmotnost, objem ani exporty.

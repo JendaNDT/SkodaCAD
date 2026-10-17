@@ -1,8 +1,9 @@
 # NDT – návrh etapy 07C: cílový objem a jeho pokrytí v okně
 
-Stav: **schváleno autorem 17. 10. 2026 včetně doporučení 1–4 z oddílu 10; implementace po
-krocích ve vývojové větvi – 07C.1 (editor a náhled cíle) a 07C.2 (výpočet v panelu) hotovo,
-07C.3 následuje.**
+Stav: **schváleno autorem 17. 10. 2026 včetně doporučení 1–4 z oddílu 10; implementováno
+ve vývojové větvi `claude/magical-hawking-h944yz` (07C.1, 07C.2, 07C.3), před sloučením do
+`main`. Ruční zkouška autorem v okně zatím neproběhla.**
+Co se při implementaci upřesnilo, je v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `35f1507` ([PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17),
 sloučené 07B). Navazuje na [Etapu 07 a krok 07A](12-navrh-etapa-07.md),
 [07B – objemové pokrytí](13-navrh-etapa-07b.md), [Etapu 06](11-navrh-etapa-06.md)
@@ -327,3 +328,29 @@ Prosím o schválení nebo úpravu těchto bodů (doporučení je vždy první):
 Schválením se **neschvaluje**: automatické rozpoznání svarů, obvodové/zakřivené svary,
 odhad tepelně ovlivněné oblasti, změna výpočtu 07B nebo formátu, nové knihovny ani
 sloučení do `main`.
+
+**Autor 17. 10. 2026 napsal „schvaluji 07C“** – schváleny body 1–4 tak, jak jsou doporučené.
+
+## 11. Provedení a upřesnění
+
+| Krok | Co vzniklo | Ověření |
+|---|---|---|
+| 07C.1 | `gui/target_dialog.py`, `ModelSession.check_ndt_volume_target`, `ndt_target_outline`, `ndt_frame_from_edge`, `ndt_target_preview`, `viewer.show_target`, podnabídka *NDT – cílové objemy* | testy dialogu (identický JSON, chyby, Zpět), self-test „target“, snímky |
+| 07C.2 | pole *Krok cíle*, *Tolerance zachycení*, *Ověřit citlivost na krok*, `ndt_coverage_estimate`, `compute_ndt_coverage(convergence=True)` i v pomocném procesu | shoda s přímým porovnáním i s pomocným procesem, testy panelu, okno spočítalo 9,02 % jako CLI |
+| 07C.3 | `ndt/volume_drawing.py`, `VolumeSample.piece_bounds`, `set_section_target` (*Průřez svarem*), šedá legenda, kreslení „map_top“ | plochy kresby = povrch / průřez cíle, buňka se dvěma kusy u otvoru, self-test 600/400 mm², snímky |
+
+Upřesnění proti návrhu (bez změny výpočtu 07B a formátu):
+
+- **Náhled cíle i objemová mapa se kreslí navrch** (vrstva `Topmost`): cíl leží uvnitř
+  neprůhledného dílu a jeho stěny splývají se stěnami dílu – v běžné vrstvě nebyl na snímku
+  vidět. Plochy řezu dílu jsou pod mapou šedé (červená je „nepokryto“); panel *Řez* to
+  píše („šedě pod mapou pokrytí“). Self-test kreslí druh „map_top“ zvlášť.
+- *Průřez svarem* je nový druh řezu (`TargetSection`): poloha = vzdálenost od začátku cíle
+  0 … délka, rovina míří k pozorovateli v izometrii. Jde zvolit i v panelu *Řez*
+  (*Kolmo na osu cíle*). Posun a otočení řezu druh zachovají (`dataclasses.replace`).
+- Skupina sondy a formulář pokrytí se nevešly do doku (panel se posouval do strany –
+  starší stav); tlačítka sondy a krokování jsou nově po dvou řádcích, formulář zalamuje
+  dlouhé popisky.
+- Výsledek V svaru (`tupy_svar_objem.json`, sonda 70°, bez odrazů, kroky 5/4 mm) spočítaný
+  v okně: pokryto **9,02 %**, nepokryto 90,98 %, citlivost **3,88 p. b.** (oranžově „zjemni
+  krok“); 45–49 s na cloudovém počítači. V průřezu svarem je zelený jen pás u kořene.

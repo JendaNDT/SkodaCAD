@@ -18,6 +18,7 @@ pozadí v pomocném procesu: úprava se přijme hned, ``result`` zůstane do dok
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime
 import math
 import re
@@ -72,6 +73,7 @@ from skodacad.ndt.volume_coverage import (
     compute_volume,
     grid_extent,
 )
+from skodacad.ndt.volume_drawing import volume_mesh
 from skodacad.ndt.welds import (
     TargetError,
     TargetVolume,
@@ -175,6 +177,7 @@ class ModelSession:
         self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
         self._target_preview_cache: tuple[Any, Any] | None = None
+        self._volume_drawing_cache: tuple[Any, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -669,16 +672,29 @@ class ModelSession:
         self.section_settings = SectionSettings(None, (low + high) / 2, False, base)
         return self.section
 
+    def set_section_target(self, target: dict[str, Any]) -> Section | None:
+        """Průřez svarem: řez kolmo na osu cíle, napoprvé uprostřed jeho délky. Poloha je
+        vzdálenost od začátku cíle (0 … délka); řez míří k pozorovateli v izometrii."""
+        saved = self.ndt_target_outline(target)[0]
+        self._section_source()
+        frame = saved["frame"]
+        axis = tuple(frame["axis"])
+        sign = 1.0 if sum(a * v for a, v in zip(axis, (1.0, -1.0, 1.0), strict=True)) >= 0 \
+            else -1.0
+        along = TargetSection(tuple(frame["origin"]), axis, saved["length_mm"],
+                              tuple(sign * a + 0.0 for a in axis))  # bez −0.0
+        self.section_settings = SectionSettings(None, saved["length_mm"] / 2, False,
+                                                target=along)
+        return self.section
+
     def set_section_position(self, position: float) -> Section | None:
         settings = self._require_section()
-        self.section_settings = SectionSettings(settings.axis, float(position),
-                                                settings.flipped, settings.base)
+        self.section_settings = dataclasses.replace(settings, position=float(position))
         return self.section
 
     def flip_section(self) -> Section | None:
         settings = self._require_section()
-        self.section_settings = SectionSettings(settings.axis, settings.position,
-                                                not settings.flipped, settings.base)
+        self.section_settings = dataclasses.replace(settings, flipped=not settings.flipped)
         return self.section
 
     def clear_section(self) -> None:
@@ -691,12 +707,20 @@ class ModelSession:
             return None
         if settings.axis is not None:
             return axis_plane(settings.axis, settings.position, settings.flipped)
+        if settings.target is not None:
+            along = settings.target
+            origin = tuple(o + a * settings.position
+                           for o, a in zip(along.origin, along.axis, strict=True))
+            normal = tuple(-n for n in along.normal) if settings.flipped else along.normal
+            return SectionPlane(origin, normal)
         return offset_plane(settings.base, settings.position, settings.flipped)
 
     def section_range(self) -> tuple[float, float]:
         """Rozsah posuvníku řezu (souřadnice v ose, nebo hloubka pod plochou) [mm]."""
         settings = self._require_section()
         part = self._section_source()
+        if settings.target is not None:
+            return 0.0, settings.target.length
         if settings.axis is not None:
             return axis_range(part, settings.axis)
         return base_depth_range(part, settings.base)
@@ -1370,12 +1394,29 @@ class ModelSession:
         return None
 
     def visible_ndt_coverage(self) -> tuple[list, list, list]:
+        """Barevná síť mapy pro okno; u objemu povrch cíle (při řezu rozříznutého)."""
         result = self.ndt_coverage
-        if result is None or isinstance(result, VolumeCoverageMap):
+        if result is None:
             return [], [], []
+        if isinstance(result, VolumeCoverageMap):
+            return self._volume_drawing(result)
         nodes, triangles, colors = result.mesh()
         plane = self.section_plane
         return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def _volume_drawing(self, result: VolumeCoverageMap) -> tuple[list, list, list]:
+        """Kresba objemového výsledku pro díl, ke kterému patří (pamatuje se pro řez)."""
+        plane = self.section_plane
+        key = (id(result), plane)
+        if self._volume_drawing_cache is None or self._volume_drawing_cache[0] != key:
+            try:
+                shape = _cut_preview(resolve_target(self.result.part,
+                                                    result.assumptions["target"]).shape, plane)
+                drawing = volume_mesh(result, shape) if shape is not None else ([], [], [])
+            except Exception:  # noqa: BLE001 – kresba je jen pohled, čísla zůstávají v panelu
+                drawing = ([], [], [])
+            self._volume_drawing_cache = (key, drawing)
+        return self._volume_drawing_cache[1]
 
     def export_ndt_coverage(self, path: str | Path) -> Path:
         result = self.ndt_coverage
@@ -1652,6 +1693,17 @@ class SectionSettings:
     position: float
     flipped: bool = False
     base: SectionPlane | None = None
+    target: TargetSection | None = None  # průřez svarem: poloha = vzdálenost od začátku cíle
+
+
+@dataclass(frozen=True)
+class TargetSection:
+    """Řez kolmo na osu cílového objemu NDT (tlačítko Průřez svarem)."""
+
+    origin: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    length: float
+    normal: tuple[float, float, float]  # ± osa, k pozorovateli v izometrii
 
 
 @dataclass(frozen=True)

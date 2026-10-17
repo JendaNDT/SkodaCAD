@@ -81,7 +81,10 @@ def test_volume_target_changes_only_study_invalidates_map_and_verification_and_h
     assert session.ndt_target_volume("s1").volume_mm3 == pytest.approx(2000)
     result = session.compute_ndt_coverage(step_mm=25, target_step_mm=10)
     assert result.total_volume == pytest.approx(2000)
-    assert session.visible_ndt_coverage() == ([], [], [])  # objemová kresba až v 07C
+    from skodacad.ndt.volume_drawing import mesh_areas
+
+    # 07C: kresba = povrch cíle 10 × 10 × 20 mm obarvený podle buněk
+    assert sum(mesh_areas(session.visible_ndt_coverage()).values()) == pytest.approx(1000)
 
 
 def test_invalid_target_rolls_back_without_touching_document_or_history():
@@ -261,7 +264,11 @@ def test_volume_background_result_cancel_and_target_change_invalidate_cache(tmp_
             tmp_path / "volume.csv").read_text(encoding="utf-8-sig")
         session.set_section_axis("X", 2)
         assert session.ndt_coverage is result and result.total_volume == pytest.approx(2000)
-        assert session.visible_ndt_coverage() == ([], [], [])
+        from skodacad.ndt.volume_drawing import mesh_areas
+
+        # řez X = 2 nechá z cíle 2 × 20 × 10 mm; kresba je jen pohled, čísla stejná
+        drawing = mesh_areas(session.visible_ndt_coverage())
+        assert sum(drawing.values()) == pytest.approx(2 * (2 * 20 + 2 * 10 + 20 * 10))
         session.start_ndt_coverage(step_mm=1, target_step_mm=0.1)
         assert session.cancel()
         assert session.document.to_dict() == before and session.ndt_coverage is None

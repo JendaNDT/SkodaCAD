@@ -61,8 +61,10 @@ class FakeViewer(QtWidgets.QWidget):
     def hide_thickness_map(self):
         self.thickness_map = None
 
-    def show_coverage_map(self, nodes, triangles, colors):
+    def show_coverage_map(self, nodes, triangles, colors, fill=None, topmost=False):
         self.coverage_map = (list(nodes), list(triangles), list(colors))
+        self.coverage_fill = list(fill or [])  # plochy řezu dílu šedě (objem v řezu)
+        self.coverage_topmost = topmost
 
     def hide_coverage_map(self):
         self.coverage_map = None
@@ -259,6 +261,26 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     assert text.startswith("<b>Geometricky pokryto ")
     assert "citlivost na krok" in text and UT_DISCLAIMER in text
     assert "Stav vnitřního bodu zastupuje objem jeho kusu buňky" in text
+    assert "Dovnitř se podívej tlačítkem <b>Průřez svarem</b>" in text
+    nodes, triangles, _colors = w.viewer.coverage_map  # 07C.3: povrch cíle navrch
+    assert triangles and w.viewer.coverage_topmost and w.viewer.coverage_fill == []
+    assert w.viewer.target is None  # mapa nahradí průhledný náhled cíle
+    assert panel.volume_legend.isVisibleTo(panel)
+    percent = result.percent("covered")
+    assert panel.cross_section_action.isEnabled()
+    panel.cross_section_action.trigger()
+    assert session.section_settings.target is not None and session.section_range() == (0, 20)
+    assert w.section_combo.currentData() == "target"
+    assert "kolmo na osu cíle, 10.00 mm od jeho začátku" in w.section_info.text()
+    assert "(šedě pod mapou pokrytí)" in w.section_info.text()
+    assert w.viewer.coverage_fill  # plochy řezu dílu šedě, průřez cíle barevně
+    assert session.ndt_coverage is result and result.percent("covered") == percent
+    assert "Průřez svarem</b>" not in panel.coverage_label.text()
+    action(w, "Řez modelem").trigger()  # vypnout řez
+    assert session.section_settings is None
+    w.section_combo.setCurrentIndex(w.section_combo.findData("target"))
+    w._section_kind_chosen()  # totéž z panelu Řez
+    assert session.section_settings.target is not None
     panel.coverage_target_step.setValue(0.5)  # 20 × 20 × 40 buněk – pořád v mezích
     assert panel.coverage_action.isEnabled()
     panel.coverage_step.setValue(0.5)  # pojezd 0,5 mm na desce 200 × 100 = příliš poloh

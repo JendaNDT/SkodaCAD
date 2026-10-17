@@ -160,8 +160,10 @@ svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová, ná
 objemy*. 07C.2 hotovo: panel zná krok cíle, toleranci (automaticky / číslo) a citlivost na
 krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad před spuštěním
 `ndt_coverage_estimate` se stejnými ochranami jako 07B; nepovedené porovnání nechá jemný
-výsledek a napíše „nepodařilo ověřit“. Do 07C.3 `visible_ndt_coverage` pro objem vrací
-prázdnou kresbu. Formát zůstává 16.
+výsledek a napíše „nepodařilo ověřit“. 07C.3 hotovo: `ndt/volume_drawing.py` obarví povrch
+cíle (i rozříznutého) podle buněk 07B, `VolumeSample.piece_bounds` rozliší kusy v buňce,
+nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Ruční
+zkouška 07C autorem a sloučení do `main` zatím neproběhly.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
@@ -200,6 +202,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
+| `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
@@ -529,6 +532,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   počet desetinných míst – nezměněné *OK* musí vrátit identický JSON (bez kroku Zpět).
 - Dialog *OK* nejdřív zavolá `check_ndt_volume_target`; když jádro cíl odmítne, dialog
   zůstane otevřený s chybou (`TargetDialog.accept`).
+- Objemová mapa se kreslí také `Topmost` (`show_coverage_map(..., topmost=True)`) a plochy
+  řezu dílu pod ní **šedě** (`fill`) – průřez cíle leží v rovině řezu dílu, v jedné vrstvě by
+  se plochy praly (z-fighting). Červená výplň by se pletla s „nepokryto“.
+- Kresba nepotřebuje geometrii z pomocného procesu: `resolve_target` + `section.cut` v okně,
+  povrch se rozřeže podél mřížky (`grid_min`, `target_step_mm`, `grid_frame` z předpokladů).
+  Úlomek na konci mřížky (čelo svaru) patří poslední buňce – indexy se omezují na počet buněk,
+  jinak by čelo zešedlo.
+- Kus buňky se pozná jen podle `piece_bounds`; když nejde rozhodnout (kvádry se překrývají,
+  meze chybí) a stavy se liší, úlomek je šedý – **nikdy nehádat zelenou**.
+- `SectionSettings` se mění přes `dataclasses.replace` – ruční konstruktor by ztratil
+  `target` (*Průřez svarem*) při posunu nebo otočení řezu.
+- Snímek přiblíženého řezu: `V3d_View.SetAt` drží oko na místě a kameru nakloní – nastav
+  i `SetEye` a `SetUp`; `app._screenshot` pohled před snímkem přizpůsobí celému dílu.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -631,8 +647,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
-  [x] 07B objemové pokrytí (sloučeno v PR #17), [ ] 07C ovládání a demonstrace
-  (návrh `14-navrh-etapa-07c.md` čeká na schválení) …
+  [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
+  (vývojová větev; ruční zkouška autorem a sloučení čekají) …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

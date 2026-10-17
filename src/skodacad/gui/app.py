@@ -370,14 +370,36 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     if (not isinstance(covered, VolumeCoverageMap) or not enabled
             or abs(covered.total_volume - 1000) > 1e-6
             or abs(covered.volume("covered") - 1000) > 1e-6
-            or "convergence" not in covered.assumptions
-            or session.visible_ndt_coverage() != ([], [], [])):
+            or "convergence" not in covered.assumptions):
         lines.append("✕ NDT objemové pokrytí: objem, osové zásahy, citlivost nebo panel "
                      "nesouhlasí")
         return False
     lines.append(f"✓ NDT objemové pokrytí (07B, panel 07C): {covered.volume('covered'):.6f} / "
                  f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
-                 "citlivost na krok ověřena; objemová kresba čeká na 07C.3")
+                 "citlivost na krok ověřena")
+    from skodacad.ndt.volume_drawing import mesh_areas
+
+    lines.stream.write("  … NDT objemová kresba a průřez (07C)\n")
+    lines.stream.flush()
+    # Krychle 10 mm celá pokrytá: povrch 600 mm², v průřezu uprostřed zbude 10 × 5 × 10 mm.
+    whole = mesh_areas(session.visible_ndt_coverage())
+    window._refresh_all()
+    panel.cross_section()
+    QApplication.processEvents()
+    half = mesh_areas(session.visible_ndt_coverage())
+    drawn = bool(getattr(window.viewer, "_coverage_objects", None)) if window.viewer.ready \
+        else True
+    image = user_dir() / "self-test-objem.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    session.clear_section()
+    window._refresh_all()
+    if (len(whole) != 1 or abs(sum(whole.values()) - 600) > 1e-6 or len(half) != 1
+            or abs(sum(half.values()) - 400) > 1e-6 or not drawn):
+        lines.append(f"✕ NDT objemová kresba: plochy {whole} / v průřezu {half} (čekáno 600 "
+                     "a 400 mm² zeleně)")
+        return False
+    lines.append(f"✓ NDT objemová kresba (07C): povrch 600 mm², průřez svarem 400 mm² "
+                 f"zeleně, snímek {image}: {shown}")
     lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
     session.dirty = False
     window.open_model(volume_model, template=True)
@@ -500,8 +522,8 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe",
-                    "target"):
+    for variant in ("line", "point", "ball", "label", "arial", "map", "map_top", "accent",
+                    "probe", "target"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)
