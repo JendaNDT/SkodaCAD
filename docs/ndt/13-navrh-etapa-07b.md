@@ -206,6 +206,17 @@ Jemný běh trval při místní zkoušce přibližně 42 s (4 000 kandidátních
 **Výsledek není stabilní odhad; souhrn i CSV doporučují zjemnit krok.**
 Čísla platí pouze pro tuto jednu konfiguraci, ne pro všechny možné polohy a sondy.
 
+Doplňující místní ověření: jemnější cíl **1,25 mm** při stejném pojezdu 5 mm
+a výchozí toleranci dal **11,98 %**, ale hrubší běh 10/2,5 mm jen **5,90 %**.
+Samotné zjemnění cíle tedy citlivost původního porovnání neodstranilo.
+Při výslovné numerické toleranci **8 mm v obou bězích** vyšly kroky 5/1,25 mm
+na **11,98 %** a 10/2,5 mm na **11,79 %**, rozdíl **0,19 p. b.**.
+Jemný běh měl 15 360 kandidátních buněk, 9 280 kusů, přibližně 145 s; součet vah
+zůstal **14 613,843876 mm³**. Jemný výsledek se zvětšením vyhledávací tolerance
+nezměnil; hrubší pojezd našel více kandidátních os, které se jednotlivě znovu ověřily.
+Nejde o rozšíření fyzického svazku. Výsledek má nízkou pozorovanou citlivost této
+dvojice mřížek, nikoli zaručenou přesnost do 0,19 %.
+
 ## 6. Citlivost na krok a význam čísel
 
 Pro objem bude samostatné `check_volume_convergence`, se stejným pravidlem jako
@@ -223,6 +234,11 @@ Větší rozdíl doporučí zjemnit krok. Bez porovnání se výsledek označí 
 Jemnější krok, stejná tolerance, stejný cíl a stejné fyzikální předpoklady jsou
 podmínkou smysluplného porovnání. Hrubé buňky mohou přehlédnout úzké slepé místo;
 ani úspěšná kontrola součtu objemu to sama neodhalí.
+Porovnání zahrnuje také schopnost najít kandidátní zásahy při zadané toleranci:
+malá pevná tolerance může u hrubšího pojezdu některé kandidáty vynechat.
+Při doplňujícím ověření se proto smí použít výslovně zvolená stejná tolerance
+pro oba běhy; její zvýšení nikdy neobchází opakované ověření skutečného přiložení
+a dráhy paprsku. Původní výsledek porovnání musí zůstat dohledatelný.
 
 ## 7. Omezení práce a reakce na chybu
 

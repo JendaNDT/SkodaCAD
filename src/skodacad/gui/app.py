@@ -361,6 +361,7 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     lines.append(f"✓ NDT objemové pokrytí (07B): {covered.volume('covered'):.6f} / "
                  f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
                  "objemová mapa v okně čeká na 07C")
+    lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
     session.dirty = False
     window.open_model(volume_model, template=True)
     return True
