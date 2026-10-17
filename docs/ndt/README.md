@@ -13,9 +13,9 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 9. [Návrh etapy 04](09-navrh-etapa-04.md) – geometrický model UT paprsku: přímá a úhlová sonda, lom podle Snellova zákona se zadanými předpoklady, odrazy (poloviční a celá rozteč), zobrazení ve 3D a v řezu (schváleno a provedeno 16. 10. 2026).
 10. [Návrh etapy 05](10-navrh-etapa-05.md) – ruční pohyb sondy v okně (milník M1): tažení sondy myší po povrchu ve 3D, krokování a posuvník přímé dráhy se živým přepočtem kolize a UT paprsku (schváleno a provedeno 16. 10. 2026).
 11. [Návrh etapy 06](11-navrh-etapa-06.md) – mapa geometrického pokrytí UT (začátek milníku M2): pojezd po ploše i přímce, tři stavy, 3D, CSV a kontrola citlivosti na krok (sloučeno v PR #15; 723 testů a zkoušky balíčků Windows/macOS prošly; ruční zkouška vydání po sloučení čeká).
-12. [Návrh etapy 07](12-navrh-etapa-07.md) – svar a cílový objem: rovný V a koutový svar, pomocný objem a formát JSON 16; 07A sloučeno v PR #16, 07B sloučeno v PR #17, 07C sloučeno v PR #19 (bez ruční zkoušky).
+12. [Návrh etapy 07](12-navrh-etapa-07.md) – svar a cílový objem: rovný V a koutový svar, pomocný objem a formát JSON 16; 07A sloučeno v PR #16, 07B sloučeno v PR #17, 07C sloučeno v PR #19 (autor po vydání: „ok funguje to“).
 13. [Návrh etapy 07B](13-navrh-etapa-07b.md) – geometrické pokrytí skutečného cílového objemu: váhy v mm³, tři stavy, zachování objemu, limity, CSV a citlivost na krok; bez nového ovládání (schváleno, sloučeno v PR #17).
-14. [Návrh etapy 07C](14-navrh-etapa-07c.md) – cílový objem a jeho pokrytí v okně: editor svaru/objemu s nákresem průřezu, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok, barevný povrch cíle a průřez svarem (schváleno 17. 10. 2026, na pokyn autora sloučeno v PR #19 bez ruční zkoušky; ruční zkouška autorem čeká).
+14. [Návrh etapy 07C](14-navrh-etapa-07c.md) – cílový objem a jeho pokrytí v okně: editor svaru/objemu s nákresem průřezu, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok, barevný povrch cíle a průřez svarem (schváleno 17. 10. 2026, sloučeno v PR #19, autor po vydání napsal „ok funguje to“).
 15. [Rozbor citlivosti V svaru](15-rozbor-citlivosti-v-svaru.md) – proč objemové pokrytí V svaru „skákalo“ s krokem: správná hodnota 12,2 % nezávisle na mřížce, porovnávací běh hledal s příliš malou tolerancí, buňky 4 mm jsou pro 12mm plech příliš velké; opravy 1–3 schválené a provedené (spravedlivé porovnání kroků, výchozí krok cíle podle průřezu, referenční test).
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
@@ -37,7 +37,7 @@ Další podle plánu je etapa 07 – svar a cílová oblast jako NDT objekty (po
 a pomocné objemy, bez nového ovládání. Objemové pokrytí 07B je schválené a sloučené
 v PR #17: samostatný výsledek v mm³, CLI/CSV a citlivost na krok. Editor a objemový
 náhled v okně (07C, [návrh](14-navrh-etapa-07c.md)) jsou schválené a na pokyn autora
-sloučené do `main` v PR #19 bez ruční zkoušky; ruční zkouška autorem čeká.
+sloučené do `main` v PR #19; po vydání autor napsal „ok funguje to“.
 Etapa 16 (virtuální signály) je podle závazného vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

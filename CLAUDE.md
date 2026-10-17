@@ -167,9 +167,9 @@ krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad p�
 `ndt_coverage_estimate` se stejnými ochranami jako 07B; nepovedené porovnání nechá jemný
 výsledek a napíše „nepodařilo ověřit“. 07C.3 hotovo: `ndt/volume_drawing.py` obarví povrch
 cíle (i rozříznutého) podle buněk 07B, `VolumeSample.piece_bounds` rozliší kusy v buňce,
-nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Ruční
-zkouška 07C autorem zatím neproběhla (odložená, nenahrazovat tvrzením). Rozbor citlivosti V svaru
-(`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
+nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Po
+sloučení autor 17. 10. 2026 k vydání z `e898575` napsal „ok funguje to“. Rozbor citlivosti
+V svaru (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
 tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
 z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy 1–3
 schválené a provedené (`auto_tolerance`, `recommended_target_step`, `CONVERGENCE_RULE`,
@@ -670,7 +670,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
   [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
-  (sloučeno v PR #19 bez ruční zkoušky; ruční zkouška autorem čeká) …
+  (sloučeno v PR #19, autor po vydání: „ok funguje to“) …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

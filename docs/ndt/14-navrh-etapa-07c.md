@@ -2,8 +2,8 @@
 
 Stav: **schváleno autorem 17. 10. 2026 včetně doporučení 1–4 z oddílu 10; implementováno
 ve vývojové větvi `claude/magical-hawking-h944yz` (07C.1, 07C.2, 07C.3) a 17. 10. 2026 na
-pokyn autora („PR sloučit hned bez ruční zkoušky“) sloučeno do `main` v PR #19. Ruční
-zkouška autorem v okně zatím neproběhla.**
+pokyn autora („PR sloučit hned bez ruční zkoušky“) sloučeno do `main` v PR #19. Po vydání
+z `e898575` autor napsal „ok funguje to“.**
 Co se při implementaci upřesnilo, je v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `35f1507` ([PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17),
 sloučené 07B). Navazuje na [Etapu 07 a krok 07A](12-navrh-etapa-07.md),
