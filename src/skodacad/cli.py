@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     coverage.add_argument("model", type=Path)
     coverage.add_argument("--plocha", required=True, metavar="X,Y,Z",
                           help="výchozí bod sondy na pojezdové ploše [mm]")
-    coverage.add_argument("--studie", help="UT studie se sondou a cílovými plochami")
+    coverage.add_argument("--studie", help="UT studie se sondou a cílovými plochami/objemem")
     coverage.add_argument("--cil", action="append", metavar="X,Y,Z",
                           help="kontrolovaný bod (lze opakovat)")
     coverage.add_argument("--cil-plocha", action="append", metavar="X,Y,Z",
@@ -253,8 +253,9 @@ def _coverage(args: argparse.Namespace) -> int:
     from skodacad.ndt.coverage import compute as coverage_compute
     from skodacad.ndt.devices import Probe, place
     from skodacad.ndt.geometry import PartGeometry
-    from skodacad.ndt.study import study_probe
+    from skodacad.ndt.study import part_fingerprint, study_probe
     from skodacad.ndt.ut import refract
+    from skodacad.ndt.volume_coverage import check_volume_convergence, compute_volume
 
     if args.beam_angle is not None and args.snell is not None:
         raise ValueError("Zadej buď --sklon, nebo --snell, ne obojí.")
@@ -265,7 +266,7 @@ def _coverage(args: argparse.Namespace) -> int:
     geo = PartGeometry(result.part)
     probe = _cli_probe(args, document, Probe, study_probe)
     placed = place(geo, probe, _vector(args.plocha, "--plocha"), angle=args.smer)
-    faces, points = [], None
+    faces, points, target = [], None, None
     if args.cil:
         points = [_vector(text, "--cil") for text in args.cil]
     elif args.cil_plocha:
@@ -281,27 +282,38 @@ def _coverage(args: argparse.Namespace) -> int:
         study_result = next(s for s in result.ndt if s.id == args.studie)
         if record["method"] != "UT" or study_result.state != "ok":
             raise ValueError("Vyber platnou UT studii.")
-        if (record.get("target") or {}).get("kind") != "faces":
-            raise ValueError("Objemový cíl je uložený; výpočet jeho pokrytí přidá krok 07B.")
-        faces, problems = geo.faces_of(record.get("target"))
-        if problems:
-            raise ValueError(" ".join(problems))
+        if (record.get("target") or {}).get("kind") in ("volume", "weld"):
+            target = record["target"]
+        else:
+            faces, problems = geo.faces_of(record.get("target"))
+            if problems:
+                raise ValueError(" ".join(problems))
     else:
         raise ValueError("Zadej --cil, --cil-plocha nebo --studie s kontrolovanou oblastí.")
     refraction = refract(*_vector(args.snell, "--snell"), args.vlna) if args.snell else None
-    options = dict(faces=faces or None, points=points, mode=args.rezim,
+    inputs = ({"target": target} if target is not None else
+              {"faces": faces or None, "points": points})
+    options = dict(**inputs, mode=args.rezim,
                    scan_step=args.krok, target_step=(args.krok if args.krok_cile is None
                                                      else args.krok_cile),
                    length_mm=args.delka, angle_deg=args.smer, tolerance_mm=args.tolerance,
                    spread_deg=args.rozevreni, beta=args.beam_angle, bounces=args.bounces,
                    max_length=args.max_length, refraction=refraction)
-    covered = coverage_compute(geo, placed, **options)
+    compute = compute_volume if target is not None else coverage_compute
+    covered = compute(geo, placed, **options)
     covered.assumptions.update(model=args.model.name, parameters=dict(result.parameters),
-                               study_id=args.studie)
+                               study_id=args.studie,
+                               part_fingerprint=part_fingerprint(document),
+                               evaluated_target=(target["kind"] if target else
+                                                 "points" if points else "faces"))
+    convergence = None
+    if args.konvergence:
+        convergence = (check_volume_convergence(geo, placed, fine=covered, **options)
+                       if target is not None else check_convergence(geo, placed, **options))
     print("\n".join(covered.summary()))
     print("Předpoklady:", covered.assumptions)
-    if args.konvergence:
-        print(check_convergence(geo, placed, **options).text)
+    if convergence is not None and target is None:
+        print(convergence.text)
     if args.csv:
         try:
             print("CSV:", covered.write_csv(args.csv))

@@ -59,6 +59,7 @@ from skodacad.ndt.study import (
 )
 from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
+from skodacad.ndt.volume_coverage import VolumeCoverageMap, compute_volume
 from skodacad.ndt.welds import TargetError, TargetVolume, normalize_target, resolve_target
 from skodacad.picking import (
     edge_selector,
@@ -152,7 +153,7 @@ class ModelSession:
         self.ndt_scan_index = 0
         self._placement_cache: tuple[Any, ...] | None = None
         self._geometry_cache: tuple[Any, Any] | None = None
-        self._coverage_cache: tuple[Any, CoverageMap] | None = None
+        self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
@@ -1169,7 +1170,7 @@ class ModelSession:
         return (self.result, repr(request), repr(record))
 
     @property
-    def ndt_coverage(self) -> CoverageMap | None:
+    def ndt_coverage(self) -> CoverageMap | VolumeCoverageMap | None:
         """Mapa platí pouze pro původní díl, zadání studie a přiložení sondy."""
         if self.computing or self._coverage_cache is None:
             return None
@@ -1187,7 +1188,7 @@ class ModelSession:
     def clear_ndt_coverage(self) -> None:
         self._coverage_cache = None
 
-    def _coverage_inputs(self) -> tuple[PartGeometry, Placement, list[Any], float]:
+    def _coverage_inputs(self) -> tuple[PartGeometry, Placement, list[Any] | dict, float]:
         self._require_computed("výpočet pokrytí")
         placed = self.ndt_placement
         if placed is None or self.ndt_placement_request is None:
@@ -1197,9 +1198,9 @@ class ModelSession:
         state = next(r.state for r in self.ndt_studies if r.id == study_id)
         if record["method"] != "UT" or state != "ok":
             raise DocumentError("Pokrytí potřebuje platnou UT studii s kontrolovanou oblastí.")
-        if (record.get("target") or {}).get("kind") != "faces":
-            raise DocumentError("Objemový cíl je uložený; výpočet jeho pokrytí přidá krok 07B.")
         geo = self._ndt_geometry()
+        if (record.get("target") or {}).get("kind") in ("volume", "weld"):
+            return geo, placed, record["target"], angle
         faces, problems = geo.faces_of(record.get("target"))
         if problems or not faces:
             raise DocumentError("Kontrolovanou oblast nejde určit: " + " ".join(problems))
@@ -1207,15 +1208,19 @@ class ModelSession:
 
     def compute_ndt_coverage(self, mode: str = "face", step_mm: float = 5.0,
                              bounces: int | None = None, spread_deg: float = 0.0,
-                             length_mm: float = 50.0) -> CoverageMap:
+                             length_mm: float = 50.0, *, target_step_mm: float | None = None,
+                             tolerance_mm: float | None = None) -> CoverageMap | VolumeCoverageMap:
         """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
-        geo, placed, faces, angle = self._coverage_inputs()
+        geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
         self.clear_ndt_coverage()
         try:
-            result = compute_coverage(geo, placed, faces=faces, mode=mode,
-                                      scan_step=step_mm, target_step=step_mm, angle_deg=angle,
-                                      bounces=bounces, spread_deg=spread_deg, length_mm=length_mm)
+            compute = compute_volume if isinstance(target, dict) else compute_coverage
+            inputs = {"target": target} if isinstance(target, dict) else {"faces": target}
+            result = compute(geo, placed, **inputs, mode=mode, scan_step=step_mm,
+                             target_step=step_mm if target_step_mm is None else target_step_mm,
+                             tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
+                             spread_deg=spread_deg, length_mm=length_mm)
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
             raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
         result.assumptions.update(study_id=self.ndt_placement_request[0],
@@ -1224,7 +1229,7 @@ class ModelSession:
         self._coverage_cache = (key, result)
         return result
 
-    def start_ndt_coverage(self, **options: Any) -> CoverageMap | None:
+    def start_ndt_coverage(self, **options: Any) -> CoverageMap | VolumeCoverageMap | None:
         """Okno použije existující pomocný proces: zůstává živé a výpočet jde zastavit."""
         self._coverage_inputs()
         if self._runner is None:
@@ -1239,7 +1244,7 @@ class ModelSession:
 
     def visible_ndt_coverage(self) -> tuple[list, list, list]:
         result = self.ndt_coverage
-        if result is None:
+        if result is None or isinstance(result, VolumeCoverageMap):
             return [], [], []
         nodes, triangles, colors = result.mesh()
         plane = self.section_plane
