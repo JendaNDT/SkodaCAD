@@ -34,6 +34,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
         self.probe_drag_enabled = False
+        self.target = None  # (objem náhledu cíle, objem zadaného tvaru nebo None)
 
     def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
@@ -44,6 +45,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.coverage_map = None
         self.probe = None
         self.beam = []
+        self.target = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -72,6 +74,12 @@ class FakeViewer(QtWidgets.QWidget):
     def hide_probe(self):
         self.probe = None
         self.beam = []
+
+    def show_target(self, body, outline=None):
+        self.target = (body.volume, outline.volume if outline is not None else None)
+
+    def hide_target(self):
+        self.target = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -204,6 +212,178 @@ def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_w
     ndt_window._refresh_all()
     assert "objem 2000 mm³" in ndt_window.ndt_panel.details.text()
     assert not ndt_window.ndt_panel.coverage_action.isEnabled()
+
+
+# --- 07C: editor a náhled cílového objemu ------------------------------------------------
+
+
+@pytest.fixture
+def weld_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "cilove_objemy" / "tupy_svar_objem.json",
+                        template=True)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_volume_examples_menu_and_target_preview(window, slot_errors):
+    from PySide6.QtWidgets import QMenu
+
+    menu = next(m for m in window.findChildren(QMenu) if m.title() == "NDT – cílové objemy")
+    labels = [a.text() for a in menu.actions()]
+    assert labels == ["NDT 07A – Objem tupého svaru V", "NDT 07A – Objemy koutových svarů"]
+    window.session.dirty = False
+    action(window, labels[0]).trigger()
+    assert "svaru V" in window.windowTitle()
+    assert window.viewer.target is None  # studie zatím není vybraná
+    window.ndt_panel.select("s1")
+    volume, outline = window.viewer.target
+    assert volume == pytest.approx(14_613.843876, abs=1e-5) and outline is None
+    assert "tupý svar V, objem 14613.8 mm³" in window.ndt_panel.details.text()
+    window.ndt_panel.select(None)
+    assert window.viewer.target is None
+    assert slot_errors == []
+
+
+def test_target_dialog_loads_example_and_unchanged_ok_keeps_target(weld_window, monkeypatch,
+                                                                   slot_errors):
+    import copy
+
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    w = weld_window
+    w.ndt_panel.select("s1")
+    before = copy.deepcopy(w.session.ndt_study("s1")["target"])
+    seen = {}
+
+    def run(self, dialog):
+        seen.update(kind=dialog.kind.currentText(), axis=dialog.axis.currentText(),
+                    across=dialog.across.currentText(), height=dialog.height_label.text(),
+                    thickness=dialog.dimensions["thickness_mm"].text(),
+                    fillet=dialog.dimensions["leg_across_mm"].isVisibleTo(dialog),
+                    volume=dialog.volume_label.text(), edge=dialog.edge_button.isEnabled(),
+                    ok=dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled(),
+                    profiles=len(dialog.preview.profiles))
+        dialog.accept()
+        seen["check"] = dialog.check_label.text()
+        return dialog.result()
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", run)
+    action(w, "Cílový objem…").trigger()
+    assert seen.pop("check").startswith("V dílu v pořádku: účinný objem v materiálu "
+                                        "14 613.844 mm³")
+    assert seen == {"kind": "Tupý svar V", "axis": "+Y", "across": "+X", "height": "+Z",
+                    "thickness": "12", "fillet": False,
+                    "volume": "Zadaný objem (průřez × délka): <b>14 613.844 mm³</b>",
+                    "edge": False, "ok": True, "profiles": 3}
+    assert w.session.ndt_study("s1")["target"] == before
+    assert not w.session.dirty  # stejné zadání = žádná změna, žádný krok Zpět
+    assert slot_errors == []
+
+
+def test_target_dialog_keeps_invalid_weld_open_and_rejects_bad_numbers(weld_window,
+                                                                       monkeypatch):
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    w = weld_window
+    w.ndt_panel.select("s1")
+    before = w.session.ndt_study("s1")["target"]
+    seen = {}
+
+    def run(self, dialog):
+        dialog.dimensions["thickness_mm"].setText("20")
+        seen["volume"] = dialog.volume_label.text()  # ze vzorce jde spočítat …
+        dialog.accept()  # … ale v dílu se svar nevejde → dialog zůstane otevřený
+        seen.update(result=dialog.result(), check=dialog.check_label.text())
+        dialog.dimensions["thickness_mm"].setText("dvanáct")
+        seen.update(error=dialog.error_label.text(), profiles=dialog.preview.profiles,
+                    ok=dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled())
+        dialog.dimensions["thickness_mm"].setText("12,0")  # desetinná čárka platí
+        seen["fixed"] = dialog.error_label.text()
+        return 0
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", run)
+    w.ndt_panel.volume_action.trigger()
+    assert "mm³" in seen["volume"] and seen["result"] == 0
+    assert "Zadaný svar není celý v materiálu dílu – chybí" in seen["check"]
+    assert "„Tloušťka plechu [mm]“ musí být číslo" in seen["error"]
+    assert seen["profiles"] == [] and not seen["ok"] and seen["fixed"] == ""
+    assert w.session.ndt_study("s1")["target"] == before
+
+
+def test_target_dialog_replaces_faces_with_prism_and_undo(ndt_window, monkeypatch, slot_errors):
+    w = ndt_window
+    panel = w.ndt_panel
+    panel.select("s1")
+    faces = w.session.ndt_study("s1")["target"]
+    assert w.viewer.target is None
+
+    def run(self, dialog):
+        assert dialog.kind.currentText() == "Tupý svar V"  # výchozí – nutno přepsat
+        dialog.kind.setCurrentIndex(dialog.kind.findData("volume"))
+        assert dialog.table.isVisibleTo(dialog)
+        assert not dialog.dimensions["thickness_mm"].isVisibleTo(dialog)
+        for field, value in zip(dialog.origin, ("-5", "-5", "5"), strict=True):
+            field.setText(value)
+        dialog.length.setText("10")
+        assert "1 000.000 mm³" in dialog.volume_label.text()  # 10 × 10 × 10 mm
+        dialog.add_vertex.click()
+        assert dialog.table.rowCount() == 5 and dialog.error_label.text() != ""
+        dialog.table.selectRow(4)
+        dialog.remove_vertex.click()
+        assert dialog.table.rowCount() == 4 and dialog.error_label.text() == ""
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", run)
+    panel.volume_action.trigger()
+    target = w.session.ndt_study("s1")["target"]
+    assert target["kind"] == "volume" and target["frame"]["origin"] == [-5.0, -5.0, 5.0]
+    assert "obecný hranol, objem 1000 mm³" in panel.details.text()
+    assert "nahradil" in w.statusBar().currentMessage()
+    assert w.viewer.target == (pytest.approx(1000), None)
+    action(w, "Zpět").trigger()
+    assert w.session.ndt_study("s1")["target"] == faces
+    assert w.viewer.target is None
+    assert slot_errors == []
+
+
+def test_target_dialog_edge_helper_and_custom_direction(ndt_window, monkeypatch, slot_errors):
+    w = ndt_window
+    session = w.session
+    custom = {"kind": "volume", "frame": {"origin": [0, 0, 5], "axis": [0.6, 0.8, 0],
+                                          "across": [0.8, -0.6, 0]},
+              "length_mm": 10, "profile_mm": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+    session.set_ndt_volume_target("s1", custom)
+    w._refresh_all()  # okno převezme nový přepočet (jinak by překreslení smazalo výběr)
+    before = session.ndt_study("s1")["target"]
+    w.ndt_panel.select("s1")
+    w.viewer.click([edge_at(session.result.part, 0, -50, 20)])  # horní hrana desky podél X
+    seen = {}
+
+    def run(self, dialog):
+        seen.update(axis=dialog.axis.currentText(), across=dialog.across.currentText(),
+                    height=dialog.height_label.text(), edge=dialog.edge_button.isEnabled())
+        if seen.get("second"):
+            dialog.edge_button.click()
+            seen.update(origin=[f.text() for f in dialog.origin], length=dialog.length.text(),
+                        edge_axis=dialog.axis.currentText(),
+                        edge_across=dialog.across.currentText())
+            return 0
+        dialog.accept()
+        return dialog.result()
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", run)
+    w.ndt_panel.volume_action.trigger()
+    assert seen == {"axis": "vlastní (0.6; 0.8; 0)", "across": "vlastní (0.8; -0.6; 0)",
+                    "height": "+Z", "edge": True}
+    assert session.ndt_study("s1")["target"] == before  # šikmý směr zůstal beze změny
+    seen["second"] = True
+    w.ndt_panel.volume_action.trigger()
+    assert seen["origin"] == ["-100", "-50", "20"] and seen["length"] == "200"
+    assert seen["edge_axis"] == "+X" and seen["edge_across"] in ("+Y", "−Y", "+Z", "−Z")
+    assert slot_errors == []
 
 
 def test_parameter_change_rebuilds(window):

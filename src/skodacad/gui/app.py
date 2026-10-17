@@ -338,6 +338,17 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT cílový objem (07A): {volume.volume_mm3:.6f} mm³; "
                  "načtení v okně a oddělení od pokrytí OK")
+    preview = session.ndt_target_preview("s1")
+    drawn = bool(getattr(window.viewer, "_target_objects", None)) if window.viewer.ready \
+        else True
+    image = user_dir() / "self-test-cil.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    if preview is None or abs(preview[0].volume - volume.volume_mm3) > 1e-4 or not drawn:
+        lines.append("✕ NDT náhled cílového objemu (07C): těleso se nespočítalo nebo "
+                     "nenakreslilo")
+        return False
+    lines.append(f"✓ NDT náhled cílového objemu (07C): průhledný svar ve 3D, snímek {image}: "
+                 f"{shown}")
     from skodacad.ndt.volume_coverage import VolumeCoverageMap
 
     lines.stream.write("  … NDT objemové pokrytí (07B)\n")
@@ -483,7 +494,8 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe"):
+    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe",
+                    "target"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)

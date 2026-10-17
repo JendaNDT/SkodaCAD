@@ -27,7 +27,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from build123d import Vector
+from build123d import GeomType, Vector
 
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
 from skodacad.export import export
@@ -60,7 +60,14 @@ from skodacad.ndt.study import (
 from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
 from skodacad.ndt.volume_coverage import VolumeCoverageMap, compute_volume
-from skodacad.ndt.welds import TargetError, TargetVolume, normalize_target, resolve_target
+from skodacad.ndt.welds import (
+    TargetError,
+    TargetVolume,
+    nominal_volume,
+    normalize_target,
+    resolve_target,
+    target_profiles,
+)
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -155,6 +162,7 @@ class ModelSession:
         self._geometry_cache: tuple[Any, Any] | None = None
         self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
+        self._target_preview_cache: tuple[Any, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -911,15 +919,77 @@ class ModelSession:
     def set_ndt_volume_target(self, study_id: str, target: dict[str, Any]) -> BuildResult:
         """Zadaný pomocný objem/svar; změní jen studii, s kontrolou geometrie a Zpět/Znovu."""
         self._study_index(study_id)
-        self._require_computed("nastavení cílového objemu")
+        saved = self.ndt_target_outline(target)[0]
+        self.check_ndt_volume_target(saved)
+        return self._edit_study(study_id, lambda study: study.update(target=saved), setup=True)
+
+    def check_ndt_volume_target(self, target: dict[str, Any]) -> TargetVolume:
+        """Cíl ověřený na aktuálním dílu **bez změny modelu** (editor: Zkontrolovat v dílu)."""
+        self._require_computed("kontrola cílového objemu")
         if self._computed != self.document:
             raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
         try:
-            saved = normalize_target(target)
-            resolve_target(self._final_part(), saved)
+            return resolve_target(self._final_part(), normalize_target(target))
         except TargetError as exc:
             raise DocumentError(str(exc)) from None
-        return self._edit_study(study_id, lambda study: study.update(target=saved), setup=True)
+
+    @staticmethod
+    def ndt_target_outline(target: dict[str, Any]) -> tuple[dict[str, Any], list, float]:
+        """Ověřené zadání cíle, polygony průřezu (napříč, výška) a zadaný objem ze vzorce
+        (průřez × délka) – bez geometrie dílu, pro nákres v editoru."""
+        try:
+            saved = normalize_target(target)
+            return saved, target_profiles(saved), nominal_volume(saved)
+        except TargetError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def ndt_frame_from_edge(self, shapes: list[Any]) -> dict[str, Any]:
+        """Rovná hrana vybraná ve 3D → počátek (začátek hrany), směr podél a délka [mm].
+        Směr se otočí ke kladným souřadnicím, aby nezávisel na orientaci hrany v OCCT."""
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if faces or len(edges) != 1 or edges[0].geom_type != GeomType.LINE:
+            raise DocumentError("Vyber ve 3D právě jednu rovnou hranu (podél svaru).")
+        start, end = edges[0].position_at(0), edges[0].position_at(1)
+        direction = end - start
+        length = direction.length
+        if length <= 1e-9:
+            raise DocumentError("Vybraná hrana má nulovou délku.")
+        components = (direction.X, direction.Y, direction.Z)
+        if components[max(range(3), key=lambda i: abs(components[i]))] < 0:
+            start, direction = end, -direction
+        axis = [_clean(v / length) for v in (direction.X, direction.Y, direction.Z)]
+        return {"origin": [_clean(v) for v in (start.X, start.Y, start.Z)], "axis": axis,
+                "length_mm": _clean(length)}
+
+    def ndt_target_preview(self, study_id: str | None) -> tuple[Any, Any] | None:
+        """Pomocné těleso objemového cíle studie pro náhled ve 3D: (účinný objem v materiálu,
+        zadaný tvar – jen když z dílu vyčnívá). Při řezu rozříznuté. None = není co ukázat."""
+        if study_id is None or self.document is None or self.result is None \
+                or self.result.part is None:
+            return None
+        try:
+            target = (self.ndt_study(study_id).get("target") or {})
+        except DocumentError:
+            return None
+        if target.get("kind") not in ("volume", "weld"):
+            return None
+        plane = self.section_plane
+        key = (id(self.result.part), repr(target), plane)
+        if self._target_preview_cache is not None and self._target_preview_cache[0] == key:
+            return self._target_preview_cache[1]
+        try:
+            resolved = resolve_target(self.result.part, target)
+        except TargetError:
+            preview = None
+        else:
+            outside = resolved.outside_volume_mm3 > max(1e-6, resolved.volume_mm3 * 1e-8)
+            shapes = [_cut_preview(shape, plane)
+                      for shape in (resolved.shape, resolved.requested if outside else None)]
+            preview = None if shapes[0] is None else (shapes[0], shapes[1])
+        self._target_preview_cache = (key, preview)
+        return preview
 
     def ndt_target_volume(self, study_id: str) -> TargetVolume:
         """Účinné pomocné těleso platné studie (není to výsledek pokrytí ani výrobní díl)."""
@@ -1541,6 +1611,23 @@ def _is_flat(face: Any) -> bool:
     except SelectionError:
         return False
     return True
+
+
+def _clean(value: float) -> float:
+    """Číslo z geometrie bez šumu (−0,0 a 1e-15) – ať se v editoru neukazuje 4.999999999."""
+    value = round(value, 9)
+    return 0.0 if value == 0 else value
+
+
+def _cut_preview(shape: Any, plane: SectionPlane | None) -> Any:
+    """Náhled cíle při zapnutém řezu: rozříznutý; mimo řez celý, odříznutý = None."""
+    if shape is None or plane is None:
+        return shape
+    try:
+        return cut_section(shape, plane).part
+    except SectionError:
+        center = shape.center()
+        return shape if plane.side((center.X, center.Y, center.Z)) < 0 else None
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

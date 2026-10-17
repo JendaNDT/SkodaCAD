@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
         self._shown_coverage = None
         self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
+        self._shown_target: Any = None  # náhled cílového objemu NDT právě v prohlížeči
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
         self._view_actions: list[QAction] = []
@@ -511,6 +512,21 @@ class MainWindow(QMainWindow):
         else:
             self.viewer.show_coverage_map(*self.session.visible_ndt_coverage())
         self._shown_coverage = found
+        self._refresh_target()
+
+    def _refresh_target(self) -> None:
+        """Průhledný náhled cílového objemu (svaru) studie vybrané v panelu NDT; mapa pokrytí
+        ho nahradí. Session tvar pamatuje, takže se kreslí znovu jen po změně."""
+        study_id = self.ndt_panel.current_id()
+        preview = (None if self.session.ndt_coverage is not None
+                   else self.session.ndt_target_preview(study_id))
+        if preview is self._shown_target:
+            return
+        self._shown_target = preview
+        if preview is None:
+            self.viewer.hide_target()
+        else:
+            self.viewer.show_target(*preview)
 
     def show_ndt(self) -> None:
         self.ndt_dock.show()
@@ -596,13 +612,17 @@ class MainWindow(QMainWindow):
             examples_menu.addAction(
                 self._action(path.stem, lambda p=path: self.open_model(p, template=True))
             )
-        ndt_examples = _reference_parts(self.examples_dir / "ndt") if self.examples_dir else []
-        if ndt_examples:
-            ndt_menu = examples_menu.addMenu("NDT – referenční díly")
-            for label, path in ndt_examples:
-                ndt_menu.addAction(
-                    self._action(label, lambda p=path: self.open_model(p, template=True))
-                )
+        ndt_folder = self.examples_dir / "ndt" if self.examples_dir else None
+        for title, folder in (("NDT – referenční díly", ndt_folder),
+                              ("NDT – cílové objemy", ndt_folder / "cilove_objemy"
+                               if ndt_folder else None)):
+            ndt_examples = _reference_parts(folder) if folder is not None else []
+            if ndt_examples:
+                ndt_menu = examples_menu.addMenu(title)
+                for label, path in ndt_examples:
+                    ndt_menu.addAction(
+                        self._action(label, lambda p=path: self.open_model(p, template=True))
+                    )
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
         file_menu.addAction(self.save_action)
@@ -999,6 +1019,7 @@ class MainWindow(QMainWindow):
             self._shown_map = None  # prohlížeč mapu s dílem smazal
             self._shown_coverage = None
             self._shown_probe = None  # … i sondu
+            self._shown_target = None  # … i náhled cílového objemu
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
@@ -1071,6 +1092,7 @@ class MainWindow(QMainWindow):
         else:
             shapes = []
         self.viewer.highlight(shapes)
+        self._refresh_target()
 
     def _refresh_title(self) -> None:
         self.setWindowTitle(self.session.title)

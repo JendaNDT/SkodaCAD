@@ -35,10 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.target_dialog import TargetDialog
 from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
 from skodacad.ndt.coverage import PERCENT_NOTE
 from skodacad.ndt.devices import KINDS, Probe
 from skodacad.ndt.study import METHODS, StudyResult
+from skodacad.ndt.welds import WELD_TYPES
 
 if TYPE_CHECKING:
     from skodacad.gui.main_window import MainWindow
@@ -64,6 +66,9 @@ class NdtPanel(QWidget):
         self.rename_action = action("Přejmenovat…", self.rename)
         self.target_action = action("Oblast z výběru", self.set_target)
         self.target_action.setToolTip("Kontrolovaná oblast = plochy vybrané ve 3D")
+        self.volume_action = action("Cílový objem…", self.edit_volume_target)
+        self.volume_action.setToolTip("Svar nebo kontrolovaný objem uvnitř dílu (místo ploch); "
+                                      "díl se nemění")
         self.method_action = action("Metoda…", self.change_method)
         self.note_action = action("Poznámka…", self.edit_note)
         self.confirm_action = action("Potvrdit pro aktuální díl", self.confirm)
@@ -124,9 +129,10 @@ class NdtPanel(QWidget):
         self.studies.currentRowChanged.connect(lambda _row: self._row_changed())
         self.studies.itemDoubleClicked.connect(lambda _item: self.rename())
         layout.addWidget(self.studies)
-        for row in ((self.rename_action, self.target_action, self.method_action),
+        for row in ((self.target_action, self.volume_action),
+                    (self.rename_action, self.method_action, self.note_action),
                     (self.confirm_action, self.verify_action, self.unverify_action),
-                    (self.note_action, self.duplicate_action, self.delete_action)):
+                    (self.duplicate_action, self.delete_action)):
             buttons = QHBoxLayout()
             for item in row:
                 buttons.addWidget(window._tool_button(item))
@@ -315,7 +321,7 @@ class NdtPanel(QWidget):
             return
         record = self._record(study_id) or {}
         faces = (_count(result.faces, "plocha", "plochy", "ploch")
-                 if result.target_kind == "faces" else f"objem {result.volume_mm3:.6g} mm³")
+                 if result.target_kind == "faces" else _volume_text(record, result))
         lines = [f"<b>{result.name}</b> – {METHOD_LABELS.get(result.method, result.method)}",
                  f"Stav: <b>{result.mark} {result.label}</b> · kontrolovaná oblast: {faces}",
                  *result.messages, result.verified]
@@ -335,6 +341,7 @@ class NdtPanel(QWidget):
         self.new_action.setEnabled(ready)
         self.target_action.setEnabled(selected and has_part and info.faces > 0
                                       and info.edges == 0)
+        self.volume_action.setEnabled(selected and has_part)
         for action in (self.rename_action, self.method_action, self.note_action,
                        self.duplicate_action, self.delete_action):
             action.setEnabled(selected)
@@ -367,7 +374,8 @@ class NdtPanel(QWidget):
         self.export_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.coverage_box.setVisible(bool(ut or has_coverage or session._coverage_pending))
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
-            for action in (self.new_action, self.target_action, self.rename_action,
+            for action in (self.new_action, self.target_action, self.volume_action,
+                           self.rename_action,
                            self.method_action, self.note_action, self.duplicate_action,
                            self.delete_action, self.confirm_action, self.verify_action,
                            self.unverify_action, self.probe_action, self.place_action,
@@ -415,6 +423,29 @@ class NdtPanel(QWidget):
         picked, point = list(self.window._picked), self.window.viewer.picked_point
         self._apply("Kontrolovanou oblast nejde nastavit",
                     lambda: self.window.session.set_ndt_target(study_id, picked, point))
+
+    def edit_volume_target(self) -> None:
+        """Dialog cílového objemu (svar / hranol); OK = jeden krok Zpět, díl se nemění."""
+        study_id = self.current_id()
+        if study_id is None:
+            return
+        session = self.window.session
+        target = session.ndt_study(study_id).get("target") or {}
+        replaces_faces = bool(target.get("faces"))
+        try:
+            edge = session.ndt_frame_from_edge(list(self.window._picked))
+        except DocumentError:
+            edge = None  # pomůcka „Podle vybrané hrany“ zůstane vypnutá
+        dialog = TargetDialog(session, target if target.get("kind") in ("volume", "weld")
+                              else None, edge, self)
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        values = dialog.target()
+        if self._apply("Cílový objem nejde nastavit",
+                       lambda: session.set_ndt_volume_target(study_id, values)) is not None:
+            self.window.statusBar().showMessage(
+                "Cílový objem nastaven" + (" – plochy oblasti nahradil (Zpět je vrátí)."
+                                           if replaces_faces else "."), 8000)
 
     def change_method(self) -> None:
         study_id = self.current_id()
@@ -705,6 +736,17 @@ class ProbeDialog(QDialog):
                 **{key: self.fields[key].value() for key, _label, kinds in self.FIELDS
                    if kinds is None or kind in kinds},
                 "bounces": self.bounces.value()}
+
+
+def _volume_text(record: dict, result: StudyResult) -> str:
+    """Popis objemového cíle: druh a objem v materiálu (zadaný, když se liší)."""
+    target = record.get("target") or {}
+    kind = WELD_TYPES.get(target.get("weld_type"), "svar") if target.get("kind") == "weld" \
+        else "obecný hranol"
+    text = f"{kind}, objem {result.volume_mm3:.6g} mm³"
+    if abs(result.requested_volume_mm3 - result.volume_mm3) > 1e-6 * max(1.0, result.volume_mm3):
+        text += f" (zadaný {result.requested_volume_mm3:.6g} mm³)"
+    return text
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

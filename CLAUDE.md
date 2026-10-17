@@ -118,6 +118,11 @@
   `shift_ndt_probe`, `scan_ndt_line`, `select_ndt_scan_index`), v okně přepínač *Jezdit sondou
   myší* + `Alt`+tažení a `Alt`+kolečko ve 3D prohlížeči, krokování **◀ / ▶** a tlačítko *Projet
   čáru* s posuvníkem. Formát se nemění (verze 15).
+- (17. 10. 2026, schváleno) **NDT etapa 07C – cílový objem v okně** (návrh
+  `docs/ndt/14-navrh-etapa-07c.md`, doporučení 1–4): číselný editor svaru/hranolu se směry
+  jen ±X/±Y/±Z, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok
+  zapnutou ve výchozím stavu, výchozí kroky pojezd 5 mm / cíl 4 mm, barevný povrch cíle
+  a tlačítko *Průřez svarem*. Výpočet 07B ani formát (16) se nemění.
 
 ## Architektura (`src/skodacad/`)
 
@@ -147,8 +152,12 @@ nikdy nezaměňovat za `CoverageMap.areas`; ověřuje se součet vah bez přenor
 Neurčený vnitřní bod ponechá známý objem nejistý. Zásahy sdílí Etapu 06, výsledek
 je přenosný pomocným procesem, CLI/CSV a citlivost mají úplná upozornění UT.
 Pojezd `line` s nulovým rozevřením objem odmítne (osy nevymezují kladný objem).
-07C (editor/náhled) má návrh `docs/ndt/14-navrh-etapa-07c.md`, zatím neschválený ani
-implementovaný; do schválení objemový výpočet v panelu
+07C (schváleno 17. 10. 2026 včetně doporučení 1–4, návrh `docs/ndt/14-navrh-etapa-07c.md`,
+implementace po krocích ve vývojové větvi). 07C.1 hotovo: `gui/target_dialog.py` (editor
+svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová, nákres průřezu Qt),
+`ModelSession.check_ndt_volume_target` (bez změny modelu), `ndt_target_outline`,
+`ndt_frame_from_edge`, `ndt_target_preview` (v řezu rozříznutý), podnabídka *NDT – cílové
+objemy*. Do 07C.2 objemový výpočet v panelu
 nepovolovat a `visible_ndt_coverage` pro objem vrací prázdnou kresbu. Formát zůstává 16.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
@@ -188,6 +197,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
+| `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
@@ -503,6 +513,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   začíná 1. úsek v materiálu na `0.0 <= EDGE_TOL`, není potřeba bod odrazu posouvat. Při
   nejistém dopadu (`THROUGH_EDGE`, `GRAZING`) nemá odraz jednoznačnou normálu a dráha skončí
   se `STOPPED_UNCERTAIN`.
+
+## Známé pasti (NDT cílový objem v okně)
+
+- Náhled cíle (`viewer.show_target`) se kreslí ve vrstvě **`Topmost`**: svar je uvnitř
+  neprůhledného dílu a jeho stěny (převýšení, řez) splývají se stěnami dílu – v běžné vrstvě
+  nebyl na snímku vidět. Prohlížeč ho maže s dílem (`show_part`) → `_shown_target = None`.
+- `QComboBox.findData` **nenajde položku podle n-tice** (data jsou PyObject) – vrátí −1 a
+  nabídka by tiše zůstala na první položce. Data položek nabídek jsou proto text
+  (`target_dialog.KINDS`, klíče směrů `"+X"` …); šikmý směr ze souboru je položka navíc.
+- Čísla v dialogu jsou `QLineEdit` (ne `QDoubleSpinBox`), aby se nezaokrouhlila na pevný
+  počet desetinných míst – nezměněné *OK* musí vrátit identický JSON (bez kroku Zpět).
+- Dialog *OK* nejdřív zavolá `check_ndt_volume_target`; když jádro cíl odmítne, dialog
+  zůstane otevřený s chybou (`TargetDialog.accept`).
 
 ## Známé pasti (NDT – závazné vymezení UT)
 

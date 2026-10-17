@@ -1,6 +1,7 @@
 # NDT – návrh etapy 07C: cílový objem a jeho pokrytí v okně
 
-Stav: **návrh 17. 10. 2026 – čeká na schválení autorem; nic z něj zatím není implementované.**
+Stav: **schváleno autorem 17. 10. 2026 včetně doporučení 1–4 z oddílu 10; implementace po
+krocích ve vývojové větvi – 07C.1 (editor a náhled cíle) hotovo, 07C.2 a 07C.3 následují.**
 Výchozí stav: `main`, commit `35f1507` ([PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17),
 sloučené 07B). Navazuje na [Etapu 07 a krok 07A](12-navrh-etapa-07.md),
 [07B – objemové pokrytí](13-navrh-etapa-07b.md), [Etapu 06](11-navrh-etapa-06.md)
@@ -126,6 +127,9 @@ Kontrolu dělá táž funkce jako při načtení souboru (`welds.normalize_targe
 - U objemového cíle dnes ve 3D není vidět nic (zvýraznění oblasti umí jen plochy);
   náhled to doplní. Na rozdíl od zvýraznění ploch se kreslí **i s přiloženou sondou** –
   je průhledný, takže sondu ani dráhu paprsku nepřekryje.
+- Kreslí se **navrch** (vrstva `Topmost`, jako zvýraznění): cíl leží uvnitř neprůhledného
+  dílu a jeho stěny splývají se stěnami dílu, takže by jinak nebyl vidět (zjištěno snímkem
+  při 07C.1).
   Když je zobrazená mapa pokrytí, náhled se skryje (mapa ho nahradí).
 - Při zapnutém řezu se rozřízne i náhled (`section.cut` na tělese cíle).
 - Tvar pro kreslení dá `ModelSession.ndt_target_preview(study_id)`; prohlížeč ho jen

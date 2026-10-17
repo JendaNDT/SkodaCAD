@@ -15,6 +15,11 @@ ALGORITHM = "ndt-cilovy-objem 1"
 MAX_VERTICES = 256
 MAX_SIZE = 1_000_000.0  # ochrana geometrického jádra před extrémními vstupy [mm]
 EPS = 1e-7
+# Směry, které nabízí editor cíle (07C); jiný uložený směr zůstane beze změny.
+DIRECTIONS: dict[str, tuple[float, float, float]] = {
+    "+X": (1.0, 0.0, 0.0), "-X": (-1.0, 0.0, 0.0), "+Y": (0.0, 1.0, 0.0),
+    "-Y": (0.0, -1.0, 0.0), "+Z": (0.0, 0.0, 1.0), "-Z": (0.0, 0.0, -1.0)}
+WELD_TYPES = {"butt_v": "tupý svar V", "fillet": "koutový svar"}
 DIMENSION_LABELS = {
     "leg_across_mm": "Rameno svaru napříč", "leg_height_mm": "Rameno svaru na výšku",
     "thickness_mm": "Tloušťka plechu", "angle_deg": "Rozevření úkosu",
@@ -182,6 +187,43 @@ def _weld_profiles(target: dict) -> list[list[list[float]]]:
                 profile.pop()
             result.append(profile)
     return result
+
+
+def direction_name(vector: Any) -> str | None:
+    """„+X“ … pro směr rovnoběžný s osou souřadnic, jinak None (šikmý směr ze souboru)."""
+    length = math.hypot(*vector)
+    if length <= EPS:
+        return None
+    unit = [v / length for v in vector]
+    return next((name for name, axis in DIRECTIONS.items()
+                 if all(abs(a - b) <= 1e-9 for a, b in zip(unit, axis, strict=True))), None)
+
+
+def height_direction(axis: Any, across: Any) -> tuple[float, float, float]:
+    """Směr výšky průřezu = napříč × osa (pravidlo 07A)."""
+    return (across[1] * axis[2] - across[2] * axis[1],
+            across[2] * axis[0] - across[0] * axis[2],
+            across[0] * axis[1] - across[1] * axis[0])
+
+
+def target_profiles(target: dict[str, Any]) -> list[list[list[float]]]:
+    """Polygony průřezu (napříč, výška) ověřeného cíle – svar může mít tělo, převýšení
+    a podkořen jako samostatné polygony, které se dotýkají jen hranou."""
+    saved = normalize_target(target)
+    return [saved["profile_mm"]] if saved["kind"] == "volume" else _weld_profiles(saved)
+
+
+def section_area(profiles: list[list[list[float]]]) -> float:
+    """Obsah průřezu [mm²] – Gaussův vzorec pro každý polygon."""
+    return math.fsum(abs(math.fsum(a[0] * b[1] - a[1] * b[0]
+                                   for a, b in zip(p, p[1:] + p[:1], strict=True))) / 2
+                     for p in profiles)
+
+
+def nominal_volume(target: dict[str, Any]) -> float:
+    """Zadaný objem ze vzorce: průřez × délka [mm³] (bez průniku s dílem)."""
+    saved = normalize_target(target)
+    return section_area(target_profiles(saved)) * saved["length_mm"]
 
 
 @dataclass(frozen=True)
