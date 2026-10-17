@@ -203,7 +203,7 @@ def test_scan_slider_clears_coverage_summary_and_export(ndt_window, slot_errors)
     assert slot_errors == []
 
 
-def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_window):
+def test_volume_target_panel_loads_and_needs_placed_probe_for_coverage(ndt_window):
     from test_ndt_volume_session import target
 
     session = ndt_window.session
@@ -211,7 +211,60 @@ def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_w
     ndt_window.ndt_panel.select("s1")
     ndt_window._refresh_all()
     assert "objem 2000 mm³" in ndt_window.ndt_panel.details.text()
-    assert not ndt_window.ndt_panel.coverage_action.isEnabled()
+    assert not ndt_window.ndt_panel.coverage_action.isEnabled()  # sonda není přiložená
+    assert "po přiložení sondy" in ndt_window.ndt_panel.coverage_estimate.text()
+
+
+def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_errors):
+    from skodacad.ndt import UT_DISCLAIMER
+    from skodacad.ndt.devices import Probe
+    from test_ndt_volume_session import target
+
+    w = ndt_window
+    session, panel = w.session, w.ndt_panel
+    form = panel.coverage_form
+    panel.select("s1")
+    assert not form.isRowVisible(panel.coverage_target_step)  # plochy: jen krok výpočtu
+    assert form.labelForField(panel.coverage_step).text() == "Krok výpočtu [mm]:"
+    session.set_ndt_volume_target("s1", target())
+    session.set_ndt_device("s1", Probe.straight(10))
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped], (0, 0, 20))
+    w._refresh_all()
+    assert form.isRowVisible(panel.coverage_target_step)
+    assert form.labelForField(panel.coverage_step).text() == "Krok pojezdu [mm]:"
+    assert (panel.coverage_step.value(), panel.coverage_target_step.value()) == (5, 4)
+    assert panel.coverage_convergence.isChecked() and panel.coverage_tolerance_auto.isChecked()
+    assert not panel.coverage_tolerance.isEnabled()
+    assert panel.coverage_estimate.text().startswith("Odhad: 45 buněk cíle, ")
+    assert "hrubší běh" in panel.coverage_estimate.text()
+    assert panel.coverage_action.isEnabled()
+    panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("line"))
+    assert not panel.coverage_action.isEnabled()  # čára bez rozevření nevymezuje objem
+    assert "nevymezuje pokrytý objem" in panel.coverage_estimate.text()
+    panel.coverage_spread.setValue(5)
+    assert panel.coverage_action.isEnabled()
+    panel.coverage_spread.setValue(0)
+    panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("face"))
+    panel.coverage_step.setValue(25)
+    panel.coverage_target_step.setValue(5)
+    assert panel.coverage_estimate.text().startswith("Odhad: 16 buněk cíle, 45 poloh sondy")
+    panel.coverage_tolerance_auto.setChecked(False)
+    assert panel.coverage_tolerance.isEnabled()
+    panel.coverage_tolerance.setValue(10)
+    panel.coverage_action.trigger()
+    result = session.ndt_coverage
+    assert result.assumptions["tolerance_mm"] == 10
+    assert result.assumptions["convergence"]["coarse_steps_mm"] == (50.0, 10.0)
+    text = panel.coverage_label.text()
+    assert text.startswith("<b>Geometricky pokryto ")
+    assert "citlivost na krok" in text and UT_DISCLAIMER in text
+    assert "Stav vnitřního bodu zastupuje objem jeho kusu buňky" in text
+    panel.coverage_target_step.setValue(0.5)  # 20 × 20 × 40 buněk – pořád v mezích
+    assert panel.coverage_action.isEnabled()
+    panel.coverage_step.setValue(0.5)  # pojezd 0,5 mm na desce 200 × 100 = příliš poloh
+    assert not panel.coverage_action.isEnabled()
+    assert "příliš mnoho poloh" in panel.coverage_estimate.text()
+    assert slot_errors == []
 
 
 # --- 07C: editor a náhled cílového objemu ------------------------------------------------

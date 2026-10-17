@@ -157,8 +157,11 @@ implementace po krocích ve vývojové větvi). 07C.1 hotovo: `gui/target_dialog
 svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová, nákres průřezu Qt),
 `ModelSession.check_ndt_volume_target` (bez změny modelu), `ndt_target_outline`,
 `ndt_frame_from_edge`, `ndt_target_preview` (v řezu rozříznutý), podnabídka *NDT – cílové
-objemy*. Do 07C.2 objemový výpočet v panelu
-nepovolovat a `visible_ndt_coverage` pro objem vrací prázdnou kresbu. Formát zůstává 16.
+objemy*. 07C.2 hotovo: panel zná krok cíle, toleranci (automaticky / číslo) a citlivost na
+krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad před spuštěním
+`ndt_coverage_estimate` se stejnými ochranami jako 07B; nepovedené porovnání nechá jemný
+výsledek a napíše „nepodařilo ověřit“. Do 07C.3 `visible_ndt_coverage` pro objem vrací
+prázdnou kresbu. Formát zůstává 16.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.

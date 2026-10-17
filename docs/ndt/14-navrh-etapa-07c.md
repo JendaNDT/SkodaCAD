@@ -1,7 +1,8 @@
 # NDT – návrh etapy 07C: cílový objem a jeho pokrytí v okně
 
 Stav: **schváleno autorem 17. 10. 2026 včetně doporučení 1–4 z oddílu 10; implementace po
-krocích ve vývojové větvi – 07C.1 (editor a náhled cíle) hotovo, 07C.2 a 07C.3 následují.**
+krocích ve vývojové větvi – 07C.1 (editor a náhled cíle) a 07C.2 (výpočet v panelu) hotovo,
+07C.3 následuje.**
 Výchozí stav: `main`, commit `35f1507` ([PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17),
 sloučené 07B). Navazuje na [Etapu 07 a krok 07A](12-navrh-etapa-07.md),
 [07B – objemové pokrytí](13-navrh-etapa-07b.md), [Etapu 06](11-navrh-etapa-06.md)

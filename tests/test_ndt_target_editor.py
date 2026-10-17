@@ -116,3 +116,103 @@ def test_preview_outline_only_when_prism_sticks_out_and_none_for_faces():
     assert body.volume == pytest.approx(10 * 10 * 20)  # jen z = 10 … 20 je materiál
     assert outline.volume == pytest.approx(10 * 30 * 20)
     assert session.ndt_target_preview("neni") is None
+
+
+# --- 07C.2: odhad, citlivost na krok a výpočet na pozadí -----------------------------------
+
+
+def volume_session():
+    from test_ndt_session import coverage_session
+    from test_ndt_volume_session import target
+
+    session = coverage_session()  # deska, přímá sonda Ø10 přiložená shora uprostřed
+    session.set_ndt_volume_target("s1", target())  # hranol 10 × 10 × 20 mm = 2000 mm³
+    return session
+
+
+def test_estimate_counts_cells_and_positions_and_refuses_what_compute_would_refuse():
+    from skodacad.ndt.coverage import _scan_positions
+
+    session = volume_session()
+    estimate = session.ndt_coverage_estimate(step_mm=25, target_step_mm=5)
+    positions = len(_scan_positions(session.ndt_placement, "face", 25, 50))
+    assert (estimate.cells, estimate.positions, estimate.ok) == (2 * 2 * 4, positions, True)
+    assert estimate.legs == session.ndt_beam.bounces + 1
+    assert estimate.text == f"Odhad: 16 buněk cíle, {positions} poloh sondy."
+    assert "hrubší běh" in session.ndt_coverage_estimate(step_mm=25, target_step_mm=5,
+                                                         convergence=True).text
+    fine = session.ndt_coverage_estimate(step_mm=25, target_step_mm=0.3)
+    assert not fine.ok and fine.cells == 34 * 34 * 67 and "příliš jemný" in fine.text
+    with pytest.raises(DocumentError, match="příliš jemná"):  # stejná ochrana jako výpočet
+        session.compute_ndt_coverage(step_mm=25, target_step_mm=0.3)
+    crowded = session.ndt_coverage_estimate(step_mm=0.5, target_step_mm=5)
+    assert not crowded.ok and "příliš mnoho poloh" in crowded.text
+    line = session.ndt_coverage_estimate(mode="line", step_mm=5, target_step_mm=5)
+    assert not line.ok and "nevymezuje pokrytý objem" in line.text
+    assert session.ndt_coverage_estimate(mode="line", spread_deg=5, step_mm=5,
+                                         target_step_mm=5).ok
+
+
+def test_estimate_is_only_for_volume_targets():
+    from test_ndt_session import coverage_session
+
+    with pytest.raises(DocumentError, match="jen pro objemový cíl"):
+        coverage_session().ndt_coverage_estimate()
+
+
+def test_session_convergence_matches_direct_comparison_and_is_reported():
+    from skodacad.ndt.volume_coverage import check_volume_convergence
+
+    session = volume_session()
+    plain = session.compute_ndt_coverage(step_mm=25, target_step_mm=5)
+    assert "Citlivost na krok neověřena." in plain.summary()
+    result = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, convergence=True)
+    found = result.assumptions["convergence"]
+    assert found["fine_steps_mm"] == (25.0, 5.0) and found["coarse_steps_mm"] == (50.0, 10.0)
+    assert found["tolerance_mm"] == pytest.approx(25 * math.sqrt(0.5))  # z jemného běhu
+    direct = check_volume_convergence(
+        session._ndt_geometry(), session.ndt_placement, target=session.ndt_study("s1")["target"],
+        mode="face", scan_step=25, target_step=5, angle_deg=session.ndt_placement_request[2])
+    assert found["delta_pp"] == pytest.approx(direct.delta_pct)
+    assert found["fine_pct"] == pytest.approx(direct.fine)
+    assert any(line.startswith("Citlivost na krok: největší rozdíl")
+               for line in result.summary())
+    assert result.total_volume == pytest.approx(2000)
+    assert math.fsum(result.volume(s) for s in ("covered", "uncovered", "uncertain")) \
+        == pytest.approx(2000)
+
+
+def test_failed_comparison_keeps_fine_result_but_never_claims_stability(monkeypatch):
+    import skodacad.session as module
+    from skodacad.ndt.coverage import CoverageError
+
+    def broken(*args, **kwargs):
+        raise CoverageError("hrubší běh selhal")
+
+    monkeypatch.setattr(module, "check_volume_convergence", broken)
+    result = volume_session().compute_ndt_coverage(step_mm=25, target_step_mm=5,
+                                                   convergence=True)
+    assert "convergence" not in result.assumptions
+    assert "Citlivost na krok se nepodařilo ověřit: hrubší běh selhal" in result.summary()
+
+
+def test_background_coverage_with_convergence_matches_synchronous():
+    from skodacad.worker import BackgroundRebuilder
+    from test_ndt_session import coverage_session
+    from test_ndt_volume_session import target
+
+    expected = volume_session().compute_ndt_coverage(step_mm=25, target_step_mm=5,
+                                                     convergence=True)
+    runner = BackgroundRebuilder()
+    try:
+        session = coverage_session(runner)
+        session.set_ndt_volume_target("s1", target())
+        assert session.wait(30)
+        session.start_ndt_coverage(step_mm=25, target_step_mm=5, convergence=True)
+        assert session.coverage_pending and session.ndt_coverage is None
+        assert session.wait(60), session.failure
+        assert not session.coverage_pending
+        found = session.ndt_coverage.assumptions["convergence"]
+        assert found == expected.assumptions["convergence"]
+    finally:
+        runner.close()

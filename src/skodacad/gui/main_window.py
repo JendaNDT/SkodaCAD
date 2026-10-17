@@ -1069,10 +1069,17 @@ class MainWindow(QMainWindow):
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
             widget.setVisible(shown)
         self.stop_action.setEnabled(computing)
+        if self.session.coverage_pending:
+            self.ndt_panel._show_coverage()  # uplynulý čas výpočtu pokrytí v panelu
 
     def stop_rebuild(self) -> None:
+        coverage = self.session.coverage_pending
         if self.session.cancel():
             self._pending_shown = False
+            if coverage:  # zastavený výpočet pokrytí – model se neměnil
+                self._refresh_all()
+                self.statusBar().showMessage("Výpočet mapy pokrytí zastaven.", 10000)
+                return
             if self.session.map_visible and self.session.thickness_map is None:
                 self.session.map_visible = False  # nedopočítaná mapa se vypne
             self._reload_all()

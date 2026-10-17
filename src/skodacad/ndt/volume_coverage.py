@@ -170,6 +170,19 @@ def _check_volume(samples: list[VolumeSample], expected: float) -> float:
     return error
 
 
+def grid_extent(target: dict, step: float) -> tuple[Point, Point, tuple[int, int, int]]:
+    """Místní rozsah mřížky cíle (napříč, výška, podélně) a počty buněk v osách – bez
+    geometrie, takže jde spočítat i jako odhad před výpočtem."""
+    target = normalize_target(target)
+    profiles = [target["profile_mm"]] if target["kind"] == "volume" else _weld_profiles(target)
+    vertices = [v for profile in profiles for v in profile]
+    low = (min(v[0] for v in vertices), min(v[1] for v in vertices), 0.0)
+    high = (max(v[0] for v in vertices), max(v[1] for v in vertices), target["length_mm"])
+    counts = tuple(max(1, math.ceil((b - a) / step - 1e-12))
+                   for a, b in zip(low, high, strict=True))
+    return low, high, counts
+
+
 def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
                    legs: int) -> tuple[list[VolumeSample], Any, dict]:
     from build123d import Align, Box, Location, Plane
@@ -177,12 +190,7 @@ def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
     f = target["frame"]
     # Pravotočivá rovina: její Y = -výška, Z = axis. V uložených mezích je výška kladná.
     plane = Plane(origin=f["origin"], x_dir=f["across"], z_dir=f["axis"])
-    profiles = [target["profile_mm"]] if target["kind"] == "volume" else _weld_profiles(target)
-    vertices = [v for profile in profiles for v in profile]
-    low = (min(v[0] for v in vertices), min(v[1] for v in vertices), 0.0)
-    high = (max(v[0] for v in vertices), max(v[1] for v in vertices), target["length_mm"])
-    counts = tuple(max(1, math.ceil((b - a) / step - 1e-12))
-                   for a, b in zip(low, high, strict=True))
+    low, high, counts = grid_extent(target, step)
     count = math.prod(counts)
     if count > MAX_CELLS or count * positions * legs > MAX_COMPARISONS:
         raise CoverageError("Objemová mřížka je příliš jemná – zvětši krok cíle nebo pojezdu.")

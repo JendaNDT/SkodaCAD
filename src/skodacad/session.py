@@ -42,7 +42,13 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
-from skodacad.ndt.coverage import CoverageMap
+from skodacad.ndt.coverage import (
+    MAX_COMPARISONS,
+    MAX_POSITIONS,
+    CoverageError,
+    CoverageMap,
+    _scan_positions,
+)
 from skodacad.ndt.coverage import compute as compute_coverage
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
@@ -59,7 +65,13 @@ from skodacad.ndt.study import (
 )
 from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
-from skodacad.ndt.volume_coverage import VolumeCoverageMap, compute_volume
+from skodacad.ndt.volume_coverage import (
+    MAX_CELLS,
+    VolumeCoverageMap,
+    check_volume_convergence,
+    compute_volume,
+    grid_extent,
+)
 from skodacad.ndt.welds import (
     TargetError,
     TargetVolume,
@@ -1279,25 +1291,70 @@ class ModelSession:
     def compute_ndt_coverage(self, mode: str = "face", step_mm: float = 5.0,
                              bounces: int | None = None, spread_deg: float = 0.0,
                              length_mm: float = 50.0, *, target_step_mm: float | None = None,
-                             tolerance_mm: float | None = None) -> CoverageMap | VolumeCoverageMap:
-        """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
+                             tolerance_mm: float | None = None,
+                             convergence: bool = False) -> CoverageMap | VolumeCoverageMap:
+        """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy).
+        ``convergence`` u objemu navíc porovná s hrubším během (dvojnásobné kroky)."""
         geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
         self.clear_ndt_coverage()
+        volume = isinstance(target, dict)
+        options = dict({"target": target} if volume else {"faces": target}, mode=mode,
+                       scan_step=step_mm,
+                       target_step=step_mm if target_step_mm is None else target_step_mm,
+                       tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
+                       spread_deg=spread_deg, length_mm=length_mm)
         try:
-            compute = compute_volume if isinstance(target, dict) else compute_coverage
-            inputs = {"target": target} if isinstance(target, dict) else {"faces": target}
-            result = compute(geo, placed, **inputs, mode=mode, scan_step=step_mm,
-                             target_step=step_mm if target_step_mm is None else target_step_mm,
-                             tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
-                             spread_deg=spread_deg, length_mm=length_mm)
+            result = (compute_volume if volume else compute_coverage)(geo, placed, **options)
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
             raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
+        if volume and convergence:
+            try:
+                check_volume_convergence(geo, placed, fine=result, **options)
+            except Exception as exc:  # noqa: BLE001 – jemný výsledek platí, stabilita ne
+                result.assumptions["convergence_text"] = (
+                    f"Citlivost na krok se nepodařilo ověřit: {exc}")
         result.assumptions.update(study_id=self.ndt_placement_request[0],
                                   part_fingerprint=part_fingerprint(self._require()),
                                   parameters=dict(self.result.parameters))
         self._coverage_cache = (key, result)
         return result
+
+    def ndt_coverage_estimate(self, mode: str = "face", step_mm: float = 5.0,
+                              spread_deg: float = 0.0, length_mm: float = 50.0, *,
+                              target_step_mm: float | None = None,
+                              convergence: bool = False) -> CoverageEstimate:
+        """Velikost objemového výpočtu ještě před spuštěním (bez geometrických průniků):
+        buňky cíle, polohy sondy a stejné ochrany jako výpočet 07B."""
+        _geo, placed, target, _angle = self._coverage_inputs()
+        if not isinstance(target, dict):
+            raise DocumentError("Odhad je jen pro objemový cíl.")
+        if mode == "line" and spread_deg == 0:
+            return CoverageEstimate(0, 0, 0, False, (
+                "Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. Pro objem zvol "
+                "pojezd po ploše; pro čáru lze samostatně vyhodnotit body nebo plochy."))
+        step = step_mm if target_step_mm is None else target_step_mm
+        try:
+            cells = math.prod(grid_extent(target, step)[2])
+            positions = len(_scan_positions(placed, mode, step_mm, length_mm))
+        except (CoverageError, TargetError) as exc:
+            return CoverageEstimate(0, 0, 0, False, str(exc))
+        beam = self.ndt_beam
+        legs = beam.bounces + 1 if beam is not None else 1
+        ok = (cells <= MAX_CELLS and positions <= MAX_POSITIONS
+              and cells * positions * legs <= MAX_COMPARISONS)
+        text = (f"Odhad: {_count(cells, 'buňka', 'buňky', 'buněk')} cíle, "
+                f"{_count(positions, 'poloha', 'polohy', 'poloh')} sondy")
+        if convergence:
+            text += "; s citlivostí navíc hrubší běh (dvojnásobné kroky)"
+        text += "." if ok else (" – výpočet je příliš jemný (nejvýš 20 000 buněk a 80 milionů "
+                                "porovnání). Zvětši krok cíle nebo pojezdu.")
+        return CoverageEstimate(cells, positions, legs, ok, text)
+
+    @property
+    def coverage_pending(self) -> bool:
+        """Počítá se zrovna mapa pokrytí v pomocném procesu?"""
+        return self._coverage_pending is not None
 
     def start_ndt_coverage(self, **options: Any) -> CoverageMap | VolumeCoverageMap | None:
         """Okno použije existující pomocný proces: zůstává živé a výpočet jde zastavit."""
@@ -1595,6 +1652,17 @@ class SectionSettings:
     position: float
     flipped: bool = False
     base: SectionPlane | None = None
+
+
+@dataclass(frozen=True)
+class CoverageEstimate:
+    """Odhad objemového výpočtu pokrytí (``ModelSession.ndt_coverage_estimate``)."""
+
+    cells: int
+    positions: int
+    legs: int
+    ok: bool  # False = výpočet by překročil ochrany 07B nebo nemá smysl
+    text: str
 
 
 @dataclass(frozen=True)

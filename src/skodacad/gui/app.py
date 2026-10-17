@@ -362,16 +362,22 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     session.set_ndt_device("s1", Probe.straight(10))
     top = max(session.result.part.faces(), key=lambda face: face.center().Z)
     session.place_ndt_probe("s1", [top.wrapped], (0, 0, 20))
-    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0)
-    if (not isinstance(covered, VolumeCoverageMap)
+    panel.select("s1")
+    window._refresh_all()
+    enabled = panel.coverage_action.isEnabled()  # 07C: objem jde spočítat z panelu
+    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0,
+                                           convergence=True)
+    if (not isinstance(covered, VolumeCoverageMap) or not enabled
             or abs(covered.total_volume - 1000) > 1e-6
             or abs(covered.volume("covered") - 1000) > 1e-6
+            or "convergence" not in covered.assumptions
             or session.visible_ndt_coverage() != ([], [], [])):
-        lines.append("✕ NDT objemové pokrytí: objem nebo osové zásahy nesouhlasí")
+        lines.append("✕ NDT objemové pokrytí: objem, osové zásahy, citlivost nebo panel "
+                     "nesouhlasí")
         return False
-    lines.append(f"✓ NDT objemové pokrytí (07B): {covered.volume('covered'):.6f} / "
+    lines.append(f"✓ NDT objemové pokrytí (07B, panel 07C): {covered.volume('covered'):.6f} / "
                  f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
-                 "objemová mapa v okně čeká na 07C")
+                 "citlivost na krok ověřena; objemová kresba čeká na 07C.3")
     lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
     session.dirty = False
     window.open_model(volume_model, template=True)
