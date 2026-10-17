@@ -281,6 +281,8 @@ def _coverage(args: argparse.Namespace) -> int:
         study_result = next(s for s in result.ndt if s.id == args.studie)
         if record["method"] != "UT" or study_result.state != "ok":
             raise ValueError("Vyber platnou UT studii.")
+        if (record.get("target") or {}).get("kind") != "faces":
+            raise ValueError("Objemový cíl je uložený; výpočet jeho pokrytí přidá krok 07B.")
         faces, problems = geo.faces_of(record.get("target"))
         if problems:
             raise ValueError(" ".join(problems))

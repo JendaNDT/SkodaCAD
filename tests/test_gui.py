@@ -195,6 +195,17 @@ def test_scan_slider_clears_coverage_summary_and_export(ndt_window, slot_errors)
     assert slot_errors == []
 
 
+def test_volume_target_panel_loads_without_enabling_unimplemented_coverage(ndt_window):
+    from test_ndt_volume_session import target
+
+    session = ndt_window.session
+    session.set_ndt_volume_target("s1", target())
+    ndt_window.ndt_panel.select("s1")
+    ndt_window._refresh_all()
+    assert "objem 2000 mm³" in ndt_window.ndt_panel.details.text()
+    assert not ndt_window.ndt_panel.coverage_action.isEnabled()
+
+
 def test_parameter_change_rebuilds(window):
     volume_before = window.session.properties.volume_mm3
     edit(window, "n", "8")

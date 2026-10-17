@@ -22,6 +22,7 @@ from build123d import Face, Part, Vector
 
 from skodacad.materials import material_key
 from skodacad.measure import MeasureError, format_value, reference_for
+from skodacad.ndt.welds import TargetError, normalize_target, resolve_target
 from skodacad.selectors import SelectionError, find_face
 
 METHODS = {  # zkratka → český název metody
@@ -30,7 +31,7 @@ METHODS = {  # zkratka → český název metody
     "MT": "magnetická prášková",
     "RT": "radiografická",
 }
-TARGET_KINDS = ("faces",)  # objem a svar přidá etapa 07
+TARGET_KINDS = ("faces", "volume", "weld")
 STUDY_KEYS = ("id", "name", "method", "target", "device", "note", "created", "part",
               "verified")
 
@@ -93,17 +94,24 @@ def check_study(study: Any, index: int = 1) -> None:
             raise StudyError(f"{where}: {exc}") from None
     verified = study.get("verified")
     if verified is not None:
-        if (not isinstance(verified, dict) or set(verified) - {"by", "date", "part"}
+        if (not isinstance(verified, dict) or set(verified) - {"by", "date", "part", "target"}
                 or not isinstance(verified.get("by"), str) or not verified["by"].strip()
-                or not all(isinstance(verified.get(key, ""), str) for key in ("date", "part"))):
+                or not all(isinstance(verified.get(key, ""), str)
+                           for key in ("date", "part", "target"))):
             raise StudyError(f'{where}: „verified“ musí být {{"by": "kdo", "date": "RRRR-MM-DD", '
                              '"part": "otisk dílu"}.')
 
 
 def _check_target(target: Any, where: str) -> None:
     if not isinstance(target, dict) or target.get("kind") not in TARGET_KINDS:
-        raise StudyError(f'{where}: kontrolovaná oblast „target“ musí být {{"kind": "faces", '
-                         '"faces": [...]}.')
+        raise StudyError(f'{where}: kontrolovaná oblast „target“ musí mít druh faces, volume '
+                         'nebo weld.')
+    if target["kind"] != "faces":
+        try:
+            normalize_target(target)
+        except TargetError as exc:
+            raise StudyError(f"{where}: {exc}") from None
+        return
     faces = target.get("faces", [])
     if not isinstance(faces, list):
         raise StudyError(f"{where}: „target.faces“ musí být seznam ploch.")
@@ -157,6 +165,9 @@ class StudyResult:
     faces: int = 0  # kolik ploch kontrolované oblasti se na dílu našlo
     verified: str = "neověřeno"
     part: str = ""  # otisk aktuálního dílu
+    target_kind: str = "faces"
+    volume_mm3: float = 0.0
+    requested_volume_mm3: float = 0.0
 
     @property
     def label(self) -> str:
@@ -184,10 +195,24 @@ def evaluate(part: Part | None, study: dict[str, Any], fingerprint: str) -> Stud
     broken: list[str] = []
     warnings: list[str] = []
     references = (study.get("target") or {}).get("faces", [])
+    target = study.get("target") or {}
+    kind = target.get("kind", "faces")
+    has_target = bool(references) if kind == "faces" else bool(target)
+    volume = requested_volume = 0.0
     found = 0
     if part is None:
         broken.append("Model nemá těleso (některý prvek se nepostavil) – studii nejde "
                       "vyhodnotit.")
+    elif kind != "faces":
+        try:
+            resolved = resolve_target(part, target)
+            volume, requested_volume = resolved.volume_mm3, resolved.requested_volume_mm3
+            warnings.append(f"Cílový objem v materiálu: {volume:.6g} mm³ "
+                            f"(zadaný objem {requested_volume:.6g} mm³).")
+            if kind == "weld":
+                warnings.append("Nominální zadaný svar – nejde o rozpoznanou hranici natavení.")
+        except TargetError as exc:
+            broken.append(f"Kontrolovaná oblast: {exc}")
     else:
         for number, reference in enumerate(references, start=1):
             single = len(references) == 1
@@ -210,14 +235,15 @@ def evaluate(part: Part | None, study: dict[str, Any], fingerprint: str) -> Stud
         state = "stale"
         warnings.insert(0, "Díl se od nastavení studie změnil – zkontroluj ji a potvrď pro "
                            "aktuální díl.")
-    elif not references:
+    elif not has_target:
         state = "incomplete"
     else:
         state = "ok"
-    if not references:
+    if not has_target:
         warnings.append("Chybí kontrolovaná oblast – vyber plochy dílu.")
     return StudyResult(sid, name, method, state, tuple(broken + warnings), found,
-                       _verification(study, fingerprint), fingerprint)
+                       _verification(study, fingerprint), fingerprint, kind, volume,
+                       requested_volume)
 
 
 def _verification(study: dict[str, Any], fingerprint: str) -> str:
@@ -226,8 +252,18 @@ def _verification(study: dict[str, Any], fingerprint: str) -> str:
         return "Neověřeno."
     if verified.get("part") != fingerprint:
         return f"Ověření ({verified['by']}) neplatí – díl se od ověření změnil."
+    if ((study.get("target") or {}).get("kind") in ("volume", "weld")
+            and verified.get("target") != target_fingerprint(study["target"])):
+        return f"Ověření ({verified['by']}) neplatí – zadání cílového objemu není ověřené."
     when = _date_cz(verified.get("date", ""))
     return f"Ověřil(a) {verified['by']}" + (f" {when}." if when else ".")
+
+
+def target_fingerprint(target: dict[str, Any]) -> str:
+    """Ověření objemu se váže i na zadání cíle, ne pouze na recept výrobního dílu."""
+    value = normalize_target(target) if target.get("kind") in ("volume", "weld") else target
+    text = json.dumps(_canonical(value), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _date_cz(text: str) -> str:
@@ -275,6 +311,13 @@ def target_for(part: Part, faces: list[Face], point: Any = None) -> dict[str, An
 def refresh_target(part: Part, target: dict[str, Any]) -> dict[str, Any]:
     """Kontrolovaná oblast znovu ukotvená na aktuálním dílu (při potvrzení studie): body
     a směry ploch tam, kde plochy teď jsou. Plocha, která zmizela → ``SelectionError``."""
+    if target.get("kind") in ("volume", "weld"):
+        try:
+            normalized = normalize_target(target)
+            resolve_target(part, normalized)
+        except TargetError as exc:
+            raise StudyError(str(exc)) from None
+        return normalized
     references = []
     for reference in target.get("faces", []):
         face, on_face = find_face(part, reference["face"])
@@ -303,7 +346,8 @@ def new_study(method: str, existing: list[dict[str, Any]], fingerprint: str,
     study: dict[str, Any] = {"id": sid,
                              "name": (name or "").strip() or f"{method} studie {sid[1:]}",
                              "method": method}
-    if target and target.get("faces"):
+    if target and (target.get("faces") or target.get("kind") in ("volume", "weld")):
+        _check_target(target, f"NDT studie „{sid}“")
         study["target"] = copy.deepcopy(target)
     study.update(note="", created=(today or datetime.date.today()).isoformat(),
                  part=fingerprint)

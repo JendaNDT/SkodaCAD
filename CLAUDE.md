@@ -121,7 +121,7 @@
 
 ## Architektura (`src/skodacad/`)
 
-Etapa 06 (schválena autorem, implementována ve vývojové větvi): `ndt/coverage.py` počítá plochy
+Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
 nebo body z pojezdu `face`/`line`, tři stavy, CSV a citlivost na krok. `ModelSession` drží
 mapu pouze jako pohled; výpočet v okně používá `BackgroundRebuilder` a jde zrušit. Formát
 zůstává 15. `skodacad pokryti` vyžaduje `--plocha` a cíle (`--cil`, `--cil-plocha`, `--studie`).
@@ -130,6 +130,21 @@ sondy skutečně přiloží a paprsek znovu spočítá. Na zakřivené ploše je
 blízkost nejistá. Citlivost porovnává krok a 2× krok při stejné toleranci. Povinné upozornění
 UT a význam procenta jsou v panelu, CLI i CSV. V `devices.place` nelze ořez odsazený o 0,001 mm
 použít k vyloučení kolize; mohl by přehlédnout nízkou překážku (hlídá regresní test).
+
+Etapa 07A (schválena 17. 10. 2026, implementace ve vývojové větvi): `ndt/welds.py`
+validuje a staví pomocné cíle `volume` / `weld` (rovný V bez otupení a koutový svar).
+Formát 16 zachovává načtení verzí 1–15. Obecný hranol se protíná s materiálem,
+nominální svar se musí celý vejít do dílu. Vektory `axis` a `across` jsou kolmé,
+výška průřezu = `across × axis`; body pro build123d.Polygon předávat jako tuple,
+seznamy souřadnic mohou tiše vytvořit nulovou plochu. Jen číselné rozměry v mm/°.
+`set_ndt_volume_target` / `ndt_target_volume` jsou veřejná rozhraní ModelSession;
+studie drží jen JSON, výsledek přepočtu jen číselné objemy, nikdy pomocný OCCT tvar.
+Změna dílu vyžaduje potvrzení, cíl se sám neposouvá; změna cíle ruší mapu a ověření.
+Ověření objemu nese i `verified.target` (otisk cíle), kontroluje se i při načtení souboru.
+07B (objemové pokrytí) a 07C (editor/náhled) zatím nejsou implementované ani schválené;
+neumožnit spustit plošný výpočet nad objemem. Ukázky jsou v `examples/ndt/cilove_objemy/`,
+balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
+je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
 
 | Soubor | Úloha |
 |---|---|
@@ -580,8 +595,9 @@ použít k vyloučení kolize; mohl by přehlédnout nízkou překážku (hlíd�
   [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
   [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
-  [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (ve vývojové větvi),
-  [ ] 07 svar a cílová oblast jako NDT objekty …
+  [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
+  [ ] 07 svar a cílová oblast: [x] 07A datový základ (vývojová větev),
+  [ ] 07B objemové pokrytí, [ ] 07C ovládání a demonstrace …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

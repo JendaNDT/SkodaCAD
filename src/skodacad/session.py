@@ -54,10 +54,12 @@ from skodacad.ndt.study import (
     part_fingerprint,
     refresh_target,
     study_probe,
+    target_fingerprint,
     target_for,
 )
 from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
+from skodacad.ndt.welds import TargetError, TargetVolume, normalize_target, resolve_target
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -884,7 +886,7 @@ class ModelSession:
         study = _studies(document)[self._study_index(study_id)]
         fingerprint = part_fingerprint(document)
         target = study.get("target")
-        if target and target.get("faces"):
+        if target and (target.get("faces") or target.get("kind") in ("volume", "weld")):
             if self.result is None or self.result.part is None or self._computed != document:
                 raise DocumentError("Model nemá spočítané těleso – studii teď nejde potvrdit.")
             try:
@@ -899,8 +901,39 @@ class ModelSession:
                 study["target"] = target
             if (study.get("verified") or {}).get("part") != fingerprint:
                 study.pop("verified", None)
+            elif (target and target.get("kind") in ("volume", "weld")
+                  and (study.get("verified") or {}).get("target") != target_fingerprint(target)):
+                study.pop("verified", None)
 
         return self._edit_study(study_id, confirm)
+
+    def set_ndt_volume_target(self, study_id: str, target: dict[str, Any]) -> BuildResult:
+        """Zadaný pomocný objem/svar; změní jen studii, s kontrolou geometrie a Zpět/Znovu."""
+        self._study_index(study_id)
+        self._require_computed("nastavení cílového objemu")
+        if self._computed != self.document:
+            raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
+        try:
+            saved = normalize_target(target)
+            resolve_target(self._final_part(), saved)
+        except TargetError as exc:
+            raise DocumentError(str(exc)) from None
+        return self._edit_study(study_id, lambda study: study.update(target=saved), setup=True)
+
+    def ndt_target_volume(self, study_id: str) -> TargetVolume:
+        """Účinné pomocné těleso platné studie (není to výsledek pokrytí ani výrobní díl)."""
+        self._require_computed("ověření cílového objemu")
+        if self._computed != self.document:
+            raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
+        record = self.ndt_study(study_id)
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
+        if state != "ok":
+            raise DocumentError("Cílový objem vyžaduje platnou studii – nejdřív ji zkontroluj "
+                                "a potvrď pro aktuální díl.")
+        try:
+            return resolve_target(self._final_part(), record.get("target"))
+        except TargetError as exc:
+            raise DocumentError(str(exc)) from None
 
     def verify_ndt_study(self, study_id: str, by: str) -> BuildResult:
         """Zapíše odborné ověření studie (kdo, dnes, pro aktuální díl)."""
@@ -917,6 +950,10 @@ class ModelSession:
             raise DocumentError(f"Studie {reasons.get(state, 'ještě není vyhodnocená')}.")
         verified = {"by": by, "date": datetime.date.today().isoformat(),
                     "part": _studies(self._require())[index]["part"]}
+        target = _studies(self._require())[index].get("target") or {}
+        if target.get("kind") in ("volume", "weld"):
+            self.ndt_target_volume(study_id)
+            verified["target"] = target_fingerprint(target)
         return self._edit_study(study_id, lambda study: study.update(verified=verified))
 
     def unverify_ndt_study(self, study_id: str) -> BuildResult:
@@ -1160,6 +1197,8 @@ class ModelSession:
         state = next(r.state for r in self.ndt_studies if r.id == study_id)
         if record["method"] != "UT" or state != "ok":
             raise DocumentError("Pokrytí potřebuje platnou UT studii s kontrolovanou oblastí.")
+        if (record.get("target") or {}).get("kind") != "faces":
+            raise DocumentError("Objemový cíl je uložený; výpočet jeho pokrytí přidá krok 07B.")
         geo = self._ndt_geometry()
         faces, problems = geo.faces_of(record.get("target"))
         if problems or not faces:

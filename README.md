@@ -720,7 +720,9 @@ vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = ho
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
-(`beam_angle`, `bounces`); starší soubory se načtou beze změny.
+(`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A).
+Starší soubory verze 1–15 se načtou beze změny. Uložení novou aplikací zapisuje verzi 16;
+starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
 
@@ -734,9 +736,10 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
 ]}
 ```
 
-* **`method`** – `UT`, `PT`, `MT` nebo `RT`. **`target`** – kontrolovaná oblast: zatím jen
+* **`method`** – `UT`, `PT`, `MT` nebo `RT`. **`target`** – kontrolovaná oblast:
   `"kind": "faces"` se seznamem ploch zapsaných jako u měření (bod `at`, směr `normal`, druh,
-  poloměr). Bez ní (nebo s prázdným seznamem) je studie neúplná.
+  poloměr), nebo objem/svar podle popisu níže. Bez oblasti (nebo s prázdným seznamem ploch)
+  je studie neúplná.
 * **`part`** – otisk dílu (16 znaků), ke kterému byla studie založena nebo naposledy
   potvrzena; jiný otisk = studie zastaralá. **`verified`** (nepovinné) – kdo a kdy ověřil,
   pro jaký otisk dílu. `name`, `note`, `created` jsou texty.
@@ -749,6 +752,55 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
   `beam_angle` = úhel lomu v materiálu $\beta$ [°] 1–85, `bounces` = počet odrazů 0–10,
   `max_gap` = dovolená mezera pod sondou, `reserve` = manipulační rezerva). Přiložení sondy ani
   dráha paprsku se do souboru neukládají.
+
+### Cílové objemy a svary (07A, verze 16)
+
+Krok 07A ukládá a geometricky ověřuje pomocné objemy; **výpočet jejich pokrytí přijde
+v 07B a editor/náhled cíle v 07C**. Plošné mapy Etapy 06 fungují dál. Objemový cíl
+se do výrobního dílu nepřidává a nemění jeho hmotnost, objem ani exporty.
+
+Ukázky k otevření přes **Soubor → Otevřít**:
+
+- [Tupý V svar](examples/ndt/cilove_objemy/tupy_svar_objem.json): 14 613,843876 mm³.
+- [Dva koutové svary](examples/ndt/cilove_objemy/koutovy_svar_objem.json): dva nezávislé cíle
+  po 2 450 mm³. Díl je geometricky stejný jako původní referenční příklad.
+
+Pomocný objem je polygonální hranol:
+
+```json
+"target": {
+  "kind": "volume",
+  "frame": {"origin": [0, 0, 0], "axis": [0, 1, 0], "across": [1, 0, 0]},
+  "length_mm": 20,
+  "profile_mm": [[0, 0], [10, 0], [10, 10], [0, 10]]
+}
+```
+
+`axis` je směr délky od počátku, `across` první souřadnice průřezu; druhá souřadnice
+má směr `across × axis` (zde +Z). Směry musí být nenulové a kolmé; při načtení se
+normalizují. Rozměry jsou konečná čísla v mm, bez výrazů. Cíl je průnik hranolu
+s materiálem dílu; souhrn odděluje zadaný a účinný objem. Prázdný průnik je neplatný.
+
+U `kind: "weld"` se místo `profile_mm` zadává `weld_type` a `dimensions`:
+
+- `fillet`: kladná ramena `leg_across_mm`, `leg_height_mm`.
+- `butt_v` bez otupení kořene: `thickness_mm`, `angle_deg` (0–180° bez krajních hodnot)
+  a nezáporná `root_gap_mm`; volitelně skupina `cap_width_mm`, `cap_top_width_mm`,
+  `cap_height_mm` pro převýšení a `root_width_mm`, `root_tip_width_mm`, `root_height_mm`
+  pro podkořen. Chybějící skupina má rozměry 0. Při nenulové výšce je nutná kladná
+  šířka u plechu, koncová šířka 0 vytvoří trojúhelník.
+
+Jde o nominální geometrii zadanou člověkem. Svar musí tvořit souvislé těleso a musí
+se celý vejít do materiálu (objemová tolerance `max(0,000001 mm³; objem × 10⁻⁸)`);
+chybějící materiál se nesmí tiše odříznout. Skutečnou hranici natavení ani tepelně
+ovlivněnou oblast program neurčuje.
+
+`ModelSession.set_ndt_volume_target(id, target)` nastaví validovaný cíl s historií
+Zpět/Znovu; `ndt_target_volume(id)` vrací jeho pomocné těleso a objemy v mm³.
+Po změně receptu dílu je studie zastaralá; pokud svar už nemá materiál, vazba je neplatná.
+Potvrzení ponechá zadané souřadnice, nepřesune cíl na jiné místo. Změna cíle odstraní
+starou mapu i ověření. Ověření objemu má navíc `verified.target`, otisk zadání cíle;
+při ruční změně cíle v JSON přestane platit i při stejném dílu.
 
 ### Materiály
 

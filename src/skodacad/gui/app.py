@@ -325,6 +325,19 @@ def _self_test_ndt(window, lines: _Report) -> bool:
                  f"snímek {image}: {shown}")
     session.clear_ndt_placement()
     window._refresh_all()
+    volume_model = folder / "ndt" / "cilove_objemy" / "tupy_svar_objem.json"
+    session.dirty = False
+    window.open_model(volume_model, template=True)
+    panel.select("s1")
+    window._refresh_all()
+    QApplication.processEvents()
+    volume = session.ndt_target_volume("s1")
+    if (abs(volume.volume_mm3 - 14613.84387633061) > 1e-4
+            or panel.coverage_action.isEnabled() or "mm³" not in panel.details.text()):
+        lines.append("✕ NDT cílový objem: geometrie, načtení nebo stav ovládání nesouhlasí")
+        return False
+    lines.append(f"✓ NDT cílový objem (07A): {volume.volume_mm3:.6f} mm³; "
+                 "načtení v okně a oddělení od pokrytí OK")
     return True
 
 

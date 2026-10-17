@@ -1,0 +1,182 @@
+{
+  "format": "skodacad",
+  "version": 16,
+  "name": "NDT 07A – Objemy koutových svarů",
+  "description": "Ukázka 07A: dva nominální koutové svary s rameny 7 mm a délkou 100 mm, každý jako samostatná UT studie s objemem 2450 mm³. Výrobní geometrie je shodná s koutovy_svar.json. Výpočet objemového pokrytí přidá krok 07B a editor/náhled cíle krok 07C.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "A": 200,
+    "B": 100,
+    "t": 10,
+    "s": 10,
+    "v": 80,
+    "z": 7
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys pásnice",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "A",
+          "height": "B"
+        }
+      ]
+    },
+    {
+      "id": "pasnice",
+      "type": "extrude",
+      "name": "Pásnice",
+      "sketch": "obrys",
+      "distance": "t"
+    },
+    {
+      "id": "stojina_obrys",
+      "type": "sketch",
+      "name": "Obrys stojiny",
+      "plane": "top",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "s",
+          "height": "B"
+        }
+      ]
+    },
+    {
+      "id": "stojina",
+      "type": "extrude",
+      "name": "Stojina",
+      "sketch": "stojina_obrys",
+      "distance": "v"
+    },
+    {
+      "id": "svary_prurez",
+      "type": "sketch",
+      "name": "Průřez koutových svarů",
+      "plane": "XZ",
+      "elements": [
+        {
+          "shape": "polygon",
+          "points": [
+            [
+              "s/2",
+              "t"
+            ],
+            [
+              "s/2 + z",
+              "t"
+            ],
+            [
+              "s/2",
+              "t + z"
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "points": [
+            [
+              "-s/2",
+              "t"
+            ],
+            [
+              "-s/2",
+              "t + z"
+            ],
+            [
+              "-s/2 - z",
+              "t"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "svary",
+      "type": "extrude",
+      "name": "Koutové svary",
+      "sketch": "svary_prurez",
+      "operation": "add",
+      "distance": "B",
+      "direction": "both"
+    }
+  ],
+  "measurements": [],
+  "ndt": {
+    "studies": [
+      {
+        "id": "s1",
+        "name": "UT pravého koutového svaru",
+        "method": "UT",
+        "target": {
+          "kind": "weld",
+          "frame": {
+            "origin": [
+              5.0,
+              -50.0,
+              10.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "across": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          "length_mm": 100.0,
+          "weld_type": "fillet",
+          "dimensions": {
+            "leg_across_mm": 7.0,
+            "leg_height_mm": 7.0
+          }
+        },
+        "note": "",
+        "created": "2026-10-17",
+        "part": "6b1f544564e63cd7"
+      },
+      {
+        "id": "s2",
+        "name": "UT levého koutového svaru",
+        "method": "UT",
+        "target": {
+          "kind": "weld",
+          "frame": {
+            "origin": [
+              -5.0,
+              50.0,
+              10.0
+            ],
+            "axis": [
+              0.0,
+              -1.0,
+              0.0
+            ],
+            "across": [
+              -1.0,
+              0.0,
+              0.0
+            ]
+          },
+          "length_mm": 100.0,
+          "weld_type": "fillet",
+          "dimensions": {
+            "leg_across_mm": 7.0,
+            "leg_height_mm": 7.0
+          }
+        },
+        "note": "",
+        "created": "2026-10-17",
+        "part": "6b1f544564e63cd7"
+      }
+    ]
+  }
+}
