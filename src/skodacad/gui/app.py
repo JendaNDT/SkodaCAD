@@ -338,6 +338,17 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT cílový objem (07A): {volume.volume_mm3:.6f} mm³; "
                  "načtení v okně a oddělení od pokrytí OK")
+    preview = session.ndt_target_preview("s1")
+    drawn = bool(getattr(window.viewer, "_target_objects", None)) if window.viewer.ready \
+        else True
+    image = user_dir() / "self-test-cil.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    if preview is None or abs(preview[0].volume - volume.volume_mm3) > 1e-4 or not drawn:
+        lines.append("✕ NDT náhled cílového objemu (07C): těleso se nespočítalo nebo "
+                     "nenakreslilo")
+        return False
+    lines.append(f"✓ NDT náhled cílového objemu (07C): průhledný svar ve 3D, snímek {image}: "
+                 f"{shown}")
     from skodacad.ndt.volume_coverage import VolumeCoverageMap
 
     lines.stream.write("  … NDT objemové pokrytí (07B)\n")
@@ -351,16 +362,44 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     session.set_ndt_device("s1", Probe.straight(10))
     top = max(session.result.part.faces(), key=lambda face: face.center().Z)
     session.place_ndt_probe("s1", [top.wrapped], (0, 0, 20))
-    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0)
-    if (not isinstance(covered, VolumeCoverageMap)
+    panel.select("s1")
+    window._refresh_all()
+    enabled = panel.coverage_action.isEnabled()  # 07C: objem jde spočítat z panelu
+    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0,
+                                           convergence=True)
+    if (not isinstance(covered, VolumeCoverageMap) or not enabled
             or abs(covered.total_volume - 1000) > 1e-6
             or abs(covered.volume("covered") - 1000) > 1e-6
-            or session.visible_ndt_coverage() != ([], [], [])):
-        lines.append("✕ NDT objemové pokrytí: objem nebo osové zásahy nesouhlasí")
+            or "convergence" not in covered.assumptions):
+        lines.append("✕ NDT objemové pokrytí: objem, osové zásahy, citlivost nebo panel "
+                     "nesouhlasí")
         return False
-    lines.append(f"✓ NDT objemové pokrytí (07B): {covered.volume('covered'):.6f} / "
+    lines.append(f"✓ NDT objemové pokrytí (07B, panel 07C): {covered.volume('covered'):.6f} / "
                  f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
-                 "objemová mapa v okně čeká na 07C")
+                 "citlivost na krok ověřena")
+    from skodacad.ndt.volume_drawing import mesh_areas
+
+    lines.stream.write("  … NDT objemová kresba a průřez (07C)\n")
+    lines.stream.flush()
+    # Krychle 10 mm celá pokrytá: povrch 600 mm², v průřezu uprostřed zbude 10 × 5 × 10 mm.
+    whole = mesh_areas(session.visible_ndt_coverage())
+    window._refresh_all()
+    panel.cross_section()
+    QApplication.processEvents()
+    half = mesh_areas(session.visible_ndt_coverage())
+    drawn = bool(getattr(window.viewer, "_coverage_objects", None)) if window.viewer.ready \
+        else True
+    image = user_dir() / "self-test-objem.png"
+    shown = window.viewer.dump(str(image)) if window.viewer.ready else False
+    session.clear_section()
+    window._refresh_all()
+    if (len(whole) != 1 or abs(sum(whole.values()) - 600) > 1e-6 or len(half) != 1
+            or abs(sum(half.values()) - 400) > 1e-6 or not drawn):
+        lines.append(f"✕ NDT objemová kresba: plochy {whole} / v průřezu {half} (čekáno 600 "
+                     "a 400 mm² zeleně)")
+        return False
+    lines.append(f"✓ NDT objemová kresba (07C): povrch 600 mm², průřez svarem 400 mm² "
+                 f"zeleně, snímek {image}: {shown}")
     lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
     session.dirty = False
     window.open_model(volume_model, template=True)
@@ -483,7 +522,8 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     """Každý druh kreslení měření zvlášť: zpráva se zapisuje průběžně, takže když ovladač
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
-    for variant in ("line", "point", "ball", "label", "arial", "map", "accent", "probe"):
+    for variant in ("line", "point", "ball", "label", "arial", "map", "map_top", "accent",
+                    "probe", "target"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)

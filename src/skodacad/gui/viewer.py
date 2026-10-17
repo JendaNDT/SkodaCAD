@@ -96,6 +96,9 @@ _DRAG_THRESHOLD = 3  # pixely; menší pohyb myši je pořád „klik“
 PROBE_COLORS = {"ok": (0.13, 0.62, 0.30), "tight": (0.93, 0.55, 0.10),
                 "lift_off": (0.93, 0.55, 0.10), "overhang": (0.93, 0.55, 0.10),
                 "uncertain": (0.93, 0.55, 0.10), "collision": (0.86, 0.15, 0.15)}
+# Náhled cílového objemu NDT (svar): modrá – jiná než tři stavy pokrytí i barvy sondy.
+TARGET_COLOR = (0.20, 0.45, 0.85)
+TARGET_OUTLINE = (0.35, 0.35, 0.40)
 
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
@@ -219,6 +222,7 @@ class OccViewer(QWidget):
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
+        self._target_objects: list[Any] = []  # náhled cílového objemu NDT (svar)
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
         self._probe_dragging = False
@@ -251,6 +255,7 @@ class OccViewer(QWidget):
         self._remove_measurement()
         self._remove_map()
         self._remove_probe()
+        self._remove_target()
         self._remove_coverage()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
@@ -367,6 +372,45 @@ class OccViewer(QWidget):
             self._context.Remove(shown, False)
         self._probe_objects = []
 
+    def show_target(self, body: Any, outline: Any = None) -> None:
+        """Náhled cílového objemu NDT: průhledné modré těleso (účinný objem v materiálu)
+        a ``outline`` – šedé hrany zadaného tvaru, když z dílu vyčnívá. Kliknout na ně nejde,
+        plochy dílu pod nimi jdou dál vybírat."""
+        if not self.ready:
+            return
+        self._remove_target()
+        shown = AIS_Shape(getattr(body, "wrapped", body))
+        shown.SetColor(_rgb(*TARGET_COLOR))
+        shown.SetTransparency(0.55)
+        self._context.Display(shown, False)
+        self._context.Deactivate(shown)
+        # Navrch (jako zvýraznění): cíl leží uvnitř dílu a jeho stěny splývají se stěnami
+        # dílu – jinak by ho neprůhledný díl schoval.
+        self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+        self._target_objects = [shown]
+        if outline is not None:
+            edges = AIS_Shape(getattr(outline, "wrapped", outline))
+            edges.SetColor(_rgb(*TARGET_OUTLINE))
+            edges.SetWidth(1.5)
+            edges.Attributes().UIsoAspect().SetNumber(0)
+            edges.Attributes().VIsoAspect().SetNumber(0)
+            edges.SetDisplayMode(0)  # jen hrany (okno má výchozí režim 1 = stínovaně)
+            self._context.Display(edges, False)
+            self._context.Deactivate(edges)
+            self._context.SetZLayer(edges, Graphic3d_ZLayerId_Topmost)
+            self._target_objects.append(edges)
+        self._view.Redraw()
+
+    def hide_target(self) -> None:
+        if self.ready:
+            self._remove_target()
+            self._view.Redraw()
+
+    def _remove_target(self) -> None:
+        for shown in self._target_objects:
+            self._context.Remove(shown, False)
+        self._target_objects = []
+
     def scale_info(self) -> str:
         """Velikost okna OCCT proti Qt a poměr pro klik myší (diagnostika Retina, 150 %)."""
         if not self.ready:
@@ -410,7 +454,8 @@ class OccViewer(QWidget):
             builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(0, 0, 0)).Vertex())
         shown: Any = AIS_Shape(compound)
         shown.SetColor(color)
-        if variant == "map":  # barevná síť (mapa tloušťky) a díl jen hranami
+        if variant in ("map", "map_top"):  # barevná síť (mapa) a díl jen hranami; „map_top“
+            # navrch jako objemová mapa svaru (07C)
             mesh = Poly_Triangulation(3, 1, False)
             for i, point in enumerate(((0, 0, 0), (10, 0, 0), (0, 10, 0)), start=1):
                 mesh.SetNode(i, gp_Pnt(*point))
@@ -425,6 +470,8 @@ class OccViewer(QWidget):
             shown.SetDisplayMode(0)
             _unlit(shown)
             self._context.Display(shown, False)
+            if variant == "map_top":
+                self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
             if self._ais is not None:
                 self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
             self._view.Redraw()
@@ -441,6 +488,11 @@ class OccViewer(QWidget):
             self._view.Redraw()
             self._context.Remove(body, False)
             self._view.Redraw()
+            return
+        if variant == "target":  # průhledný cílový objem NDT a drátěný obrys zadaného tvaru
+            self.show_target(BRepPrimAPI_MakeBox(10, 10, 10).Shape(),
+                             BRepPrimAPI_MakeBox(12, 12, 12).Shape())
+            self.hide_target()
             return
         if variant == "accent":  # díl s plochami jiné barvy (plochy řezu)
             colored = AIS_ColoredShape(BRepPrimAPI_MakeBox(10, 10, 10).Shape())
@@ -522,11 +574,27 @@ class OccViewer(QWidget):
         self._remove_map()
         self._view.Redraw()
 
-    def show_coverage_map(self, nodes: list, triangles: list, colors: list) -> None:
-        """Tři diskrétní barvy cílových plošek UT, nezávisle na sondě a měřeních."""
+    def show_coverage_map(self, nodes: list, triangles: list, colors: list,
+                          fill: list[Any] | None = None, topmost: bool = False) -> None:
+        """Tři diskrétní barvy cílových plošek UT, nezávisle na sondě a měřeních.
+
+        Objemový cíl (07C) leží uvnitř dílu: kreslí se navrch (``topmost``) a ``fill`` jsou
+        plochy řezu dílu, vyplněné šedě – barevný průřez svarem je pak vidět v nich."""
         if not self.ready:
             return
         self._remove_coverage()
+        if fill:
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            for face in fill:
+                builder.Add(compound, getattr(face, "wrapped", face))
+            cut_faces = AIS_Shape(compound)
+            cut_faces.SetColor(_rgb(0.55, 0.57, 0.60))  # šedě – červená je „nepokryto“
+            cut_faces.SetDisplayMode(1)
+            self._context.Display(cut_faces, False)
+            self._context.Deactivate(cut_faces)
+            self._coverage_objects.append(cut_faces)
         if not triangles:
             self._view.Redraw()
             return
@@ -546,6 +614,8 @@ class OccViewer(QWidget):
         _unlit(shown)
         self._context.Display(shown, False)
         self._context.Deactivate(shown)
+        if topmost:
+            self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
         self._coverage_objects.append(shown)
         if self._ais is not None:
             self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)

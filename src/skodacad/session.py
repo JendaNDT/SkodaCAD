@@ -18,6 +18,7 @@ pozadí v pomocném procesu: úprava se přijme hned, ``result`` zůstane do dok
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime
 import math
 import re
@@ -27,7 +28,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from build123d import Vector
+from build123d import GeomType, Vector
 
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
 from skodacad.export import export
@@ -42,7 +43,13 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
-from skodacad.ndt.coverage import CoverageMap
+from skodacad.ndt.coverage import (
+    MAX_COMPARISONS,
+    MAX_POSITIONS,
+    CoverageError,
+    CoverageMap,
+    _scan_positions,
+)
 from skodacad.ndt.coverage import compute as compute_coverage
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
@@ -59,8 +66,23 @@ from skodacad.ndt.study import (
 )
 from skodacad.ndt.study import duplicate as duplicate_study
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
-from skodacad.ndt.volume_coverage import VolumeCoverageMap, compute_volume
-from skodacad.ndt.welds import TargetError, TargetVolume, normalize_target, resolve_target
+from skodacad.ndt.volume_coverage import (
+    MAX_CELLS,
+    VolumeCoverageMap,
+    check_volume_convergence,
+    compute_volume,
+    grid_extent,
+    recommended_target_step,
+)
+from skodacad.ndt.volume_drawing import volume_mesh
+from skodacad.ndt.welds import (
+    TargetError,
+    TargetVolume,
+    nominal_volume,
+    normalize_target,
+    resolve_target,
+    target_profiles,
+)
 from skodacad.picking import (
     edge_selector,
     face_direction,
@@ -155,6 +177,8 @@ class ModelSession:
         self._geometry_cache: tuple[Any, Any] | None = None
         self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
+        self._target_preview_cache: tuple[Any, Any] | None = None
+        self._volume_drawing_cache: tuple[Any, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -649,16 +673,29 @@ class ModelSession:
         self.section_settings = SectionSettings(None, (low + high) / 2, False, base)
         return self.section
 
+    def set_section_target(self, target: dict[str, Any]) -> Section | None:
+        """Průřez svarem: řez kolmo na osu cíle, napoprvé uprostřed jeho délky. Poloha je
+        vzdálenost od začátku cíle (0 … délka); řez míří k pozorovateli v izometrii."""
+        saved = self.ndt_target_outline(target)[0]
+        self._section_source()
+        frame = saved["frame"]
+        axis = tuple(frame["axis"])
+        sign = 1.0 if sum(a * v for a, v in zip(axis, (1.0, -1.0, 1.0), strict=True)) >= 0 \
+            else -1.0
+        along = TargetSection(tuple(frame["origin"]), axis, saved["length_mm"],
+                              tuple(sign * a + 0.0 for a in axis))  # bez −0.0
+        self.section_settings = SectionSettings(None, saved["length_mm"] / 2, False,
+                                                target=along)
+        return self.section
+
     def set_section_position(self, position: float) -> Section | None:
         settings = self._require_section()
-        self.section_settings = SectionSettings(settings.axis, float(position),
-                                                settings.flipped, settings.base)
+        self.section_settings = dataclasses.replace(settings, position=float(position))
         return self.section
 
     def flip_section(self) -> Section | None:
         settings = self._require_section()
-        self.section_settings = SectionSettings(settings.axis, settings.position,
-                                                not settings.flipped, settings.base)
+        self.section_settings = dataclasses.replace(settings, flipped=not settings.flipped)
         return self.section
 
     def clear_section(self) -> None:
@@ -671,12 +708,20 @@ class ModelSession:
             return None
         if settings.axis is not None:
             return axis_plane(settings.axis, settings.position, settings.flipped)
+        if settings.target is not None:
+            along = settings.target
+            origin = tuple(o + a * settings.position
+                           for o, a in zip(along.origin, along.axis, strict=True))
+            normal = tuple(-n for n in along.normal) if settings.flipped else along.normal
+            return SectionPlane(origin, normal)
         return offset_plane(settings.base, settings.position, settings.flipped)
 
     def section_range(self) -> tuple[float, float]:
         """Rozsah posuvníku řezu (souřadnice v ose, nebo hloubka pod plochou) [mm]."""
         settings = self._require_section()
         part = self._section_source()
+        if settings.target is not None:
+            return 0.0, settings.target.length
         if settings.axis is not None:
             return axis_range(part, settings.axis)
         return base_depth_range(part, settings.base)
@@ -911,15 +956,77 @@ class ModelSession:
     def set_ndt_volume_target(self, study_id: str, target: dict[str, Any]) -> BuildResult:
         """Zadaný pomocný objem/svar; změní jen studii, s kontrolou geometrie a Zpět/Znovu."""
         self._study_index(study_id)
-        self._require_computed("nastavení cílového objemu")
+        saved = self.ndt_target_outline(target)[0]
+        self.check_ndt_volume_target(saved)
+        return self._edit_study(study_id, lambda study: study.update(target=saved), setup=True)
+
+    def check_ndt_volume_target(self, target: dict[str, Any]) -> TargetVolume:
+        """Cíl ověřený na aktuálním dílu **bez změny modelu** (editor: Zkontrolovat v dílu)."""
+        self._require_computed("kontrola cílového objemu")
         if self._computed != self.document:
             raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
         try:
-            saved = normalize_target(target)
-            resolve_target(self._final_part(), saved)
+            return resolve_target(self._final_part(), normalize_target(target))
         except TargetError as exc:
             raise DocumentError(str(exc)) from None
-        return self._edit_study(study_id, lambda study: study.update(target=saved), setup=True)
+
+    @staticmethod
+    def ndt_target_outline(target: dict[str, Any]) -> tuple[dict[str, Any], list, float]:
+        """Ověřené zadání cíle, polygony průřezu (napříč, výška) a zadaný objem ze vzorce
+        (průřez × délka) – bez geometrie dílu, pro nákres v editoru."""
+        try:
+            saved = normalize_target(target)
+            return saved, target_profiles(saved), nominal_volume(saved)
+        except TargetError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def ndt_frame_from_edge(self, shapes: list[Any]) -> dict[str, Any]:
+        """Rovná hrana vybraná ve 3D → počátek (začátek hrany), směr podél a délka [mm].
+        Směr se otočí ke kladným souřadnicím, aby nezávisel na orientaci hrany v OCCT."""
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if faces or len(edges) != 1 or edges[0].geom_type != GeomType.LINE:
+            raise DocumentError("Vyber ve 3D právě jednu rovnou hranu (podél svaru).")
+        start, end = edges[0].position_at(0), edges[0].position_at(1)
+        direction = end - start
+        length = direction.length
+        if length <= 1e-9:
+            raise DocumentError("Vybraná hrana má nulovou délku.")
+        components = (direction.X, direction.Y, direction.Z)
+        if components[max(range(3), key=lambda i: abs(components[i]))] < 0:
+            start, direction = end, -direction
+        axis = [_clean(v / length) for v in (direction.X, direction.Y, direction.Z)]
+        return {"origin": [_clean(v) for v in (start.X, start.Y, start.Z)], "axis": axis,
+                "length_mm": _clean(length)}
+
+    def ndt_target_preview(self, study_id: str | None) -> tuple[Any, Any] | None:
+        """Pomocné těleso objemového cíle studie pro náhled ve 3D: (účinný objem v materiálu,
+        zadaný tvar – jen když z dílu vyčnívá). Při řezu rozříznuté. None = není co ukázat."""
+        if study_id is None or self.document is None or self.result is None \
+                or self.result.part is None:
+            return None
+        try:
+            target = (self.ndt_study(study_id).get("target") or {})
+        except DocumentError:
+            return None
+        if target.get("kind") not in ("volume", "weld"):
+            return None
+        plane = self.section_plane
+        key = (id(self.result.part), repr(target), plane)
+        if self._target_preview_cache is not None and self._target_preview_cache[0] == key:
+            return self._target_preview_cache[1]
+        try:
+            resolved = resolve_target(self.result.part, target)
+        except TargetError:
+            preview = None
+        else:
+            outside = resolved.outside_volume_mm3 > max(1e-6, resolved.volume_mm3 * 1e-8)
+            shapes = [_cut_preview(shape, plane)
+                      for shape in (resolved.shape, resolved.requested if outside else None)]
+            preview = None if shapes[0] is None else (shapes[0], shapes[1])
+        self._target_preview_cache = (key, preview)
+        return preview
 
     def ndt_target_volume(self, study_id: str) -> TargetVolume:
         """Účinné pomocné těleso platné studie (není to výsledek pokrytí ani výrobní díl)."""
@@ -1209,25 +1316,84 @@ class ModelSession:
     def compute_ndt_coverage(self, mode: str = "face", step_mm: float = 5.0,
                              bounces: int | None = None, spread_deg: float = 0.0,
                              length_mm: float = 50.0, *, target_step_mm: float | None = None,
-                             tolerance_mm: float | None = None) -> CoverageMap | VolumeCoverageMap:
-        """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy)."""
+                             tolerance_mm: float | None = None,
+                             convergence: bool = False) -> CoverageMap | VolumeCoverageMap:
+        """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy).
+        ``convergence`` u objemu navíc porovná s hrubším během (dvojnásobné kroky)."""
         geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
         self.clear_ndt_coverage()
+        volume = isinstance(target, dict)
+        # Bez kroku cíle: u objemu podle velikosti průřezu (compute_volume), u ploch krok.
+        options = dict({"target": target} if volume else {"faces": target}, mode=mode,
+                       scan_step=step_mm,
+                       target_step=(None if volume else step_mm) if target_step_mm is None
+                       else target_step_mm,
+                       tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
+                       spread_deg=spread_deg, length_mm=length_mm)
         try:
-            compute = compute_volume if isinstance(target, dict) else compute_coverage
-            inputs = {"target": target} if isinstance(target, dict) else {"faces": target}
-            result = compute(geo, placed, **inputs, mode=mode, scan_step=step_mm,
-                             target_step=step_mm if target_step_mm is None else target_step_mm,
-                             tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
-                             spread_deg=spread_deg, length_mm=length_mm)
+            result = (compute_volume if volume else compute_coverage)(geo, placed, **options)
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
             raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
+        if volume and convergence:
+            try:
+                check_volume_convergence(geo, placed, fine=result, **options)
+            except Exception as exc:  # noqa: BLE001 – jemný výsledek platí, stabilita ne
+                result.assumptions["convergence_text"] = (
+                    f"Citlivost na krok se nepodařilo ověřit: {exc}")
         result.assumptions.update(study_id=self.ndt_placement_request[0],
                                   part_fingerprint=part_fingerprint(self._require()),
                                   parameters=dict(self.result.parameters))
         self._coverage_cache = (key, result)
         return result
+
+    def ndt_coverage_estimate(self, mode: str = "face", step_mm: float = 5.0,
+                              spread_deg: float = 0.0, length_mm: float = 50.0, *,
+                              target_step_mm: float | None = None,
+                              convergence: bool = False) -> CoverageEstimate:
+        """Velikost objemového výpočtu ještě před spuštěním (bez geometrických průniků):
+        buňky cíle, polohy sondy a stejné ochrany jako výpočet 07B."""
+        _geo, placed, target, _angle = self._coverage_inputs()
+        if not isinstance(target, dict):
+            raise DocumentError("Odhad je jen pro objemový cíl.")
+        if mode == "line" and spread_deg == 0:
+            return CoverageEstimate(0, 0, 0, False, (
+                "Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. Pro objem zvol "
+                "pojezd po ploše; pro čáru lze samostatně vyhodnotit body nebo plochy."))
+        try:
+            step = recommended_target_step(normalize_target(target)) \
+                if target_step_mm is None else target_step_mm
+            cells = math.prod(grid_extent(target, step)[2])
+            positions = len(_scan_positions(placed, mode, step_mm, length_mm))
+        except (CoverageError, TargetError) as exc:
+            return CoverageEstimate(0, 0, 0, False, str(exc))
+        beam = self.ndt_beam
+        legs = beam.bounces + 1 if beam is not None else 1
+        ok = (cells <= MAX_CELLS and positions <= MAX_POSITIONS
+              and cells * positions * legs <= MAX_COMPARISONS)
+        text = (f"Odhad: {_count(cells, 'buňka', 'buňky', 'buněk')} cíle, "
+                f"{_count(positions, 'poloha', 'polohy', 'poloh')} sondy")
+        if convergence:
+            text += "; s citlivostí navíc hrubší běh (dvojnásobné kroky)"
+        text += "." if ok else (" – výpočet je příliš jemný (nejvýš 20 000 buněk a 80 milionů "
+                                "porovnání). Zvětši krok cíle nebo pojezdu.")
+        return CoverageEstimate(cells, positions, legs, ok, text)
+
+    def ndt_recommended_target_step(self, study_id: str | None) -> float | None:
+        """Výchozí krok cíle objemové studie (šestina menšího rozměru průřezu); None = studie
+        nemá objemový cíl."""
+        try:
+            target = (self.ndt_study(study_id).get("target") or {}) if study_id else {}
+            if target.get("kind") not in ("volume", "weld"):
+                return None
+            return recommended_target_step(normalize_target(target))
+        except (DocumentError, TargetError):
+            return None
+
+    @property
+    def coverage_pending(self) -> bool:
+        """Počítá se zrovna mapa pokrytí v pomocném procesu?"""
+        return self._coverage_pending is not None
 
     def start_ndt_coverage(self, **options: Any) -> CoverageMap | VolumeCoverageMap | None:
         """Okno použije existující pomocný proces: zůstává živé a výpočet jde zastavit."""
@@ -1243,12 +1409,29 @@ class ModelSession:
         return None
 
     def visible_ndt_coverage(self) -> tuple[list, list, list]:
+        """Barevná síť mapy pro okno; u objemu povrch cíle (při řezu rozříznutého)."""
         result = self.ndt_coverage
-        if result is None or isinstance(result, VolumeCoverageMap):
+        if result is None:
             return [], [], []
+        if isinstance(result, VolumeCoverageMap):
+            return self._volume_drawing(result)
         nodes, triangles, colors = result.mesh()
         plane = self.section_plane
         return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def _volume_drawing(self, result: VolumeCoverageMap) -> tuple[list, list, list]:
+        """Kresba objemového výsledku pro díl, ke kterému patří (pamatuje se pro řez)."""
+        plane = self.section_plane
+        key = (id(result), plane)
+        if self._volume_drawing_cache is None or self._volume_drawing_cache[0] != key:
+            try:
+                shape = _cut_preview(resolve_target(self.result.part,
+                                                    result.assumptions["target"]).shape, plane)
+                drawing = volume_mesh(result, shape) if shape is not None else ([], [], [])
+            except Exception:  # noqa: BLE001 – kresba je jen pohled, čísla zůstávají v panelu
+                drawing = ([], [], [])
+            self._volume_drawing_cache = (key, drawing)
+        return self._volume_drawing_cache[1]
 
     def export_ndt_coverage(self, path: str | Path) -> Path:
         result = self.ndt_coverage
@@ -1525,6 +1708,28 @@ class SectionSettings:
     position: float
     flipped: bool = False
     base: SectionPlane | None = None
+    target: TargetSection | None = None  # průřez svarem: poloha = vzdálenost od začátku cíle
+
+
+@dataclass(frozen=True)
+class TargetSection:
+    """Řez kolmo na osu cílového objemu NDT (tlačítko Průřez svarem)."""
+
+    origin: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    length: float
+    normal: tuple[float, float, float]  # ± osa, k pozorovateli v izometrii
+
+
+@dataclass(frozen=True)
+class CoverageEstimate:
+    """Odhad objemového výpočtu pokrytí (``ModelSession.ndt_coverage_estimate``)."""
+
+    cells: int
+    positions: int
+    legs: int
+    ok: bool  # False = výpočet by překročil ochrany 07B nebo nemá smysl
+    text: str
 
 
 @dataclass(frozen=True)
@@ -1541,6 +1746,23 @@ def _is_flat(face: Any) -> bool:
     except SelectionError:
         return False
     return True
+
+
+def _clean(value: float) -> float:
+    """Číslo z geometrie bez šumu (−0,0 a 1e-15) – ať se v editoru neukazuje 4.999999999."""
+    value = round(value, 9)
+    return 0.0 if value == 0 else value
+
+
+def _cut_preview(shape: Any, plane: SectionPlane | None) -> Any:
+    """Náhled cíle při zapnutém řezu: rozříznutý; mimo řez celý, odříznutý = None."""
+    if shape is None or plane is None:
+        return shape
+    try:
+        return cut_section(shape, plane).part
+    except SectionError:
+        center = shape.center()
+        return shape if plane.side((center.X, center.Y, center.Z)) < 0 else None
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

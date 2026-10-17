@@ -118,6 +118,16 @@
   `shift_ndt_probe`, `scan_ndt_line`, `select_ndt_scan_index`), v okně přepínač *Jezdit sondou
   myší* + `Alt`+tažení a `Alt`+kolečko ve 3D prohlížeči, krokování **◀ / ▶** a tlačítko *Projet
   čáru* s posuvníkem. Formát se nemění (verze 15).
+- (17. 10. 2026, schváleno) **NDT etapa 07C – cílový objem v okně** (návrh
+  `docs/ndt/14-navrh-etapa-07c.md`, doporučení 1–4): číselný editor svaru/hranolu se směry
+  jen ±X/±Y/±Z, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok
+  zapnutou ve výchozím stavu, výchozí kroky pojezd 5 mm / cíl 4 mm, barevný povrch cíle
+  a tlačítko *Průřez svarem*. Výpočet 07B ani formát (16) se nemění.
+- (17. 10. 2026, schváleno) **Opravy 1–3 z rozboru citlivosti V svaru**
+  (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): hrubý běh porovnání kroků hledá s tolerancí
+  `max(jemná, krok × √0,5)` (pravidlo `ndt-ut-objemove-porovnani 2`), výslovně malá
+  tolerance dostane upozornění; výchozí krok cíle = šestina menšího rozměru průřezu
+  (místo 4 mm z 07C); referenční test V svaru (15,18 % průřezu).
 
 ## Architektura (`src/skodacad/`)
 
@@ -141,14 +151,29 @@ seznamy souřadnic mohou tiše vytvořit nulovou plochu. Jen číselné rozměry
 studie drží jen JSON, výsledek přepočtu jen číselné objemy, nikdy pomocný OCCT tvar.
 Změna dílu vyžaduje potvrzení, cíl se sám neposouvá; změna cíle ruší mapu a ověření.
 Ověření objemu nese i `verified.target` (otisk cíle), kontroluje se i při načtení souboru.
-07B (schváleno 17. 10. 2026, implementace ve vývojové větvi): `ndt/volume_coverage.py`
+07B (schváleno 17. 10. 2026, sloučeno v PR #17, `35f1507`): `ndt/volume_coverage.py`
 dělí skutečný cíl na oříznuté buňky a oddělené kusy, váhy v mm³. `VolumeCoverageMap`
 nikdy nezaměňovat za `CoverageMap.areas`; ověřuje se součet vah bez přenormování.
 Neurčený vnitřní bod ponechá známý objem nejistý. Zásahy sdílí Etapu 06, výsledek
 je přenosný pomocným procesem, CLI/CSV a citlivost mají úplná upozornění UT.
 Pojezd `line` s nulovým rozevřením objem odmítne (osy nevymezují kladný objem).
-07C (editor/náhled) zatím není implementované ani schválené; objemový výpočet v panelu
-nepovolovat a `visible_ndt_coverage` pro objem vrací prázdnou kresbu. Formát zůstává 16.
+07C (schváleno 17. 10. 2026 včetně doporučení 1–4, návrh `docs/ndt/14-navrh-etapa-07c.md`,
+sloučeno do `main` v PR #19 na pokyn autora bez ruční zkoušky). 07C.1 hotovo:
+`gui/target_dialog.py` (editor svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová,
+nákres průřezu Qt), `ModelSession.check_ndt_volume_target` (bez změny modelu), `ndt_target_outline`,
+`ndt_frame_from_edge`, `ndt_target_preview` (v řezu rozříznutý), podnabídka *NDT – cílové
+objemy*. 07C.2 hotovo: panel zná krok cíle, toleranci (automaticky / číslo) a citlivost na
+krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad před spuštěním
+`ndt_coverage_estimate` se stejnými ochranami jako 07B; nepovedené porovnání nechá jemný
+výsledek a napíše „nepodařilo ověřit“. 07C.3 hotovo: `ndt/volume_drawing.py` obarví povrch
+cíle (i rozříznutého) podle buněk 07B, `VolumeSample.piece_bounds` rozliší kusy v buňce,
+nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Ruční
+zkouška 07C autorem zatím neproběhla (odložená, nenahrazovat tvrzením). Rozbor citlivosti V svaru
+(`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
+tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
+z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy 1–3
+schválené a provedené (`auto_tolerance`, `recommended_target_step`, `CONVERGENCE_RULE`,
+`tests/test_ndt_volume_reference.py`). Plošná mapa Etapy 06 má stále staré pravidlo.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
@@ -187,6 +212,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
+| `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
+| `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
@@ -503,6 +530,44 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   nejistém dopadu (`THROUGH_EDGE`, `GRAZING`) nemá odraz jednoznačnou normálu a dráha skončí
   se `STOPPED_UNCERTAIN`.
 
+## Známé pasti (NDT cílový objem v okně)
+
+- Náhled cíle (`viewer.show_target`) se kreslí ve vrstvě **`Topmost`**: svar je uvnitř
+  neprůhledného dílu a jeho stěny (převýšení, řez) splývají se stěnami dílu – v běžné vrstvě
+  nebyl na snímku vidět. Prohlížeč ho maže s dílem (`show_part`) → `_shown_target = None`.
+- `QComboBox.findData` **nenajde položku podle n-tice** (data jsou PyObject) – vrátí −1 a
+  nabídka by tiše zůstala na první položce. Data položek nabídek jsou proto text
+  (`target_dialog.KINDS`, klíče směrů `"+X"` …); šikmý směr ze souboru je položka navíc.
+- Čísla v dialogu jsou `QLineEdit` (ne `QDoubleSpinBox`), aby se nezaokrouhlila na pevný
+  počet desetinných míst – nezměněné *OK* musí vrátit identický JSON (bez kroku Zpět).
+- Dialog *OK* nejdřív zavolá `check_ndt_volume_target`; když jádro cíl odmítne, dialog
+  zůstane otevřený s chybou (`TargetDialog.accept`).
+- Objemová mapa se kreslí také `Topmost` (`show_coverage_map(..., topmost=True)`) a plochy
+  řezu dílu pod ní **šedě** (`fill`) – průřez cíle leží v rovině řezu dílu, v jedné vrstvě by
+  se plochy praly (z-fighting). Červená výplň by se pletla s „nepokryto“.
+- Kresba nepotřebuje geometrii z pomocného procesu: `resolve_target` + `section.cut` v okně,
+  povrch se rozřeže podél mřížky (`grid_min`, `target_step_mm`, `grid_frame` z předpokladů).
+  Úlomek na konci mřížky (čelo svaru) patří poslední buňce – indexy se omezují na počet buněk,
+  jinak by čelo zešedlo.
+- Kus buňky se pozná jen podle `piece_bounds`; když nejde rozhodnout (kvádry se překrývají,
+  meze chybí) a stavy se liší, úlomek je šedý – **nikdy nehádat zelenou**.
+- `SectionSettings` se mění přes `dataclasses.replace` – ruční konstruktor by ztratil
+  `target` (*Průřez svarem*) při posunu nebo otočení řezu.
+- Snímek přiblíženého řezu: `V3d_View.SetAt` drží oko na místě a kameru nakloní – nastav
+  i `SetEye` a `SetUp`; `app._screenshot` pohled před snímkem přizpůsobí celému dílu.
+
+## Známé pasti (NDT – citlivost objemového pokrytí)
+
+- Na **rovinném** pojezdu je tolerance zachycení jen **poloměr hledání**: každé místo blízko
+  osy se přesně ověří (`coverage._resolve_axis_hit` dopočítá polohu sondy, přiloží ji
+  a trasuje). Větší tolerance tam nevyrobí falešné „pokryto“ (na zakřivené ploše jen
+  „nelze spolehlivě vyhodnotit“), menší než `krok × √0,5` ale část paprsků nenajde.
+- Porovnání kroků je zkouška, ne důkaz: chyba buňky nekončí plynule, záleží i na poloze
+  mřížky vůči hranici (V svar: 5 mm náhodou přesně, 4 mm −3,4 p. b.).
+- Referenční V svar: výřez 10 mm, sonda 70° zprava bez odrazů, platné přiložení od
+  x0 = 22 mm (čelo 12 mm před výstupem naráží na převýšení), Y ±40 mm; průřez 15,18 %,
+  celý svar 12,2 %.
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -604,7 +669,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 04 geometrický model UT paprsku (lom jen se zadanými předpoklady, odrazy, formát v15),
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
-  [x] 07B objemové pokrytí (vývojová větev), [ ] 07C ovládání a demonstrace …
+  [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
+  (sloučeno v PR #19 bez ruční zkoušky; ruční zkouška autorem čeká) …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

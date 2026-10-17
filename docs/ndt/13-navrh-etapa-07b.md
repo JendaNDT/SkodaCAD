@@ -1,7 +1,8 @@
 # NDT – návrh etapy 07B: geometrické pokrytí cílového objemu
 
-Stav: **autor schválil implementaci 17. 10. 2026; provedeno ve vývojové větvi
-`codex/ndt-etapa-07b`, před sloučením do `main`**.
+Stav: **autor schválil implementaci 17. 10. 2026; sloučeno do `main` v
+[PR #17](https://github.com/JendaNDT/SkodaCAD/pull/17), commit `35f1507`**.
+Navazující ovládání v okně navrhuje [07C](14-navrh-etapa-07c.md) (čeká na schválení).
 Výchozí stav: `main`, commit `0dea6f8`, [sloučené PR #16](https://github.com/JendaNDT/SkodaCAD/pull/16).
 Navazuje na [Etapu 07 a provedený krok 07A](12-navrh-etapa-07.md),
 [Etapu 06](11-navrh-etapa-06.md) a [závazné vymezení UT](04-zavazne-vymezeni-ut.md).
@@ -223,6 +224,9 @@ Pro objem bude samostatné `check_volume_convergence`, se stejným pravidlem jak
 Etapa 06: porovnat `(krok pojezdu, krok cíle)` s `(2× krok pojezdu, 2× krok cíle)`.
 Počátek a orientace mřížky se zachovají. Tolerance i rozevření budou v obou bězích
 stejné; tolerance se převezme z jemnějšího běhu a podruhé se neodvodí z hrubého kroku.
+*(Změněno 17. 10. 2026 podle [rozboru citlivosti](15-rozbor-citlivosti-v-svaru.md): na
+rovině je tolerance jen poloměr hledání, hrubý běh proto hledá s
+`max(tolerance jemného běhu, krok × √0,5)`; jinak by část paprsků nenašel.)*
 Oba běhy zahrnou tentýž celý účinný objem a všechny tři stavy.
 
 Souhrn uvede procenta všech tří stavů v obou bězích, největší rozdíl v procentních
