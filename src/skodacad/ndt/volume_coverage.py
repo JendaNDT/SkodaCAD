@@ -41,6 +41,28 @@ MAX_PIECES = 20_000
 MAX_CLASSIFICATIONS = 1_000_000
 APPROXIMATION = ("Stav vnitřního bodu zastupuje objem jeho kusu buňky; "
                  "není důkazem zásahu každého místa.")
+# Pravidlo porovnání kroků (rozbor docs/ndt/15-rozbor-citlivosti-v-svaru.md): na rovinném
+# pojezdu je tolerance jen poloměr hledání (každý zásah se přesně ověří), hrubý běh proto
+# hledá aspoň tak hustě jako jemný – jinak by část paprsků jen „nenašel“.
+CONVERGENCE_RULE = "ndt-ut-objemove-porovnani 2: tolerance hrubého běhu ≥ jeho krok × √0,5"
+TARGET_STEP_SHARE = 6  # výchozí krok cíle = menší rozměr průřezu / 6 (rozbor, oddíl 4)
+
+
+def auto_tolerance(mode: str, scan_step: float) -> float:
+    """Automatická tolerance zachycení: polovina úhlopříčky mřížky pojezdu (po čáře 0,6 kroku)."""
+    return scan_step * (math.sqrt(0.5) if mode == "face" else 0.6)
+
+
+def recommended_target_step(target: dict) -> float:
+    """Výchozí krok cíle: šestina menšího rozměru průřezu, dolů na 0,5 mm, nejméně 0,5 mm
+    a v mezích MAX_CELLS. U 12mm V svaru (průřez 20 × 15 mm) 2,5 mm, u koutu 7 × 7 mm 1 mm.
+    Pevné 4 mm byly pro malý pokrytý klín u kořene příliš hrubé (chyba až 3,4 p. b.)."""
+    low, high, _counts = grid_extent(target, 1.0)
+    size = min(high[0] - low[0], high[1] - low[1])
+    step = max(0.5, math.floor(size / TARGET_STEP_SHARE / 0.5) * 0.5)
+    while math.prod(grid_extent(target, step)[2]) > MAX_CELLS:
+        step += 0.5
+    return step
 
 
 @dataclass(frozen=True)
@@ -95,6 +117,7 @@ class VolumeCoverageMap:
         lines += [f"Krok pojezdu {a['scan_step_mm']:g} mm, cíle {a['target_step_mm']:g} mm, "
                   f"tolerance {a['tolerance_mm']:g} mm, rozevření {a['spread_deg']:g}°.",
                   APPROXIMATION,
+                  *([a["tolerance_warning"]] if a.get("tolerance_warning") else []),
                   a.get("convergence_text", "Citlivost na krok neověřena."),
                   f"Výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}."]
         lines.extend(dict.fromkeys(r for r in self.reasons if r))
@@ -252,7 +275,8 @@ def _sample_volume(geo: PartGeometry, target: dict, step: float, positions: int,
 
 
 def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
-                   mode: str = "face", scan_step: float = 5.0, target_step: float = 4.0,
+                   mode: str = "face", scan_step: float = 5.0,
+                   target_step: float | None = None,
                    length_mm: float = 50.0, angle_deg: float = 0.0,
                    tolerance_mm: float | None = None, spread_deg: float = 0.0,
                    beta: float | None = None, bounces: int | None = None,
@@ -260,6 +284,8 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
                    refraction: Refraction | None = None) -> VolumeCoverageMap:
     started = time.monotonic()
     scan_step = _number(scan_step, "Krok pojezdu [mm]", 0.1, 1000)
+    if target_step is None:  # výchozí krok podle velikosti průřezu
+        target_step = recommended_target_step(normalize_target(target))
     target_step = _number(target_step, "Krok cíle [mm]", 0.1, 1000)
     length_mm = _number(length_mm, "Délka pojezdu [mm]", 0, 100000)
     angle_deg = _number(angle_deg, "Směr sondy [°]", -36000, 36000)
@@ -270,9 +296,9 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
         raise CoverageError("Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. "
                             "Pro objem zvol pojezd po ploše; pro čáru lze samostatně "
                             "vyhodnotit body nebo plochy.")
-    tolerance = (scan_step * (math.sqrt(0.5) if mode == "face" else 0.6)
-                 if tolerance_mm is None else _number(
-                     tolerance_mm, "Tolerance zachycení [mm]", 0, 1000))
+    search = auto_tolerance(mode, scan_step)
+    tolerance = (search if tolerance_mm is None else _number(
+        tolerance_mm, "Tolerance zachycení [mm]", 0, 1000))
     target = normalize_target(target)
     beam = trace_beam(geo, placement, beta, bounces, max_length, refraction)
     candidates = _scan_positions(placement, mode, scan_step, length_mm)
@@ -292,7 +318,13 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
                        quantity="volume", unit="mm³",
                        target_fingerprint=target_fingerprint(target),
                        volume_algorithm=ALGORITHM, hit_algorithm=HIT_ALGORITHM,
-                       approximation=APPROXIMATION)
+                       approximation=APPROXIMATION,
+                       recommended_target_step_mm=recommended_target_step(target))
+    if tolerance < search - 1e-9:
+        assumptions["tolerance_warning"] = (
+            f"Tolerance zachycení {tolerance:g} mm je menší než krok pojezdu × "
+            f"{'0,71' if mode == 'face' else '0,6'} = {search:.3g} mm – hledání nemusí najít "
+            "všechny paprsky a pokrytí může vyjít nižší.")
     return VolumeCoverageMap(samples, states, hits, reasons, resolved.requested_volume_mm3,
                              resolved.volume_mm3, positions, valid, uncertain, assumptions,
                              time.monotonic() - started)
@@ -305,6 +337,7 @@ class VolumeConvergence:
     delta_pct: float
     fine_steps: tuple[float, float]
     coarse_steps: tuple[float, float]
+    tolerances: tuple[float, float] = (0.0, 0.0)  # tolerance jemného a hrubého běhu [mm]
 
     @property
     def stable(self) -> bool:
@@ -316,7 +349,8 @@ class VolumeConvergence:
                            for s, label in STATES.items())
         return (f"Citlivost na krok: největší rozdíl tří stavů {self.delta_pct:.2f} "
                 f"procentního bodu; kroky pojezdu/cíle {self.fine_steps} / "
-                f"{self.coarse_steps} mm. {values}. "
+                f"{self.coarse_steps} mm, tolerance {self.tolerances[0]:.3g} / "
+                f"{self.tolerances[1]:.3g} mm. {values}. "
                 + ("Nízká pozorovaná citlivost do 1 p. b.; není zárukou přesnosti."
                    if self.stable else "Zjemni krok výpočtu."))
 
@@ -324,24 +358,30 @@ class VolumeConvergence:
 def check_volume_convergence(geo: PartGeometry, placement: Placement, *,
                              fine: VolumeCoverageMap | None = None,
                              **kwargs: Any) -> VolumeConvergence:
-    """CLI předá již spočítaný jemný běh; tolerance se pro hrubý běh nezvětší."""
+    """CLI předá již spočítaný jemný běh. Hrubý běh má dvojnásobné kroky a hledá aspoň
+    tak hustě jako jemný: tolerance = max(tolerance jemného běhu, jeho krok × √0,5).
+    Na rovině se každý zásah přesně ověří, takže větší poloměr hledání pokrytí nezvětší
+    neprávem; na zakřivené ploše dává jen „nelze spolehlivě vyhodnotit“."""
     if fine is None:
         fine = compute_volume(geo, placement, **kwargs)
     a = fine.assumptions
     fine_steps = (a["scan_step_mm"], a["target_step_mm"])
     coarse_steps = tuple(v * 2 for v in fine_steps)
+    coarse_tolerance = max(a["tolerance_mm"], auto_tolerance(a["mode"], coarse_steps[0]))
     coarse = compute_volume(geo, placement, **(kwargs | {
         "scan_step": coarse_steps[0], "target_step": coarse_steps[1],
-        "tolerance_mm": a["tolerance_mm"]}))
+        "tolerance_mm": coarse_tolerance}))
     if not math.isclose(fine.total_volume, coarse.total_volume, rel_tol=1e-8, abs_tol=1e-6):
         raise CoverageError("Porovnání kroků nemá shodný cílový objem.")
     f, c = ({s: result.percent(s) for s in STATES} for result in (fine, coarse))
     result = VolumeConvergence(f, c, max(abs(f[s] - c[s]) for s in STATES),
-                               fine_steps, coarse_steps)
+                               fine_steps, coarse_steps, (a["tolerance_mm"], coarse_tolerance))
     fine.assumptions.update(convergence={"fine_pct": f, "coarse_pct": c,
                                          "delta_pp": result.delta_pct,
                                          "fine_steps_mm": fine_steps,
                                          "coarse_steps_mm": coarse_steps,
-                                         "tolerance_mm": a["tolerance_mm"]},
+                                         "tolerance_mm": a["tolerance_mm"],
+                                         "coarse_tolerance_mm": coarse_tolerance,
+                                         "rule": CONVERGENCE_RULE},
                             convergence_text=result.text)
     return result

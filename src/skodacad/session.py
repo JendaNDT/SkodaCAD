@@ -72,6 +72,7 @@ from skodacad.ndt.volume_coverage import (
     check_volume_convergence,
     compute_volume,
     grid_extent,
+    recommended_target_step,
 )
 from skodacad.ndt.volume_drawing import volume_mesh
 from skodacad.ndt.welds import (
@@ -1323,9 +1324,11 @@ class ModelSession:
         key = self._coverage_context()
         self.clear_ndt_coverage()
         volume = isinstance(target, dict)
+        # Bez kroku cíle: u objemu podle velikosti průřezu (compute_volume), u ploch krok.
         options = dict({"target": target} if volume else {"faces": target}, mode=mode,
                        scan_step=step_mm,
-                       target_step=step_mm if target_step_mm is None else target_step_mm,
+                       target_step=(None if volume else step_mm) if target_step_mm is None
+                       else target_step_mm,
                        tolerance_mm=tolerance_mm, angle_deg=angle, bounces=bounces,
                        spread_deg=spread_deg, length_mm=length_mm)
         try:
@@ -1357,8 +1360,9 @@ class ModelSession:
             return CoverageEstimate(0, 0, 0, False, (
                 "Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. Pro objem zvol "
                 "pojezd po ploše; pro čáru lze samostatně vyhodnotit body nebo plochy."))
-        step = step_mm if target_step_mm is None else target_step_mm
         try:
+            step = recommended_target_step(normalize_target(target)) \
+                if target_step_mm is None else target_step_mm
             cells = math.prod(grid_extent(target, step)[2])
             positions = len(_scan_positions(placed, mode, step_mm, length_mm))
         except (CoverageError, TargetError) as exc:
@@ -1374,6 +1378,17 @@ class ModelSession:
         text += "." if ok else (" – výpočet je příliš jemný (nejvýš 20 000 buněk a 80 milionů "
                                 "porovnání). Zvětši krok cíle nebo pojezdu.")
         return CoverageEstimate(cells, positions, legs, ok, text)
+
+    def ndt_recommended_target_step(self, study_id: str | None) -> float | None:
+        """Výchozí krok cíle objemové studie (šestina menšího rozměru průřezu); None = studie
+        nemá objemový cíl."""
+        try:
+            target = (self.ndt_study(study_id).get("target") or {}) if study_id else {}
+            if target.get("kind") not in ("volume", "weld"):
+                return None
+            return recommended_target_step(normalize_target(target))
+        except (DocumentError, TargetError):
+            return None
 
     @property
     def coverage_pending(self) -> bool:

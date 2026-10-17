@@ -348,7 +348,8 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   a zadaný objem ze vzorce, **Zkontrolovat v dílu** spočítá účinný objem v materiálu bez
   změny modelu. *Podle vybrané hrany* převezme směr a délku z rovné hrany vybrané ve 3D.
   Cíl se ve 3D ukáže průhledně modře (i skrz díl). U objemového cíle má mapa pokrytí navíc
-  **krok cíle** (výchozí 4 mm, pojezd 5 mm), toleranci zachycení (automaticky) a zapnuté
+  **krok cíle** (výchozí šestina menšího rozměru průřezu, u 12mm V svaru 2,5 mm; pojezd
+  5 mm), toleranci zachycení (automaticky) a zapnuté
   **Ověřit citlivost na krok**; před spuštěním je vidět odhad (buňky, polohy sondy). Výsledek:
   tučná procenta tří stavů v mm³, citlivost nahlas (oranžově „zjemni krok“), barevný povrch
   cíle a tlačítko **Průřez svarem** – řez kolmo na osu cíle, posuvník v panelu *Řez* jede
@@ -782,7 +783,9 @@ bez přenormování. Výsledky zůstávají pouze v paměti a zanikají se změn
 
 `skodacad pokryti MODEL --studie s1 --plocha X,Y,Z --rezim face --krok 5 --krok-cile 2
 --konvergence --csv out/pokryti.csv` vyhodnotí cíl uložený ve studii. Adresář `out`
-musí existovat. Porovnání zdvojnásobí oba kroky při stejné toleranci; nízký rozdíl
+musí existovat. Bez `--krok-cile` je krok cíle šestina menšího rozměru průřezu.
+Porovnání zdvojnásobí oba kroky; hrubý běh hledá aspoň s tolerancí krok × √0,5 (na
+rovině je tolerance jen poloměr hledání, každý zásah se přesně ověří); nízký rozdíl
 není zárukou přesnosti. Výstup i CSV vždy obsahují úplné upozornění UT.
 Objemový pojezd po čáře (`line`) s nulovým rozevřením se odmítá, protože ideální
 osy nevymezují kladný objem. Nenulové rozevření vyžaduje výslovné zadání.

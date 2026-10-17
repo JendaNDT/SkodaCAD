@@ -123,6 +123,11 @@
   jen ±X/±Y/±Z, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok
   zapnutou ve výchozím stavu, výchozí kroky pojezd 5 mm / cíl 4 mm, barevný povrch cíle
   a tlačítko *Průřez svarem*. Výpočet 07B ani formát (16) se nemění.
+- (17. 10. 2026, schváleno) **Opravy 1–3 z rozboru citlivosti V svaru**
+  (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): hrubý běh porovnání kroků hledá s tolerancí
+  `max(jemná, krok × √0,5)` (pravidlo `ndt-ut-objemove-porovnani 2`), výslovně malá
+  tolerance dostane upozornění; výchozí krok cíle = šestina menšího rozměru průřezu
+  (místo 4 mm z 07C); referenční test V svaru (15,18 % průřezu).
 
 ## Architektura (`src/skodacad/`)
 
@@ -166,8 +171,9 @@ nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůs
 zkouška 07C autorem a sloučení do `main` zatím neproběhly. Rozbor citlivosti V svaru
 (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
 tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
-z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy čekají
-na schválení – do té doby pravidlo 07B §6 ani výchozí kroky neměnit.
+z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy 1–3
+schválené a provedené (`auto_tolerance`, `recommended_target_step`, `CONVERGENCE_RULE`,
+`tests/test_ndt_volume_reference.py`). Plošná mapa Etapy 06 má stále staré pravidlo.
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
@@ -549,6 +555,18 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `target` (*Průřez svarem*) při posunu nebo otočení řezu.
 - Snímek přiblíženého řezu: `V3d_View.SetAt` drží oko na místě a kameru nakloní – nastav
   i `SetEye` a `SetUp`; `app._screenshot` pohled před snímkem přizpůsobí celému dílu.
+
+## Známé pasti (NDT – citlivost objemového pokrytí)
+
+- Na **rovinném** pojezdu je tolerance zachycení jen **poloměr hledání**: každé místo blízko
+  osy se přesně ověří (`coverage._resolve_axis_hit` dopočítá polohu sondy, přiloží ji
+  a trasuje). Větší tolerance tam nevyrobí falešné „pokryto“ (na zakřivené ploše jen
+  „nelze spolehlivě vyhodnotit“), menší než `krok × √0,5` ale část paprsků nenajde.
+- Porovnání kroků je zkouška, ne důkaz: chyba buňky nekončí plynule, záleží i na poloze
+  mřížky vůči hranici (V svar: 5 mm náhodou přesně, 4 mm −3,4 p. b.).
+- Referenční V svar: výřez 10 mm, sonda 70° zprava bez odrazů, platné přiložení od
+  x0 = 22 mm (čelo 12 mm před výstupem naráží na převýšení), Y ±40 mm; průřez 15,18 %,
+  celý svar 12,2 %.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 

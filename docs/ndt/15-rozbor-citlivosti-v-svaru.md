@@ -1,7 +1,8 @@
 # NDT – rozbor: proč je objemové pokrytí V svaru citlivé na krok
 
-Stav: **rozbor 17. 10. 2026 ve vývojové větvi po 07C; výpočet ani formát se nemění.
-Návrh oprav (oddíl 6) čeká na schválení autorem.**
+Stav: **rozbor 17. 10. 2026; autor schválil opravy 1–3 z oddílu 6 („schvaluji opravy 1–3
+z rozboru“) a jsou provedené ve vývojové větvi – viz [oddíl 7](#7-provedení-oprav).
+Formát se nemění.**
 Navazuje na [07B](13-navrh-etapa-07b.md) (výpočet a pravidlo porovnání kroků) a
 [07C](14-navrh-etapa-07c.md) (výchozí kroky v okně). Závazné vymezení UT platí beze změny:
 jde jen o geometrické pokrytí, procento není pravděpodobnost nalezení vady.
@@ -118,7 +119,8 @@ průřezu** (≤ 3 mm u 12 mm plechu) je chyba v této úloze do ±0,6 p. b.
 2. **Výchozí krok cíle podle velikosti průřezu:** šestina menšího rozměru průřezu,
    zaokrouhlená dolů na 0,5 mm (nejméně 0,5 mm, v mezích 20 000 buněk) místo pevných 4 mm.
    V svar 20 × 15 mm → 2,5 mm: ověřeno výpočtem **11,79 %** (−0,4 p. b., přesně podle
-   simulace) za 67 s místo 105 s u 2 mm; koutový 7 × 7 mm → 1 mm. Mění schválené rozhodnutí 3 z 07C (pojezd 5 mm / cíl 4 mm).
+   simulace) za 67 s místo 105 s u 2 mm; koutový 7 × 7 mm → 1 mm.
+   Mění schválené rozhodnutí 3 z 07C (pojezd 5 mm / cíl 4 mm).
 3. **Regresní test s touto referencí:** V svar 70°, bez odrazů – výchozí nastavení musí
    být do ±1 p. b. od 12,2 % a porovnávací běh se správnou tolerancí nesmí ukázat
    rozdíl způsobený jen hledáním.
@@ -126,3 +128,25 @@ průřezu** (≤ 3 mm u 12 mm plechu) je chyba v této úloze do ±0,6 p. b.
    (přesnost jemné mřížky za zlomek času). Teď se nenavrhuje.
 
 Schválením se nemění formát, výrobní geometrie ani závazné vymezení UT.
+
+## 7. Provedení oprav
+
+- **Oprava 1:** `volume_coverage.check_volume_convergence` – hrubý běh hledá s tolerancí
+  `max(tolerance jemného běhu, jeho krok × √0,5)` (`auto_tolerance`), v souhrnu
+  „tolerance 3.54 / 7.07 mm“, v předpokladech `coarse_tolerance_mm` a pravidlo
+  `ndt-ut-objemove-porovnani 2` (`CONVERGENCE_RULE`). Výslovná tolerance menší než
+  `krok × √0,5` (u čáry `× 0,6`) zapíše do souhrnu i CSV upozornění „hledání nemusí najít
+  všechny paprsky“ (`tolerance_warning`). Samotný výpočet pokrytí (`ndt-ut-objemove-pokryti 1`)
+  se nezměnil.
+- **Oprava 2:** `recommended_target_step` – výchozí krok cíle v okně (pole se nastaví při
+  výběru studie s novým cílem a drží ruční změnu, dokud se cíl nezmění; odhad připíše
+  „Doporučený krok cíle … mm“), v `ModelSession` i v `skodacad pokryti` bez `--krok-cile`.
+  U ploch zůstává krok cíle = krok pojezdu.
+- **Oprava 3:** `tests/test_ndt_volume_reference.py` – výřez 10 mm V svaru, reference vzorcem
+  15,18 % průřezu. Výchozí nastavení dává 14,74 % (odchylka 0,44 p. b.), porovnávací běh
+  15,22 % (rozdíl 0,47 p. b. – dřív by hledal jen 3,54 mm daleko), pojezd 10 mm se
+  správnou tolerancí přesně totéž co 5 mm; tolerance 3,54 mm u pojezdu 10 mm by dala
+  7,37 % a dostane upozornění.
+- **Neopraveno (mimo schválení):** plošná mapa Etapy 06 (`coverage.check_convergence`) má
+  stejné pravidlo „tolerance zůstává stejná“; u ploch se tolerance chová stejně (rovina =
+  přesné ověření). Navrhuje se jako samostatná malá oprava.

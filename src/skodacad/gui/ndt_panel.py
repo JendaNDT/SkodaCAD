@@ -234,9 +234,11 @@ class NdtPanel(QWidget):
         self.coverage_target_step.setObjectName("ndt_coverage_target_step")
         self.coverage_target_step.setRange(0.5, 100)
         self.coverage_target_step.setDecimals(1)
-        self.coverage_target_step.setValue(4.0)
-        self.coverage_target_step.setToolTip("Hrana objemové buňky cíle; jemnější krok = "
-                                             "přesnější, ale delší výpočet")
+        self.coverage_target_step.setValue(4.0)  # při výběru studie se nastaví doporučený
+        self.coverage_target_step.setToolTip(
+            "Hrana objemové buňky cíle. Doporučeno: šestina menšího rozměru průřezu cíle "
+            "(jemnější = přesnější, ale delší výpočet)")
+        self._target_step_key: tuple | None = None  # pro který cíl je nastaven doporučený
         form.addRow("Krok cíle [mm]:", self.coverage_target_step)
         self.coverage_spread = QDoubleSpinBox()
         self.coverage_spread.setRange(0, 45)
@@ -438,6 +440,8 @@ class NdtPanel(QWidget):
         possible = bool(ut and placed and matching and result is not None
                         and result.state == "ok" and not self.window.ai_busy)
         volume = self._volume_target()
+        if volume:
+            self._recommend_target_step()
         estimate = self._estimate() if possible and volume else None
         self.coverage_action.setEnabled(possible and (not volume or (estimate is not None
                                                                       and estimate.ok)))
@@ -647,12 +651,28 @@ class NdtPanel(QWidget):
             self._estimate_cache = (key, found)
         return self._estimate_cache[1]
 
+    def _recommend_target_step(self) -> None:
+        """Nový objemový cíl → doporučený krok cíle (šestina menšího rozměru průřezu);
+        uživatel ho pak smí změnit, dokud se cíl nezmění."""
+        key = (self.current_id(), repr((self._record(self.current_id()) or {}).get("target")))
+        if key == self._target_step_key:
+            return
+        recommended = self.window.session.ndt_recommended_target_step(self.current_id())
+        if recommended is None:
+            return
+        self._target_step_key = key
+        self.coverage_target_step.blockSignals(True)
+        self.coverage_target_step.setValue(recommended)
+        self.coverage_target_step.blockSignals(False)
+
     def _show_volume_options(self, volume: bool, estimate: CoverageEstimate | None) -> None:
         """Krok cíle, tolerance a citlivost jen u objemového cíle; odhad pod nimi."""
         form = self.coverage_form
         for widget in (self.coverage_target_step, self.tolerance_box,
                        self.coverage_convergence):
             form.setRowVisible(widget, volume)
+        recommended = (self.window.session.ndt_recommended_target_step(self.current_id())
+                       if volume else None)
         form.labelForField(self.coverage_step).setText(
             "Krok pojezdu [mm]:" if volume else "Krok výpočtu [mm]:")
         self.coverage_estimate.setVisible(volume)
@@ -664,7 +684,11 @@ class NdtPanel(QWidget):
         else:
             self.coverage_estimate.setStyleSheet("color: #555;" if estimate.ok
                                                  else "color: #b9770e;")
-            self.coverage_estimate.setText(estimate.text)
+            text = estimate.text
+            if recommended is not None and \
+                    abs(self.coverage_target_step.value() - recommended) > 1e-9:
+                text += f" Doporučený krok cíle {recommended:g} mm."
+            self.coverage_estimate.setText(text)
 
     def compute_coverage(self) -> None:
         options = self._coverage_options()

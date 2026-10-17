@@ -109,7 +109,9 @@ def main(argv: list[str] | None = None) -> int:
                           help="bod určující cílovou plochu (lze opakovat)")
     coverage.add_argument("--rezim", choices=("line", "face"), default="face")
     coverage.add_argument("--krok", type=float, default=5.0, help="krok pojezdu [mm]")
-    coverage.add_argument("--krok-cile", type=float, help="krok sítě cíle [mm], jinak --krok")
+    coverage.add_argument("--krok-cile", type=float,
+                          help="krok sítě cíle [mm]; jinak u objemu šestina menšího rozměru "
+                               "průřezu, u ploch --krok")
     coverage.add_argument("--delka", type=float, default=50.0, help="délka přímé dráhy [mm]")
     coverage.add_argument("--smer", type=float, default=0.0, help="natočení sondy [°]")
     coverage.add_argument("--sklon", "--uhel", dest="beam_angle", type=float)
@@ -294,8 +296,9 @@ def _coverage(args: argparse.Namespace) -> int:
     inputs = ({"target": target} if target is not None else
               {"faces": faces or None, "points": points})
     options = dict(**inputs, mode=args.rezim,
-                   scan_step=args.krok, target_step=(args.krok if args.krok_cile is None
-                                                     else args.krok_cile),
+                   scan_step=args.krok,
+                   target_step=(args.krok_cile if args.krok_cile is not None
+                                else None if target is not None else args.krok),
                    length_mm=args.delka, angle_deg=args.smer, tolerance_mm=args.tolerance,
                    spread_deg=args.rozevreni, beta=args.beam_angle, bounces=args.bounces,
                    max_length=args.max_length, refraction=refraction)

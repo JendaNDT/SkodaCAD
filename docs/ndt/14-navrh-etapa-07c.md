@@ -149,7 +149,7 @@ Skupina *Mapa geometrického pokrytí UT* pro studii s objemovým cílem:
 |---|---|---|
 | Zdroj poloh sondy | Po ploše přiložení | *Z přímé dráhy* jen s nenulovým rozevřením – jinak panel vypíše větu 07B „Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem…“ a tlačítko vypne |
 | Krok pojezdu [mm] | 5 | dosavadní pole *Krok výpočtu*, přejmenované |
-| **Krok cíle [mm]** | 4 (viz rozhodnutí 3) | nové, jen pro objem; hrana buňky mřížky |
+| **Krok cíle [mm]** | šestina menšího rozměru průřezu (V svar 2,5) | nové, jen pro objem; hrana buňky mřížky; původně 4 mm – změněno podle rozboru 15 |
 | Rozevření (poloviční úhel) [°] | 0 | beze změny |
 | **Tolerance zachycení [mm]** | Automaticky | nové, ve skupině *Pokročilé*; automaticky = krok pojezdu × 0,71 (plocha) / × 0,6 (čára) jako v 07B. Tooltip: „vyhledávací pomůcka, ne šířka svazku“ |
 | **Ověřit citlivost na krok** | zapnuto (rozhodnutí 2) | navíc hrubší běh se dvojnásobnými kroky a stejnou tolerancí (`check_volume_convergence`) |
@@ -321,7 +321,9 @@ Prosím o schválení nebo úpravu těchto bodů (doporučení je vždy první):
    ale panel nikdy neukáže číslo bez informace o jeho stabilitě.
 3. **Výchozí kroky pojezdu 5 mm a cíle 4 mm** jako rychlý první pohled – *doporučeno*
    (u V svaru necelá minuta i s citlivostí); jemnější výpočet je volba uživatele
-   (panel radí „zjemni krok“).
+   (panel radí „zjemni krok“). *Změněno 17. 10. 2026 podle
+   [rozboru citlivosti](15-rozbor-citlivosti-v-svaru.md): krok cíle je výchozí šestina
+   menšího rozměru průřezu (V svar 2,5 mm, koutový 1 mm) – 4 mm byly o 3,2 p. b. vedle.*
 4. **Tlačítko *Průřez svarem*** (řez kolmo na osu cíle) – *doporučeno*; je to pohled,
    na který je NDT technik zvyklý.
 

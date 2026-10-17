@@ -234,10 +234,12 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     w._refresh_all()
     assert form.isRowVisible(panel.coverage_target_step)
     assert form.labelForField(panel.coverage_step).text() == "Krok pojezdu [mm]:"
-    assert (panel.coverage_step.value(), panel.coverage_target_step.value()) == (5, 4)
+    # krok cíle = šestina menšího rozměru průřezu 10 × 10 mm, dolů na 0,5 mm (rozbor 15)
+    assert (panel.coverage_step.value(), panel.coverage_target_step.value()) == (5, 1.5)
     assert panel.coverage_convergence.isChecked() and panel.coverage_tolerance_auto.isChecked()
     assert not panel.coverage_tolerance.isEnabled()
-    assert panel.coverage_estimate.text().startswith("Odhad: 45 buněk cíle, ")
+    assert panel.coverage_estimate.text().startswith("Odhad: 686 buněk cíle, ")
+    assert "Doporučený krok cíle" not in panel.coverage_estimate.text()
     assert "hrubší běh" in panel.coverage_estimate.text()
     assert panel.coverage_action.isEnabled()
     panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("line"))
@@ -250,6 +252,9 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     panel.coverage_step.setValue(25)
     panel.coverage_target_step.setValue(5)
     assert panel.coverage_estimate.text().startswith("Odhad: 16 buněk cíle, 45 poloh sondy")
+    assert panel.coverage_estimate.text().endswith("Doporučený krok cíle 1.5 mm.")
+    w._refresh_all()  # stejný cíl – vlastní krok cíle zůstane
+    assert panel.coverage_target_step.value() == 5
     panel.coverage_tolerance_auto.setChecked(False)
     assert panel.coverage_tolerance.isEnabled()
     panel.coverage_tolerance.setValue(10)
@@ -259,7 +264,11 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     assert result.assumptions["convergence"]["coarse_steps_mm"] == (50.0, 10.0)
     text = panel.coverage_label.text()
     assert text.startswith("<b>Geometricky pokryto ")
-    assert "citlivost na krok" in text and UT_DISCLAIMER in text
+    assert UT_DISCLAIMER in text
+    # tolerance 10 mm < pojezd 25 mm × 0,71: hledání neúplné – panel to řekne a porovnání
+    # (hrubý běh hledá podle své mřížky) to ukáže jako citlivost
+    assert "hledání nemusí najít všechny paprsky" in text
+    assert "Výsledek je citlivý na krok" in text
     assert "Stav vnitřního bodu zastupuje objem jeho kusu buňky" in text
     assert "Dovnitř se podívej tlačítkem <b>Průřez svarem</b>" in text
     nodes, triangles, _colors = w.viewer.coverage_map  # 07C.3: povrch cíle navrch

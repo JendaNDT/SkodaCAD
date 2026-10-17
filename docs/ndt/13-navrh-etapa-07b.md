@@ -224,6 +224,9 @@ Pro objem bude samostatné `check_volume_convergence`, se stejným pravidlem jak
 Etapa 06: porovnat `(krok pojezdu, krok cíle)` s `(2× krok pojezdu, 2× krok cíle)`.
 Počátek a orientace mřížky se zachovají. Tolerance i rozevření budou v obou bězích
 stejné; tolerance se převezme z jemnějšího běhu a podruhé se neodvodí z hrubého kroku.
+*(Změněno 17. 10. 2026 podle [rozboru citlivosti](15-rozbor-citlivosti-v-svaru.md): na
+rovině je tolerance jen poloměr hledání, hrubý běh proto hledá s
+`max(tolerance jemného běhu, krok × √0,5)`; jinak by část paprsků nenašel.)*
 Oba běhy zahrnou tentýž celý účinný objem a všechny tři stavy.
 
 Souhrn uvede procenta všech tří stavů v obou bězích, největší rozdíl v procentních
