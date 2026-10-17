@@ -158,9 +158,9 @@ Neurčený vnitřní bod ponechá známý objem nejistý. Zásahy sdílí Etapu 
 je přenosný pomocným procesem, CLI/CSV a citlivost mají úplná upozornění UT.
 Pojezd `line` s nulovým rozevřením objem odmítne (osy nevymezují kladný objem).
 07C (schváleno 17. 10. 2026 včetně doporučení 1–4, návrh `docs/ndt/14-navrh-etapa-07c.md`,
-implementace po krocích ve vývojové větvi). 07C.1 hotovo: `gui/target_dialog.py` (editor
-svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová, nákres průřezu Qt),
-`ModelSession.check_ndt_volume_target` (bez změny modelu), `ndt_target_outline`,
+sloučeno do `main` v PR #19 na pokyn autora bez ruční zkoušky). 07C.1 hotovo:
+`gui/target_dialog.py` (editor svaru/hranolu, směry jen ±X/±Y/±Z, šikmý směr ze souboru se zachová,
+nákres průřezu Qt), `ModelSession.check_ndt_volume_target` (bez změny modelu), `ndt_target_outline`,
 `ndt_frame_from_edge`, `ndt_target_preview` (v řezu rozříznutý), podnabídka *NDT – cílové
 objemy*. 07C.2 hotovo: panel zná krok cíle, toleranci (automaticky / číslo) a citlivost na
 krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad před spuštěním
@@ -168,7 +168,7 @@ krok (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu), odhad p�
 výsledek a napíše „nepodařilo ověřit“. 07C.3 hotovo: `ndt/volume_drawing.py` obarví povrch
 cíle (i rozříznutého) podle buněk 07B, `VolumeSample.piece_bounds` rozliší kusy v buňce,
 nejednoznačné = šedě; *Průřez svarem* = `set_section_target`. Formát zůstává 16. Ruční
-zkouška 07C autorem a sloučení do `main` zatím neproběhly. Rozbor citlivosti V svaru
+zkouška 07C autorem zatím neproběhla (odložená, nenahrazovat tvrzením). Rozbor citlivosti V svaru
 (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovinném pojezdu je
 tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
 z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy 1–3
@@ -670,7 +670,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
   [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
-  (vývojová větev; ruční zkouška autorem a sloučení čekají) …
+  (sloučeno v PR #19 bez ruční zkoušky; ruční zkouška autorem čeká) …
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

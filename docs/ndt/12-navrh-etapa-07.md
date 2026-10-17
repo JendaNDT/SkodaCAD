@@ -2,7 +2,7 @@
 
 Stav: **07A schváleno autorem 17. 10. 2026 a sloučeno do `main` v PR #16 (`0dea6f8`);
 07B schváleno 17. 10. 2026 a sloučeno do `main` v PR #17 (`35f1507`);
-07C schváleno 17. 10. 2026 a implementováno ve vývojové větvi**.
+07C schváleno 17. 10. 2026 a sloučeno do `main` v PR #19 bez ruční zkoušky**.
 
 Podrobné návrhy kroků: [07B – geometrické pokrytí cílového objemu](13-navrh-etapa-07b.md),
 [07C – cílový objem a jeho pokrytí v okně](14-navrh-etapa-07c.md).

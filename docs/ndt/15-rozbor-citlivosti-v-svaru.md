@@ -1,7 +1,7 @@
 # NDT – rozbor: proč je objemové pokrytí V svaru citlivé na krok
 
 Stav: **rozbor 17. 10. 2026; autor schválil opravy 1–3 z oddílu 6 („schvaluji opravy 1–3
-z rozboru“) a jsou provedené ve vývojové větvi – viz [oddíl 7](#7-provedení-oprav).
+z rozboru“) a jsou provedené (sloučeno do `main` v PR #19) – viz [oddíl 7](#7-provedení-oprav).
 Formát se nemění.**
 Navazuje na [07B](13-navrh-etapa-07b.md) (výpočet a pravidlo porovnání kroků) a
 [07C](14-navrh-etapa-07c.md) (výchozí kroky v okně). Závazné vymezení UT platí beze změny:
