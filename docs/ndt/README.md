@@ -12,7 +12,8 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 8. [Návrh první verze pro macOS](08-navrh-macos.md) – audit knihoven (vše má verzi pro Apple Silicon), Cocoa okno, `SkodaCAD.app` v ZIP, samostatné sestavení na GitHubu, ruční test na MacBooku (rozpracováno).
 9. [Návrh etapy 04](09-navrh-etapa-04.md) – geometrický model UT paprsku: přímá a úhlová sonda, lom podle Snellova zákona se zadanými předpoklady, odrazy (poloviční a celá rozteč), zobrazení ve 3D a v řezu (schváleno a provedeno 16. 10. 2026).
 10. [Návrh etapy 05](10-navrh-etapa-05.md) – ruční pohyb sondy v okně (milník M1): tažení sondy myší po povrchu ve 3D, krokování a posuvník přímé dráhy se živým přepočtem kolize a UT paprsku (schváleno a provedeno 16. 10. 2026).
-11. [Návrh etapy 06](11-navrh-etapa-06.md) – mapa geometrického pokrytí UT (začátek milníku M2): pojezd po ploše i přímce, tři stavy, 3D, CSV a kontrola citlivosti na krok (schváleno; implementováno ve vývojové větvi, čeká na kontrolu a sloučení).
+11. [Návrh etapy 06](11-navrh-etapa-06.md) – mapa geometrického pokrytí UT (začátek milníku M2): pojezd po ploše i přímce, tři stavy, 3D, CSV a kontrola citlivosti na krok (sloučeno v PR #15; 723 testů a zkoušky balíčků Windows/macOS prošly; ruční zkouška vydání po sloučení čeká).
+12. [Návrh etapy 07](12-navrh-etapa-07.md) – svar a cílový objem: rovný V a koutový svar, pomocný objem a formát JSON 16; 07A schváleno a implementováno ve vývojové větvi, 07B/07C zatím neschválené návrhy.
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 
@@ -21,12 +22,16 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 
 (Soubory 04 a 05 mají shodná čísla s návrhy etap – kvůli odkazům se nepřečíslovávají.)
 
-**Stav:** etapy 00–05 jsou hotové; **milník M1 hotový**. Etapa 06 je ve vývojové větvi:
+**Stav:** etapy 00–06 jsou implementované v hlavní větvi; **milník M1 hotový**. Etapa 06:
 `ndt/coverage.py`, pojezd po ploše i přímce, tři stavy vzorků, ověření mezilehlých poloh,
-citlivost na krok, CSV, výpočet na pozadí a 3D mapa v okně. Formát zůstává verze 15,
-výsledek je pouze pohled a po změně zadání zanikne. Autor potvrdil místní ruční zkoušku;
-změna čeká na kontrolu a sloučení do hlavní větve.
-Další podle plánu je etapa 07 – svar a cílová oblast jako NDT objekty (pokračování milníku M2).
+citlivost na krok, CSV, výpočet na pozadí a 3D mapa v okně. Etapa 06 ponechala formát 15,
+výsledek je pouze pohled a po změně zadání zanikne. Autor potvrdil počáteční místní ruční zkoušku;
+po kontrole byly opraveny odrazy od boční stěny a souhrn při posunu sondy posuvníkem.
+PR #15 byl po schválení sloučen, balíčky Windows i macOS prošly automatickou zkouškou.
+Ruční zkouška vydání po sloučení byla odložena a zatím neproběhla.
+Další podle plánu je etapa 07 – svar a cílová oblast jako NDT objekty (pokračování milníku M2);
+07A je schváleno a implementováno ve vývojové větvi (formát 16): datový základ a pomocné
+objemy, bez nového ovládání. Objemové pokrytí 07B a editor/náhled 07C přijdou po dalším schválení.
 Etapa 16 (virtuální signály) je podle závazného vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

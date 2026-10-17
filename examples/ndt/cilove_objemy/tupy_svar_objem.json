@@ -1,0 +1,144 @@
+{
+  "format": "skodacad",
+  "version": 16,
+  "name": "NDT 07A – Objem tupého svaru V",
+  "description": "Ukázka 07A: nominální rovný V svar (tloušťka 12 mm, úkos 60°, mezera 2 mm, délka 100 mm) včetně převýšení a podkořene. Cílový objem 14613,843876 mm³. Výrobní geometrie je shodná s tupy_svar.json. Výpočet objemového pokrytí přidá krok 07B a editor/náhled cíle krok 07C.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "A": 300,
+    "B": 100,
+    "t": 12,
+    "c": 20,
+    "h": 2,
+    "k": 6,
+    "p": 1
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys plechů",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "A",
+          "height": "B"
+        }
+      ]
+    },
+    {
+      "id": "plechy",
+      "type": "extrude",
+      "name": "Plechy",
+      "sketch": "obrys",
+      "distance": "t"
+    },
+    {
+      "id": "svar_prurez",
+      "type": "sketch",
+      "name": "Převýšení a podkořen",
+      "plane": "XZ",
+      "elements": [
+        {
+          "shape": "polygon",
+          "points": [
+            [
+              "-c/2",
+              "t"
+            ],
+            [
+              "c/2",
+              "t"
+            ],
+            [
+              "c/2 - 3",
+              "t + h"
+            ],
+            [
+              "-c/2 + 3",
+              "t + h"
+            ]
+          ]
+        },
+        {
+          "shape": "polygon",
+          "points": [
+            [
+              "-k/2",
+              0
+            ],
+            [
+              "-k/2 + 1",
+              "-p"
+            ],
+            [
+              "k/2 - 1",
+              "-p"
+            ],
+            [
+              "k/2",
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "svar",
+      "type": "extrude",
+      "name": "Svar",
+      "sketch": "svar_prurez",
+      "operation": "add",
+      "distance": "B",
+      "direction": "both"
+    }
+  ],
+  "measurements": [],
+  "ndt": {
+    "studies": [
+      {
+        "id": "s1",
+        "name": "UT objemu V svaru",
+        "method": "UT",
+        "target": {
+          "kind": "weld",
+          "frame": {
+            "origin": [
+              0.0,
+              -50.0,
+              0.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "across": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          "length_mm": 100.0,
+          "weld_type": "butt_v",
+          "dimensions": {
+            "angle_deg": 60.0,
+            "root_gap_mm": 2.0,
+            "thickness_mm": 12.0,
+            "cap_height_mm": 2.0,
+            "cap_top_width_mm": 14.0,
+            "cap_width_mm": 20.0,
+            "root_height_mm": 1.0,
+            "root_tip_width_mm": 4.0,
+            "root_width_mm": 6.0
+          }
+        },
+        "note": "",
+        "created": "2026-10-17",
+        "part": "650b773fdd7c1b67"
+      }
+    ]
+  }
+}

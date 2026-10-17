@@ -314,7 +314,8 @@ class NdtPanel(QWidget):
             self.details.setText("" if self.studies.count() else "Model zatím nemá NDT studii.")
             return
         record = self._record(study_id) or {}
-        faces = _count(result.faces, "plocha", "plochy", "ploch")
+        faces = (_count(result.faces, "plocha", "plochy", "ploch")
+                 if result.target_kind == "faces" else f"objem {result.volume_mm3:.6g} mm³")
         lines = [f"<b>{result.name}</b> – {METHOD_LABELS.get(result.method, result.method)}",
                  f"Stav: <b>{result.mark} {result.label}</b> · kontrolovaná oblast: {faces}",
                  *result.messages, result.verified]
@@ -359,6 +360,7 @@ class NdtPanel(QWidget):
                     and session.ndt_placement_request[0] == self.current_id())
         self.coverage_action.setEnabled(bool(ut and placed and matching
                                              and result is not None and result.state == "ok"
+                                             and result.target_kind == "faces"
                                              and not self.window.ai_busy))
         has_coverage = session.ndt_coverage is not None
         self.clear_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)

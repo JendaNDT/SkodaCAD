@@ -54,7 +54,7 @@ def test_old_models_load_without_ndt_and_save_as_current_version(path, tmp_path)
     document = Document.load(path)
     assert document.ndt is None
     data = document.to_dict()
-    assert "ndt" not in data and data["version"] == VERSION == 15
+    assert "ndt" not in data and data["version"] == VERSION == 16
 
 
 def test_study_survives_save_and_load(tmp_path):
@@ -77,7 +77,7 @@ def test_study_survives_save_and_load(tmp_path):
     ({"studies": [{"id": "s1", "method": "UT"}, {"id": "s1", "method": "PT"}]}, "dvakrát"),
     ({"studies": [{"id": "s1", "method": "UT", "probe": {}}]}, "neznámá položka „probe“"),
     ({"studies": [{"id": "s1", "method": "UT", "target": {"kind": "volume"}}]},
-     '„target“ musí být {"kind": "faces"'),
+     'Souřadný systém cíle musí být objekt'),
     ({"studies": [{"id": "s1", "method": "UT",
                    "target": {"kind": "faces", "faces": [{"face": {"at": [1, 2]}}]}}]},
      "plocha č. 1 musí být"),

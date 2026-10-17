@@ -40,9 +40,9 @@ FORMAT = "skodacad"
 # a „loft“ (přechod mezi skicami), verze 12 normalizované díly („standard“), ocelový profil
 # ve skice („steel“) a v tažení, verze 13 NDT studie („ndt“), verze 14 sonda ve studii
 # („device“), verze 15 úhel lomu a počet odrazů sondy („beam_angle“, „bounces“). Starší verze
-# jsou podmnožinou – načtou se beze změny.
-VERSION = 15
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+# jsou podmnožinou – načtou se beze změny. Verze 16 přidává cílové objemy a svary NDT.
+VERSION = 16
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
 
 
 class DocumentError(ValueError):
@@ -131,6 +131,14 @@ class Document:
                 check(ndt)
             except StudyError as exc:
                 raise DocumentError(str(exc)) from None
+            # Kopie: načtení nesmí změnit vstupní slovník ani původní soubor.
+            from skodacad.ndt.welds import normalize_target
+
+            ndt = copy.deepcopy(ndt)
+            for study in ndt.get("studies", []):
+                target = study.get("target") or {}
+                if target.get("kind") in ("volume", "weld"):
+                    study["target"] = normalize_target(target)
 
         return cls(
             name=str(data.get("name", "Bez názvu")),
