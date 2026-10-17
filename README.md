@@ -755,9 +755,26 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
 
 ### Cílové objemy a svary (07A, verze 16)
 
-Krok 07A ukládá a geometricky ověřuje pomocné objemy; **výpočet jejich pokrytí přijde
-v 07B a editor/náhled cíle v 07C**. Plošné mapy Etapy 06 fungují dál. Objemový cíl
+Krok 07A ukládá a geometricky ověřuje pomocné objemy. **07B přidává výpočet objemového
+pokrytí přes CLI a ModelSession; editor a náhled objemové mapy v okně patří až do 07C**.
+Podrobnosti a meze výpočtu: [Etapa 07B](docs/ndt/13-navrh-etapa-07b.md).
+Plošné mapy Etapy 06 fungují dál. Objemový cíl
 se do výrobního dílu nepřidává a nemění jeho hmotnost, objem ani exporty.
+
+Objemový výsledek se váží v **mm³**, plochový dál v mm² a bodový počtem bodů.
+Buňky se oříznou skutečným cílem a každý jejich oddělený kus má vlastní ověřený
+vnitřní bod. Jeho stav zastupuje celý kus: jde o aproximaci podle kroku cíle.
+Známý objem bez spolehlivého vnitřního bodu zůstává nejistý. Součet vah se kontroluje
+bez přenormování. Výsledky zůstávají pouze v paměti a zanikají se změnou zadání.
+
+`skodacad pokryti MODEL --studie s1 --plocha X,Y,Z --rezim face --krok 5 --krok-cile 2
+--konvergence --csv out/pokryti.csv` vyhodnotí cíl uložený ve studii. Adresář `out`
+musí existovat. Porovnání zdvojnásobí oba kroky při stejné toleranci; nízký rozdíl
+není zárukou přesnosti. Výstup i CSV vždy obsahují úplné upozornění UT.
+Objemový pojezd po čáře (`line`) s nulovým rozevřením se odmítá, protože ideální
+osy nevymezují kladný objem. Nenulové rozevření vyžaduje výslovné zadání.
+Počty buněk/kusů/poloh a porovnání jsou omezené; příliš jemný výpočet doporučí
+zhrubnout, nepřepne se na hrubší krok automaticky.
 
 Ukázky k otevření přes **Soubor → Otevřít**:
 

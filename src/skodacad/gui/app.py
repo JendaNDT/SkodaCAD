@@ -338,6 +338,32 @@ def _self_test_ndt(window, lines: _Report) -> bool:
         return False
     lines.append(f"✓ NDT cílový objem (07A): {volume.volume_mm3:.6f} mm³; "
                  "načtení v okně a oddělení od pokrytí OK")
+    from skodacad.ndt.volume_coverage import VolumeCoverageMap
+
+    lines.stream.write("  … NDT objemové pokrytí (07B)\n")
+    lines.stream.flush()
+    # Malá oblast uvnitř desky prověří zabalený modul, váhy i skutečné osové zásahy.
+    session.dirty = False
+    window.open_model(folder / "ndt" / "deska.json", template=True)
+    session.set_ndt_volume_target("s1", {"kind": "volume", "frame": {
+        "origin": [-5, -5, 5], "axis": [0, 1, 0], "across": [1, 0, 0]},
+        "length_mm": 10, "profile_mm": [[0, 0], [10, 0], [10, 10], [0, 10]]})
+    session.set_ndt_device("s1", Probe.straight(10))
+    top = max(session.result.part.faces(), key=lambda face: face.center().Z)
+    session.place_ndt_probe("s1", [top.wrapped], (0, 0, 20))
+    covered = session.compute_ndt_coverage(step_mm=25, target_step_mm=5, bounces=0)
+    if (not isinstance(covered, VolumeCoverageMap)
+            or abs(covered.total_volume - 1000) > 1e-6
+            or abs(covered.volume("covered") - 1000) > 1e-6
+            or session.visible_ndt_coverage() != ([], [], [])):
+        lines.append("✕ NDT objemové pokrytí: objem nebo osové zásahy nesouhlasí")
+        return False
+    lines.append(f"✓ NDT objemové pokrytí (07B): {covered.volume('covered'):.6f} / "
+                 f"{covered.total_volume:.6f} mm³, {covered.percent('covered'):.2f} %; "
+                 "objemová mapa v okně čeká na 07C")
+    lines += covered.summary()  # i protokol balíčkové zkoušky nese celé vymezení UT
+    session.dirty = False
+    window.open_model(volume_model, template=True)
     return True
 
 

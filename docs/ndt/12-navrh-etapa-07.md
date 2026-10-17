@@ -1,13 +1,17 @@
 # NDT – návrh etapy 07: svar a cílový objem
 
-Stav: **07A schváleno autorem 17. 10. 2026, implementováno ve vývojové větvi;
-07B a 07C zůstávají návrhem a nejsou zatím schválené ani implementované**.
+Stav: **07A schváleno autorem 17. 10. 2026 a sloučeno do `main` v PR #16 (`0dea6f8`);
+07B schváleno 17. 10. 2026 a implementováno ve vývojové větvi;
+07C zůstává neschváleným návrhem**.
+
+Podrobný návrh dalšího kroku: [07B – geometrické pokrytí cílového objemu](13-navrh-etapa-07b.md).
 
 Provedení 07A: `ndt/welds.py`, cíle `volume`/`weld` v JSON 16, normalizace směrů,
 ověření skutečných objemů, stavy a historie studií, metody `ModelSession`, ukázkové
 soubory v `examples/ndt/cilove_objemy/`. Objemové ověření se váže také na otisk cíle
 `verified.target`. Stávající panel umí ukázat číselný objem; nový editor ani zobrazení
-pomocného tělesa se zatím nepřidává. Plošný výpočet nad objemovým cílem je zakázaný.
+pomocného tělesa se zatím nepřidává. 07B vyhodnocuje objem samostatně v mm³,
+nikdy přes plošné váhy; ovládání objemového výpočtu v okně zůstává až pro 07C.
 
 Navazuje na [plán](03-implementacni-plan.md), [Etapu 06](11-navrh-etapa-06.md)
 a [závazné vymezení UT](04-zavazne-vymezeni-ut.md). Etapa 06 je sloučená v

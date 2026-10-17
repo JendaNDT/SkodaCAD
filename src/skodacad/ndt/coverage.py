@@ -306,6 +306,20 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
             reasons.append(reason)
     if not centers:
         raise CoverageError("Kontrolovanou oblast se nepodařilo rozdělit – vyber jinou plochu.")
+    candidates = _scan_positions(placement, mode, scan_step, length_mm)
+    result = _evaluate_samples(geo, placement, centers, reasons, candidates, initial_beam,
+                               mode=mode, scan_step=scan_step, target_step=target_step,
+                               length_mm=length_mm, angle_deg=angle_deg, tolerance=tolerance,
+                               spread_deg=spread_deg, beta=beta, bounces=bounces,
+                               max_length=max_length, refraction=refraction,
+                               nodes=nodes, triangles=triangles, faces=bool(faces))
+    return CoverageMap(nodes, triangles, centers, areas, *result,
+                       time.monotonic() - started)
+
+
+def _scan_positions(placement: Placement, mode: str, scan_step: float,
+                    length_mm: float) -> list[Point]:
+    """Společná mřížka pojezdu; lze ověřit ještě před objemovými průniky."""
     face = placement.surface.face
     if mode == "face":
         candidates = _grid_face(face, scan_step)
@@ -320,9 +334,28 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
         candidates = [tuple(o + d * min(i * scan_step, length_mm)
                             for o, d in zip(placement.origin, placement.x_dir, strict=True))
                       for i in range(count + 1)]
+    if len(candidates) > MAX_POSITIONS:
+        raise CoverageError("Pojezd má příliš mnoho poloh – zvětši krok výpočtu.")
+    return candidates
+
+
+def _evaluate_samples(geo: PartGeometry, placement: Placement,
+                      centers: list[Point | None], reasons: list[str], candidates: list[Point],
+                      initial_beam: BeamPath, *, mode: str, scan_step: float,
+                      target_step: float, length_mm: float, angle_deg: float, tolerance: float,
+                      spread_deg: float, beta: float | None, bounces: int | None,
+                      max_length: float | None, refraction: Refraction | None,
+                      nodes: list | None = None, triangles: list | None = None,
+                      faces: bool = False) -> tuple:
+    """Stejné ověřování přiložení a ramen pro plochy, body i objemové vzorky.
+
+    None znamená známou objemovou váhu bez spolehlivého vnitřního bodu.
+    Důvod nejistoty takového vzorku nelze paprskem přepsat.
+    """
     if (len(candidates) > MAX_POSITIONS
             or len(candidates) * len(centers) * (initial_beam.bounces + 1) > MAX_COMPARISONS):
         raise CoverageError("Výpočet je příliš jemný – zvětši krok nebo zmenši cílovou oblast.")
+    face = placement.surface.face
     states = ["uncertain" if r else "uncovered" for r in reasons]
     hits: list[CoverageHit | None] = [None] * len(centers)
     valid, uncertain = 0, 0
@@ -344,9 +377,10 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
             ax, ay, az = leg.start
             dx, dy, dz = leg.direction
             previous = leg.cumulative_length - leg.length
-            for k, (tx, ty, tz) in enumerate(centers):
-                if states[k] == "covered":
+            for k, point in enumerate(centers):
+                if point is None or states[k] == "covered":
                     continue
+                tx, ty, tz = point
                 vx, vy, vz = tx - ax, ty - ay, tz - az
                 projection = vx * dx + vy * dy + vz * dz
                 # Disk osy/kužele na rameni, bez kulového prodloužení za konce ramene.
@@ -387,8 +421,7 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
                    "length_mm": length_mm, "angle_deg": angle_deg, "tolerance_mm": tolerance,
                    "spread_deg": spread_deg, "probe": placement.probe.to_dict(),
                    "source": placement.origin, "interpolated_positions_checked": len(resolved)}
-    return CoverageMap(nodes, triangles, centers, areas, states, hits, reasons, len(candidates),
-                       valid, uncertain, assumptions, time.monotonic() - started)
+    return states, hits, reasons, len(candidates), valid, uncertain, assumptions
 
 
 @dataclass(frozen=True)

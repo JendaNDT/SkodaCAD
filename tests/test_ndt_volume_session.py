@@ -79,8 +79,9 @@ def test_volume_target_changes_only_study_invalidates_map_and_verification_and_h
     assert session.ndt_study("s1") == old_record
     session.redo()
     assert session.ndt_target_volume("s1").volume_mm3 == pytest.approx(2000)
-    with pytest.raises(DocumentError, match="07B"):
-        session.compute_ndt_coverage()
+    result = session.compute_ndt_coverage(step_mm=25, target_step_mm=10)
+    assert result.total_volume == pytest.approx(2000)
+    assert session.visible_ndt_coverage() == ([], [], [])  # objemová kresba až v 07C
 
 
 def test_invalid_target_rolls_back_without_touching_document_or_history():
@@ -219,7 +220,7 @@ def test_failed_rebuild_cannot_use_old_part_for_volume_or_its_verification():
             action()
 
 
-def test_cli_reports_volume_but_does_not_pretend_to_compute_volume_coverage(tmp_path, capsys):
+def test_cli_reports_volume_and_computes_weighted_coverage(tmp_path, capsys):
     session = opened()
     session.set_ndt_volume_target("s1", target())
     path = session.save(tmp_path / "objem.json")
@@ -228,6 +229,58 @@ def test_cli_reports_volume_but_does_not_pretend_to_compute_volume_coverage(tmp_
 
     summary = capsys.readouterr().out
     assert "2000 mm³" in summary and UT_DISCLAIMER in summary
-    assert main(["pokryti", str(path), "--studie", "s1", "--plocha", "0,0,20"]) == 2
-    captured = capsys.readouterr()
-    assert "07B" in captured.err + captured.out
+    csv_path = tmp_path / "coverage.csv"
+    assert main(["pokryti", str(path), "--studie", "s1", "--plocha", "0,0,20",
+                 "--prima", "10", "--krok", "25", "--krok-cile", "10", "--konvergence",
+                 "--csv", str(csv_path)]) == 0
+    captured = capsys.readouterr().out
+    assert "2000 mm³" in captured and "Cíl: objem" in captured
+    text = csv_path.read_text(encoding="utf-8-sig")
+    assert "objem [mm³]" in text and "convergence" in text and UT_DISCLAIMER in text
+    assert "mm²" not in text
+
+
+def test_volume_background_result_cancel_and_target_change_invalidate_cache(tmp_path):
+    from skodacad.ndt.volume_coverage import VolumeCoverageMap
+
+    runner = BackgroundRebuilder()
+    try:
+        session = coverage_session(runner)
+        session.set_ndt_volume_target("s1", target())
+        assert session.wait(30)
+        before = session.document.to_dict()
+        session.start_ndt_coverage(step_mm=25, target_step_mm=10)
+        assert session.computing and session.ndt_coverage is None
+        assert session.wait(40), session.failure
+        result = session.ndt_coverage
+        assert isinstance(result, VolumeCoverageMap)
+        assert result.total_volume == pytest.approx(2000)
+        assert result.volume("covered") == pytest.approx(2000)
+        assert session.document.to_dict() == before
+        assert "objem [mm³]" in session.export_ndt_coverage(
+            tmp_path / "volume.csv").read_text(encoding="utf-8-sig")
+        session.set_section_axis("X", 2)
+        assert session.ndt_coverage is result and result.total_volume == pytest.approx(2000)
+        assert session.visible_ndt_coverage() == ([], [], [])
+        session.start_ndt_coverage(step_mm=1, target_step_mm=0.1)
+        assert session.cancel()
+        assert session.document.to_dict() == before and session.ndt_coverage is None
+        session.start_ndt_coverage(step_mm=25, target_step_mm=10)
+        with pytest.raises(DocumentError, match="ještě přepočítává"):
+            session.set_ndt_volume_target("s1", target() | {"length_mm": 10})
+        assert session.cancel()
+        session.set_ndt_volume_target("s1", target() | {"length_mm": 10})
+        assert session.wait(40)
+        assert session.ndt_coverage is None
+    finally:
+        runner.close()
+
+
+def test_explicit_cli_points_do_not_masquerade_as_volume_of_study(tmp_path, capsys):
+    session = coverage_session()
+    session.set_ndt_volume_target("s1", target())
+    path = session.save(tmp_path / "model.json")
+    assert main(["pokryti", str(path), "--studie", "s1", "--plocha", "0,0,20",
+                 "--cil", "0,0,0", "--rezim", "line", "--delka", "0"]) == 0
+    text = capsys.readouterr().out
+    assert "1 bodů" in text and "'evaluated_target': 'points'" in text and "mm³" not in text
