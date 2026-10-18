@@ -1,6 +1,8 @@
 # NDT – návrh etapy 09: návrh poloh UT sondy a mapa problémových zón
 
-Stav: **návrh ke schválení (18. 10. 2026).** Nic z toho ještě není naprogramované.
+Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 09 včetně doporučení 1–9“);
+implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
+v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `afce8c7` ([PR #22](https://github.com/JendaNDT/SkodaCAD/pull/22)).
 Navazuje na [plán, etapa 09](03-implementacni-plan.md), [geometrické pokrytí (etapa 06)](11-navrh-etapa-06.md),
 [objemové pokrytí svaru (07B)](13-navrh-etapa-07b.md), [knihovnu sond (etapa 08)](16-navrh-etapa-08.md)
@@ -260,3 +262,26 @@ Každý krok zvlášť: `ruff`, `pytest`, commit; do `main` až na tvůj pokyn.
 
 Schválením se **neschvaluje**: dráha sondy (etapa 10), změna výpočtu přiložení, paprsku
 ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
+
+## 11. Provedení a upřesnění
+
+- **09A.1 (hotovo):** `ndt/access.py` – varianty, tři kola, pořadí, kombinace, sjednocení
+  vzorek po vzorku, české důvody vyřazení, souhrn a CSV. Pokrytí počítá beze změny
+  `coverage.compute` / `volume_coverage.compute_volume`. Upřesnění proti oddílu 2:
+  - **Dosah se zjišťuje před přiložením.** Zamíření a paprsek trvají asi 1 ms, přiložení
+    asi 30 ms (změřeno). Sonda se proto přikládá jen tam, odkud paprsek některé varianty
+    míří k cíli. Vyřazené i spočítané varianty jsou tytéž, jen rychleji. Výřez V svaru,
+    všechny plochy, krok 10 mm: první dvě kola 363 s → **40 s**, celá analýza 566 s →
+    **328 s**, stejné výsledky.
+  - **Mřížka prvního kola = mřížka pojezdu třetího kola** (krok analýzy, výchozí 10 mm).
+    Přiložení se mezi koly a variantami sdílí (`devices.reuse_placements`, čísla se
+    nemění). Mez je 500 poloh na plochu, ne „polovina šířky sondy, 200“.
+  - Plochy menší než kontaktní plocha sondy se vynechají s důvodem.
+  - **Mapa kontaktních ploch má čtvrtý stav:** šedá = „odsud paprsek k cíli nemíří“.
+    Červená tak znamená přesně „paprsek by k cíli mířil, ale sonda se nevejde“.
+  - **Nejlepší poloha varianty** je uzel mřížky, u kterého leží nejvíc zásahů. Přepočet
+    z této polohy stejným krokem dává **totéž číslo** (test).
+  - Výřez V svaru, 70°, všechny plochy, krok 10 mm: na prvních čtyřech místech je 70°
+    s odrazem (99,91 %, shora i zespodu, z obou stran). Zespodu bez odrazu vychází
+    77,89 %, šikmo 45° 24,32 %. Kombinace je jen #1: druhá strana přidá méně než 1 p. b.
+

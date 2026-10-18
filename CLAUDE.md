@@ -139,6 +139,15 @@
   Snellovým zákonem **jen na pokyn**, frekvence jen informativně, formát 17, tvarovaná
   předsádka (08C) odložena. Sloučeno v PR #22 (`afce8c7`); autor 18. 10. 2026 k vydání
   z `afce8c7` napsal „ok funguje to“. Tím je hotový milník M2 (etapy 06–08).
+- (18. 10. 2026, schváleno včetně doporučení 1–9) **NDT etapa 09 – návrh poloh UT sondy
+  a mapa problémových zón** (`docs/ndt/17-navrh-etapa-09.md`, milník M3): `ndt/access.py`
+  zkouší varianty rovinná plocha × směr × β × odrazy (směry po 45° + k cíli/od cíle + kolmo
+  na svar, úhel ze studie, jiné 45/60/70° jen na zaškrtnutí, odrazy 0 a 1), vyřadí
+  nepřístupné s českým důvodem, pokrytí stávajícím výpočtem krokem analýzy (výchozí
+  10 mm, nejvýš 40 variant), pořadí pokrytí → volnost → nejistota → jednoduchost, kombinace
+  nejvýš 3 sjednocená vzorek po vzorku, mapy problémových zón (cíl, kontaktní plochy).
+  Jen pohled, formát 17; *Použít variantu* = jeden krok Zpět; zakřivené plochy se
+  nezkoušejí; CLI `skodacad polohy`, AI bez nového nástroje, souběh procesů odložen.
 
 ## Architektura (`src/skodacad/`)
 
@@ -222,6 +231,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/geometry.py` | NDT geometrické jádro (`PartGeometry`): `cast` (průsečíky, úseky v materiálu, jistota), `classify`, `surface_at` (normála, zakřivení), `visible`, `collision` (průnik, vůle), `faces_of`; konstanty `ALGORITHM`, tolerance |
 | `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, `beam_angle`, `bounces`, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
 | `ndt/library.py` | knihovna NDT (etapa 08, jen UT): vestavěné materiály `MATERIALS` (rychlosti ze 2 zdrojů, zdroje v docstringu) a obecné sondy `PROBES`, `transfer_angle` / `check_angle` / `transferred` (přepočet úhlu jen na pokyn), `describe` pro výstupy, Moje sondy (`ndt-knihovna.json`) |
+| `ndt/access.py` | návrh poloh UT sondy (etapa 09): `Analysis` (varianty, 1. a 2. kolo `prepare`, 3. kolo `evaluate` stávajícím výpočtem pokrytí, `run`), `finish` (pořadí `rank`, kombinace, `union` vzorek po vzorku), `AccessResult.summary` / `write_csv`, mapa kontaktních ploch `ContactPoint` |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
@@ -607,6 +617,24 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Poznámka k úhlu (`angle_note`) platí jen pro úhel a materiál, ke kterým vznikla.
 - Panel čte Moje sondy znovu jen po změně souboru (`NdtPanel._user_library`, čas změny).
 
+## Známé pasti (NDT – návrh poloh sondy)
+
+- Dosah se zjišťuje **před** přiložením: `devices.aim` (stejný výpočet směru jako `place`,
+  sdílený `_frame`) + `trace_beam` ~1 ms, přiložení ~30 ms. `Aim` nikdy nenahrazuje
+  `Placement` – platnost polohy rozhoduje jen `place`.
+- Mřížka 1. kola = mřížka pojezdu 3. kola (`coverage._grid_face`, krok analýzy). Přiložení
+  se sdílí jen uvnitř `devices.reuse_placements` (klíč: rozměry a meze sondy, bod, úhel,
+  plocha; úhel β a odrazy přiložení nemění, sonda se v uloženém výsledku jen vymění).
+  Mimo analýzu se nic nepamatuje (tažení myší by jinak plnilo paměť).
+- Výchozí poloha výpočet pokrytí v ploše neovlivní, jen se přidá k mřížce, když v ní není.
+  Nejlepší poloha je proto **uzel mřížky** (`Analysis._best`) a odkaz na plochu nese bod
+  bez zaokrouhlení – přepočet z něj dá totéž číslo. Zásahy z mezipoloh (`_resolve_axis_hit`)
+  mají původ mimo mřížku, přičtou se nejbližšímu uzlu.
+- Sjednocení (`access.union`) jen pro mapy téže mřížky cíle (stejný krok cíle) – jinak
+  česká chyba. Váhy se nepřenormovávají.
+- Rezerva dosahu je velkorysá (tolerance + krok): poloha u cíle „míří k cíli“ i směrem od
+  něj. Je to jen síto; o pokrytí rozhoduje 3. kolo.
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -711,7 +739,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
   (sloučeno v PR #19, autor po vydání: „ok funguje to“) …,
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
-  to“; 08C tvarovaná předsádka odložena) – milník M2 hotov, další podle plánu etapa 09.
+  to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
+  [ ] 09 návrh poloh UT sondy (schváleno 18. 10. 2026): [x] 09A.1 jádro `ndt/access.py`,
+  [ ] 09A.2 ModelSession, pomocný proces, CLI a CSV, [ ] 09B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
