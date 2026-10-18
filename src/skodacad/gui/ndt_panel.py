@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.gui.target_dialog import TargetDialog
 from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
-from skodacad.ndt.coverage import PERCENT_NOTE, STATES
+from skodacad.ndt.coverage import PERCENT_NOTE, STATES, CoverageMap
 from skodacad.ndt.devices import KINDS, Probe
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
@@ -229,7 +229,7 @@ class NdtPanel(QWidget):
         self.coverage_step.setDecimals(1)
         self.coverage_step.setValue(5.0)
         form.addRow("Krok výpočtu [mm]:", self.coverage_step)
-        # Objemový cíl (07C): krok cíle, tolerance a citlivost; u ploch jsou řádky skryté.
+        # Objemový cíl (07C): krok cíle a tolerance; u ploch jsou řádky skryté.
         self.coverage_target_step = QDoubleSpinBox()
         self.coverage_target_step.setObjectName("ndt_coverage_target_step")
         self.coverage_target_step.setRange(0.5, 100)
@@ -266,9 +266,9 @@ class NdtPanel(QWidget):
         self.coverage_convergence.setObjectName("ndt_coverage_convergence")
         self.coverage_convergence.setChecked(True)
         self.coverage_convergence.setToolTip(
-            "Navíc hrubší výpočet: porovná výsledek s dvojnásobnými kroky a stejnou "
-            "tolerancí. Bez "
-            "porovnání panel napíše „Citlivost na krok neověřena“.")
+            "Navíc hrubší výpočet: porovná výsledek s dvojnásobnými kroky (hrubší výpočet "
+            "hledá paprsky podle svých kroků). Trvá zhruba o polovinu déle. Bez porovnání "
+            "panel napíše „Citlivost na krok neověřena“.")
         form.addRow(self.coverage_convergence)
         # Dlouhý popisek nad pole, když je dok úzký (jinak by se panel posouval do strany).
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
@@ -592,13 +592,12 @@ class NdtPanel(QWidget):
         result = session.ndt_coverage
         if result is not None:
             lines = [escape(line) for line in result.summary()]
-            if isinstance(result, VolumeCoverageMap):
-                lines[:0] = ["<b>" + " · ".join(f"{label} {result.percent(state):.2f} %"
-                                                for state, label in STATES.items()) + "</b>",
-                             _sensitivity_html(result)]
-                if session.section_settings is None:
-                    lines.insert(2, "Barevný je jen povrch cíle. Dovnitř se podívej tlačítkem "
-                                    "<b>Průřez svarem</b>.")
+            lines[:0] = ["<b>" + " · ".join(f"{label} {result.percent(state):.2f} %"
+                                            for state, label in STATES.items()) + "</b>",
+                         _sensitivity_html(result)]
+            if isinstance(result, VolumeCoverageMap) and session.section_settings is None:
+                lines.insert(2, "Barevný je jen povrch cíle. Dovnitř se podívej tlačítkem "
+                                "<b>Průřez svarem</b>.")
             self.coverage_label.setText("<br>".join(lines))
         elif session.coverage_pending:
             self.coverage_label.setText(
@@ -631,10 +630,10 @@ class NdtPanel(QWidget):
     def _coverage_options(self) -> dict:
         options = {"mode": self.coverage_mode.currentData(), "step_mm": self.coverage_step.value(),
                    "spread_deg": self.coverage_spread.value(),
-                   "length_mm": self.scan_length.value()}
+                   "length_mm": self.scan_length.value(),
+                   "convergence": self.coverage_convergence.isChecked()}
         if self._volume_target():
-            options.update(target_step_mm=self.coverage_target_step.value(),
-                           convergence=self.coverage_convergence.isChecked())
+            options.update(target_step_mm=self.coverage_target_step.value())
         return options
 
     def _estimate(self) -> CoverageEstimate:
@@ -666,10 +665,9 @@ class NdtPanel(QWidget):
         self.coverage_target_step.blockSignals(False)
 
     def _show_volume_options(self, volume: bool, estimate: CoverageEstimate | None) -> None:
-        """Krok cíle, tolerance a citlivost jen u objemového cíle; odhad pod nimi."""
+        """Krok cíle a tolerance jen u objemového cíle (citlivost i u ploch); odhad pod nimi."""
         form = self.coverage_form
-        for widget in (self.coverage_target_step, self.tolerance_box,
-                       self.coverage_convergence):
+        for widget in (self.coverage_target_step, self.tolerance_box):
             form.setRowVisible(widget, volume)
         recommended = (self.window.session.ndt_recommended_target_step(self.current_id())
                        if volume else None)
@@ -910,7 +908,7 @@ class ProbeDialog(QDialog):
                 "bounces": self.bounces.value()}
 
 
-def _sensitivity_html(result: VolumeCoverageMap) -> str:
+def _sensitivity_html(result: CoverageMap | VolumeCoverageMap) -> str:
     """Citlivost na krok nahlas: oranžově citlivý nebo neověřený výsledek."""
     found = result.assumptions.get("convergence")
     if found is None:

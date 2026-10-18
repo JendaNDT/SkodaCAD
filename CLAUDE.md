@@ -142,7 +142,9 @@ zůstává 15. `skodacad pokryti` vyžaduje `--plocha` a cíle (`--cil`, `--cil-
 Numerická tolerance nesmí obejít otisk, kolizi ani rezervu: na rovině se mezilehlá poloha
 sondy skutečně přiloží a paprsek znovu spočítá. Na zakřivené ploše je pouhá numerická
 blízkost nejistá. Citlivost porovnává krok a 2× krok; hrubý běh hledá s `max(jemná tolerance,
-`auto_tolerance` hrubých kroků)` (oprava 18. 10. 2026, jen CLI `--konvergence`). Povinné upozornění
+`auto_tolerance` hrubých kroků)` (oprava 18. 10. 2026); v panelu *Ověřit citlivost na krok*
+i pro plochy (`compute_ndt_coverage(convergence=True)`, i v pomocném procesu) a CLI
+`--konvergence`. Povinné upozornění
 UT a význam procenta jsou v panelu, CLI i CSV. V `devices.place` nelze ořez odsazený o 0,001 mm
 použít k vyloučení kolize; mohl by přehlédnout nízkou překážku (hlídá regresní test).
 

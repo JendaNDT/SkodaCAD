@@ -166,11 +166,24 @@ def test_coverage_panel_compute_hide_export_and_invalidation(ndt_window, tmp_pat
     assert panel.coverage_action.isEnabled()
     panel.coverage_step.setValue(10)
     panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("line"))
+    # plochy: citlivost na krok je v panelu taky (zapnutá), krok cíle a tolerance ne
+    assert panel.coverage_form.isRowVisible(panel.coverage_convergence)
+    assert panel.coverage_convergence.isChecked()
+    assert not panel.coverage_form.isRowVisible(panel.tolerance_box)
     panel.coverage_action.trigger()
     assert session.ndt_coverage is not None and w.viewer.coverage_map is not None
-    assert UT_DISCLAIMER in panel.coverage_label.text()
-    assert "Geometricky pokryto" in panel.coverage_label.text()
+    text = panel.coverage_label.text()
+    assert UT_DISCLAIMER in text
+    assert text.startswith("<b>Geometricky pokryto ")
+    assert session.ndt_coverage.assumptions["convergence"]["coarse_steps_mm"] == (20, 20)
+    assert "citlivost na krok (" in text or "citlivý na krok" in text
+    assert session.ndt_coverage.assumptions["convergence_text"] in text
+    assert "Průřez svarem" not in text and not panel.volume_legend.isVisibleTo(panel)
     assert w.viewer.probe is not None
+    panel.coverage_convergence.setChecked(False)
+    panel.coverage_action.trigger()
+    assert "convergence" not in session.ndt_coverage.assumptions
+    assert "Citlivost na krok neověřena." in panel.coverage_label.text()
     path = tmp_path / "pokryti.csv"
     monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *a: (str(path), "CSV"))
     panel.export_coverage_action.trigger()

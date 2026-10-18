@@ -335,9 +335,12 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   Numerická tolerance sama neospravedlňuje kolidující polohu sondy: na rovinném pojezdu se
   mezilehlé polohy znovu ověřují. Procento je geometrický podíl, nikoli pravděpodobnost nálezu
   vady. Krok zjemni a porovnej výsledky; u bodových dotazů jde o podíl bodů, nikoli plochu.
-  `--konvergence` porovná krok a 2× krok; hrubý běh hledá s automatickou tolerancí svých
-  kroků (aspoň s tolerancí jemného běhu), jinak by část paprsků jen nenašel. Výslovně
-  zadaná tolerance menší než krok × 0,71 (po čáře × 0,6) dostane v souhrnu upozornění.
+  Zaškrtnuté **Ověřit citlivost na krok** (výchozí, výpočet trvá zhruba o polovinu déle)
+  nebo `--konvergence` porovná krok a 2× krok a nahoře v souhrnu napíše zeleně nízkou
+  citlivost, nebo oranžově „Výsledek je citlivý na krok – zjemni krok“. Hrubý běh hledá
+  s automatickou tolerancí svých kroků (aspoň s tolerancí jemného běhu), jinak by část
+  paprsků jen nenašel. Výslovně zadaná tolerance menší než krok × 0,71 (po čáře × 0,6)
+  dostane v souhrnu upozornění.
 
   Příklady příkazové řádky (bez změny modelu):
 

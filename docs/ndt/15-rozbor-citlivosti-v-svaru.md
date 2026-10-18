@@ -157,8 +157,9 @@ Schválením se nemění formát, výrobní geometrie ani závazné vymezení UT
 
 Schváleno autorem 18. 10. 2026. Plošná mapa (cílové plochy nebo body, `ndt/coverage.py`)
 porovnávala krok a dvojnásobný krok se **stejnou** tolerancí – stejná chyba jako příčina A.
-Porovnání se v Etapě 06 spouští jen z příkazové řádky (`skodacad pokryti --konvergence`);
-panel v okně ho pro plochy nemá.
+Porovnání se v Etapě 06 spouštělo jen z příkazové řádky (`skodacad pokryti --konvergence`);
+od 18. 10. 2026 (na přání autora, po sloučení opravy v PR #20) ho má i panel v okně –
+zaškrtávátko *Ověřit citlivost na krok* platí pro plochy i objem.
 
 Ukázka (`examples/ndt/deska.json`, sonda na horní ploše ve středu, cíl spodní plocha
 200 × 100 mm, pojezd po ploše; geometricky pokryto):
@@ -188,3 +189,8 @@ Provedení (výpočet pokrytí `ndt-ut-pokryti 1` se nemění):
 - Test `test_coarse_run_finds_beams_between_its_positions`: čtyři body přesně mezi polohami
   hrubého běhu; staré pravidlo (tolerance 3 mm) je nenajde (rozdíl 100 p. b.), nové
   (6 mm) najde a ověří (rozdíl 0).
+- Panel (18. 10. 2026): `ModelSession.compute_ndt_coverage(convergence=True)` porovná i plochy
+  (i v pomocném procesu; nepovedené porovnání nechá jemný výsledek a napíše „nepodařilo
+  ověřit“), souhrn plošné mapy začíná tučnými procenty a citlivostí nahlas jako u objemu.
+  Deska s krokem 10 mm: 85,74 % / 78,12 % při 20 mm → oranžově „citlivý na krok“ (rozdíl
+  7,62 p. b.); s krokem 5 mm rozdíl 1,24 p. b.
