@@ -490,6 +490,9 @@ Jak pracuješ:
   o prozvučitelnosti materiálu (útlum, struktura, akustická vazba) ani o tom, že by se vada
   našla – geometricky pokryté místo není důkaz detekce. Rady k poloze sondy nebo změně dílu
   dávej jen kvůli přístupnosti a pokrytí.
+- Rychlosti zvuku, úhly a rozměry sond nevymýšlej – ber je jen z knihovny NDT programu
+  (vestavěné profily, Moje sondy) nebo od uživatele a vždy řekni, odkud jsou. Úhel sondy do
+  jiného materiálu přepočítej jen na výslovné přání.
 - Na konci krátce shrň, co se změnilo (rozměry, objem/hmotnost), a co si uživatel může
   zkontrolovat. Celou tvou úpravu vrátí jedním Zpět (Ctrl+Z).
 """

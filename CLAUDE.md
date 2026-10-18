@@ -220,6 +220,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/__init__.py`, `ndt/study.py` | NDT: upozornění na předběžnost a povinné upozornění UT (`UT_DISCLAIMER`, názvy `UT_ACCESS`, `UT_COVERAGE`); studie (kontrola struktury, otisk dílu, stav po přepočtu `StudyResult`, nová studie, oblast z výběru, znovuukotvení, kopie) |
 | `ndt/geometry.py` | NDT geometrické jádro (`PartGeometry`): `cast` (průsečíky, úseky v materiálu, jistota), `classify`, `surface_at` (normála, zakřivení), `visible`, `collision` (průnik, vůle), `faces_of`; konstanty `ALGORITHM`, tolerance |
 | `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, `beam_angle`, `bounces`, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
+| `ndt/library.py` | knihovna NDT (etapa 08, jen UT): vestavěné materiály `MATERIALS` (rychlosti ze 2 zdrojů, zdroje v docstringu) a obecné sondy `PROBES`, `transfer_angle` / `check_angle` / `transferred` (přepočet úhlu jen na pokyn), `describe` pro výstupy, Moje sondy (`ndt-knihovna.json`) |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
@@ -583,6 +584,21 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Referenční V svar: výřez 10 mm, sonda 70° zprava bez odrazů, platné přiložení od
   x0 = 22 mm (čelo 12 mm před výstupem naráží na převýšení), Y ±40 mm; průřez 15,18 %,
   celý svar 12,2 %.
+
+## Známé pasti (NDT knihovna)
+
+- Úhel v jiném materiálu: $\sin\beta / c$ je při stejné předsádce stálé → stačí rychlost
+  v materiálu úhlu (obvykle ocel) a v materiálu pro UT. **Nikdy nepřepočítávat samo** –
+  `check_angle` jen hlásí (`differs`), přepočet dělá `transferred` / `apply_ndt_angle_transfer`
+  / CLI `--prepocet-uhlu` (jeden krok Zpět, původ `transferred`, `angle_note`).
+- Údaje o původu (`profile`, `origins`, `angle_material` …) jsou v `Probe` jen nepovinné:
+  `to_dict` je zapíše, jen když jsou vyplněné – starý záznam zůstane totožný. `origins` drží
+  dataclass jako n-tici dvojic (hashovatelné), z JSON přichází dict.
+- Studie si drží **kopii** hodnot sondy i materiálu; změna Mých sond studii nezmění.
+  Poškozený `ndt-knihovna.json` se nikdy nepřepíše (`LibraryError`), vestavěné profily jdou dál.
+- Bez profilu, původu a materiálu je `describe` prázdné → výstupy starých modelů beze změny.
+- Vestavěná data nesmí tvrdit ověření/certifikaci (hlídá `test_ndt_library`); litina a titan
+  chybí záměrně (rozptyl / neshoda zdrojů) – přidat jen se dvěma zdroji.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 

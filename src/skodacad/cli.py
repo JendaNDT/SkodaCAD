@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                        help="maximální délka dráhy paprsku v materiálu [mm]")
     probe.add_argument("--mezera", type=float, help="dovolená mezera pod sondou [mm] (0.5)")
     probe.add_argument("--rezerva", type=float, help="manipulační rezerva [mm] (0)")
+    _library_arguments(probe)
     probe.add_argument("--posun", dest="move", metavar="DX,DY,DZ",
                        help="posouvej sondu tímto směrem a vypiš, kde volně jede")
     probe.add_argument("--delka", type=float, default=50.0, help="délka posunu [mm] (50)")
@@ -124,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     coverage.add_argument("--dosah", dest="max_length", type=float)
     coverage.add_argument("--snell", metavar="ALFA,C1,C2")
     coverage.add_argument("--vlna", choices=("shear", "longitudinal"), default="shear")
+    _library_arguments(coverage)
     coverage.add_argument("--tolerance", type=float, help="numerický poloměr zachycení [mm]")
     coverage.add_argument("--rozevreni", type=float, default=0.0, help="poloviční úhel [°]")
     coverage.add_argument("--konvergence", action="store_true", help="porovnej krok a 2× krok")
@@ -177,9 +179,8 @@ def _ray(args: argparse.Namespace) -> int:
 
 
 def _probe(args: argparse.Namespace) -> int:
-    from skodacad.ndt.devices import DeviceError, Probe, place, scan_line
+    from skodacad.ndt.devices import DeviceError, place, scan_line
     from skodacad.ndt.geometry import GeometryError, PartGeometry
-    from skodacad.ndt.study import study_probe
     from skodacad.ndt.ut import BeamError, refract, trace_beam
 
     if args.beam_angle is not None and args.snell is not None:
@@ -195,7 +196,7 @@ def _probe(args: argparse.Namespace) -> int:
     if result.part is None:
         raise ValueError("Model nemá těleso – není kam sondu přiložit.")
     try:
-        probe = _cli_probe(args, document, Probe, study_probe)
+        probe, device_lines, _material = _cli_device(args, document)
         geo = PartGeometry(result.part)
         placed = place(geo, probe, point, direction)
         beam = trace_beam(geo, placed, beta=args.beam_angle, bounces=args.bounces,
@@ -204,6 +205,8 @@ def _probe(args: argparse.Namespace) -> int:
         raise ValueError(str(exc)) from None
     print(f"{probe.label} (mezera nejvýš {probe.max_gap:.2f} mm, rezerva "
           f"{probe.reserve:.2f} mm)")
+    for line in device_lines:
+        print(f"  {line}")
     print(f"Přiložení v [{_coords(placed.origin)}], paprsek "
           f"[{_coords(placed.x_dir)}]:")
     print(f"  {placed.text}")
@@ -224,17 +227,85 @@ def _probe(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cli_probe(args: argparse.Namespace, document: Document, probe_class: type,
-               study_probe: Any) -> Any:
-    """Sonda z příkazové řádky: ze studie, přímá, úhlová, nebo výchozí úhlová."""
-    if args.studie:
-        studies = (document.ndt or {}).get("studies", [])
-        study = next((s for s in studies if s.get("id") == args.studie), None)
-        if study is None:
-            raise ValueError(f"NDT studie „{args.studie}“ v modelu není.")
-        base = study_probe(study)
+def _library_arguments(parser: argparse.ArgumentParser) -> None:
+    """Knihovna NDT (etapa 08) – společné pro „sonda“ a „pokryti“."""
+    parser.add_argument("--profil", metavar="KLÍČ",
+                        help="profil sondy z knihovny (např. uhlova-standardni-70, prima-10) "
+                             "nebo název z Mých sond")
+    parser.add_argument("--material-ut", metavar="NÁZEV",
+                        help="materiál pro UT (ocel, nerez, hliník, měď, mosaz nebo z Mých "
+                             "sond); jinak ze studie")
+    parser.add_argument("--prepocet-uhlu", action="store_true",
+                        help="přepočti úhel sondy do materiálu pro UT (Snellův zákon)")
+    parser.add_argument("--knihovna", type=Path, metavar="SOUBOR",
+                        help="soubor Mých sond (výchozí ~/SkodaCAD/ndt-knihovna.json)")
+
+
+def _cli_device(args: argparse.Namespace, document: Document) -> tuple[Any, list[str], Any]:
+    """Sonda, řádky o profilu/materiálu/úhlu a materiál pro UT z příkazové řádky.
+    Úhel se do jiného materiálu přepočítá jen s --prepocet-uhlu."""
+    from skodacad.ndt.library import (
+        check_angle,
+        describe,
+        find_material,
+        load_user_library,
+        transferred,
+        user_library_path,
+    )
+    from skodacad.ndt.study import study_material
+    from skodacad.ndt.ut import BeamError
+
+    library = load_user_library(args.knihovna or user_library_path())
+    probe = _cli_probe(args, document, library.probes)
+    study = _cli_study(args, document)
+    material = study_material(study) if study is not None else None
+    if args.material_ut:
+        material = find_material(args.material_ut, library.materials)
+        if material is None:
+            raise ValueError(f"Materiál pro UT „{args.material_ut}“ v knihovně není (vestavěné: "
+                             "ocel, nerez, hliník, měď, mosaz; vlastní přidej do Mých sond).")
+    check = check_angle(probe, material, document.material)
+    if args.prepocet_uhlu:
+        if args.beam_angle is not None or args.snell:
+            raise ValueError("--prepocet-uhlu nejde spojit s --uhel ani --snell.")
+        try:
+            probe = transferred(probe, check)
+        except BeamError as exc:
+            raise ValueError(str(exc)) from None
+        check = check_angle(probe, material, document.material)
+    used = args.profil or args.material_ut
+    return probe, [*(library.problems if used else []), *describe(probe, material, check)], \
+        material
+
+
+def _cli_study(args: argparse.Namespace, document: Document) -> dict[str, Any] | None:
+    if not args.studie:
+        return None
+    studies = (document.ndt or {}).get("studies", [])
+    study = next((s for s in studies if s.get("id") == args.studie), None)
+    if study is None:
+        raise ValueError(f"NDT studie „{args.studie}“ v modelu není.")
+    return study
+
+
+def _cli_probe(args: argparse.Namespace, document: Document, mine: dict[str, Any]) -> Any:
+    """Sonda z příkazové řádky: profil z knihovny, ze studie, přímá, úhlová, nebo výchozí."""
+    from skodacad.ndt.devices import Probe
+    from skodacad.ndt.library import PROBES
+    from skodacad.ndt.study import study_probe
+
+    if args.profil:
+        found = PROBES.get(args.profil) or next(
+            (p for p in PROBES.values() if p.name == args.profil), None)
+        base = found.probe if found is not None else mine.get(args.profil)
+        if base is None:
+            raise ValueError(f"Profil sondy „{args.profil}“ neznám. Vestavěné: "
+                             f"{', '.join(PROBES)}" + (f"; Moje sondy: {', '.join(mine)}"
+                                                      if mine else "") + ".")
+    elif args.studie:
+        base = study_probe(_cli_study(args, document))
     elif args.prima is not None:
-        base = probe_class.straight(args.prima)
+        base = Probe.straight(args.prima)
     elif args.uhlova:
         try:
             length, width, height = (float(v.replace(",", "."))
@@ -242,20 +313,25 @@ def _cli_probe(args: argparse.Namespace, document: Document, probe_class: type,
         except ValueError:
             raise ValueError(f"--uhlova „{args.uhlova}“ musí být délka x šířka x výška, např. "
                              "40x20x25.") from None
-        base = probe_class.angle(length, width, height)
+        base = Probe.angle(length, width, height)
     else:
-        base = probe_class.angle()
+        base = Probe.angle()
     changes = {key: value for key, value in (("front", args.celo), ("max_gap", args.mezera),
                                              ("reserve", args.rezerva)) if value is not None}
-    return probe_class.from_dict({**base.to_dict(), **changes}) if changes else base
+    if not changes:
+        return base
+    data = {**base.to_dict(), **changes}
+    if "front" in changes and base.origins:  # výstupní bod z profilu přepsán ručně
+        data["origins"] = {**dict(base.origins), "front": "entered"}
+    return Probe.from_dict(data)
 
 
 def _coverage(args: argparse.Namespace) -> int:
     from skodacad.ndt.coverage import check_convergence
     from skodacad.ndt.coverage import compute as coverage_compute
-    from skodacad.ndt.devices import Probe, place
+    from skodacad.ndt.devices import place
     from skodacad.ndt.geometry import PartGeometry
-    from skodacad.ndt.study import part_fingerprint, study_probe
+    from skodacad.ndt.study import part_fingerprint
     from skodacad.ndt.ut import refract
     from skodacad.ndt.volume_coverage import check_volume_convergence, compute_volume
 
@@ -266,7 +342,7 @@ def _coverage(args: argparse.Namespace) -> int:
     document = Document.load(args.model)
     result = rebuild(document, _parse_overrides(args.overrides) or None)
     geo = PartGeometry(result.part)
-    probe = _cli_probe(args, document, Probe, study_probe)
+    probe, device_lines, ut_material = _cli_device(args, document)
     placed = place(geo, probe, _vector(args.plocha, "--plocha"), angle=args.smer)
     faces, points, target = [], None, None
     if args.cil:
@@ -308,7 +384,9 @@ def _coverage(args: argparse.Namespace) -> int:
                                study_id=args.studie,
                                part_fingerprint=part_fingerprint(document),
                                evaluated_target=(target["kind"] if target else
-                                                 "points" if points else "faces"))
+                                                 "points" if points else "faces"),
+                               device_lines=device_lines,
+                               **({"ut_material": ut_material.to_dict()} if ut_material else {}))
     if args.konvergence:  # text porovnání je pak i v souhrnu
         (check_volume_convergence if target is not None else check_convergence)(
             geo, placed, fine=covered, **options)

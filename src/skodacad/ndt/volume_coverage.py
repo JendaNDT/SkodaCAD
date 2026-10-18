@@ -112,6 +112,7 @@ class VolumeCoverageMap:
         a = self.assumptions
         lines += [f"Krok pojezdu {a['scan_step_mm']:g} mm, cíle {a['target_step_mm']:g} mm, "
                   f"tolerance {a['tolerance_mm']:g} mm, rozevření {a['spread_deg']:g}°.",
+                  *a.get("device_lines", []),
                   APPROXIMATION,
                   *([a["tolerance_warning"]] if a.get("tolerance_warning") else []),
                   a.get("convergence_text", "Citlivost na krok neověřena."),

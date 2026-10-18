@@ -224,3 +224,11 @@ nová knihovna Pythonu, změna výpočtu pokrytí ani sloučení do `main`.
 - **08A.2 (hotovo):** formát **17** (`document.VERSION`), studie smí mít `material` pro UT
   (kontrola `library.Material`, `study.study_material`), README popisuje nové položky. Soubory
   verzí 1–16 se načtou beze změny, uložení zapisuje 17.
+- **08A.3 (hotovo):** `ModelSession.ndt_ut_material`, `set_ndt_ut_material` (název vestavěného
+  profilu, vlastní záznam nebo None; ruší ověření), `ndt_angle_check`, `apply_ndt_angle_transfer`
+  (jeden krok Zpět), `ndt_device_lines`; výsledek pokrytí nese `device_lines` a `ut_material`,
+  souhrn i CSV (plochy i objem) je vypíšou. CLI `sonda` a `pokryti`: `--profil`, `--material-ut`,
+  `--prepocet-uhlu`, `--knihovna`; ruční `--celo` u profilu změní původ výstupního bodu na
+  „zadáno ručně“. AI asistent rychlosti ani úhly nevymýšlí (`assistant.RULES`). Ukázka: deska
+  20 mm, 70° v oceli – půlkrok 54,95 mm; materiál hliník a `--prepocet-uhlu` → 65,2°, půlkrok
+  43,28 mm (= 20 · tg 65,2°).

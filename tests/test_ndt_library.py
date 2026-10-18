@@ -199,3 +199,96 @@ def test_format_17_stores_probe_origins_and_ut_material(tmp_path):
     data["ndt"]["studies"][0] = loaded
     with pytest.raises(DocumentError, match="příčná rychlost bývá menší"):
         Document.from_dict(data)
+
+
+def library_session():
+    from conftest import EXAMPLES, face_at
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(EXAMPLES / "ndt" / "deska.json")
+    part = session.result.part
+    session.set_ndt_target("s1", [face_at(part, 0, 0, 0).wrapped], (0, 0, 0))
+    session.set_ndt_device("s1", PROBES["uhlova-standardni-70"].probe)
+    session.place_ndt_probe("s1", [face_at(session.result.part, 0, 0, 20).wrapped],
+                            (0, 0, 20))
+    return session
+
+
+def test_session_ut_material_angle_check_and_transfer_with_undo():
+    from skodacad.document import DocumentError
+
+    session = library_session()
+    assert session.ndt_angle_check("s1").state == "ok"  # díl i úhel v oceli
+    assert session.ndt_beam.legs[0].length == pytest.approx(20 / math.cos(math.radians(70)))
+    session.verify_ndt_study("s1", "J. N.")
+    session.set_ndt_ut_material("s1", "ocel")
+    assert "verified" not in session.ndt_study("s1")  # změna zadání ruší ověření
+    assert session.ndt_angle_check("s1").state == "ok"
+    session.set_ndt_ut_material("s1", None)
+    session.set_info(material="hliník")
+    assert session.ndt_angle_check("s1").state == "unknown"
+    with pytest.raises(DocumentError, match="přepočítat"):
+        session.apply_ndt_angle_transfer("s1")
+    with pytest.raises(DocumentError, match="ve vestavěné knihovně není"):
+        session.set_ndt_ut_material("s1", "litina")
+    with pytest.raises(DocumentError, match="zdroj"):
+        session.set_ndt_ut_material("s1", {"name": "x", "c_l": 5000, "c_t": 3000})
+    session.set_ndt_ut_material("s1", "Hliník")
+    assert session.ndt_ut_material("s1") == MATERIALS["hlinik"]
+    found = session.ndt_angle_check("s1")
+    assert found.state == "differs" and session.ndt_probe("s1").beam_angle == 70
+    session.apply_ndt_angle_transfer("s1")
+    probe = session.ndt_probe("s1")
+    assert probe.beam_angle == 65.2 and probe.origin("beam_angle") == "transferred"
+    assert session.ndt_angle_check("s1").state == "ok"
+    # dráha paprsku se změní: půlkrok desky 20 mm = 20 · tg β
+    assert session.ndt_beam.legs[0].hit.point[0] == pytest.approx(
+        20 * math.tan(math.radians(65.2)), abs=1e-3)
+    session.undo()
+    assert session.ndt_probe("s1").beam_angle == 70
+    session.set_ndt_ut_material("s1", None)
+    assert session.ndt_ut_material("s1") is None
+
+
+def test_coverage_outputs_list_profile_material_and_warning(tmp_path):
+    session = library_session()
+    session.set_ndt_ut_material("s1", "hliník")
+    result = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    assert result.assumptions["ut_material"]["name"] == "hliník"
+    summary = "\n".join(result.summary())
+    assert "Profil sondy: Obecná úhlová standardní" in summary
+    assert "Materiál pro UT: hliník" in summary and "Přepočítej úhel" in summary
+    text = result.write_csv(tmp_path / "pokryti.csv").read_text(encoding="utf-8-sig")
+    assert "Materiál pro UT: hliník" in text and "Přepočítej úhel" in text
+    plain = library_session()
+    plain.set_ndt_device("s1", Probe.angle(beam_angle=70))
+    result = plain.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    assert result.assumptions["device_lines"] == [] and "ut_material" not in result.assumptions
+
+
+def test_cli_profile_material_and_explicit_angle_transfer(tmp_path, capsys, monkeypatch):
+    from conftest import EXAMPLES
+    from skodacad.cli import main
+
+    monkeypatch.setenv("SKODACAD_HOME", str(tmp_path))
+    model = str(EXAMPLES / "ndt" / "deska.json")
+    common = ["sonda", model, "--bod", "0,0,20", "--profil", "uhlova-standardni-70",
+              "--material-ut", "hliník"]
+    assert main(common) == 0
+    text = capsys.readouterr().out
+    assert "Přepočítej úhel" in text and "úhel lomu 70.0°" in text  # sám nepřepočítá
+    assert main([*common, "--prepocet-uhlu"]) == 0
+    text = capsys.readouterr().out
+    assert "úhel lomu 65.2°" in text and "půlkrok 43.28 mm" in text  # 20 · tg 65,2°
+    assert main([*common, "--prepocet-uhlu", "--uhel", "60"]) == 2
+    assert main(["sonda", model, "--bod", "0,0,20", "--profil", "neznamy"]) == 2
+    assert "Vestavěné: prima-10" in capsys.readouterr().err
+    save_user_probe(user_library_path(tmp_path), "Moje 70",
+                    replace(PROBES["uhlova-standardni-70"].probe, front=11,
+                            origins={"front": "measured"}))
+    csv = tmp_path / "pokryti.csv"
+    assert main(["pokryti", model, "--plocha", "0,0,20", "--profil", "Moje 70",
+                 "--cil", "40,0,0", "--rezim", "line", "--delka", "0", "--csv", str(csv)]) == 0
+    assert "Profil sondy: Moje 70 (Moje sondy)" in capsys.readouterr().out
+    assert "změřeno – výstupní bod od čela" in csv.read_text(encoding="utf-8-sig")

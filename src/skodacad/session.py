@@ -40,7 +40,7 @@ from skodacad.expressions import (
 )
 from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
-from skodacad.materials import density_g_cm3
+from skodacad.materials import density_g_cm3, material_key
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
 from skodacad.ndt.coverage import (
@@ -54,6 +54,15 @@ from skodacad.ndt.coverage import (
 from skodacad.ndt.coverage import compute as compute_coverage
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
+from skodacad.ndt.library import (
+    MATERIALS,
+    AngleCheck,
+    LibraryError,
+    Material,
+    check_angle,
+    transferred,
+)
+from skodacad.ndt.library import describe as describe_device
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
     StudyError,
@@ -61,6 +70,7 @@ from skodacad.ndt.study import (
     new_study,
     part_fingerprint,
     refresh_target,
+    study_material,
     study_probe,
     target_fingerprint,
     target_for,
@@ -1100,6 +1110,58 @@ class ModelSession:
         record = probe.to_dict()
         return self._edit_study(study_id, lambda study: study.update(device=record), setup=True)
 
+    # --- NDT knihovna: materiál pro UT a úhel sondy (etapa 08) --------------------------
+
+    def ndt_ut_material(self, study_id: str) -> Material | None:
+        """Materiál pro UT ve studii (rychlosti zvuku), None = nezvolený."""
+        return study_material(_studies(self._require())[self._study_index(study_id)])
+
+    def set_ndt_ut_material(self, study_id: str,
+                            material: str | dict[str, Any] | Material | None) -> BuildResult:
+        """Materiál pro UT: název vestavěného profilu („hliník“), vlastní záznam, None = žádný.
+        Mění zadání – ověření studie zanikne a mapa pokrytí se spočítá znovu."""
+        if isinstance(material, str):
+            found = MATERIALS.get(material_key(material))
+            if found is None:
+                raise DocumentError(f"Materiál „{material}“ ve vestavěné knihovně není (je tam "
+                                    f"{', '.join(m.name for m in MATERIALS.values())}). Vlastní "
+                                    "materiál zadej rychlostmi zvuku a zdrojem.")
+            material = found
+        try:
+            record = None if material is None else (
+                material if isinstance(material, Material) else Material.from_dict(material)
+            ).to_dict()
+        except LibraryError as exc:
+            raise DocumentError(str(exc)) from None
+
+        def update(study: dict[str, Any]) -> None:
+            if record is None:
+                study.pop("material", None)
+            else:
+                study["material"] = record
+
+        return self._edit_study(study_id, update, setup=True)
+
+    def ndt_angle_check(self, study_id: str) -> AngleCheck:
+        """Platí úhel sondy v materiálu pro UT? Nic nemění – přepočet jen přes
+        ``apply_ndt_angle_transfer``."""
+        return check_angle(self.ndt_probe(study_id), self.ndt_ut_material(study_id),
+                           self._require().material)
+
+    def apply_ndt_angle_transfer(self, study_id: str) -> BuildResult:
+        """Přepočte úhel sondy do materiálu pro UT (Snellův zákon) – jeden krok Zpět."""
+        found = self.ndt_angle_check(study_id)
+        if found.state != "differs":
+            raise DocumentError(found.text or "Úhel sondy není co přepočítat – platí přímo "
+                                              "v materiálu dílu.")
+        return self.set_ndt_device(study_id, transferred(self.ndt_probe(study_id), found))
+
+    def ndt_device_lines(self, study_id: str) -> list[str]:
+        """Profil sondy, původ hodnot, materiál pro UT a kontrola úhlu pro výstupy
+        (prázdné, když nic z toho není zadané)."""
+        return describe_device(self.ndt_probe(study_id), self.ndt_ut_material(study_id),
+                               self.ndt_angle_check(study_id))
+
     def place_ndt_probe(self, study_id: str, shapes: list[Any], point: Any = None,
                         angle: float = 0.0) -> Placement:
         """Přiloží sondu studie na plochu vybranou ve 3D (jen pohled, do modelu se neukládá;
@@ -1344,9 +1406,13 @@ class ModelSession:
             except Exception as exc:  # noqa: BLE001 – jemný výsledek platí, stabilita ne
                 result.assumptions["convergence_text"] = (
                     f"Citlivost na krok se nepodařilo ověřit: {exc}")
-        result.assumptions.update(study_id=self.ndt_placement_request[0],
+        study_id = self.ndt_placement_request[0]
+        material = self.ndt_ut_material(study_id)
+        result.assumptions.update(study_id=study_id,
                                   part_fingerprint=part_fingerprint(self._require()),
-                                  parameters=dict(self.result.parameters))
+                                  parameters=dict(self.result.parameters),
+                                  device_lines=self.ndt_device_lines(study_id),
+                                  **({"ut_material": material.to_dict()} if material else {}))
         self._coverage_cache = (key, result)
         return result
 
