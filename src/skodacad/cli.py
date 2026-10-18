@@ -312,7 +312,8 @@ def _coverage(args: argparse.Namespace) -> int:
     convergence = None
     if args.konvergence:
         convergence = (check_volume_convergence(geo, placed, fine=covered, **options)
-                       if target is not None else check_convergence(geo, placed, **options))
+                       if target is not None
+                       else check_convergence(geo, placed, fine=covered, **options))
     print("\n".join(covered.summary()))
     print("Předpoklady:", covered.assumptions)
     if convergence is not None and target is None:

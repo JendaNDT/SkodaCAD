@@ -28,6 +28,7 @@ from skodacad.ndt.coverage import (
     _evaluate_samples,
     _number,
     _scan_positions,
+    auto_tolerance,
 )
 from skodacad.ndt.devices import Placement
 from skodacad.ndt.geometry import PartGeometry, Point
@@ -46,11 +47,6 @@ APPROXIMATION = ("Stav vnitřního bodu zastupuje objem jeho kusu buňky; "
 # hledá aspoň tak hustě jako jemný – jinak by část paprsků jen „nenašel“.
 CONVERGENCE_RULE = "ndt-ut-objemove-porovnani 2: tolerance hrubého běhu ≥ jeho krok × √0,5"
 TARGET_STEP_SHARE = 6  # výchozí krok cíle = menší rozměr průřezu / 6 (rozbor, oddíl 4)
-
-
-def auto_tolerance(mode: str, scan_step: float) -> float:
-    """Automatická tolerance zachycení: polovina úhlopříčky mřížky pojezdu (po čáře 0,6 kroku)."""
-    return scan_step * (math.sqrt(0.5) if mode == "face" else 0.6)
 
 
 def recommended_target_step(target: dict) -> float:
@@ -296,7 +292,7 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
         raise CoverageError("Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. "
                             "Pro objem zvol pojezd po ploše; pro čáru lze samostatně "
                             "vyhodnotit body nebo plochy.")
-    search = auto_tolerance(mode, scan_step)
+    search = auto_tolerance(mode, scan_step)  # objem: tolerance jen podle pojezdu
     tolerance = (search if tolerance_mm is None else _number(
         tolerance_mm, "Tolerance zachycení [mm]", 0, 1000))
     target = normalize_target(target)
