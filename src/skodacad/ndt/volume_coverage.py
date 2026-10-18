@@ -25,10 +25,12 @@ from skodacad.ndt.coverage import (
     STATES,
     CoverageError,
     CoverageHit,
+    PlanRegion,
     _evaluate_samples,
     _number,
     _scan_positions,
     auto_tolerance,
+    plan_positions,
 )
 from skodacad.ndt.devices import Placement
 from skodacad.ndt.geometry import PartGeometry, Point
@@ -278,7 +280,10 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
                    tolerance_mm: float | None = None, spread_deg: float = 0.0,
                    beta: float | None = None, bounces: int | None = None,
                    max_length: float | None = None,
-                   refraction: Refraction | None = None) -> VolumeCoverageMap:
+                   refraction: Refraction | None = None,
+                   positions: list[Point] | None = None,
+                   region: PlanRegion | None = None) -> VolumeCoverageMap:
+    """Objemové pokrytí cíle; režim ``plan`` (etapa 10) bere polohy z plánu dráhy."""
     started = time.monotonic()
     scan_step = _number(scan_step, "Krok pojezdu [mm]", 0.1, 1000)
     if target_step is None:  # výchozí krok podle velikosti průřezu
@@ -287,8 +292,10 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
     length_mm = _number(length_mm, "Délka pojezdu [mm]", 0, 100000)
     angle_deg = _number(angle_deg, "Směr sondy [°]", -36000, 36000)
     spread_deg = _number(spread_deg, "Rozevření [°]", 0, 45)
-    if mode not in ("line", "face"):
+    if mode not in ("line", "face", "plan"):
         raise CoverageError("Zvol pojezd po ploše (face) nebo po přímce (line).")
+    if mode == "plan" and (not positions or region is None):
+        raise CoverageError("Plán dráhy nemá žádnou polohu sondy.")
     if mode == "line" and spread_deg == 0:
         raise CoverageError("Pojezd po čáře bez rozevření svazku nevymezuje pokrytý objem. "
                             "Pro objem zvol pojezd po ploše; pro čáru lze samostatně "
@@ -298,7 +305,8 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
         tolerance_mm, "Tolerance zachycení [mm]", 0, 1000))
     target = normalize_target(target)
     beam = trace_beam(geo, placement, beta, bounces, max_length, refraction)
-    candidates = _scan_positions(placement, mode, scan_step, length_mm)
+    candidates = (plan_positions(positions) if mode == "plan"
+                  else _scan_positions(placement, mode, scan_step, length_mm))
     try:
         samples, resolved, metadata = _sample_volume(geo, target, target_step,
                                                     len(candidates), beam.bounces + 1)
@@ -310,7 +318,8 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
         geo, placement, [s.point for s in samples], [s.reason for s in samples],
         candidates, beam, mode=mode, scan_step=scan_step, target_step=target_step,
         length_mm=length_mm, angle_deg=angle_deg, tolerance=tolerance, spread_deg=spread_deg,
-        beta=beta, bounces=bounces, max_length=max_length, refraction=refraction)
+        beta=beta, bounces=bounces, max_length=max_length, refraction=refraction,
+        region=region)
     assumptions.update(metadata, target=target, target_kind=target["kind"],
                        quantity="volume", unit="mm³",
                        target_fingerprint=target_fingerprint(target),
@@ -320,8 +329,8 @@ def compute_volume(geo: PartGeometry, placement: Placement, *, target: dict,
     if tolerance < search - 1e-9:
         assumptions["tolerance_warning"] = (
             f"Tolerance zachycení {tolerance:g} mm je menší než krok pojezdu × "
-            f"{'0,71' if mode == 'face' else '0,6'} = {search:.3g} mm – hledání nemusí najít "
-            "všechny paprsky a pokrytí může vyjít nižší.")
+            f"{'0,71' if mode in ('face', 'plan') else '0,6'} = {search:.3g} mm – hledání "
+            "nemusí najít všechny paprsky a pokrytí může vyjít nižší.")
     return VolumeCoverageMap(samples, states, hits, reasons, resolved.requested_volume_mm3,
                              resolved.volume_mm3, positions, valid, uncertain, assumptions,
                              time.monotonic() - started)

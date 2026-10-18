@@ -1,6 +1,8 @@
 # NDT – návrh etapy 10: plán dráhy UT sondy (automatická skenovací trajektorie)
 
-Stav: **návrh k rozhodnutí autora**, nic z něj zatím není naprogramované.
+Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 10 včetně doporučení 1–10“);
+implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
+v [oddílu 13](#13-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `bbc207f` ([PR #23](https://github.com/JendaNDT/SkodaCAD/pull/23)).
 Navazuje na [plán, etapa 10](03-implementacni-plan.md), [návrh poloh sondy (etapa 09)](17-navrh-etapa-09.md),
 [ruční pohyb sondy (etapa 05)](10-navrh-etapa-05.md), [geometrické pokrytí (etapa 06)](11-navrh-etapa-06.md),
@@ -298,3 +300,39 @@ Každý krok zvlášť: `ruff`, `pytest`, commit. Do `main` až na tvůj pokyn.
 
 Schválením se **neschvaluje**: zakřivené plochy, natáčení sondy, změna výpočtu přiložení
 a paprsku, nová knihovna Pythonu ani sloučení do `main`.
+
+## 13. Provedení a upřesnění
+
+- **10A.1 (hotovo):** `ndt/plan.py` – mřížka průchodu, dosah, přiložení, úseky s konci
+  dohledanými půlením, cik-cak, kontrola po 1 mm, nájezd, zakázané zóny, boční rezerva,
+  pokrytí z poloh plánu a souhrn s CSV. Výpočet pokrytí dostal režim `plan`
+  (`coverage.PlanRegion`: mezipoloha sondy jen v pásu úseku, zóny vyřadí i mezipolohy);
+  dnešní režimy `face` a `line` počítají beze změny (regresní testy etap 06, 07B a 09 prošly).
+- **Upřesnění:**
+  - Když na konci úseku nejde sondu zvednout (převis), vrátí se **po už projeté dráze** na
+    nejbližší místo, kde to jde. Když ji nejde spustit na začátek úseku, spustí se na nejbližší
+    poloze úseku a na začátek dojede po povrchu. Úsek, na který nejde najet vůbec, plán
+    vynechá a napíše proč.
+  - Boční rezerva se měří napříč řádku do poloviny rozteče (u rozteče 5 mm tedy do 2,5 mm,
+    víc = „aspoň 2,5 mm“), pod 1 mm je poloha „na hraně“.
+  - **Srovnání s celou plochou** a **odolnost** (posun řádků o ± půl rozteče) jsou volby,
+    výchozí vypnuté – každá stojí další výpočet pokrytí.
+  - Vzory se porovnávají z mřížky (počet přestavení, délka, řádky); kontrolu po 1 mm, nájezd
+    a pokrytí počítá jen zvolený vzor.
+- **Změřeno 18. 10. 2026** (cloud, časy kolísají), celý V svar 100 mm, plocha nahoře vpravo,
+  70°, směr ke svaru, rozteč 5 mm:
+
+  | Plán | Úseky | Pokryto (celá plocha) | Čas celkem |
+  |---|---|---|---|
+  | bez odrazu, vzor *k cíli a zpět* | 17 řádků, 473 mm, 0 přestavení | **11,79 %** (11,79 %) | 70 s |
+  | bez odrazu, *automaticky* → podél | 6 řádků, 480 mm, 0 přestavení | **11,79 %** (11,79 %) | 60 s |
+  | 1 odraz, *automaticky* → podél | 12 řádků, 960 mm, 0 přestavení | **79,93 %** (79,93 %) | 197 s |
+
+  Úseky vzoru *k cíli a zpět* začínají na x = 22,19 mm (převýšení, dohledáno na 0,5 mm),
+  řádky jen v y ±40 mm; 14 poloh na krajních řádcích je „na hraně“ (vně přesah).
+- **Testy** (`tests/test_ndt_plan.py`, výřez svaru 10 mm kvůli času): plán = pojezd po
+  ploše 14,743 %, každý bod trasy po 1 mm znovu přiložený bez paměti plánovače je platný,
+  uložený a znovu načtený plán dá tytéž stavy vzorků, zóna zkrátí řádky na x ≤ 30,5 mm
+  a žádný bod do ní nezasáhne, dva průchody (zprava a zleva) 15,22 % s jedním přestavením,
+  převis (spuštění i zvednutí mimo střechu, s nájezdem 0 bez přejezdů), úzká mezera (napříč
+  nic, podél jen pás ±5 mm), režim `plan` přes celou plochu = režim `face`.
