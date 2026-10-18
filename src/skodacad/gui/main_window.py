@@ -137,6 +137,7 @@ class MainWindow(QMainWindow):
         self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
         self._shown_points: Any = None  # mapa kontaktních ploch návrhu poloh v prohlížeči
         self._shown_target: Any = None  # náhled cílového objemu NDT právě v prohlížeči
+        self._shown_plan: Any = None  # plán dráhy sondy a zóny právě v prohlížeči (klíč)
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
         self._view_actions: list[QAction] = []
@@ -485,6 +486,7 @@ class MainWindow(QMainWindow):
     def _refresh_probe(self) -> None:
         """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
         (u přímé sondy kolmo do materiálu)."""
+        self._refresh_plan()
         self._refresh_coverage()
         placement = self.session.ndt_placement
         if placement is self._shown_probe:
@@ -504,8 +506,21 @@ class MainWindow(QMainWindow):
         self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short,
                                points)
 
+    def _refresh_plan(self) -> None:
+        """Plán dráhy vybrané studie ve 3D: úseky, přesuny, přestavení a zakázané zóny."""
+        key, drawing = self.session.ndt_plan_drawing(self.ndt_panel.current_id())
+        if key == self._shown_plan:
+            return
+        self._shown_plan = key
+        if drawing is None:
+            self.viewer.hide_plan()
+        else:
+            self.viewer.show_plan(*drawing)
+
     def _refresh_coverage(self) -> None:
         found = self.session.ndt_coverage
+        if found is None:  # pokrytí plánu dráhy (při přehrávání narůstá)
+            found = self.ndt_panel.plan_view()
         access = self.session.ndt_access
         mode = self.ndt_panel.access_map_mode()
         if found is None and access is not None and mode == "target":
@@ -713,6 +728,10 @@ class MainWindow(QMainWindow):
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.access_action, self.ndt_panel.access_show_action,
                      self.ndt_panel.access_apply_action, self.ndt_panel.access_export_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.plan_action, self.ndt_panel.plan_check_action,
+                     self.ndt_panel.plan_zones_action, self.ndt_panel.plan_export_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -1045,6 +1064,7 @@ class MainWindow(QMainWindow):
             self._shown_points = None  # … i body mapy kontaktních ploch
             self._shown_probe = None  # … i sondu
             self._shown_target = None  # … i náhled cílového objemu
+            self._shown_plan = None  # … i plán dráhy a zóny
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
@@ -1073,6 +1093,7 @@ class MainWindow(QMainWindow):
         if self.session.poll():
             if self.session.computing:  # průběžná zpráva návrhu poloh – výpočet běží dál
                 self.ndt_panel._show_access()
+                self.ndt_panel._show_plan()
                 self.ndt_panel.refresh_actions()
                 self._refresh_progress()
                 return
@@ -1103,17 +1124,21 @@ class MainWindow(QMainWindow):
             self.ndt_panel._show_coverage()  # uplynulý čas výpočtu pokrytí v panelu
         if self.session.access_pending:
             self.ndt_panel._show_access()  # průběh návrhu poloh v panelu
+        if self.session.plan_pending:
+            self.ndt_panel._show_plan()  # průběh plánu dráhy v panelu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
         access = self.session.access_pending
+        plan = self.session.plan_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage or access:  # zastavený výpočet pokrytí / návrhu – model se neměnil
+            if coverage or access or plan:  # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
                 self.statusBar().showMessage(
                     "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
-                    else "Výpočet mapy pokrytí zastaven.", 10000)
+                    else "Výpočet plánu dráhy zastaven – uložený plán zůstal beze změny."
+                    if plan else "Výpočet mapy pokrytí zastaven.", 10000)
                 return
             if self.session.map_visible and self.session.thickness_map is None:
                 self.session.map_visible = False  # nedopočítaná mapa se vypne

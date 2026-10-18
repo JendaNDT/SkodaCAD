@@ -5,7 +5,8 @@ varianta etapy 09). Plán ho projede **řádky** tam a zpět (cik-cak) s rozteč
 
 1. mřížka průchodu po rozteči zarovnaná se směrem paprsku (oba vzory řádků ji sdílejí),
 2. **dosah** – z uzlu se spustí paprsek bez přiložení; uzly, odkud žádné rameno nevede blízko
-   cíle, odpadnou (stejné síto jako 2. kolo etapy 09),
+   cíle, odpadnou (síto jako 2. kolo etapy 09, ale proti bodům skutečného cíle – obalový
+   kvádr V svaru je mnohem větší než svar),
 3. **přiložení** jen v okolí uzlů v dosahu; platný uzel = přiloženo a mimo zakázané zóny,
 4. **úseky** = souvislé běhy platných uzlů řádku oříznuté na dosah; konec u překážky se
    dohledá půlením na 0,5 mm,
@@ -64,6 +65,9 @@ PATTERNS = {"toward": "k cíli a zpět", "along": "podél", "manual": "ručně"}
 PATTERN_CHOICES = {"auto": "automaticky", "toward": PATTERNS["toward"],
                    "along": PATTERNS["along"]}
 STEP_KINDS = {"scan": "úsek", "slide": "přesun po povrchu", "air": "přestavení"}
+STEP_COLORS = {"scan": (0.10, 0.60, 0.20), "slide": (0.45, 0.45, 0.45),
+               "air": (0.95, 0.55, 0.10)}  # kresba ve 3D (okno) – legenda panelu NDT
+ZONE_COLOR = (0.85, 0.20, 0.15)
 DEFAULT_ROW_STEP = 5.0
 DEFAULT_APPROACH = 20.0
 DEFAULT_CHECK_STEP = 1.0
@@ -200,6 +204,28 @@ class Zone:
 
         size = [h - lo for lo, h in zip(self.low, self.high, strict=True)]
         return Pos(*self.low) * Box(*size, align=(Align.MIN, Align.MIN, Align.MIN))
+
+
+def zone_hit(body: Any, zones: tuple[Zone, ...] | list[Zone],
+             solids: dict[int, Any] | None = None) -> Zone | None:
+    """První zóna, do které těleso (tělo sondy) zasahuje; nespočítaný průnik = zasahuje.
+    ``solids`` = paměť těles zón podle pořadí (plánovač ji drží celou dobu výpočtu)."""
+    if not zones or body is None:
+        return None
+    solids = {} if solids is None else solids
+    box = body.bounding_box()
+    for i, zone in enumerate(zones):
+        if (box.min.X > zone.high[0] or box.max.X < zone.low[0]
+                or box.min.Y > zone.high[1] or box.max.Y < zone.low[1]
+                or box.min.Z > zone.high[2] or box.max.Z < zone.low[2]):
+            continue
+        solid = solids.get(i)
+        if solid is None:
+            solid = solids[i] = zone.solid()
+        volume = _overlap(body.wrapped, solid.wrapped)
+        if volume is None or volume > OVERLAP_TOL:
+            return zone
+    return None
 
 
 def probe_fingerprint(probe: Probe) -> str:
@@ -555,6 +581,17 @@ class PlanCoverage:
         return states
 
 
+    def segment_hits(self, check: PlanCheck) -> dict[tuple[int, int], int]:
+        """Úsek (průchod, úsek) → kolik vzorků cíle z něj paprsek zasáhl jako první. Úsek
+        s nulou nic nepokrývá sám (každý jeho zásah má dřívější úsek) – jde ho smazat."""
+        counts = {(p.pass_index, p.segment): 0 for p in check.positions}
+        for first in self.first_position:
+            if first is not None:
+                position = check.positions[first]
+                counts[(position.pass_index, position.segment)] += 1
+        return counts
+
+
 @dataclass(frozen=True)
 class PlanEstimate:
     nodes: int
@@ -602,6 +639,10 @@ class PlanResult:
                              f"mm pokryto {_num(low, 2)}–{_num(high, 2)} %.")
         else:
             lines.append("Pokrytí plánu zatím není spočítané.")
+        useless = self.useless_segments()
+        if useless:
+            lines.append(f"Úseky bez přínosu (žádný vzorek cíle nezasáhnou jako první): "
+                         f"{len(useless)} – jde je smazat, pokrytí se tím nezmenší.")
         lines += list(self.dropped)
         lines.append(f"Rozteč {_num(self.plan.row_step_mm)} mm, kontrolní krok "
                      f"{_num(self.plan.check_step_mm)} mm, výška nájezdu "
@@ -609,6 +650,14 @@ class PlanResult:
                      + (f", zakázané zóny {len(a.get('zones', []))}" if a.get("zones") else "")
                      + f"; výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}.")
         return lines
+
+    def useless_segments(self) -> list[tuple[int, int]]:
+        """Úseky, ze kterých paprsek žádný vzorek nezasáhne jako první (jen se spočítaným
+        pokrytím)."""
+        if self.coverage is None:
+            return []
+        return [key for key, count in self.coverage.segment_hits(self.check).items()
+                if not count]
 
     def write_csv(self, path: str | Path) -> Path:
         path = Path(path)
@@ -713,6 +762,7 @@ class Planner:
         self._margin = tolerance + step  # síto dosahu jako 2. kolo etapy 09
         self._slope = math.tan(math.radians(self.options.spread_deg))
         self._checks = 0
+        self._samples: Any = None  # body cíle pro síto dosahu (numpy, až při prvním použití)
 
     # --- sonda, přiložení, zóny, nájezd ----------------------------------------------
 
@@ -729,21 +779,7 @@ class Planner:
         return _Frame(aimed.origin, aimed.x_dir, aimed.y_dir, aimed.z_dir)
 
     def _zone_of(self, body: Any) -> Zone | None:
-        if not self.zones or body is None:
-            return None
-        box = body.bounding_box()
-        for i, zone in enumerate(self.zones):
-            if (box.min.X > zone.high[0] or box.max.X < zone.low[0]
-                    or box.min.Y > zone.high[1] or box.max.Y < zone.low[1]
-                    or box.min.Z > zone.high[2] or box.max.Z < zone.low[2]):
-                continue
-            solid = self._zone_solids.get(i)
-            if solid is None:
-                solid = self._zone_solids[i] = zone.solid()
-            volume = _overlap(body.wrapped, solid.wrapped)
-            if volume is None or volume > OVERLAP_TOL:
-                return zone
-        return None
+        return zone_hit(body, self.zones, self._zone_solids)
 
     def allowed(self, placed: Placement) -> bool:
         """Přiložení mimo zakázané zóny (pro ``coverage.PlanRegion``)."""
@@ -783,15 +819,62 @@ class Planner:
         self._approach_memo[key] = free
         return free
 
+    def _target_points(self) -> Any:
+        """Body cíle pro síto dosahu: u ploch těžiště sítě povrchu, u objemu body mřížky
+        uvnitř skutečného cíle (krok cíle), u bodů body. Rameno, které projde cílem, má
+        k některému bodu blíž než polovinu úhlopříčky kroku – rezerva síta je větší."""
+        if self._samples is not None:
+            return self._samples
+        import numpy as np
+
+        step = self.options.target_step_mm or self.options.row_step_mm
+        if self.points is not None:
+            points = [tuple(float(v) for v in p) for p in self.points]
+        elif self.faces is not None:
+            from skodacad.thickness_map import _Surface
+
+            points = list(_Surface(self.geo.part, step, self.faces).centers)
+        else:
+            from skodacad.ndt.welds import resolve_target
+
+            shape = resolve_target(self.geo.part, self.volume).shape
+            inner = PartGeometry(shape)
+            counts = [max(1, math.ceil((h - lo) / step)) for lo, h in zip(self._low, self._high,
+                                                                          strict=True)]
+            points = []
+            for i in range(counts[0] + 1):
+                for j in range(counts[1] + 1):
+                    for k in range(counts[2] + 1):
+                        point = tuple(min(lo + n * step, h) for lo, h, n in zip(
+                            self._low, self._high, (i, j, k), strict=True))
+                        if inner.classify(point) != "outside":
+                            points.append(point)
+        self._samples = np.array(points or [self._low, self._high], dtype=float)
+        return self._samples
+
     def _reaches(self, point: Point, frame: _Frame, config: Probe) -> bool:
+        import numpy as np
+
         aimed = Aim(config, _r(point), frame.ex, frame.ey, frame.n)
         try:
             beam = trace_beam(self.geo, aimed)
         except (BeamError, GeometryError):
             return False
-        return any(_segment_reaches(leg.start, leg.direction, leg.length, self._low,
-                                    self._high, self._margin + leg.cumulative_length
-                                    * self._slope) for leg in beam.legs)
+        samples = None
+        for leg in beam.legs:
+            margin = self._margin + leg.cumulative_length * self._slope
+            if not _segment_reaches(leg.start, leg.direction, leg.length, self._low,
+                                    self._high, margin):
+                continue  # obalový kvádr cíle je daleko – levné síto napřed
+            if samples is None:
+                samples = self._target_points()
+            offset = samples - np.array(leg.start)
+            direction = np.array(leg.direction)
+            along = np.clip(offset @ direction, 0.0, leg.length)
+            gap = offset - np.outer(along, direction)
+            if (np.einsum("ij,ij->i", gap, gap) <= margin * margin).any():
+                return True
+        return False
 
     # --- mřížka průchodu -------------------------------------------------------------
 

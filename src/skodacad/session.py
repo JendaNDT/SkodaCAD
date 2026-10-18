@@ -76,6 +76,7 @@ from skodacad.ndt.library import (
 )
 from skodacad.ndt.library import describe as describe_device
 from skodacad.ndt.plan import (
+    STEP_COLORS,
     PassSpec,
     Plan,
     PlanError,
@@ -85,6 +86,7 @@ from skodacad.ndt.plan import (
     PlanResult,
     Zone,
     probe_fingerprint,
+    zone_hit,
     zones_from,
 )
 from skodacad.ndt.study import METHODS as NDT_METHODS
@@ -220,6 +222,8 @@ class ModelSession:
         # plán dráhy (etapa 10): (klíč platnosti, ověřený plán) a běžící sestavení/ověření
         self._plan_cache: tuple[tuple[Any, ...], PlanResult] | None = None
         self._plan_pending: dict[str, Any] | None = None
+        self._plan_drawing_cache: tuple[Any, Any] | None = None
+        self._plan_view_cache: tuple[Any, Any] | None = None
         self._target_preview_cache: tuple[Any, Any] | None = None
         self._volume_drawing_cache: tuple[Any, Any] | None = None
 
@@ -1842,6 +1846,23 @@ class ModelSession:
 
         return self._edit_study(study_id, update)
 
+    @property
+    def ndt_placement_zone(self) -> str:
+        """Upozornění, když ručně přiložená sonda zasahuje do zakázané zóny studie (zóny
+        platí pro plán dráhy – přiložení samo nezakazují); jinak prázdné."""
+        placement, request = self.ndt_placement, self.ndt_placement_request
+        if placement is None or request is None:
+            return ""
+        try:
+            zones = self.ndt_zones(request[0])
+        except DocumentError:
+            return ""
+        found = zone_hit(placement.body, zones)
+        if found is None:
+            return ""
+        return (f"Sonda zasahuje do zakázané zóny {found.label(zones.index(found))} – plán "
+                "dráhy sem nepojede.")
+
     def ndt_plan(self, study_id: str) -> Plan | None:
         """Plán dráhy uložený ve studii, None = žádný."""
         data = self.ndt_study(study_id).get("plan")
@@ -2264,6 +2285,24 @@ class ModelSession:
             raise DocumentError(str(exc)) from None
         return self._edit_study(study_id, lambda study: study.update(plan=record))
 
+    def remove_ndt_useless_segments(self, study_id: str) -> BuildResult:
+        """Smaže úseky, ze kterých paprsek žádný vzorek cíle nezasáhne jako první (podle
+        spočítaného pokrytí plánu) – jeden krok Zpět. Pokrytí se tím nezmenší; ověří ho
+        nový výpočet."""
+        result = self.ndt_plan_result
+        if result is None or self.ndt_plan_study() != study_id or result.coverage is None:
+            raise DocumentError("Nejdřív plán ověř a spočítej jeho pokrytí.")
+        useless = set(result.useless_segments())
+        if not useless:
+            raise DocumentError("Plán nemá úseky bez přínosu.")
+
+        def change(passes: list[dict[str, Any]]) -> None:
+            for p_index, plan_pass in enumerate(passes):
+                plan_pass["segments"] = [s for s_index, s in enumerate(plan_pass["segments"])
+                                         if (p_index, s_index) not in useless]
+
+        return self._edit_plan(study_id, change)
+
     def remove_ndt_plan(self, study_id: str) -> BuildResult:
         return self._edit_study(study_id, lambda study: study.pop("plan", None))
 
@@ -2297,6 +2336,81 @@ class ModelSession:
             self.ndt_placement_request, self._probe_override = previous
             raise DocumentError(error)
         return placement
+
+    def ndt_plan_drawing(self, study_id: str | None) -> tuple[Any, Any]:
+        """Kresba plánu dráhy studie pro okno: (klíč, (čáry po barvách, začátek, zóny)), nebo
+        (None, None). Ověřený plán ukáže celou jízdu (přesuny, přestavení obloukem nad dílem
+        ve výšce nájezdu), neověřený jen úseky. Klíč se mění jen se změnou kresby."""
+        if study_id is None or self.document is None or self.result is None \
+                or self.result.part is None:
+            return None, None
+        try:
+            record = self.ndt_study(study_id)
+        except DocumentError:
+            return None, None
+        plan_data, zones_data = record.get("plan"), record.get("zones")
+        if plan_data is None and not zones_data:
+            return None, None
+        result = self.ndt_plan_result if self.ndt_plan_study() == study_id else None
+        key = (id(self.result), json.dumps(plan_data, sort_keys=True),
+               json.dumps(zones_data, sort_keys=True), id(result))
+        if self._plan_drawing_cache is not None and self._plan_drawing_cache[0] == key:
+            return self._plan_drawing_cache
+        lines: dict[tuple, list] = {color: [] for color in STEP_COLORS.values()}
+        start = None
+        try:
+            if result is not None:
+                height = max(result.plan.approach_mm, 10.0)
+                for step in result.check.steps:
+                    if step.kind == "air":
+                        up = tuple(p + n * height for p, n in zip(step.start, step.normals[0],
+                                                                 strict=True))
+                        over = tuple(p + n * height for p, n in zip(step.end, step.normals[1],
+                                                                   strict=True))
+                        lines[STEP_COLORS["air"]] += [(step.start, up), (up, over),
+                                                      (over, step.end)]
+                    else:
+                        lines[STEP_COLORS[step.kind]].append((step.start, step.end))
+                start = result.check.steps[0].start if result.check.steps else None
+            elif plan_data is not None:
+                for plan_pass in Plan.from_dict(plan_data).passes:
+                    for segment in plan_pass.segments:
+                        lines[STEP_COLORS["scan"]].append((segment.start, segment.end))
+                        start = start or segment.start
+            zones = [zone.solid() for zone in zones_from(zones_data)]
+        except PlanError:
+            return None, None
+        self._plan_drawing_cache = (key, ({c: v for c, v in lines.items() if v}, start, zones))
+        return self._plan_drawing_cache
+
+    def ndt_plan_view_map(self, index: int | None) -> CoverageMap | VolumeCoverageMap | None:
+        """Mapa pokrytí plánu po polohu ``index`` (přehrávání): co ještě paprsek nezasáhl, je
+        zatím nepokryté. None = celý plán."""
+        result = self.ndt_plan_result
+        if result is None or result.coverage is None:
+            return None
+        full = result.coverage.coverage
+        if index is None or index >= len(result.check.positions) - 1:
+            return full
+        key = (id(result), index)
+        if self._plan_view_cache is None or self._plan_view_cache[0] != key:
+            self._plan_view_cache = (key, dataclasses.replace(
+                full, states=result.coverage.until(index)))
+        return self._plan_view_cache[1]
+
+    def ndt_zone_from_selection(self, shapes: list[Any]) -> dict[str, Any]:
+        """Zakázaná zóna kolem ploch či hran vybraných ve 3D (obalový kvádr + 1 mm)."""
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        items = [*faces, *edges]
+        if not items:
+            raise DocumentError("Nejdřív ve 3D vyber plochu nebo hranu, kolem které má zóna "
+                                "být.")
+        boxes = [item.bounding_box() for item in items]
+        low = [round(min(getattr(b.min, a) for b in boxes) - 1.0, 2) for a in "XYZ"]
+        high = [round(max(getattr(b.max, a) for b in boxes) + 1.0, 2) for a in "XYZ"]
+        center = "; ".join(f"{(lo + hi) / 2:g}".replace(".", ",") for lo, hi in
+                           zip(low, high, strict=True))
+        return {"name": f"zóna u ({center})", "min": low, "max": high}
 
     def export_ndt_plan(self, path: str | Path) -> Path:
         result = self.ndt_plan_result

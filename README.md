@@ -418,7 +418,14 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   po změně dílu, cíle nebo sondy je plán *zastaralý* a sám se nikdy nepřepočítá ani neposune
   (*ověřit znovu* / *sestavit znovu*). Ruční úpravy úseků (smazat, obrátit, přeřadit, upravit
   konce, přidat z přiložené sondy) jsou kroky Zpět. Uložený plán po novém otevření souboru
-  spočítá totéž pokrytí. V příkazové řádce: `skodacad draha MODEL --studie s1
+  spočítá totéž pokrytí. V okně je to skupina **Plán dráhy sondy** v panelu NDT: z čeho
+  plánovat (přiložená sonda, vybraná varianta nebo kombinace návrhu poloh), vzor, rozteč,
+  výška nájezdu, **Naplánovat dráhu**, **Ověřit a spočítat**, stav plánu, tabulka úseků
+  (návaznost a **přínos** – kolik vzorků cíle úsek zasáhne jako první; **Smazat úseky bez
+  přínosu** pokrytí nezmenší), úpravy úseků, **Zakázané zóny…** a **přehrávání** (sonda
+  s paprskem jede po dráze, mapa pokrytí narůstá). Ve 3D jsou úseky zeleně, přesuny po povrchu
+  šedě, přestavení oranžově obloukem nad dílem a zóny průhledně červeně. V příkazové řádce:
+  `skodacad draha MODEL --studie s1
   (--plocha X,Y,Z --smer 180 | --varianta N | --kombinace | --prepocet) [--vzor auto|k-cili|podel]
   [--roztec 5] [--najezd 20] [--kontrola 1] [--zona X1,Y1,Z1:X2,Y2,Z2] [--srovnani]
   [--odolnost] [--ulozit] [--csv plan.csv]`. Návrh: [Etapa 10](docs/ndt/18-navrh-etapa-10.md).

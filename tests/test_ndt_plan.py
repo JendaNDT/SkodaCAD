@@ -164,6 +164,25 @@ def test_every_route_point_is_collision_free_and_recompute_is_identical(weld, sl
     assert result.coverage.until(len(result.check.positions)) == result.coverage.coverage.states
 
 
+def test_useless_segments_go_without_losing_coverage(weld, slice_plan):
+    """Řádky y = ±10 mm míjejí výřez svaru (y ±5 mm) – síto dosahu je velkorysé, ale
+    pokrytí ukáže, že nic nezasáhnou; po smazání vyjde totéž číslo s kratší dráhou."""
+    from dataclasses import replace
+
+    _, right, _ = weld
+    planner, result = slice_plan
+    hits = result.coverage.segment_hits(result.check)
+    assert sum(hits.values()) == sum(f is not None for f in result.coverage.first_position)
+    useless = result.useless_segments()
+    assert useless and "bez přínosu" in "\n".join(result.summary())
+    keep = [s for i, s in enumerate(result.plan.passes[0].segments) if (0, i) not in useless]
+    pruned = replace(result.plan, passes=(replace(result.plan.passes[0], segments=tuple(keep)),))
+    again = planner.evaluate(pruned, [right])
+    assert again.coverage.covered == pytest.approx(result.coverage.covered, abs=1e-9)
+    assert again.check.length("scan") < result.check.length("scan")
+    assert not again.useless_segments()
+
+
 def test_forbidden_zone_shortens_rows_and_route_never_enters_it(weld, slice_plan):
     """Upínka za sondou (x 58–62 mm): tělo sondy dlouhé 40 mm do ní vjede, když je výstupní
     bod dál než x = 30 mm – řádky skončí u 30 mm a žádný bod trasy zónu nezasáhne."""
@@ -323,6 +342,8 @@ def test_changed_part_makes_plan_stale_until_confirmed_and_edits_undo(rib):
     session.undo()
     session.undo()
     assert session.ndt_plan("s1") == before
+    with pytest.raises(Exception, match="Nejdřív plán ověř"):  # bez spočítaného pokrytí
+        session.remove_ndt_useless_segments("s1")
     with pytest.raises(Exception, match="nemá úsek 99"):
         session.remove_ndt_plan_segment("s1", 0, 98)
     with pytest.raises(Exception, match="na kraji"):
@@ -344,8 +365,13 @@ def test_zones_are_checked_saved_and_block_the_plan(tmp_path):
     middle = tuple((a + b) / 2 for a, b in zip(segment.start, segment.end, strict=True))
     zone = {"name": "štítek", "min": [middle[0] - 2, middle[1] - 2, 20],
             "max": [middle[0] + 2, middle[1] + 2, 22]}
+    assert session.ndt_placement_zone == ""
     session.set_ndt_zones("s1", [zone])
     assert session.ndt_zones("s1")[0].to_dict() == zone
+    part = session.result.part
+    session.place_ndt_probe("s1", [face_at(part, *middle).wrapped], middle, 180)
+    assert "zakázané zóny „štítek“" in session.ndt_placement_zone  # jen upozorní
+    assert session.ndt_placement.ok
     checked = session.check_ndt_plan("s1", coverage=False)
     assert not checked.check.valid and "v zakázané zóně" in " ".join(checked.check.problems)
     assert session.ndt_plan_state("s1")[0] == "invalid"

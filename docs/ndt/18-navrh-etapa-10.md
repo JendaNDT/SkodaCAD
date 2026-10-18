@@ -317,6 +317,41 @@ a paprsku, nová knihovna Pythonu ani sloučení do `main`.
     pak *Ověřit znovu* převezme nové otisky, jen když projde celou kontrolou.
   - Úsek přidaný z přiložené sondy vede od výstupního bodu ve směru paprsku (jako *Projet
     čáru*); patří do průchodu se stejnou plochou, směrem, úhlem a odrazy, jinak vznikne nový.
+- **10B (hotovo, čeká na PR a ruční zkoušku):** skupina **Plán dráhy sondy** v panelu NDT
+  (`gui/ndt_panel.py`): z čeho (přiložená sonda / vybraná varianta / kombinace návrhu poloh),
+  vzor, rozteč, výška nájezdu, srovnání a odolnost, odhad, **Naplánovat dráhu** /
+  **Ověřit a spočítat** / **Zastavit** / **Export CSV**, stav plánu barevně, souhrn hodnocení,
+  tabulka úseků (návaznost: začátek / po povrchu / přestavení, **Přínos**), úpravy úseků
+  (Smazat, Obrátit, Nahoru, Dolů, Upravit… čísly, Přidat z přiložené sondy), dialog
+  **Zakázané zóny…** (`gui/zone_dialog.py`, tabulka kvádrů, *Z výběru*), **Smazat úseky bez
+  přínosu**, **přehrávání** (posuvník, ◀ / Přehrát / ▶, sonda s paprskem na poloze, mapa
+  pokrytí narůstá, tabulka zvýrazní úsek). Ve 3D (`viewer.show_plan`) úseky zeleně, přesuny
+  po povrchu šedě, přestavení oranžově obloukem ve výšce nájezdu, začátek kuličkou, zóny
+  průhledně červeně; self-test kreslí druh „plan“. Po každé úpravě se plán sám znovu ověří
+  (bez pokrytí), až doběhne přepočet dílu. Akce jsou i v nabídce NDT, během práce AI zamčené.
+- **Síto dosahu proti bodům cíle (zpřesnění 10B):** první verze porovnávala paprsek jen
+  s obalovým kvádrem cíle; u V svaru je kvádr mnohem větší než svar a v plánu zůstávaly řádky,
+  ze kterých paprsek svar mine. Teď se po levném testu kvádru porovná s body skutečného cíle
+  (u objemu mřížka bodů uvnitř cíle po kroku cíle, u ploch těžiště sítě povrchu) se stejnou
+  rezervou (tolerance + rozteč). Pokrytí zůstalo stejné, dráha se zkrátila:
+
+  | Celý V svar, 70°, rozteč 5 mm | Dříve (kvádr) | Teď (body cíle) | Pokryto |
+  |---|---|---|---|
+  | bez odrazu, automaticky → podél | 6 řádků, 480 mm, 60 s | 4 řádky, 320 mm, 50 s | 11,79 % |
+  | 1 odraz, automaticky → podél | 12 řádků, 960 mm, 197 s | 11 řádků, 880 mm, 187 s | 79,93 % |
+  | výřez 10 mm, bez odrazu, k cíli a zpět | 139 mm | 79 mm | 14,743 % |
+
+- **Úseky bez přínosu:** úsek, ze kterého paprsek žádný vzorek cíle nezasáhne **jako první**
+  (polohy jdou do výpočtu v pořadí jízdy), nic nepokrývá sám – každý jeho zásah má dřívější
+  úsek. Tabulka ho označí, souhrn ho spočítá a **Smazat úseky bez přínosu** ho smaže (jeden
+  krok Zpět). Test: po smazání na výřezu svaru totéž pokrytí s kratší dráhou. Plán se zónou
+  na celém svaru (štítek x 27–33, y 6–24 mm): s prvním sítem ze 17 úseků (313 mm) zbylo po
+  smazání 10 (278 mm); se sítem proti bodům cíle vyjde rovnou 10 úseků, 178 mm, jedno
+  přestavení přes štítek; pokrytí 5,9 % pokaždé stejné.
+- **Upozornění u ruční sondy:** když přiložená sonda zasahuje do zakázané zóny, panel pod
+  výsledkem přiložení napíše oranžově „Sonda zasahuje do zakázané zóny „štítek“ – plán dráhy
+  sem nepojede.“ (`ModelSession.ndt_placement_zone`, `plan.zone_hit`); přiložení samo zóna
+  nezakazuje (doporučení 6).
 - **Upřesnění:**
   - Když na konci úseku nejde sondu zvednout (převis), vrátí se **po už projeté dráze** na
     nejbližší místo, kde to jde. Když ji nejde spustit na začátek úseku, spustí se na nejbližší

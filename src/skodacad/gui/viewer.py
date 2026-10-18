@@ -77,6 +77,8 @@ from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 
+from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
+
 log = logging.getLogger(__name__)
 
 # Klíče odpovídají viewer_views.VIEW_LABELS (názvy a zkratky pro menu).
@@ -99,6 +101,7 @@ PROBE_COLORS = {"ok": (0.13, 0.62, 0.30), "tight": (0.93, 0.55, 0.10),
 # Náhled cílového objemu NDT (svar): modrá – jiná než tři stavy pokrytí i barvy sondy.
 TARGET_COLOR = (0.20, 0.45, 0.85)
 TARGET_OUTLINE = (0.35, 0.35, 0.40)
+PLAN_START_COLOR = STEP_COLORS["scan"]  # začátek dráhy sondy (etapa 10)
 
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
@@ -224,6 +227,7 @@ class OccViewer(QWidget):
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self._target_objects: list[Any] = []  # náhled cílového objemu NDT (svar)
         self._point_objects: list[Any] = []  # barevné body (mapa kontaktních ploch, etapa 09)
+        self._plan_objects: list[Any] = []  # plán dráhy sondy a zakázané zóny (etapa 10)
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
         self._probe_dragging = False
@@ -259,6 +263,7 @@ class OccViewer(QWidget):
         self._remove_target()
         self._remove_coverage()
         self._remove_points()
+        self._remove_plan()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -444,6 +449,61 @@ class OccViewer(QWidget):
             self._context.Remove(shown, False)
         self._point_objects = []
 
+    def show_plan(self, lines: dict, start: Any = None, zones: list[Any] = ()) -> None:
+        """Plán dráhy sondy: úsečky po barvách (``lines`` = {barva: [(od, do), …]} – úseky,
+        přesuny po povrchu, přestavení obloukem nad dílem), začátek kuličkou a zakázané zóny
+        jako průhledné červené kvádry. Kliknout na ně nejde, plochy dílu jdou dál vybírat."""
+        if not self.ready:
+            return
+        self._remove_plan()
+        for color, pairs in lines.items():
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            count = 0
+            for a, b in pairs:
+                begin, finish = gp_Pnt(*a), gp_Pnt(*b)
+                if begin.Distance(finish) > 1e-6:
+                    builder.Add(compound, BRepBuilderAPI_MakeEdge(begin, finish).Edge())
+                    count += 1
+            if not count:
+                continue
+            shown = AIS_Shape(compound)
+            shown.SetColor(_rgb(*color))
+            shown.SetWidth(2.5)
+            self._context.Display(shown, False)
+            self._context.Deactivate(shown)
+            self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+            self._plan_objects.append(shown)
+        if start is not None:  # kulička jako u měření (bezpečná i s ovladačem bez GPU)
+            quantity = _rgb(*PLAN_START_COLOR)
+            ball = AIS_Shape(BRepBuilderAPI_MakeVertex(gp_Pnt(*start)).Vertex())
+            ball.SetColor(quantity)
+            ball.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, quantity, 3.0))
+            self._context.Display(ball, False)
+            self._context.Deactivate(ball)
+            self._context.SetZLayer(ball, Graphic3d_ZLayerId_Topmost)
+            self._plan_objects.append(ball)
+        for zone in zones:
+            box = AIS_Shape(getattr(zone, "wrapped", zone))
+            box.SetColor(_rgb(*ZONE_COLOR))
+            box.SetTransparency(0.35)
+            _unlit(box)  # bez osvětlení – shora by červená ve světle zbělala
+            self._context.Display(box, False)
+            self._context.Deactivate(box)
+            self._plan_objects.append(box)
+        self._view.Redraw()
+
+    def hide_plan(self) -> None:
+        if self.ready:
+            self._remove_plan()
+            self._view.Redraw()
+
+    def _remove_plan(self) -> None:
+        for shown in self._plan_objects:
+            self._context.Remove(shown, False)
+        self._plan_objects = []
+
     def _remove_target(self) -> None:
         for shown in self._target_objects:
             self._context.Remove(shown, False)
@@ -531,6 +591,12 @@ class OccViewer(QWidget):
             self.show_points([(0, 0, 0), (10, 0, 0), (0, 10, 0)],
                              [(0.15, 0.7, 0.25), (0.95, 0.55, 0.1), (0.85, 0.2, 0.15)])
             self.hide_points()
+            return
+        if variant == "plan":  # plán dráhy sondy: čáry po barvách, kulička, průhledná zóna
+            self.show_plan({(0.1, 0.6, 0.2): [((0, 0, 0), (10, 0, 0))],
+                            (0.95, 0.55, 0.1): [((10, 0, 0), (10, 0, 5))]}, (0, 0, 0),
+                           [BRepPrimAPI_MakeBox(5, 5, 5).Shape()])
+            self.hide_plan()
             return
         if variant == "target":  # průhledný cílový objem NDT a drátěný obrys zadaného tvaru
             self.show_target(BRepPrimAPI_MakeBox(10, 10, 10).Shape(),
