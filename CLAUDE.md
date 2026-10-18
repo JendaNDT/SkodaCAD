@@ -763,7 +763,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
-  [ ] 10 automatická skenovací trajektorie (dokončí milník M3).
+  [ ] 10 automatická skenovací trajektorie (dokončí milník M3; návrh
+  `docs/ndt/18-navrh-etapa-10.md` čeká na rozhodnutí autora).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
