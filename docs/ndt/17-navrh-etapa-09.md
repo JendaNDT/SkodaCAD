@@ -284,4 +284,17 @@ ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
   - Výřez V svaru, 70°, všechny plochy, krok 10 mm: na prvních čtyřech místech je 70°
     s odrazem (99,91 %, shora i zespodu, z obou stran). Zespodu bez odrazu vychází
     77,89 %, šikmo 45° 24,32 %. Kombinace je jen #1: druhá strana přidá méně než 1 p. b.
+- **09A.2 (hotovo):** `ModelSession` – `ndt_access_analysis` / `ndt_access_estimate`,
+  `compute_ndt_access` (synchronně), `start_ndt_access` (pomocný proces s průběhem
+  `ndt_access_progress`, *Zastavit* nechá hotové varianty jako neúplnou analýzu),
+  `ndt_access` (platí pro díl, cíl a rozměry sondy – úhel a odrazy ne, tabulka po *Použít*
+  zůstane), `show_ndt_access_variant` (jen pohled, sonda s úhlem varianty se ukáže bez
+  uložení), `apply_ndt_access_variant` (jeden krok Zpět; změněný úhel = „zadáno ručně“),
+  `export_ndt_access`. Volba *i 45°, 60°, 70°* je obecně seznam dalších úhlů (`angles`).
+  CLI `skodacad polohy` (odhad a průběh na chybový výstup). Žebro, studie s1 (cíl dno),
+  krok 20 mm, směry po 90°, bez odrazů: 14 variant, kombinace 76,95 %, 70 s.
+- **Pozorování pro autora:** cílem studie *žebro* je dno desky. Nejvýš proto vyjde sonda
+  postavená **na dně samém** (55,86 %). Geometrický model Etapy 06 počítá jako pokrytou
+  i plochu pod výstupním bodem sondy (rameno paprsku začíná na povrchu). Výpočet pokrytí
+  jsem neměnil. Jestli má tahle místa vynechat, je otázka na samostatné rozhodnutí.
 

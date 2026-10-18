@@ -109,7 +109,7 @@ class AccessOptions:
 
     step_mm: float = 10.0  # krok analýzy = pojezd 3. kola i mřížka 1. kola (u ploch i cíl)
     direction_step_deg: float = 45.0
-    alternative_angles: bool = False  # i 45°, 60°, 70° (stejné rozměry sondy)
+    angles: tuple[float, ...] = ()  # další úhly β (panel: 45°, 60°, 70°), stejné rozměry sondy
     bounces: tuple[int, ...] = (0, 1)
     target_step_mm: float | None = None  # objem: None = doporučený (07B); plochy: krok analýzy
     tolerance_mm: float | None = None  # None = automatická jako v panelu
@@ -129,12 +129,14 @@ class AccessOptions:
         if not bounces or any(isinstance(b, bool) or not isinstance(b, int) or not 0 <= b <= 2
                               for b in bounces):
             raise AccessError("Odrazy vyber z 0, 1 a 2.")
+        angles = tuple(dict.fromkeys(number(a, "Úhel β [°]", 1, 85) for a in self.angles))
         target = (None if self.target_step_mm is None
                   else number(self.target_step_mm, "Krok cíle [mm]", 0.1, 1000))
         tolerance = (None if self.tolerance_mm is None
                      else number(self.tolerance_mm, "Tolerance zachycení [mm]", 0, 1000))
         spread = number(self.spread_deg, "Rozevření [°]", 0, 45)
-        return replace(self, step_mm=step, bounces=bounces, target_step_mm=target,
+        return replace(self, step_mm=step, bounces=bounces, angles=angles,
+                       target_step_mm=target,
                        tolerance_mm=tolerance, spread_deg=spread)
 
 
@@ -478,13 +480,15 @@ class Analysis:
                  points: list[Point] | None = None, volume: dict[str, Any] | None = None,
                  contact_faces: list[Any] | None = None,
                  options: AccessOptions | None = None,
-                 device_lines: list[str] | None = None) -> None:
+                 device_lines: list[str] | None = None,
+                 assumptions: dict[str, Any] | None = None) -> None:
         if sum(x is not None and x != [] for x in (faces, points, volume)) != 1:
             raise AccessError("Analýza potřebuje právě jeden cíl: plochy, body, nebo objem.")
         self.geo, self.probe = geo, probe
         self.faces, self.points, self.volume = faces or None, points or None, volume
         self.options = (options or AccessOptions()).checked()
         self.device_lines = list(device_lines or [])
+        self.extra = dict(assumptions or {})  # např. id studie a otisk dílu (ModelSession)
         self._memo: dict = {}
         self._seeds: list[tuple[Any, Placement, list[Point], int, float | None]] = []
         self._contact_faces = contact_faces
@@ -525,8 +529,7 @@ class Analysis:
         if self.probe.kind == "straight":
             return [0.0]
         betas = [float(self.probe.beam_angle)]
-        if self.options.alternative_angles:
-            betas += [b for b in ALTERNATIVE_ANGLES if abs(b - betas[0]) > 1e-9]
+        betas += [b for b in self.options.angles if abs(b - betas[0]) > 1e-9]
         return betas
 
     def _directions(self, face: Any) -> list[tuple[float, str]]:
@@ -750,14 +753,14 @@ class Analysis:
         self._seeds = [c[2] for c in candidates]
         assumptions = {"access_algorithm": ALGORITHM, "step_mm": self.options.step_mm,
                        "direction_step_deg": self.options.direction_step_deg,
-                       "alternative_angles": self.options.alternative_angles,
+                       "angles": list(self.options.angles),
                        "bounces": list(self.options.bounces),
                        "target_step_mm": self.options.target_step_mm,
                        "tolerance_mm": self.options.tolerance_mm,
                        "spread_deg": self.options.spread_deg, "reach_margin_mm": margin,
                        "probe": self.probe.to_dict(), "study_beta": self._betas()[0],
                        "target_box": [list(low), list(high)],
-                       "device_lines": self.device_lines}
+                       "device_lines": self.device_lines, **self.extra}
         if progress:
             progress("1. a 2. kolo: přístupnost a dosah", len(faces), len(faces))
         return Preparation([c[0] for c in candidates], [c[1] for c in candidates], rejected,
@@ -842,11 +845,14 @@ class Analysis:
         return (notes[0][0].upper() + "; ".join(notes)[1:] + ".") if notes else ""
 
     def run(self, progress: Progress | None = None,
-            on_variant: Callable[[int, VariantResult | Rejected], None] | None = None
-            ) -> AccessResult:
-        """Celá analýza najednou (příkazová řádka, pomocný proces, testy)."""
+            on_variant: Callable[[int, VariantResult | Rejected], None] | None = None,
+            on_prepared: Callable[[Preparation], None] | None = None) -> AccessResult:
+        """Celá analýza najednou (příkazová řádka, pomocný proces, testy); ``on_prepared``
+        a ``on_variant`` hlásí průběžné výsledky (okno je po zastavení nezahodí)."""
         started = time.monotonic()
         preparation = self.prepare(progress)
+        if on_prepared:
+            on_prepared(preparation)
         results = []
         for i, variant in enumerate(preparation.candidates):
             if progress:

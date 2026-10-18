@@ -2,6 +2,7 @@
 změřeným výsledkem (docs/ndt/17-navrh-etapa-09.md, oddíl 6), ne existencí výsledku."""
 
 import math
+import time
 from collections import Counter
 from dataclasses import replace
 
@@ -11,6 +12,7 @@ from conftest import EXAMPLES, face_at
 from skodacad import Document, rebuild
 from skodacad.ndt import UT_DISCLAIMER
 from skodacad.ndt.access import (
+    ALTERNATIVE_ANGLES,
     NOT_FOUND_NOTE,
     ORDER_NOTE,
     AccessError,
@@ -89,6 +91,9 @@ def test_options_are_checked_in_czech():
         AccessOptions(bounces=(3,)).checked()
     with pytest.raises(AccessError, match="Krok analýzy"):
         AccessOptions(step_mm=0).checked()
+    with pytest.raises(AccessError, match="Úhel β"):
+        AccessOptions(angles=(90,)).checked()
+    assert AccessOptions(angles=(60, 60.0, 45)).checked().angles == (60.0, 45.0)
 
 
 # --- sjednocení a pořadí -----------------------------------------------------------------
@@ -176,8 +181,8 @@ def test_rib_root_with_reserve_honestly_not_found_unless_other_angles(parts, alt
     analysis = Analysis(geo, Probe.angle(reserve=5), points=[(0.0, 0.0, 0.0)],
                         contact_faces=[face_at(geo.part, 50, 0, 20),
                                        face_at(geo.part, -50, 0, 20)],
-                        options=AccessOptions(step_mm=10, bounces=(0,),
-                                              alternative_angles=alternatives))
+                        options=AccessOptions(step_mm=10, bounces=(0,), angles=(
+                            ALTERNATIVE_ANGLES if alternatives else ())))
     result = analysis.run()
     if not found:
         assert result.combination == [] and result.union is None
@@ -248,3 +253,124 @@ def test_weld_variant_recomputed_independently_gives_same_number(weld):
                            angle_deg=best.variant.angle_deg)
     assert again.states == best.coverage.states
     assert again.percent("covered") == pytest.approx(best.covered, abs=1e-9)
+
+
+# --- ModelSession, pomocný proces a příkazová řádka (09A.2) -----------------------------
+
+QUICK = {"step_mm": 20, "direction_step_deg": 90, "bounces": (0,), "angles": (60,)}
+
+
+def rib_session(runner=None):
+    """Deska se žebrem, studie s1 (cíl: dno), kontaktní plocha horní vpravo."""
+    from skodacad.session import ModelSession
+
+    session = ModelSession(runner)
+    session.open(EXAMPLES / "ndt" / "zebro.json")
+    if runner is not None:
+        session.wait(120)
+    contact = session.ndt_access_contact([face_at(session.result.part, 50, 0, 20).wrapped])
+    return session, contact
+
+
+@pytest.fixture(scope="module")
+def rib():
+    session, contact = rib_session()
+    result = session.compute_ndt_access("s1", QUICK, contact)
+    return session, contact, result
+
+
+def test_session_analysis_is_a_view_and_keeps_through_variant_use(rib):
+    session, _, result = rib
+    assert session.ndt_access is result and not session.dirty
+    assert result.preparation.assumptions["study_id"] == "s1"
+    assert {r.variant.beta for r in result.variants} == {45.0, 60.0}
+    rank_60 = next(i for i, r in enumerate(result.variants)
+                   if r.variant.beta == 60 and r.best is not None)
+    shown = session.show_ndt_access_variant(rank_60)
+    assert shown.ok and shown.probe.beam_angle == 60 and session.ndt_probe_preview is not None
+    assert session.ndt_probe("s1").beam_angle == 45 and not session.dirty  # jen pohled
+    assert session.ndt_beam is not None
+    session.apply_ndt_access_variant(rank_60)
+    assert session.ndt_probe("s1").beam_angle == 60 and session.dirty
+    assert session.ndt_probe_preview is None and session.ndt_placement.ok
+    assert session.ndt_access is result, "úhel studie analýzu nezneplatní"
+    session.undo()
+    assert session.ndt_probe("s1").beam_angle == 45
+    session.set_ndt_device("s1", Probe.angle(length=30))  # jiné rozměry = jiná přístupnost
+    assert session.ndt_access is None
+
+
+def test_session_estimate_and_csv(rib, tmp_path):
+    session, contact, _ = rib
+    session.clear_ndt_placement()
+    estimate = session.ndt_access_estimate("s1", QUICK, contact)
+    assert estimate.ok and estimate.faces == 1 and "Odhad" in estimate.text
+    session.compute_ndt_access("s1", QUICK, contact)
+    text = session.export_ndt_access(tmp_path / "polohy.csv").read_text(encoding="utf-8-sig")
+    assert UT_DISCLAIMER in text and ORDER_NOTE in text and "vyhodnoceno" in text
+
+
+def test_session_rejects_non_ut_study(tmp_path):
+    from skodacad import DocumentError
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(EXAMPLES / "ndt" / "koutovy_svar.json")  # studie PT
+    with pytest.raises(DocumentError, match="UT studii"):
+        session.ndt_access_estimate("s1")
+
+
+@pytest.fixture(scope="module")
+def runner():
+    from skodacad.worker import BackgroundRebuilder
+
+    rebuilder = BackgroundRebuilder()
+    yield rebuilder
+    rebuilder.close()
+
+
+def test_background_analysis_streams_progress_and_matches_direct(rib, runner):
+    _, _, direct = rib
+    session, contact = rib_session(runner)
+    assert session.start_ndt_access("s1", QUICK, contact) is None and session.access_pending
+    seen = set()
+    end = time.monotonic() + 300
+    while session.computing and time.monotonic() < end:
+        session.poll()
+        seen.add(session.ndt_access_progress.split(":")[0])
+        time.sleep(0.05)
+    assert not session.computing and not session.failure
+    result = session.ndt_access
+    assert result is not None and result.complete
+    assert "1. a 2. kolo" in seen and "3. kolo" in seen
+    assert [r.covered for r in result.variants] == [r.covered for r in direct.variants]
+
+
+def test_background_stop_keeps_finished_variants(runner):
+    session, contact = rib_session(runner)
+    session.start_ndt_access("s1", QUICK, contact)
+    end = time.monotonic() + 300
+    while time.monotonic() < end:
+        session.poll()
+        if session._access_pending and session._access_pending["results"]:
+            break
+        time.sleep(0.05)
+    assert session.cancel()
+    result = session.ndt_access
+    assert result is not None and not result.complete and result.variants
+    assert "Neúplná analýza" in "\n".join(result.summary())
+    assert not session.dirty
+
+
+def test_cli_prints_summary_with_disclaimer(tmp_path, capsys):
+    from skodacad.cli import main
+
+    code = main(["polohy", str(EXAMPLES / "ndt" / "zebro.json"), "--studie", "s1",
+                 "--krok", "40", "--smery", "90", "--odrazy", "0",
+                 "--csv", str(tmp_path / "polohy.csv")])
+    out = capsys.readouterr()
+    assert code == 0
+    assert UT_DISCLAIMER in out.out and ORDER_NOTE in out.out and "Odhad" in out.err
+    assert (tmp_path / "polohy.csv").exists()
+    assert main(["polohy", str(EXAMPLES / "ndt" / "zebro.json"), "--studie", "s1",
+                 "--odrazy", "x"]) == 2

@@ -101,11 +101,27 @@ def _worker_main(conn: Any) -> None:
             message = conn.recv()
         except (EOFError, OSError):
             return  # okno skončilo
-        if message[0] not in ("rebuild", "coverage"):
+        if message[0] not in ("rebuild", "coverage", "access"):
             return
         kind, job, data, *options = message
         try:
-            if kind == "coverage":
+            if kind == "access":
+                from skodacad.session import ModelSession
+
+                session = ModelSession()
+                session.document = Document.from_dict(data)
+                session.rebuild()
+                study_id, settings, contact = options
+
+                def send(*update: Any, job: int = job) -> None:
+                    conn.send((update[0], job, update[1]))
+
+                reply = ("access", job, session.compute_ndt_access(
+                    study_id, settings, contact,
+                    progress=lambda stage, done, total: send("progress", (stage, done, total)),
+                    on_prepared=lambda prepared: send("prepared", prepared),
+                    on_variant=lambda index, outcome: send("variant", (index, outcome))))
+            elif kind == "coverage":
                 from skodacad.session import ModelSession
 
                 session = ModelSession()
@@ -149,6 +165,8 @@ class Finished:
     result: BuildResult | None = None
     error: str = ""
     coverage: Any = None
+    access: Any = None  # hotový návrh poloh (etapa 09)
+    update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
 
 class BackgroundRebuilder:
@@ -183,6 +201,11 @@ class BackgroundRebuilder:
                         options: dict[str, Any]) -> int:
         return self._submit(("coverage", document, placement, options))
 
+    def submit_access(self, document: dict[str, Any], study_id: str, options: dict[str, Any],
+                      contact: list[dict[str, Any]] | None) -> int:
+        """Návrh poloh sondy; průběh a hotové varianty chodí průběžně (``Finished.update``)."""
+        return self._submit(("access", document, study_id, options, contact))
+
     def _submit(self, message: tuple) -> int:
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
@@ -210,6 +233,8 @@ class BackgroundRebuilder:
         try:
             if worker.conn.poll():
                 kind, job, payload = worker.conn.recv()
+                if kind in ("progress", "prepared", "variant"):
+                    return Finished(job, update=(kind, payload))
                 self._active = None
                 self._idle.append(worker)
                 for extra in self._idle[MAX_IDLE:]:  # víc připravených procesů netřeba
@@ -219,6 +244,8 @@ class BackgroundRebuilder:
                     return Finished(job, result=decode_result(payload))
                 if kind == "coverage":
                     return Finished(job, coverage=payload)
+                if kind == "access":
+                    return Finished(job, access=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass
@@ -237,9 +264,10 @@ class BackgroundRebuilder:
         end = time.monotonic() + timeout
         while self._active is not None and time.monotonic() < end:
             finished = self.poll()
-            if finished is not None:
+            if finished is not None and finished.update is None:  # průběh přeskočí
                 return finished
-            time.sleep(0.02)
+            if finished is None:
+                time.sleep(0.02)
         return None
 
     def close(self) -> None:

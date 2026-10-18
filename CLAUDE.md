@@ -218,10 +218,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `skodacad ai`, `skodacad paprsek` a `skodacad sonda` |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti` a `polohy` (návrh poloh UT sondy) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí a návrh poloh (průběžné zprávy `Finished.update`) |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -634,6 +634,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   česká chyba. Váhy se nepřenormovávají.
 - Rezerva dosahu je velkorysá (tolerance + krok): poloha u cíle „míří k cíli“ i směrem od
   něj. Je to jen síto; o pokrytí rozhoduje 3. kolo.
+- ModelSession: analýza platí pro díl (otisk receptu), cíl studie a **rozměry a meze sondy**
+  (`_access_key`) – úhel a odrazy ne, aby tabulka po *Použít variantu* zůstala. *Ukázat
+  variantu* je jen pohled: `_probe_override` (sonda s úhlem a odrazy varianty) platí pro
+  přiložení, paprsek i mapu pokrytí, dokud uživatel sondu ručně nepřiloží jinam
+  (`place_ndt_probe`, posun `keep_preview=True` ji zachová) nebo neupraví sondu studie.
+- Pomocný proces posílá `progress` / `prepared` / `variant` průběžně; `session.poll` je
+  vybírá ve smyčce. *Zastavit* (`cancel`) složí z hotových variant neúplný výsledek
+  (`complete=False`), nic nezahodí.
+- Plocha, na které sonda stojí, je v geometrickém modelu Etapy 06 „pokrytá“ v místech výstupu
+  paprsku (rameno začíná na povrchu). Když je cílem kontaktní plocha sama, analýza ji proto
+  řadí vysoko – je to vlastnost stávajícího výpočtu pokrytí, ne analýzy.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -741,7 +752,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [ ] 09 návrh poloh UT sondy (schváleno 18. 10. 2026): [x] 09A.1 jádro `ndt/access.py`,
-  [ ] 09A.2 ModelSession, pomocný proces, CLI a CSV, [ ] 09B okno.
+  [x] 09A.2 ModelSession, pomocný proces, CLI a CSV, [ ] 09B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

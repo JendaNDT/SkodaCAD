@@ -379,6 +379,21 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   `--knihovna`). Výpis, souhrn pokrytí i CSV uvedou profil, původ hodnot (obecný profil /
   změřeno / zadáno ručně / katalog / přepočteno), materiál a zdroj rychlostí. Frekvence
   a průměr měniče jsou jen informativní.
+* **Návrh poloh UT sondy (etapa 09):** program sám vyzkouší varianty *rovinná plocha × směr
+  paprsku × úhel × počet odrazů* (směry po 45° + k cíli, od cíle a kolmo na svar; úhel ze
+  studie, na přání i 45°, 60°, 70° se stejnými rozměry sondy; odrazy 0 a 1). Nejdřív levně
+  zjistí, odkud paprsek k cíli vůbec míří, sondu přiloží jen tam a varianty, kde se nevejde
+  nebo k cíli nemíří, vyřadí s českým důvodem. Zbylé spočítá stávajícím výpočtem pokrytí
+  krokem analýzy (výchozí 10 mm, nejvýš 40 variant), seřadí (pokrytí, při rozdílu do 1 p. b.
+  víc platných poloh, méně nejistého, jednodušší postup) a složí **kombinaci** nejvýš tří
+  variant sjednocenou vzorek po vzorku. Pořadí vyjadřuje jen geometrické pokrytí
+  a přístupnost, nikoli zjistitelnost vad; „nenalezeno“ neznamená „nemožné“. Zakřivené plochy
+  se jako kontaktní nezkoušejí. Výsledek je jen pohled (model se nemění); *Použít variantu*
+  uloží úhel a odrazy do studie (jeden krok Zpět) a přiloží sondu do nejlepší polohy –
+  přepočet stejným krokem dá totéž číslo. V příkazové řádce:
+  `skodacad polohy MODEL --studie s1 [--krok 10] [--smery 45] [--uhly 45,60,70]
+  [--odrazy 0,1] [--csv polohy.csv]` (odhad a průběh na chybový výstup, souhrn a CSV
+  s povinným upozorněním). Návrh: [Etapa 09](docs/ndt/17-navrh-etapa-09.md).
 
 ### Tažení a přechod
 

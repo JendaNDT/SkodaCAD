@@ -43,6 +43,16 @@ from skodacad.inspection import describe_shape
 from skodacad.materials import density_g_cm3, material_key
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
+from skodacad.ndt.access import (
+    AccessError,
+    AccessEstimate,
+    AccessOptions,
+    AccessResult,
+    Analysis,
+    Preparation,
+    VariantResult,
+)
+from skodacad.ndt.access import finish as finish_access
 from skodacad.ndt.coverage import (
     MAX_COMPARISONS,
     MAX_POSITIONS,
@@ -188,6 +198,11 @@ class ModelSession:
         self._geometry_cache: tuple[Any, Any] | None = None
         self._coverage_cache: tuple[Any, CoverageMap | VolumeCoverageMap] | None = None
         self._coverage_pending: tuple[Any, ...] | None = None
+        # návrh poloh sondy (etapa 09, jen pohled): (klíč platnosti, výsledek) a běžící analýza
+        self._access_cache: tuple[tuple[Any, ...], AccessResult] | None = None
+        self._access_pending: dict[str, Any] | None = None
+        # ukázka varianty: (id studie, sonda s úhlem/odrazy varianty) – model se nemění
+        self._probe_override: tuple[str, Probe] | None = None
         self._target_preview_cache: tuple[Any, Any] | None = None
         self._volume_drawing_cache: tuple[Any, Any] | None = None
 
@@ -202,6 +217,7 @@ class ModelSession:
         self._undo.clear()
         self._redo.clear()
         self.clear_ndt_placement()
+        self._access_cache = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -213,6 +229,7 @@ class ModelSession:
         self._undo.clear()
         self._redo.clear()
         self.clear_ndt_placement()
+        self._access_cache = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -229,6 +246,7 @@ class ModelSession:
         self.failure = ""
         self.clear_ndt_coverage()
         self._coverage_pending = None
+        self._access_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -251,11 +269,31 @@ class ModelSession:
         """Převezme hotový přepočet z pozadí. True = výsledek (nebo chyba) se změnil."""
         if self._runner is None or self._job is None:
             return False
-        finished = self._runner.poll()
-        if finished is None or finished.job != self._job:
-            return False
+        changed = False
+        while True:
+            finished = self._runner.poll()
+            if finished is None or finished.job != self._job:
+                return changed
+            if finished.update is None:
+                break
+            changed = True
+            kind, payload = finished.update
+            pending = self._access_pending
+            if pending is not None:
+                if kind == "progress":
+                    pending["progress"] = payload
+                elif kind == "prepared":
+                    pending["preparation"] = payload
+                elif kind == "variant":
+                    pending["results"].append(payload[1])
         self._job = None
-        if self._coverage_pending is not None:
+        if self._access_pending is not None:
+            if finished.access is not None:
+                self._access_cache = (self._access_pending["key"], finished.access)
+            else:
+                self.failure = finished.error
+            self._access_pending = None
+        elif self._coverage_pending is not None:
             if finished.coverage is not None:
                 self._coverage_cache = (self._coverage_pending, finished.coverage)
             else:
@@ -284,6 +322,12 @@ class ModelSession:
         self._runner.cancel()
         self._job = None
         self._coverage_pending = None
+        pending, self._access_pending = self._access_pending, None
+        if pending is not None:
+            if pending["preparation"] is not None:
+                self._access_cache = (pending["key"], finish_access(
+                    pending["preparation"], pending["results"], complete=False))
+            return True
         document, computed = self._require(), self._computed
         if computed is None:
             self.failure = ("Přepočet zastaven – model zatím není spočítaný. Uprav ho "
@@ -1108,6 +1152,8 @@ class ModelSession:
         except DeviceError as exc:
             raise DocumentError(str(exc)) from None
         record = probe.to_dict()
+        if self._probe_override is not None and self._probe_override[0] == study_id:
+            self._probe_override = None
         return self._edit_study(study_id, lambda study: study.update(device=record), setup=True)
 
     # --- NDT knihovna: materiál pro UT a úhel sondy (etapa 08) --------------------------
@@ -1163,9 +1209,11 @@ class ModelSession:
                                self.ndt_angle_check(study_id))
 
     def place_ndt_probe(self, study_id: str, shapes: list[Any], point: Any = None,
-                        angle: float = 0.0) -> Placement:
+                        angle: float = 0.0, keep_preview: bool = False) -> Placement:
         """Přiloží sondu studie na plochu vybranou ve 3D (jen pohled, do modelu se neukládá;
-        po změně dílu se přiloží znovu na stejné místo). ``angle`` = směr paprsku ve stupních."""
+        po změně dílu se přiloží znovu na stejné místo). ``angle`` = směr paprsku ve stupních.
+        Ruční přiložení zruší ukázku varianty návrhu poloh (``keep_preview`` ji při posunu
+        zachová)."""
         self._require_computed("přiložení sondy")
         self._study_index(study_id)
         if self.result is None or self.result.part is None:
@@ -1174,13 +1222,15 @@ class ModelSession:
         if len(faces) != 1 or edges:
             raise DocumentError("Sondu přikládáš na jednu plochu – vyber ve 3D právě jednu "
                                 "plochu (klikni na ni v místě přiložení).")
-        previous = self.ndt_placement_request
+        previous, override = self.ndt_placement_request, self._probe_override
+        if not keep_preview or (override is not None and override[0] != study_id):
+            self._probe_override = None
         reference = surface_reference(faces[0], point)
         self.ndt_placement_request = (study_id, reference, float(angle))
         placement = self.ndt_placement
         if placement is None:
             error = self.ndt_placement_error
-            self.ndt_placement_request = previous
+            self.ndt_placement_request, self._probe_override = previous, override
             raise DocumentError(error)
         self._line_scan = None
         self.ndt_scan_index = 0
@@ -1195,7 +1245,7 @@ class ModelSession:
             study_id = self.ndt_placement_request[0]
         if angle is None:
             angle = self.ndt_placement_request[2] if self.ndt_placement_request is not None else 0.0
-        return self.place_ndt_probe(study_id, shapes, point, angle=angle)
+        return self.place_ndt_probe(study_id, shapes, point, angle=angle, keep_preview=True)
 
     def turn_ndt_probe(self, angle: float) -> Placement | None:
         """Natočí přiloženou sondu (směr paprsku ve stupních)."""
@@ -1268,6 +1318,7 @@ class ModelSession:
 
     def clear_ndt_placement(self) -> None:
         self.clear_ndt_coverage()
+        self._probe_override = None
         self.ndt_placement_request = None
         self.ndt_placement_error = ""
         self._line_scan = None
@@ -1281,7 +1332,7 @@ class ModelSession:
             return None
         result, study_id, probe, scan = self._line_scan
         if (self.result is not result or self.ndt_placement_request[0] != study_id
-                or self.ndt_probe(study_id) != probe):
+                or self._placed_probe(study_id) != probe):
             self._line_scan = None
             self.ndt_scan_index = 0
             return None
@@ -1297,7 +1348,7 @@ class ModelSession:
             return None
         study_id, reference, angle = request
         try:
-            probe = self.ndt_probe(study_id)
+            probe = self._placed_probe(study_id)
         except DocumentError:
             self.ndt_placement_error = "Studie se sondou už v modelu není."
             return None
@@ -1506,6 +1557,213 @@ class ModelSession:
         result = self.ndt_coverage
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu geometrického pokrytí UT.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    # --- NDT návrh poloh sondy (etapa 09, jen pohled) ------------------------------------
+
+    def _placed_probe(self, study_id: str) -> Probe:
+        """Sonda, která se přikládá: ukázka varianty návrhu poloh, jinak sonda studie."""
+        override = self._probe_override
+        if override is not None and override[0] == study_id:
+            return override[1]
+        return self.ndt_probe(study_id)
+
+    @property
+    def ndt_probe_preview(self) -> Probe | None:
+        """Sonda ukázky varianty (úhel a odrazy zatím neuložené ve studii), jinak None."""
+        request = self.ndt_placement_request
+        override = self._probe_override
+        if request is None or override is None or override[0] != request[0]:
+            return None
+        return override[1]
+
+    def ndt_access_contact(self, shapes: list[Any]) -> list[dict[str, Any]]:
+        """Kontaktní plochy vybrané ve 3D jako odkazy významem (jdou i do pomocného procesu)."""
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if edges or not faces:
+            raise DocumentError("Kontaktní plochy vyber ve 3D – jen plochy, ne hrany.")
+        return [surface_reference(face) for face in faces]
+
+    def _access_key(self, study_id: str) -> tuple[Any, ...]:
+        """Analýza platí pro díl (recept), cíl studie a rozměry a meze sondy; úhel a odrazy
+        studie ne – *Použít variantu* je mění a tabulka má zůstat."""
+        probe = self.ndt_probe(study_id)
+        record = self.ndt_study(study_id)
+        return (part_fingerprint(self._require()), study_id, repr(record.get("target")),
+                (probe.kind, probe.diameter, probe.length, probe.width, probe.height,
+                 probe.front, probe.max_gap, probe.reserve))
+
+    def ndt_access_analysis(self, study_id: str, options: AccessOptions | dict | None = None,
+                            contact: list[dict[str, Any]] | None = None) -> Analysis:
+        """Připravená analýza (bez výpočtu) – pro odhad i výpočet."""
+        self._require_computed("návrh poloh sondy")
+        record = self.ndt_study(study_id)
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
+        if record["method"] != "UT" or state != "ok":
+            raise DocumentError("Návrh poloh potřebuje platnou UT studii s kontrolovanou "
+                                "oblastí.")
+        geo = self._ndt_geometry()
+        target = record.get("target") or {}
+        if target.get("kind") in ("volume", "weld"):
+            inputs: dict[str, Any] = {"volume": target}
+        else:
+            faces, problems = geo.faces_of(target)
+            if problems or not faces:
+                raise DocumentError("Kontrolovanou oblast nejde určit: " + " ".join(problems))
+            inputs = {"faces": faces}
+        contact_faces = None
+        if contact:
+            contact_faces = []
+            for reference in contact:
+                try:
+                    contact_faces.append(find_face(self.result.part, reference["face"])[0])
+                except (SelectionError, KeyError, TypeError):
+                    raise DocumentError("Vybraná kontaktní plocha v dílu už není – vyber "
+                                        "plochy znovu.") from None
+        if isinstance(options, dict):
+            options = AccessOptions(**{k: tuple(v) if k in ("bounces", "angles") else v
+                                       for k, v in options.items()})
+        try:
+            return Analysis(geo, self.ndt_probe(study_id), **inputs,
+                            contact_faces=contact_faces, options=options,
+                            device_lines=self.ndt_device_lines(study_id),
+                            assumptions={"study_id": study_id,
+                                         "part_fingerprint": part_fingerprint(self._require()),
+                                         "parameters": dict(self.result.parameters),
+                                         "contact": contact or []})
+        except (AccessError, TargetError) as exc:
+            raise DocumentError(str(exc)) from None
+
+    def ndt_access_estimate(self, study_id: str, options: AccessOptions | dict | None = None,
+                            contact: list[dict[str, Any]] | None = None) -> AccessEstimate:
+        return self.ndt_access_analysis(study_id, options, contact).estimate()
+
+    def compute_ndt_access(self, study_id: str, options: AccessOptions | dict | None = None,
+                           contact: list[dict[str, Any]] | None = None, *,
+                           progress: Callable[[str, int, int], None] | None = None,
+                           on_prepared: Callable[[Preparation], None] | None = None,
+                           on_variant: Callable[[int, Any], None] | None = None
+                           ) -> AccessResult:
+        """Návrh poloh synchronně (CLI, testy, pomocný proces). Model se nemění."""
+        analysis = self.ndt_access_analysis(study_id, options, contact)
+        key = self._access_key(study_id)
+        try:
+            result = analysis.run(progress, on_variant, on_prepared)
+        except AccessError as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Návrh poloh nejde spočítat: {exc}") from None
+        self._access_cache = (key, result)
+        return result
+
+    def start_ndt_access(self, study_id: str, options: AccessOptions | dict | None = None,
+                         contact: list[dict[str, Any]] | None = None) -> AccessResult | None:
+        """Okno: analýza v pomocném procesu s průběhem; *Zastavit* nechá hotové varianty."""
+        analysis = self.ndt_access_analysis(study_id, options, contact)  # chyby hned, česky
+        if self._runner is None:
+            return self.compute_ndt_access(study_id, options, contact)
+        self.failure = ""
+        self._access_cache = None
+        self._access_pending = {"key": self._access_key(study_id), "preparation": None,
+                                "results": [], "progress": ("Připravuji návrh poloh", 0, 0)}
+        self._job = self._runner.submit_access(
+            self._require().to_dict(), study_id,
+            dataclasses.asdict(analysis.options), contact)
+        return None
+
+    @property
+    def access_pending(self) -> bool:
+        return self._access_pending is not None
+
+    @property
+    def ndt_access_progress(self) -> str:
+        """Průběh běžící analýzy česky („3. kolo: pokrytí variant 7 z 24“), jinak prázdné."""
+        if self._access_pending is None:
+            return ""
+        stage, done, total = self._access_pending["progress"]
+        return f"{stage} {done + 1 if done < total else done} z {total}" if total else stage
+
+    @property
+    def ndt_access(self) -> AccessResult | None:
+        """Hotová (i zastavená) analýza, pokud platí pro díl, cíl a rozměry sondy."""
+        if self._access_cache is None or self.document is None:
+            return None
+        key, result = self._access_cache
+        try:
+            if self._access_key(key[1]) != key:
+                self._access_cache = None
+                return None
+        except DocumentError:
+            self._access_cache = None
+            return None
+        return result
+
+    def clear_ndt_access(self) -> None:
+        self._access_cache = None
+
+    def _access_variant(self, rank: int) -> tuple[str, VariantResult]:
+        result = self.ndt_access
+        if result is None:
+            raise DocumentError("Nejdřív spusť návrh poloh sondy.")
+        if not 0 <= rank < len(result.variants):
+            raise DocumentError("Taková varianta v návrhu není.")
+        found = result.variants[rank]
+        if found.best_reference is None:
+            raise DocumentError("Tahle varianta z cíle nic nepokryje – není kam sondu přiložit.")
+        return result.preparation.assumptions["study_id"], found
+
+    def _variant_probe(self, study_id: str, found: VariantResult) -> Probe:
+        """Sonda studie s úhlem a odrazy varianty; změněný úhel = „zadáno ručně“."""
+        probe = self.ndt_probe(study_id)
+        variant = found.variant
+        if probe.kind == "straight":
+            return dataclasses.replace(probe, bounces=variant.bounces)
+        if abs(probe.beam_angle - variant.beta) <= 1e-9:
+            return dataclasses.replace(probe, bounces=variant.bounces)
+        origins = probe.origins
+        if origins:
+            origins = tuple({**dict(origins), "beam_angle": "entered"}.items())
+        return dataclasses.replace(probe, beam_angle=variant.beta, bounces=variant.bounces,
+                                   origins=origins, angle_note="")
+
+    def show_ndt_access_variant(self, rank: int) -> Placement:
+        """Přiloží sondu do nejlepší polohy varianty (jen pohled – úhel a odrazy varianty se
+        ukážou, ale do studie se neuloží)."""
+        study_id, found = self._access_variant(rank)
+        probe = self._variant_probe(study_id, found)
+        previous = (self.ndt_placement_request, self._probe_override)
+        self._probe_override = None if probe == self.ndt_probe(study_id) else (study_id, probe)
+        self.ndt_placement_request = (study_id, found.best_reference, found.variant.angle_deg)
+        self._line_scan = None
+        self.ndt_scan_index = 0
+        placement = self.ndt_placement
+        if placement is None:
+            error = self.ndt_placement_error
+            self.ndt_placement_request, self._probe_override = previous
+            raise DocumentError(error)
+        return placement
+
+    def apply_ndt_access_variant(self, rank: int) -> BuildResult | None:
+        """Uloží úhel a odrazy varianty do studie (jeden krok Zpět, jen když se liší) a přiloží
+        sondu do nejlepší polohy varianty. Návrh poloh zůstane."""
+        study_id, found = self._access_variant(rank)
+        probe = self._variant_probe(study_id, found)
+        result = None
+        if probe != self.ndt_probe(study_id):
+            result = self.set_ndt_device(study_id, probe)
+        self._probe_override = None
+        self.ndt_placement_request = (study_id, found.best_reference, found.variant.angle_deg)
+        self._line_scan = None
+        self.ndt_scan_index = 0
+        return result
+
+    def export_ndt_access(self, path: str | Path) -> Path:
+        result = self.ndt_access
+        if result is None:
+            raise DocumentError("Nejdřív spusť návrh poloh sondy.")
         try:
             return result.write_csv(path)
         except OSError as exc:
