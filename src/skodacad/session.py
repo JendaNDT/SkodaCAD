@@ -20,6 +20,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import datetime
+import json
 import math
 import re
 import time
@@ -74,6 +75,18 @@ from skodacad.ndt.library import (
     transferred,
 )
 from skodacad.ndt.library import describe as describe_device
+from skodacad.ndt.plan import (
+    PassSpec,
+    Plan,
+    PlanError,
+    PlanEstimate,
+    Planner,
+    PlanOptions,
+    PlanResult,
+    Zone,
+    probe_fingerprint,
+    zones_from,
+)
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
     StudyError,
@@ -204,6 +217,9 @@ class ModelSession:
         self._access_pending: dict[str, Any] | None = None
         # ukázka varianty: (id studie, sonda s úhlem/odrazy varianty) – model se nemění
         self._probe_override: tuple[str, Probe] | None = None
+        # plán dráhy (etapa 10): (klíč platnosti, ověřený plán) a běžící sestavení/ověření
+        self._plan_cache: tuple[tuple[Any, ...], PlanResult] | None = None
+        self._plan_pending: dict[str, Any] | None = None
         self._target_preview_cache: tuple[Any, Any] | None = None
         self._volume_drawing_cache: tuple[Any, Any] | None = None
 
@@ -219,6 +235,7 @@ class ModelSession:
         self._redo.clear()
         self.clear_ndt_placement()
         self._access_cache = None
+        self._plan_cache = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -231,6 +248,7 @@ class ModelSession:
         self._redo.clear()
         self.clear_ndt_placement()
         self._access_cache = None
+        self._plan_cache = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -248,6 +266,7 @@ class ModelSession:
         self.clear_ndt_coverage()
         self._coverage_pending = None
         self._access_pending = None
+        self._plan_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -279,6 +298,8 @@ class ModelSession:
                 break
             changed = True
             kind, payload = finished.update
+            if self._plan_pending is not None and kind == "progress":
+                self._plan_pending["progress"] = payload
             pending = self._access_pending
             if pending is not None:
                 if kind == "progress":
@@ -288,7 +309,9 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._access_pending is not None:
+        if self._plan_pending is not None:
+            self._plan_finished(finished)
+        elif self._access_pending is not None:
             if finished.access is not None:
                 self._access_cache = (self._access_pending["key"], finished.access)
             else:
@@ -323,6 +346,7 @@ class ModelSession:
         self._runner.cancel()
         self._job = None
         self._coverage_pending = None
+        self._plan_pending = None
         pending, self._access_pending = self._access_pending, None
         if pending is not None:
             if pending["preparation"] is not None:
@@ -1786,6 +1810,498 @@ class ModelSession:
         result = self.ndt_access
         if result is None:
             raise DocumentError("Nejdřív spusť návrh poloh sondy.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    # --- NDT plán dráhy UT sondy (etapa 10) ----------------------------------------------
+
+    def ndt_zones(self, study_id: str) -> tuple[Zone, ...]:
+        """Zakázané zóny studie (kvádry, kam sonda nesmí)."""
+        try:
+            return zones_from(self.ndt_study(study_id).get("zones"))
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def set_ndt_zones(self, study_id: str, zones: list[dict[str, Any] | Zone]) -> BuildResult:
+        """Uloží zakázané zóny studie – jeden krok Zpět. Plán dráhy se tím jen znovu ověří
+        (sám se neposune); zadání studie ani její ověření se nemění."""
+        try:
+            records = [zone.to_dict() if isinstance(zone, Zone)
+                       else Zone.from_dict(zone, index).to_dict()
+                       for index, zone in enumerate(zones, start=1)]
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+
+        def update(study: dict[str, Any]) -> None:
+            if records:
+                study["zones"] = records
+            else:
+                study.pop("zones", None)
+
+        return self._edit_study(study_id, update)
+
+    def ndt_plan(self, study_id: str) -> Plan | None:
+        """Plán dráhy uložený ve studii, None = žádný."""
+        data = self.ndt_study(study_id).get("plan")
+        if data is None:
+            return None
+        try:
+            return Plan.from_dict(data)
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def _plan_prints(self, study_id: str) -> dict[str, str]:
+        """Otisky zadání, pro které plán vznikl: díl (recept), cíl a rozměry sondy."""
+        record = self.ndt_study(study_id)
+        return {"part": part_fingerprint(self._require()),
+                "target": target_fingerprint(record.get("target") or {}),
+                "probe": probe_fingerprint(self.ndt_probe(study_id))}
+
+    def _plan_key(self, study_id: str) -> tuple[Any, ...]:
+        """Výsledek ověření platí pro díl, cíl, sondu, zóny a přesně tento plán."""
+        record = self.ndt_study(study_id)
+        return (part_fingerprint(self._require()), study_id,
+                json.dumps(record.get("plan"), sort_keys=True),
+                json.dumps(record.get("zones"), sort_keys=True),
+                json.dumps(record.get("target"), sort_keys=True),
+                json.dumps(self.ndt_probe(study_id).to_dict(), sort_keys=True))
+
+    @property
+    def ndt_plan_result(self) -> PlanResult | None:
+        """Ověřený (a případně spočítaný) plán, pokud platí pro současné zadání."""
+        if self._plan_cache is None or self.document is None:
+            return None
+        key, result = self._plan_cache
+        try:
+            if self._plan_key(key[1]) != key:
+                self._plan_cache = None
+                return None
+        except DocumentError:
+            self._plan_cache = None
+            return None
+        return result
+
+    def ndt_plan_study(self) -> str | None:
+        """Studie, ke které patří ``ndt_plan_result``."""
+        return self._plan_cache[0][1] if self.ndt_plan_result is not None else None
+
+    def clear_ndt_plan_result(self) -> None:
+        self._plan_cache = None
+
+    def ndt_plan_state(self, study_id: str) -> tuple[str, str]:
+        """Stav plánu: none / stale (jiný díl, cíl nebo sonda) / unchecked / invalid / ok
+        a český text."""
+        plan = self.ndt_plan(study_id)
+        if plan is None:
+            return "none", "Studie zatím nemá plán dráhy."
+        prints = self._plan_prints(study_id)
+        changed = [label for key, label in (("part", "díl"), ("target", "cíl"),
+                                            ("probe", "sonda"))
+                   if getattr(plan, key) and getattr(plan, key) != prints[key]]
+        if changed:
+            return "stale", (f"Plán je zastaralý – změnil se {', '.join(changed)}. Sám se "
+                             "neposune: ověř ho znovu, nebo ho sestav znovu.")
+        result = self.ndt_plan_result
+        if result is None or self.ndt_plan_study() != study_id:
+            return "unchecked", "Plán zatím není na tomto dílu ověřený."
+        if not result.check.valid:
+            return "invalid", "Plán neplatí: " + " ".join(result.check.problems[:3])
+        return "ok", "Plán platí" + (" (ručně upravený)." if plan.edited else ".")
+
+    def ndt_planner(self, study_id: str, options: PlanOptions | dict | None = None
+                    ) -> Planner:
+        """Plánovač pro studii (cíl, sonda, zóny) – bez výpočtu."""
+        self._require_computed("plán dráhy")
+        record = self.ndt_study(study_id)
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
+        if record["method"] != "UT" or state != "ok":
+            raise DocumentError("Plán dráhy potřebuje platnou UT studii s kontrolovanou "
+                                "oblastí.")
+        geo = self._ndt_geometry()
+        target = record.get("target") or {}
+        if target.get("kind") in ("volume", "weld"):
+            inputs: dict[str, Any] = {"volume": target}
+        else:
+            faces, problems = geo.faces_of(target)
+            if problems or not faces:
+                raise DocumentError("Kontrolovanou oblast nejde určit: " + " ".join(problems))
+            inputs = {"faces": faces}
+        if isinstance(options, dict):
+            options = PlanOptions(**options)
+        try:
+            return Planner(geo, self.ndt_probe(study_id), **inputs,
+                           zones=self.ndt_zones(study_id), options=options,
+                           device_lines=self.ndt_device_lines(study_id),
+                           assumptions={"study_id": study_id,
+                                        "part_fingerprint": part_fingerprint(self._require()),
+                                        "parameters": dict(self.result.parameters)})
+        except (PlanError, TargetError) as exc:
+            raise DocumentError(str(exc)) from None
+
+    def ndt_plan_passes(self, study_id: str, source: str = "placement",
+                        rank: int | None = None) -> list[dict[str, Any]]:
+        """Co naplánovat, jako odkazy významem (jdou i do pomocného procesu): přiložená
+        sonda (``placement``), varianta návrhu poloh (``variant`` + ``rank``) nebo jeho
+        kombinace (``combination``)."""
+        if source == "placement":
+            request, placed = self.ndt_placement_request, self.ndt_placement
+            if request is None or request[0] != study_id or placed is None:
+                raise DocumentError("Nejdřív přilož sondu studie na kontaktní plochu, nebo "
+                                    "vyber variantu návrhu poloh.")
+            if placed.surface is None or placed.surface.kind != "plane":
+                raise DocumentError("Plán dráhy umí jen rovinné kontaktní plochy – přilož "
+                                    "sondu na rovinnou plochu.")
+            probe = self._placed_probe(study_id)
+            return [{"face": request[1]["face"], "point": list(placed.origin),
+                     "angle_deg": request[2],
+                     "beta": 0.0 if probe.kind == "straight" else probe.beam_angle,
+                     "bounces": probe.bounces}]
+        result = self.ndt_access
+        if result is None or result.preparation.assumptions.get("study_id") != study_id:
+            raise DocumentError("Nejdřív spusť návrh poloh sondy pro tuto studii.")
+        if source == "variant":
+            if rank is None or not 0 <= rank < len(result.variants):
+                raise DocumentError("Taková varianta v návrhu není.")
+            indices = [rank]
+        elif source == "combination":
+            indices = list(result.combination)
+            if not indices:
+                raise DocumentError("Návrh poloh nemá žádnou kombinaci – z cíle nic nepokryje.")
+        else:
+            raise DocumentError("Plán jde sestavit z přiložené sondy, varianty nebo kombinace.")
+        passes = []
+        for index in indices:
+            found = result.variants[index]
+            if found.best_reference is None:
+                raise DocumentError(f"Varianta #{index + 1} z cíle nic nepokryje – není z čeho "
+                                    "plánovat.")
+            variant = found.variant
+            passes.append({"face": found.best_reference["face"], "point": list(found.best),
+                           "angle_deg": variant.angle_deg, "beta": variant.beta,
+                           "bounces": variant.bounces})
+        return passes
+
+    def _plan_specs(self, passes: list[dict[str, Any]]) -> list[PassSpec]:
+        from build123d import GeomType
+
+        specs = []
+        for number, request in enumerate(passes, start=1):
+            try:
+                face, at = find_face(self.result.part, request["face"])
+            except (SelectionError, KeyError, TypeError):
+                raise DocumentError(f"Plocha průchodu {number} v dílu už není – sestav plán "
+                                    "znovu z přiložené sondy.") from None
+            if face.geom_type != GeomType.PLANE:
+                raise DocumentError(f"Plocha průchodu {number} není rovinná – plán dráhy umí "
+                                    "jen rovinné kontaktní plochy.")
+            point = request.get("point") or (at.X, at.Y, at.Z)
+            specs.append(PassSpec(face, tuple(float(v) for v in point),
+                                  float(request["angle_deg"]), float(request["beta"]),
+                                  int(request["bounces"])))
+        return specs
+
+    def _plan_faces(self, plan: Plan) -> list[Any]:
+        faces = []
+        for number, plan_pass in enumerate(plan.passes, start=1):
+            try:
+                faces.append(find_face(self.result.part, plan_pass.face)[0])
+            except (SelectionError, KeyError, TypeError):
+                raise DocumentError(f"Plocha průchodu {number} v dílu už není – sestav plán "
+                                    "znovu.") from None
+        return faces
+
+    def ndt_plan_estimate(self, study_id: str, passes: list[dict[str, Any]] | None = None,
+                          options: PlanOptions | dict | None = None) -> PlanEstimate:
+        planner = self.ndt_planner(study_id, options)
+        passes = self.ndt_plan_passes(study_id) if passes is None else passes
+        return planner.estimate(self._plan_specs(passes))
+
+    def _run_plan(self, study_id: str, passes: list[dict[str, Any]] | None,
+                  options: PlanOptions | dict | None,
+                  progress: Callable[[str, int, int], None] | None) -> PlanResult:
+        """Sestavení, ověření a pokrytí bez uložení (synchronně i v pomocném procesu)."""
+        planner = self.ndt_planner(study_id, options)
+        specs = self._plan_specs(self.ndt_plan_passes(study_id) if passes is None else passes)
+        try:
+            result = planner.run(specs, progress)
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Plán dráhy nejde spočítat: {exc}") from None
+        plan = dataclasses.replace(result.plan, edited=False, **self._plan_prints(study_id))
+        return dataclasses.replace(result, plan=plan)
+
+    def _store_plan(self, study_id: str, result: PlanResult) -> PlanResult:
+        """Uloží sestavený plán do studie (jeden krok Zpět); bez úseků nic neuloží."""
+        if result.plan.passes:
+            record = result.plan.to_dict()
+            self._edit_study(study_id, lambda study: study.update(plan=record))
+            self._plan_cache = (self._plan_key(study_id), result)
+        return result
+
+    def compute_ndt_plan(self, study_id: str, passes: list[dict[str, Any]] | None = None,
+                         options: PlanOptions | dict | None = None, *,
+                         progress: Callable[[str, int, int], None] | None = None
+                         ) -> PlanResult:
+        """Sestaví plán dráhy (z přiložené sondy, nebo z ``passes``), ověří ho, spočítá
+        pokrytí a uloží do studie – jeden krok Zpět. Když nenajde žádný úsek, nic neuloží
+        (důvody jsou v ``result.dropped``)."""
+        return self._store_plan(study_id, self._run_plan(study_id, passes, options, progress))
+
+    def _check_options(self, plan: Plan, options: PlanOptions | dict | None) -> PlanOptions:
+        if isinstance(options, PlanOptions):
+            options = dataclasses.asdict(options)
+        keep = {key: value for key, value in (options or {}).items()
+                if key in ("target_step_mm", "tolerance_mm", "spread_deg", "compare",
+                           "robustness")}
+        return PlanOptions.for_plan(plan, **keep)
+
+    def check_ndt_plan(self, study_id: str, options: PlanOptions | dict | None = None, *,
+                       coverage: bool = True, confirm: bool = False,
+                       progress: Callable[[str, int, int], None] | None = None) -> PlanResult:
+        """Ověří uložený plán na současném dílu (po kontrolním kroku, nájezd, zóny)
+        a s ``coverage`` spočítá i pokrytí. Model se nemění – jen s ``confirm`` se platný
+        zastaralý plán přihlásí k současnému dílu, cíli a sondě (jeden krok Zpět)."""
+        plan = self.ndt_plan(study_id)
+        if plan is None:
+            raise DocumentError("Studie zatím nemá plán dráhy.")
+        planner = self.ndt_planner(study_id, self._check_options(plan, options))
+        faces = self._plan_faces(plan)
+        key = self._plan_key(study_id)
+        try:
+            result = planner.evaluate(plan, faces, progress, coverage=coverage)
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Plán dráhy nejde ověřit: {exc}") from None
+        self._plan_cache = (key, result)
+        if confirm:
+            self._confirm_plan(study_id, result)
+        return result
+
+    def _confirm_plan(self, study_id: str, result: PlanResult) -> None:
+        """Platný plán převezme otisky současného zadání (už není zastaralý)."""
+        prints = self._plan_prints(study_id)
+        record = self.ndt_study(study_id).get("plan") or {}
+        if not result.check.valid or all(record.get(k) == v for k, v in prints.items()):
+            return
+        self._edit_study(study_id, lambda study: study["plan"].update(prints))
+        result = dataclasses.replace(result, plan=dataclasses.replace(result.plan, **prints))
+        self._plan_cache = (self._plan_key(study_id), result)
+
+    def start_ndt_plan(self, study_id: str, passes: list[dict[str, Any]] | None = None,
+                       options: PlanOptions | dict | None = None) -> PlanResult | None:
+        """Okno: sestavení plánu v pomocném procesu; hotový plán uloží ``poll``."""
+        planner = self.ndt_planner(study_id, options)  # chyby hned, česky
+        passes = self.ndt_plan_passes(study_id) if passes is None else passes
+        self._plan_specs(passes)
+        if self._runner is None:
+            return self.compute_ndt_plan(study_id, passes, options)
+        self.failure = ""
+        self._plan_pending = {"mode": "build", "study_id": study_id,
+                              "progress": ("Připravuji plán dráhy", 0, 0)}
+        self._job = self._runner.submit_plan(self._require().to_dict(), study_id, "build",
+                                             passes, dataclasses.asdict(planner.options), True)
+        return None
+
+    def start_ndt_plan_check(self, study_id: str, options: PlanOptions | dict | None = None,
+                             coverage: bool = True, confirm: bool = False
+                             ) -> PlanResult | None:
+        """Okno: ověření (a pokrytí) uloženého plánu v pomocném procesu."""
+        plan = self.ndt_plan(study_id)
+        if plan is None:
+            raise DocumentError("Studie zatím nemá plán dráhy.")
+        checked = self._check_options(plan, options)
+        self.ndt_planner(study_id, checked)
+        self._plan_faces(plan)
+        if self._runner is None:
+            return self.check_ndt_plan(study_id, checked, coverage=coverage, confirm=confirm)
+        self.failure = ""
+        self._plan_pending = {"mode": "check", "study_id": study_id, "confirm": confirm,
+                              "key": self._plan_key(study_id),
+                              "progress": ("Ověřuji plán dráhy", 0, 0)}
+        self._job = self._runner.submit_plan(self._require().to_dict(), study_id, "check",
+                                             None, dataclasses.asdict(checked), coverage)
+        return None
+
+    @property
+    def plan_pending(self) -> bool:
+        return self._plan_pending is not None
+
+    @property
+    def ndt_plan_progress(self) -> str:
+        if self._plan_pending is None:
+            return ""
+        stage, done, total = self._plan_pending["progress"]
+        return f"{stage} {min(done + 1, total)} z {total}" if total > 1 else stage
+
+    def _plan_finished(self, finished: Any) -> None:
+        pending, self._plan_pending = self._plan_pending, None
+        if finished.plan is None:
+            self.failure = finished.error
+            return
+        if pending["mode"] == "build":
+            try:
+                self._store_plan(pending["study_id"], finished.plan)
+            except DocumentError as exc:
+                self.failure = str(exc)
+            if not finished.plan.plan.passes:
+                self.failure = ("Plán dráhy nenašel žádný úsek: "
+                                + " ".join(finished.plan.dropped))
+        elif pending["key"] == self._plan_key(pending["study_id"]):
+            self._plan_cache = (pending["key"], finished.plan)
+            if pending["confirm"]:
+                try:
+                    self._confirm_plan(pending["study_id"], finished.plan)
+                except DocumentError as exc:
+                    self.failure = str(exc)
+
+    # úpravy plánu (každá jeden krok Zpět; plán je pak „ručně upravený“)
+
+    def _edit_plan(self, study_id: str, change: Callable[[list[dict[str, Any]]], Any]
+                   ) -> BuildResult:
+        plan = self.ndt_plan(study_id)
+        if plan is None:
+            raise DocumentError("Studie zatím nemá plán dráhy.")
+        data = plan.to_dict()
+        change(data["passes"])
+        data["passes"] = [p for p in data["passes"] if p["segments"]]
+        data["edited"] = True
+        try:
+            Plan.from_dict(data)
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+        return self._edit_study(study_id, lambda study: study.update(plan=data))
+
+    @staticmethod
+    def _segments_of(passes: list[dict[str, Any]], pass_index: int, segment: int
+                     ) -> list[dict[str, Any]]:
+        if not 0 <= pass_index < len(passes):
+            raise DocumentError(f"Plán nemá průchod {pass_index + 1}.")
+        segments = passes[pass_index]["segments"]
+        if not 0 <= segment < len(segments):
+            raise DocumentError(f"Průchod {pass_index + 1} nemá úsek {segment + 1}.")
+        return segments
+
+    def remove_ndt_plan_segment(self, study_id: str, pass_index: int, segment: int
+                                ) -> BuildResult:
+        return self._edit_plan(study_id, lambda passes: self._segments_of(
+            passes, pass_index, segment).pop(segment))
+
+    def reverse_ndt_plan_segment(self, study_id: str, pass_index: int, segment: int
+                                 ) -> BuildResult:
+        def change(passes: list[dict[str, Any]]) -> None:
+            item = self._segments_of(passes, pass_index, segment)[segment]
+            item["start"], item["end"] = item["end"], item["start"]
+
+        return self._edit_plan(study_id, change)
+
+    def move_ndt_plan_segment(self, study_id: str, pass_index: int, segment: int,
+                              offset: int) -> BuildResult:
+        """Přeřadí úsek v pořadí jízdy průchodu o ``offset`` (−1 nahoru, +1 dolů)."""
+        def change(passes: list[dict[str, Any]]) -> None:
+            segments = self._segments_of(passes, pass_index, segment)
+            target = segment + offset
+            if not 0 <= target < len(segments):
+                raise DocumentError("Úsek už je na kraji průchodu – dál posunout nejde.")
+            segments.insert(target, segments.pop(segment))
+
+        return self._edit_plan(study_id, change)
+
+    def set_ndt_plan_segment(self, study_id: str, pass_index: int, segment: int,
+                             start: Any, end: Any) -> BuildResult:
+        """Nové konce úseku (mm) – zkrácení, prodloužení či posun čísly."""
+        try:
+            points = [[float(v) for v in start], [float(v) for v in end]]
+        except (TypeError, ValueError):
+            raise DocumentError("Začátek a konec úseku musí být tři čísla [x, y, z].") from None
+        if any(len(p) != 3 or not all(math.isfinite(v) for v in p) for p in points):
+            raise DocumentError("Začátek a konec úseku musí být tři čísla [x, y, z].")
+
+        def change(passes: list[dict[str, Any]]) -> None:
+            item = self._segments_of(passes, pass_index, segment)[segment]
+            item["start"], item["end"] = points
+
+        return self._edit_plan(study_id, change)
+
+    def add_ndt_plan_segment(self, study_id: str, length_mm: float = 50.0) -> BuildResult:
+        """Přidá úsek z přiložené sondy: od výstupního bodu ``length_mm`` ve směru paprsku.
+        Patří do průchodu se stejnou plochou, směrem, úhlem a odrazy, jinak vznikne nový."""
+        if not (isinstance(length_mm, int | float) and 0 <= length_mm <= 10_000):
+            raise DocumentError("Délka úseku musí být 0–10 000 mm.")
+        request = self.ndt_plan_passes(study_id)[0]
+        placed = self.ndt_placement
+        start = [float(v) for v in placed.origin]
+        end = [s + d * float(length_mm) for s, d in zip(start, placed.x_dir, strict=True)]
+        segment = {"start": start, "end": end}
+        face = find_face(self.result.part, request["face"])[0]
+        plan = self.ndt_plan(study_id)
+        if plan is None:
+            data = Plan((), edited=True, **self._plan_prints(study_id)).to_dict()
+        else:
+            data = plan.to_dict()
+        data["edited"] = True
+        for plan_pass in data["passes"]:
+            try:
+                same = find_face(self.result.part, plan_pass["face"])[0].is_same(face)
+            except (SelectionError, KeyError, TypeError):
+                same = False
+            if (same and abs(plan_pass["angle_deg"] - request["angle_deg"] % 360) < 1e-6
+                    and abs(plan_pass["beta"] - request["beta"]) < 1e-9
+                    and plan_pass["bounces"] == request["bounces"]):
+                plan_pass["segments"].append(segment)
+                break
+        else:
+            data["passes"].append({"face": dict(request["face"]),
+                                   "angle_deg": request["angle_deg"] % 360,
+                                   "beta": request["beta"], "bounces": request["bounces"],
+                                   "pattern": "manual", "segments": [segment]})
+        try:
+            record = Plan.from_dict(data).to_dict()
+        except PlanError as exc:
+            raise DocumentError(str(exc)) from None
+        return self._edit_study(study_id, lambda study: study.update(plan=record))
+
+    def remove_ndt_plan(self, study_id: str) -> BuildResult:
+        return self._edit_study(study_id, lambda study: study.pop("plan", None))
+
+    def show_ndt_plan_position(self, index: int) -> Placement:
+        """Přehrávání: přiloží sondu do polohy plánu ``index`` (jen pohled)."""
+        result = self.ndt_plan_result
+        if result is None:
+            raise DocumentError("Plán dráhy zatím není ověřený.")
+        positions = result.check.positions
+        if not 0 <= index < len(positions):
+            raise DocumentError("Taková poloha v plánu není.")
+        study_id = self.ndt_plan_study()
+        position = positions[index]
+        plan_pass = result.plan.passes[position.pass_index]
+        probe = self.ndt_probe(study_id)
+        if probe.kind == "straight":
+            shown = dataclasses.replace(probe, bounces=plan_pass.bounces)
+        else:
+            shown = dataclasses.replace(probe, beam_angle=plan_pass.beta,
+                                        bounces=plan_pass.bounces)
+        previous = (self.ndt_placement_request, self._probe_override)
+        self._probe_override = None if shown == probe else (study_id, shown)
+        self.ndt_placement_request = (study_id, {"face": {**plan_pass.face,
+                                                          "at": list(position.point)}},
+                                      plan_pass.angle_deg)
+        self._line_scan = None
+        self.ndt_scan_index = 0
+        placement = self.ndt_placement
+        if placement is None:
+            error = self.ndt_placement_error
+            self.ndt_placement_request, self._probe_override = previous
+            raise DocumentError(error)
+        return placement
+
+    def export_ndt_plan(self, path: str | Path) -> Path:
+        result = self.ndt_plan_result
+        if result is None:
+            raise DocumentError("Plán dráhy zatím není ověřený – není co uložit.")
         try:
             return result.write_csv(path)
         except OSError as exc:

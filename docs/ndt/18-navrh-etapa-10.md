@@ -308,6 +308,15 @@ a paprsku, nová knihovna Pythonu ani sloučení do `main`.
   pokrytí z poloh plánu a souhrn s CSV. Výpočet pokrytí dostal režim `plan`
   (`coverage.PlanRegion`: mezipoloha sondy jen v pásu úseku, zóny vyřadí i mezipolohy);
   dnešní režimy `face` a `line` počítají beze změny (regresní testy etap 06, 07B a 09 prošly).
+- **10A.2 (hotovo):** formát **18** (`plan` a `zones` ve studii, kontrola struktury
+  s českými chybami, verze 1–17 se načtou beze změny), `ModelSession` (sestavení z přiložené
+  sondy / varianty / kombinace, uložení jedním krokem Zpět, stav plánu, ověření uloženého
+  plánu, převzetí otisků platným plánem, úpravy úseků, zóny, přehrávání polohy, CSV), pomocný
+  proces (sestavení i ověření s průběhem) a příkaz `skodacad draha`.
+  - Zastaralou **studii** (jiný díl) je napřed potřeba potvrdit, jako u návrhu poloh; plán
+    pak *Ověřit znovu* převezme nové otisky, jen když projde celou kontrolou.
+  - Úsek přidaný z přiložené sondy vede od výstupního bodu ve směru paprsku (jako *Projet
+    čáru*); patří do průchodu se stejnou plochou, směrem, úhlem a odrazy, jinak vznikne nový.
 - **Upřesnění:**
   - Když na konci úseku nejde sondu zvednout (převis), vrátí se **po už projeté dráze** na
     nejbližší místo, kde to jde. Když ji nejde spustit na začátek úseku, spustí se na nejbližší

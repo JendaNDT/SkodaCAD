@@ -22,6 +22,7 @@ Jen geometrie: plán nepopisuje zjistitelnost vad, čas, rychlost ani techniku p
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import time
@@ -199,6 +200,15 @@ class Zone:
 
         size = [h - lo for lo, h in zip(self.low, self.high, strict=True)]
         return Pos(*self.low) * Box(*size, align=(Align.MIN, Align.MIN, Align.MIN))
+
+
+def probe_fingerprint(probe: Probe) -> str:
+    """Otisk rozměrů a mezí sondy (16 znaků) – plán na nich závisí; úhel a odrazy nese každý
+    průchod sám."""
+    values = [probe.kind, *(round(float(getattr(probe, key)), 6) for key in (
+        "diameter", "length", "width", "height", "front", "max_gap", "reserve"))]
+    text = json.dumps(values, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def zones_from(data: Any) -> tuple[Zone, ...]:

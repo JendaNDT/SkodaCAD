@@ -33,7 +33,7 @@ METHODS = {  # zkratka → český název metody
 }
 TARGET_KINDS = ("faces", "volume", "weld")
 STUDY_KEYS = ("id", "name", "method", "target", "device", "material", "note", "created",
-              "part", "verified")
+              "part", "verified", "zones", "plan")
 
 STATE_LABELS = {"ok": "platná", "stale": "zastaralá", "incomplete": "neúplná",
                 "broken": "neplatná vazba"}
@@ -98,6 +98,15 @@ def check_study(study: Any, index: int = 1) -> None:
         try:
             Material.from_dict(study["material"])
         except LibraryError as exc:
+            raise StudyError(f"{where}: {exc}") from None
+    if "zones" in study or "plan" in study:  # plán dráhy (etapa 10, formát 18)
+        from skodacad.ndt.plan import Plan, PlanError, zones_from
+
+        try:
+            zones_from(study.get("zones"))
+            if "plan" in study:
+                Plan.from_dict(study["plan"])
+        except PlanError as exc:
             raise StudyError(f"{where}: {exc}") from None
     verified = study.get("verified")
     if verified is not None:

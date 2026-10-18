@@ -402,6 +402,26 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   `skodacad polohy MODEL --studie s1 [--krok 10] [--smery 45] [--uhly 45,60,70]
   [--odrazy 0,1] [--csv polohy.csv]` (odhad a průběh na chybový výstup, souhrn a CSV
   s povinným upozorněním). Návrh: [Etapa 09](docs/ndt/17-navrh-etapa-09.md).
+* **Plán dráhy UT sondy (etapa 10):** z přiložené sondy nebo z varianty (či kombinace) návrhu
+  poloh sestaví **souvislou dráhu**: řádky tam a zpět s roztečí (výchozí 5 mm) ve vzoru
+  *k cíli a zpět* nebo *podél* (automaticky vyhraje méně přestavení, pak kratší dráha, pak méně
+  řádků). Úseky vedou jen tam, kde se sonda vejde (bez kolize, dosedá, nepřesahuje, mimo
+  **zakázané zóny**) a odkud paprsek míří k cíli; konec u překážky se dohledá na 0,5 mm. Celá
+  jízda po povrchu se kontroluje **po 1 mm**; kde se řádek přerušit musí, sonda se **přestaví**
+  a ověří se **nájezd** (tělo sondy prodloužené o výšku nájezdu, výchozí 20 mm, nesmí narazit;
+  pod převisem se sonda spustí vedle a dojede po povrchu, zvedá se tam, kam se po projeté dráze
+  vrátí). **Hodnocení** bez souhrnného skóre: geometrické pokrytí (stávajícím výpočtem
+  z poloh plánu – řádky = spojitě projetý pás šířky rozteče), délka po povrchu a vzduchem,
+  přestavení, **robustnost** (boční rezerva napříč řádku, místa „na hraně“, nejmenší volno),
+  volitelně srovnání s celou plochou a odolnost po posunu řádků o ± půl rozteče. Tabulka poloh
+  po rozteči a CSV s povinným upozorněním UT. Plán a zóny se **ukládají do studie** (formát 18);
+  po změně dílu, cíle nebo sondy je plán *zastaralý* a sám se nikdy nepřepočítá ani neposune
+  (*ověřit znovu* / *sestavit znovu*). Ruční úpravy úseků (smazat, obrátit, přeřadit, upravit
+  konce, přidat z přiložené sondy) jsou kroky Zpět. Uložený plán po novém otevření souboru
+  spočítá totéž pokrytí. V příkazové řádce: `skodacad draha MODEL --studie s1
+  (--plocha X,Y,Z --smer 180 | --varianta N | --kombinace | --prepocet) [--vzor auto|k-cili|podel]
+  [--roztec 5] [--najezd 20] [--kontrola 1] [--zona X1,Y1,Z1:X2,Y2,Z2] [--srovnani]
+  [--odolnost] [--ulozit] [--csv plan.csv]`. Návrh: [Etapa 10](docs/ndt/18-navrh-etapa-10.md).
 
 ### Tažení a přechod
 
@@ -781,8 +801,9 @@ se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
 (`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
-NDT (původ hodnot sondy, materiál pro UT; etapa 08).
-Starší soubory verze 1–16 se načtou beze změny. Uložení novou aplikací zapisuje verzi 17;
+NDT (původ hodnot sondy, materiál pro UT; etapa 08), verze 18 plán dráhy sondy a zakázané
+zóny ve studii (`plan`, `zones`; etapa 10).
+Starší soubory verze 1–17 se načtou beze změny. Uložení novou aplikací zapisuje verzi 18;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -822,6 +843,24 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   Studie může mít `material`: `{"name": "hliník", "c_l": 6320, "c_t": 3130, "source": "…",
   "profile": "hlinik"}` (podélná a příčná rychlost v m/s, 0 = neuvedeno). Geometrii ani výpočet
   tyto údaje nemění; úhel se do jiného materiálu přepočítá jen na pokyn.
+* **Plán dráhy a zakázané zóny** (verze 18, nepovinné, etapa 10): `zones` – seznam kvádrů,
+  kam sonda nesmí zasáhnout žádnou částí těla: `[{"name": "štítek", "min": [60, -20, 12],
+  "max": [90, 20, 20]}]` (mm, souřadnice dílu). `plan` – plán dráhy sondy:
+
+  ```json
+  "plan": {"pattern": "auto", "row_step_mm": 5, "approach_mm": 20, "check_step_mm": 1,
+    "passes": [{"face": {"at": [40, 0, 12], "normal": [0, 0, 1], "type": "plane"},
+                "angle_deg": 180, "beta": 70, "bounces": 0, "pattern": "toward",
+                "segments": [{"start": [50, -10, 12], "end": [22.1875, -10, 12]}]}],
+    "part": "…", "target": "…", "probe": "…", "edited": false}
+  ```
+
+  Průchod = rovinná plocha (bod a směr, nikdy číslo), směr paprsku `angle_deg` (jako při
+  přiložení sondy), úhel `beta` (0 = přímá sonda), `bounces` a úseky v pořadí jízdy
+  (`pattern`: `toward` = k cíli a zpět, `along` = podél, `manual` = ručně). `part`,
+  `target`, `probe` jsou otisky dílu, cíle a rozměrů sondy, pro které plán vznikl – jiný
+  otisk = plán zastaralý; sám se nikdy nepřepočítá ani neposune. `edited` = ručně upravený.
+  Výsledek ověření a pokrytí se do souboru neukládá.
 
 ### Cílové objemy a svary (07A, verze 16)
 

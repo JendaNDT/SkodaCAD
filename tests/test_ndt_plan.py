@@ -250,3 +250,158 @@ def test_narrow_gap_route_only_along_and_in_the_middle_strip():
     assert segments and all(abs(s.start[0]) <= 5 + 1e-6 and abs(s.end[0]) <= 5 + 1e-6
                             for s in segments)
     assert planner.check(along, faces, margins=False).valid
+
+
+# --- soubor (formát 18), ModelSession, pomocný proces a příkazová řádka (10A.2) ---------
+
+QUICK = {"row_step_mm": 20, "check_step_mm": 5}
+
+
+def rib_session(runner=None):
+    """Deska se žebrem: studie s1 (cíl dno), sonda přiložená na horní ploše vpravo ke žebru."""
+    session = ModelSession(runner)
+    session.open(EXAMPLES / "ndt" / "zebro.json")
+    if runner is not None:
+        session.wait(120)
+    part = session.result.part
+    session.place_ndt_probe("s1", [face_at(part, 50, 0, 20).wrapped], (50, 0, 20), 180)
+    return session
+
+
+@pytest.fixture(scope="module")
+def rib():
+    session = rib_session()
+    return session, session.compute_ndt_plan("s1", options=QUICK)
+
+
+def test_plan_is_stored_with_prints_and_recomputed_identically_after_reopening(rib, tmp_path):
+    session, result = rib
+    assert session.dirty and result.check.valid and result.coverage.covered > 0
+    plan = session.ndt_plan("s1")
+    assert plan == result.plan and not plan.edited
+    assert {k: getattr(plan, k) for k in ("part", "target", "probe")} == \
+        session._plan_prints("s1")
+    assert session.ndt_plan_state("s1") == ("ok", "Plán platí.")
+    path = session.save(tmp_path / "zebro.json")
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 18
+    again = ModelSession()
+    again.open(path)
+    assert again.ndt_plan("s1") == plan
+    assert again.ndt_plan_state("s1")[0] == "unchecked"
+    checked = again.check_ndt_plan("s1", QUICK)
+    assert checked.coverage.coverage.states == result.coverage.coverage.states
+    assert again.ndt_plan_state("s1")[0] == "ok" and not again.dirty
+
+
+def test_session_plays_positions_back_and_exports_csv(rib, tmp_path):
+    session, result = rib
+    placed = session.show_ndt_plan_position(len(result.check.positions) - 1)
+    assert placed.ok
+    assert placed.origin == pytest.approx(result.check.positions[-1].point, abs=1e-6)
+    text = session.export_ndt_plan(tmp_path / "plan.csv").read_text(encoding="utf-8-sig")
+    assert UT_DISCLAIMER in text and PLAN_NOTE in text
+
+
+def test_changed_part_makes_plan_stale_until_confirmed_and_edits_undo(rib):
+    """Mění sdílené sezení (díl, plán) – musí běžet po testech, které ho jen čtou."""
+    session, result = rib
+    session.set_parameter("A", "220")  # delší deska: plán se sám neposune
+    state, text = session.ndt_plan_state("s1")
+    assert state == "stale" and "díl" in text
+    session.confirm_ndt_study("s1")  # studie napřed (jako u návrhu poloh), plán zvlášť
+    assert session.ndt_plan_state("s1")[0] == "stale"
+    session.check_ndt_plan("s1", QUICK, coverage=False, confirm=True)
+    assert session.ndt_plan_state("s1")[0] == "ok"
+    before = session.ndt_plan("s1")
+    first = before.passes[0].segments[0]
+    session.reverse_ndt_plan_segment("s1", 0, 0)
+    reversed_plan = session.ndt_plan("s1")
+    assert reversed_plan.edited and reversed_plan.passes[0].segments[0] == first.reversed()
+    assert session.ndt_plan_state("s1")[0] == "unchecked"
+    session.remove_ndt_plan_segment("s1", 0, 1)
+    assert len(session.ndt_plan("s1").passes[0].segments) == len(before.passes[0].segments) - 1
+    session.undo()
+    session.undo()
+    assert session.ndt_plan("s1") == before
+    with pytest.raises(Exception, match="nemá úsek 99"):
+        session.remove_ndt_plan_segment("s1", 0, 98)
+    with pytest.raises(Exception, match="na kraji"):
+        session.move_ndt_plan_segment("s1", 0, 0, -1)
+    session.set_ndt_plan_segment("s1", 0, 0, first.start, first.start)  # jedna poloha
+    assert session.ndt_plan("s1").passes[0].segments[0].length == 0
+    session.add_ndt_plan_segment("s1", 10)
+    assert session.ndt_plan("s1").passes[0].segments[-1].length == pytest.approx(10)
+    session.remove_ndt_plan("s1")
+    assert session.ndt_plan("s1") is None and session.ndt_plan_state("s1")[0] == "none"
+
+
+def test_zones_are_checked_saved_and_block_the_plan(tmp_path):
+    session = rib_session()
+    with pytest.raises(Exception, match="větší než „min“"):
+        session.set_ndt_zones("s1", [{"name": "chyba", "min": [0, 0, 0], "max": [0, 1, 1]}])
+    result = session.compute_ndt_plan("s1", options=QUICK)
+    segment = result.plan.passes[0].segments[0]
+    middle = tuple((a + b) / 2 for a, b in zip(segment.start, segment.end, strict=True))
+    zone = {"name": "štítek", "min": [middle[0] - 2, middle[1] - 2, 20],
+            "max": [middle[0] + 2, middle[1] + 2, 22]}
+    session.set_ndt_zones("s1", [zone])
+    assert session.ndt_zones("s1")[0].to_dict() == zone
+    checked = session.check_ndt_plan("s1", coverage=False)
+    assert not checked.check.valid and "v zakázané zóně" in " ".join(checked.check.problems)
+    assert session.ndt_plan_state("s1")[0] == "invalid"
+    data = session.document.to_dict()
+    data["ndt"]["studies"][0]["plan"]["row_step_mm"] = -1
+    with pytest.raises(Exception, match="rozteč"):
+        Document.from_dict(data)
+
+
+@pytest.fixture(scope="module")
+def runner():
+    from skodacad.worker import BackgroundRebuilder
+
+    rebuilder = BackgroundRebuilder()
+    yield rebuilder
+    rebuilder.close()
+
+
+def test_background_build_stores_plan_and_check_matches(rib, runner):
+    import time
+
+    _, direct = rib
+    session = rib_session(runner)
+    assert session.start_ndt_plan("s1", options=QUICK) is None and session.plan_pending
+    seen = set()
+    end = time.monotonic() + 300
+    while session.computing and time.monotonic() < end:
+        session.poll()
+        seen.add(session.ndt_plan_progress)
+        time.sleep(0.05)
+    assert not session.failure, session.failure
+    assert session.ndt_plan("s1").passes == direct.plan.passes
+    assert any(text.startswith("Kontrola dráhy") for text in seen)
+    session.wait(120)  # přepočet po uložení plánu do studie
+    assert session.start_ndt_plan_check("s1", QUICK) is None
+    assert session.wait(300) and not session.failure
+    assert session.ndt_plan_result.coverage.covered == direct.coverage.covered
+
+
+def test_cli_plans_saves_and_rechecks(tmp_path, capsys):
+    import shutil
+
+    from skodacad.cli import main
+
+    model = tmp_path / "deska.json"
+    shutil.copy(EXAMPLES / "ndt" / "deska.json", model)
+    code = main(["draha", str(model), "--studie", "s1", "--plocha", "0,0,20",
+                 "--roztec", "40", "--kontrola", "5", "--zona=-100,-60,20:-80,60,40",
+                 "--ulozit", "--csv", str(tmp_path / "plan.csv")])
+    out = capsys.readouterr()
+    assert code == 0, out.err
+    assert UT_DISCLAIMER in out.out and PLAN_NOTE in out.out and "Odhad" in out.err
+    saved = json.loads(model.read_text(encoding="utf-8"))["ndt"]["studies"][0]
+    assert saved["plan"]["passes"] and saved["zones"][0]["min"] == [-100, -60, 20]
+    assert (tmp_path / "plan.csv").exists()
+    assert main(["draha", str(model), "--studie", "s1", "--prepocet", "--kontrola", "5"]) == 0
+    assert "Plán platí" in capsys.readouterr().out
+    assert main(["draha", str(model), "--studie", "s1"]) == 2
+    assert "Zadej, odkud plánovat" in capsys.readouterr().err

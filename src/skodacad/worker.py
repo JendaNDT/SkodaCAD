@@ -101,7 +101,7 @@ def _worker_main(conn: Any) -> None:
             message = conn.recv()
         except (EOFError, OSError):
             return  # okno skončilo
-        if message[0] not in ("rebuild", "coverage", "access"):
+        if message[0] not in ("rebuild", "coverage", "access", "plan"):
             return
         kind, job, data, *options = message
         try:
@@ -121,6 +121,20 @@ def _worker_main(conn: Any) -> None:
                     progress=lambda stage, done, total: send("progress", (stage, done, total)),
                     on_prepared=lambda prepared: send("prepared", prepared),
                     on_variant=lambda index, outcome: send("variant", (index, outcome))))
+            elif kind == "plan":
+                from skodacad.session import ModelSession
+
+                session = ModelSession()
+                session.document = Document.from_dict(data)
+                session.rebuild()
+                study_id, mode, passes, settings, coverage = options
+
+                def progress(stage: str, done: int, total: int, job: int = job) -> None:
+                    conn.send(("progress", job, (stage, done, total)))
+
+                reply = ("plan", job, session._run_plan(study_id, passes, settings, progress)
+                         if mode == "build" else session.check_ndt_plan(
+                             study_id, settings, coverage=coverage, progress=progress))
             elif kind == "coverage":
                 from skodacad.session import ModelSession
 
@@ -166,6 +180,7 @@ class Finished:
     error: str = ""
     coverage: Any = None
     access: Any = None  # hotový návrh poloh (etapa 09)
+    plan: Any = None  # sestavený nebo ověřený plán dráhy (etapa 10)
     update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
 
@@ -205,6 +220,13 @@ class BackgroundRebuilder:
                       contact: list[dict[str, Any]] | None) -> int:
         """Návrh poloh sondy; průběh a hotové varianty chodí průběžně (``Finished.update``)."""
         return self._submit(("access", document, study_id, options, contact))
+
+    def submit_plan(self, document: dict[str, Any], study_id: str, mode: str,
+                    passes: list[dict[str, Any]] | None, options: dict[str, Any],
+                    coverage: bool = True) -> int:
+        """Plán dráhy: sestavení (``build``) nebo ověření uloženého (``check``); průběh chodí
+        průběžně (``Finished.update``)."""
+        return self._submit(("plan", document, study_id, mode, passes, options, coverage))
 
     def _submit(self, message: tuple) -> int:
         self.cancel()
@@ -246,6 +268,8 @@ class BackgroundRebuilder:
                     return Finished(job, coverage=payload)
                 if kind == "access":
                     return Finished(job, access=payload)
+                if kind == "plan":
+                    return Finished(job, plan=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass

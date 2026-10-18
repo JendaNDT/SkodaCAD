@@ -230,10 +230,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti` a `polohy` (návrh poloh UT sondy) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy) a `draha` (plán dráhy UT sondy) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí a návrh poloh (průběžné zprávy `Finished.update`) |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh a plán dráhy (`submit_plan`, průběžné zprávy `Finished.update`) |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -681,6 +681,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Nájezd = tělo sondy prodloužené nahoru o výšku nájezdu (`_approach`, jen průnik OCCT, bez
   paprsků otisku). Zvednutí, které na místě nejde, se vrátí po projeté dráze (`_retreat`);
   spuštění hledá jen v rámci úseku (`_entry_point`) – jinak úsek `build` vynechá.
+- ModelSession: plán je ve studii (`plan`, `zones`, formát 18) s otisky `part` / `target` /
+  `probe` (`plan.probe_fingerprint` – rozměry a meze, ne úhel). Stav `ndt_plan_state`: none /
+  stale (jiný otisk) / unchecked / invalid / ok. Ověřený výsledek (`ndt_plan_result`) platí
+  pro klíč `_plan_key` (recept, JSON plánu, zón, cíle a sondy) – uložení plánu ho nezruší.
+  Zastaralou **studii** je třeba nejdřív potvrdit (plánovač chce platnou UT studii), pak
+  `check_ndt_plan(confirm=True)` převezme otisky jen u platného plánu (jeden krok Zpět).
+- Sestavení v pomocném procesu vrátí `PlanResult` a **uloží ho až `poll`** (`_plan_finished`
+  → `_store_plan` → `_change`, tedy i přepočet dílu). Plán bez úseků se neuloží, důvody jsou
+  v `failure`. Úpravy úseků (`_edit_plan`) nastaví `edited` a plán je pak *neověřený*.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -793,7 +802,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
   [ ] 10 plán dráhy UT sondy (schváleno 18. 10. 2026, dokončí milník M3):
-  [x] 10A.1 jádro `ndt/plan.py`, [ ] 10A.2 formát 18, ModelSession, CLI a CSV, [ ] 10B okno.
+  [x] 10A.1 jádro `ndt/plan.py`, [x] 10A.2 formát 18, ModelSession, CLI a CSV, [ ] 10B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
