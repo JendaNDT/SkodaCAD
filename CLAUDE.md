@@ -137,7 +137,8 @@
   značek, materiály s rychlostmi ze dvou zdrojů (litina a titan záměrně chybí), Moje sondy
   v `~/SkodaCAD/ndt-knihovna.json` + kopie hodnot ve studii, původ hodnot, přenos úhlu
   Snellovým zákonem **jen na pokyn**, frekvence jen informativně, formát 17, tvarovaná
-  předsádka (08C) odložena.
+  předsádka (08C) odložena. Sloučeno v PR #22 (`afce8c7`); autor 18. 10. 2026 k vydání
+  z `afce8c7` napsal „ok funguje to“. Tím je hotový milník M2 (etapy 06–08).
 
 ## Architektura (`src/skodacad/`)
 
@@ -708,7 +709,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 05 ruční pohyb sondy (milník M1), [x] 06 geometrické pokrytí (sloučeno),
   [ ] 07 svar a cílová oblast: [x] 07A datový základ (sloučeno v PR #16),
   [x] 07B objemové pokrytí (sloučeno v PR #17), [x] 07C ovládání a demonstrace
-  (sloučeno v PR #19, autor po vydání: „ok funguje to“) …
+  (sloučeno v PR #19, autor po vydání: „ok funguje to“) …,
+  [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
+  to“; 08C tvarovaná předsádka odložena) – milník M2 hotov, další podle plánu etapa 09.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
