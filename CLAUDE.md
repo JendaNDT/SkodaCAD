@@ -128,6 +128,10 @@
   `max(jemná, krok × √0,5)` (pravidlo `ndt-ut-objemove-porovnani 2`), výslovně malá
   tolerance dostane upozornění; výchozí krok cíle = šestina menšího rozměru průřezu
   (místo 4 mm z 07C); referenční test V svaru (15,18 % průřezu).
+- (18. 10. 2026, schváleno) **Stejná oprava porovnání kroků pro plošnou mapu Etapy 06**
+  (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`, oddíl 8): `coverage.check_convergence` hledá
+  v hrubém běhu s `max(jemná, auto_tolerance hrubých kroků)` (pravidlo `ndt-ut-porovnani 2`),
+  malá výslovná tolerance dostane upozornění. Výpočet pokrytí ani formát se nemění.
 
 ## Architektura (`src/skodacad/`)
 
@@ -137,7 +141,8 @@ mapu pouze jako pohled; výpočet v okně používá `BackgroundRebuilder` a jde
 zůstává 15. `skodacad pokryti` vyžaduje `--plocha` a cíle (`--cil`, `--cil-plocha`, `--studie`).
 Numerická tolerance nesmí obejít otisk, kolizi ani rezervu: na rovině se mezilehlá poloha
 sondy skutečně přiloží a paprsek znovu spočítá. Na zakřivené ploše je pouhá numerická
-blízkost nejistá. Citlivost porovnává krok a 2× krok při stejné toleranci. Povinné upozornění
+blízkost nejistá. Citlivost porovnává krok a 2× krok; hrubý běh hledá s `max(jemná tolerance,
+`auto_tolerance` hrubých kroků)` (oprava 18. 10. 2026, jen CLI `--konvergence`). Povinné upozornění
 UT a význam procenta jsou v panelu, CLI i CSV. V `devices.place` nelze ořez odsazený o 0,001 mm
 použít k vyloučení kolize; mohl by přehlédnout nízkou překážku (hlídá regresní test).
 
@@ -173,7 +178,8 @@ V svaru (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`): reference 12,2 %; na rovin
 tolerance jen poloměr hledání (zásah se přesně ověří), porovnávací běh 07B ji ale bere
 z jemného běhu → nenajde část paprsků; buňka 4 mm je pro 12mm plech velká. Opravy 1–3
 schválené a provedené (`auto_tolerance`, `recommended_target_step`, `CONVERGENCE_RULE`,
-`tests/test_ndt_volume_reference.py`). Plošná mapa Etapy 06 má stále staré pravidlo.
+`tests/test_ndt_volume_reference.py`); totéž pravidlo má od 18. 10. 2026 i plošná mapa
+Etapy 06 (`coverage.CONVERGENCE_RULE`, sdílená `coverage.auto_tolerance`).
 Podrobný návrh je v `docs/ndt/13-navrh-etapa-07b.md`. Ukázky jsou v `examples/ndt/cilove_objemy/`,
 balíček a self-test je musí přibalit/prověřit. Ruční zkouška vydání Etapy 06 po sloučení
 je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověření.
@@ -562,6 +568,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   osy se přesně ověří (`coverage._resolve_axis_hit` dopočítá polohu sondy, přiloží ji
   a trasuje). Větší tolerance tam nevyrobí falešné „pokryto“ (na zakřivené ploše jen
   „nelze spolehlivě vyhodnotit“), menší než `krok × √0,5` ale část paprsků nenajde.
+  Platí pro objem (07B) i plochy/body (Etapa 06): deska se starým porovnáním 84,5 % /
+  32,4 %, s novým 84,5 % / 85,7 %. Hrubý běh nikdy nedědit toleranci jemného běhu.
 - Porovnání kroků je zkouška, ne důkaz: chyba buňky nekončí plynule, záleží i na poloze
   mřížky vůči hranici (V svar: 5 mm náhodou přesně, 4 mm −3,4 p. b.).
 - Referenční V svar: výřez 10 mm, sonda 70° zprava bez odrazů, platné přiložení od

@@ -29,6 +29,10 @@ COLORS = {"covered": (0.15, 0.70, 0.25), "uncovered": (0.85, 0.20, 0.15),
           "uncertain": (0.90, 0.75, 0.15)}
 MAX_POSITIONS = 20_000
 MAX_COMPARISONS = 80_000_000
+# Pravidlo porovnání kroků (docs/ndt/15-rozbor-citlivosti-v-svaru.md, oddíl 8): na rovinném
+# pojezdu je tolerance jen poloměr hledání (každý zásah se přesně ověří), hrubý běh proto
+# hledá aspoň tak hustě jako jemný – jinak by část paprsků jen „nenašel“.
+CONVERGENCE_RULE = "ndt-ut-porovnani 2: tolerance hrubého běhu ≥ jeho automatická tolerance"
 
 
 class CoverageError(ValueError):
@@ -95,6 +99,8 @@ class CoverageMap:
                   f"cíle {self.assumptions['target_step_mm']:g} mm, "
                   f"tolerance {self.assumptions['tolerance_mm']:g} mm, "
                   f"rozevření {self.assumptions['spread_deg']:g}°.",
+                  *([self.assumptions["tolerance_warning"]]
+                    if self.assumptions.get("tolerance_warning") else []),
                   f"Výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}."]
         lines.extend(dict.fromkeys(r for r in self.reasons if r))
         return lines
@@ -119,6 +125,13 @@ class CoverageMap:
                          if hit else [""] * 5)
                 writer.writerow([*(cz(v) for v in p), cz(a), STATES[state], reason, *extra])
         return path
+
+
+def auto_tolerance(mode: str, scan_step: float, target_step: float = 0.0) -> float:
+    """Automatická tolerance zachycení: polovina úhlopříčky mřížky pojezdu (po čáře 0,6 kroku),
+    nejméně polovina úhlopříčky kroku cíle (ve 2D je nejvzdálenější bod buňky půl úhlopříčky)."""
+    return max(target_step * math.sqrt(0.5),
+               scan_step * (math.sqrt(0.5) if mode == "face" else 0.6))
 
 
 def _number(value: float, label: str, minimum: float, maximum: float) -> float:
@@ -273,9 +286,7 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
     length_mm = _number(length_mm, "Délka pojezdu [mm]", 0, 100000)
     angle_deg = _number(angle_deg, "Směr sondy [°]", -36000, 36000)
     spread_deg = _number(spread_deg, "Rozevření [°]", 0, 45)
-    # Ve 2D je nejvzdálenější bod buňky půl úhlopříčky, ne 0,6 její strany.
-    default_tolerance = max(target_step * math.sqrt(0.5),
-                            scan_step * (math.sqrt(0.5) if mode == "face" else 0.6))
+    default_tolerance = auto_tolerance(mode, scan_step, target_step)
     tolerance = default_tolerance if tolerance_mm is None else _number(
         tolerance_mm, "Tolerance zachycení [mm]", 0, 1000)
     if mode not in ("line", "face"):
@@ -313,8 +324,15 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
                                spread_deg=spread_deg, beta=beta, bounces=bounces,
                                max_length=max_length, refraction=refraction,
                                nodes=nodes, triangles=triangles, faces=bool(faces))
-    return CoverageMap(nodes, triangles, centers, areas, *result,
-                       time.monotonic() - started)
+    covered = CoverageMap(nodes, triangles, centers, areas, *result,
+                          time.monotonic() - started)
+    search = auto_tolerance(mode, scan_step)  # krok cíle hledání paprsků nezhustí
+    if tolerance < search - 1e-9:
+        covered.assumptions["tolerance_warning"] = (
+            f"Tolerance zachycení {tolerance:g} mm je menší než krok pojezdu × "
+            f"{'0,71' if mode == 'face' else '0,6'} = {search:.3g} mm – hledání nemusí najít "
+            "všechny paprsky a pokrytí může vyjít nižší.")
+    return covered
 
 
 def _scan_positions(placement: Placement, mode: str, scan_step: float,
@@ -430,21 +448,37 @@ class Convergence:
     coarse_pct: float
     delta_pct: float
     stable: bool
+    tolerances: tuple[float, float] = (0.0, 0.0)  # tolerance jemného a hrubého běhu [mm]
 
     @property
     def text(self) -> str:
         return (f"Citlivost na krok: největší rozdíl tří stavů {self.delta_pct:.2f} "
                 "procentního bodu "
-                f"(pokryto {self.fine_pct:.2f} % / {self.coarse_pct:.2f} % při 2× kroku); "
+                f"(pokryto {self.fine_pct:.2f} % / {self.coarse_pct:.2f} % při 2× kroku, "
+                f"tolerance {self.tolerances[0]:.3g} / {self.tolerances[1]:.3g} mm); "
                 + ("stabilní do 1 p. b." if self.stable else "zjemni krok výpočtu."))
 
 
-def check_convergence(geo: PartGeometry, placement: Placement, **kwargs: Any) -> Convergence:
-    """Porovná krok a dvojnásobný krok; numerická tolerance zůstává stejná."""
-    fine = compute(geo, placement, **kwargs)
-    coarse_options = {**kwargs, "scan_step": fine.assumptions["scan_step_mm"] * 2,
-                      "target_step": fine.assumptions["target_step_mm"] * 2,
-                      "tolerance_mm": fine.assumptions["tolerance_mm"]}
-    coarse = compute(geo, placement, **coarse_options)
+def check_convergence(geo: PartGeometry, placement: Placement, *,
+                      fine: CoverageMap | None = None, **kwargs: Any) -> Convergence:
+    """Porovná krok a dvojnásobný krok (CLI předá již spočítaný jemný běh). Hrubý běh hledá
+    aspoň tak hustě jako jemný: tolerance = max(tolerance jemného běhu, automatická tolerance
+    hrubých kroků). Na rovině se každý zásah přesně ověří, takže větší poloměr hledání
+    pokrytí nezvětší neprávem; na zakřivené ploše dává jen „nelze spolehlivě vyhodnotit“."""
+    if fine is None:
+        fine = compute(geo, placement, **kwargs)
+    a = fine.assumptions
+    steps = (a["scan_step_mm"] * 2, a["target_step_mm"] * 2)
+    coarse_tolerance = max(a["tolerance_mm"], auto_tolerance(a["mode"], *steps))
+    coarse = compute(geo, placement, **(kwargs | {
+        "scan_step": steps[0], "target_step": steps[1], "tolerance_mm": coarse_tolerance}))
     delta = max(abs(fine.percent(s) - coarse.percent(s)) for s in STATES)
-    return Convergence(fine.percent("covered"), coarse.percent("covered"), delta, delta <= 1)
+    result = Convergence(fine.percent("covered"), coarse.percent("covered"), delta, delta <= 1,
+                         (a["tolerance_mm"], coarse_tolerance))
+    a.update(convergence={"fine_pct": {s: fine.percent(s) for s in STATES},
+                          "coarse_pct": {s: coarse.percent(s) for s in STATES},
+                          "delta_pp": delta, "coarse_steps_mm": steps,
+                          "tolerance_mm": a["tolerance_mm"],
+                          "coarse_tolerance_mm": coarse_tolerance, "rule": CONVERGENCE_RULE},
+             convergence_text=result.text)
+    return result

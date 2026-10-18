@@ -7,7 +7,13 @@ import pytest
 from conftest import EXAMPLES, face_at
 from skodacad import Document, rebuild
 from skodacad.ndt import UT_DISCLAIMER
-from skodacad.ndt.coverage import PERCENT_NOTE, CoverageError, check_convergence, compute
+from skodacad.ndt.coverage import (
+    CONVERGENCE_RULE,
+    PERCENT_NOTE,
+    CoverageError,
+    check_convergence,
+    compute,
+)
 from skodacad.ndt.devices import Probe, place
 from skodacad.ndt.geometry import PartGeometry
 
@@ -203,13 +209,50 @@ def test_certain_hit_wins_over_earlier_uncertain_placement(parts, monkeypatch):
     assert result.uncertain_positions == 1 and result.valid_positions == 1
 
 
-def test_convergence_preserves_tolerance_and_reports_percentage_points(parts):
+def test_convergence_searches_coarse_grid_and_reports_percentage_points(parts):
     geo = parts["deska"]
     placed = place(geo, Probe.straight(10), (0, 0, 20))
     result = check_convergence(geo, placed, points=[(0, 0, 0)], mode="line", length_mm=10,
                                scan_step=5, tolerance_mm=0.01)
     assert result.delta_pct == 0 and result.stable
-    assert "procentního bodu" in result.text
+    # Výslovná malá tolerance platí jen pro jemný běh; hrubý hledá podle svých kroků 10/8 mm.
+    assert result.tolerances == pytest.approx((0.01, 6))
+    assert "procentního bodu" in result.text and "tolerance 0.01 / 6 mm" in result.text
+
+
+def test_coarse_run_finds_beams_between_its_positions(parts):
+    """Rozbor docs/ndt/15, oddíl 8: na rovině je tolerance jen poloměr hledání. Body leží
+    přesně mezi polohami hrubého běhu (5 mm od nich); se starou tolerancí 3 mm by je hrubý
+    běh nenašel a porovnání by ukázalo 100 p. b. místo 0."""
+    geo = parts["deska"]
+    placed = place(geo, Probe.straight(10), (-20, 0, 20), face=face_at(geo.part, 0, 0, 20))
+    options = dict(points=[(-15, 0, 0), (-5, 0, 0), (5, 0, 0), (15, 0, 0)], mode="line",
+                   length_mm=40, scan_step=5)
+    fine = compute(geo, placed, **options)
+    assert fine.states == ["covered"] * 4 and fine.assumptions["tolerance_mm"] == 3
+    old_rule = compute(geo, placed, **(options | {"scan_step": 10, "target_step": 8,
+                                                  "tolerance_mm": 3}))
+    assert old_rule.states == ["uncovered"] * 4
+    assert "hledání nemusí najít všechny paprsky" in old_rule.assumptions["tolerance_warning"]
+    result = check_convergence(geo, placed, fine=fine, **options)
+    assert result.delta_pct == 0 and result.tolerances == (3, 6)
+    found = fine.assumptions["convergence"]
+    assert found["rule"] == CONVERGENCE_RULE and found["coarse_tolerance_mm"] == 6
+    assert found["coarse_pct"]["covered"] == 100
+    assert fine.assumptions["convergence_text"] == result.text
+
+
+def test_small_explicit_tolerance_is_flagged_in_summary_and_csv(parts, tmp_path):
+    geo = parts["deska"]
+    placed = place(geo, Probe.straight(10), (0, 0, 20))
+    small = compute(geo, placed, points=[(0, 0, 0)], mode="line", length_mm=10,
+                    scan_step=5, tolerance_mm=0.01)
+    warning = small.assumptions["tolerance_warning"]
+    assert "krok pojezdu × 0,6 = 3 mm" in warning
+    assert warning in small.summary()
+    assert "hledání nemusí" in small.write_csv(tmp_path / "c.csv").read_text("utf-8-sig")
+    exact = compute(geo, placed, points=[(0, 0, 0)], mode="line", length_mm=10, scan_step=5)
+    assert "tolerance_warning" not in exact.assumptions
 
 
 @pytest.mark.parametrize("kwargs", [{"scan_step": 0}, {"scan_step": float("nan")},

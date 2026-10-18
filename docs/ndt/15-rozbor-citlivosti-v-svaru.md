@@ -2,6 +2,8 @@
 
 Stav: **rozbor 17. 10. 2026; autor schválil opravy 1–3 z oddílu 6 („schvaluji opravy 1–3
 z rozboru“) a jsou provedené (sloučeno do `main` v PR #19) – viz [oddíl 7](#7-provedení-oprav).
+18. 10. 2026 autor schválil stejnou opravu i pro plošnou mapu Etapy 06 („schvaluji opravu
+citlivosti pro Etapu 06“) – viz [oddíl 8](#8-stejná-oprava-pro-plošnou-mapu-etapy-06).
 Formát se nemění.**
 Navazuje na [07B](13-navrh-etapa-07b.md) (výpočet a pravidlo porovnání kroků) a
 [07C](14-navrh-etapa-07c.md) (výchozí kroky v okně). Závazné vymezení UT platí beze změny:
@@ -147,6 +149,42 @@ Schválením se nemění formát, výrobní geometrie ani závazné vymezení UT
   15,22 % (rozdíl 0,47 p. b. – dřív by hledal jen 3,54 mm daleko), pojezd 10 mm se
   správnou tolerancí přesně totéž co 5 mm; tolerance 3,54 mm u pojezdu 10 mm by dala
   7,37 % a dostane upozornění.
-- **Neopraveno (mimo schválení):** plošná mapa Etapy 06 (`coverage.check_convergence`) má
+- **Neopraveno (mimo schválení):** plošná mapa Etapy 06 (`coverage.check_convergence`) měla
   stejné pravidlo „tolerance zůstává stejná“; u ploch se tolerance chová stejně (rovina =
-  přesné ověření). Navrhuje se jako samostatná malá oprava.
+  přesné ověření). Navrženo jako samostatná malá oprava – provedeno v oddílu 8.
+
+## 8. Stejná oprava pro plošnou mapu Etapy 06
+
+Schváleno autorem 18. 10. 2026. Plošná mapa (cílové plochy nebo body, `ndt/coverage.py`)
+porovnávala krok a dvojnásobný krok se **stejnou** tolerancí – stejná chyba jako příčina A.
+Porovnání se v Etapě 06 spouští jen z příkazové řádky (`skodacad pokryti --konvergence`);
+panel v okně ho pro plochy nemá.
+
+Ukázka (`examples/ndt/deska.json`, sonda na horní ploše ve středu, cíl spodní plocha
+200 × 100 mm, pojezd po ploše; geometricky pokryto):
+
+| Běh | Kroky pojezdu / cíle | Tolerance | Přímá Ø 10 mm | Úhlová 45°, 1 odraz |
+|---|---|---|---|---|
+| jemný | 5 / 5 mm | 3,54 mm | 84,50 % | 60,55 % |
+| hrubý – staré pravidlo | 10 / 10 mm | 3,54 mm | **32,42 %** | **31,98 %** |
+| hrubý – nové pravidlo | 10 / 10 mm | 7,07 mm | 85,74 % | 58,89 % |
+
+Staré porovnání by tedy hlásilo rozdíl **52 p. b.** a **28,6 p. b.** a „zjemni krok“, ačkoli
+výsledek na kroku skoro nezávisí; nové hlásí 1,24 a 1,66 p. b. (mez 1 p. b. těsně
+překročená – poctivě „zjemni krok“). Teoretická hodnota pro spojitý pojezd přímé sondy je
+85,5 % (Etapa 06).
+
+Provedení (výpočet pokrytí `ndt-ut-pokryti 1` se nemění):
+
+- `coverage.auto_tolerance(mode, krok pojezdu, krok cíle)` – jediný vzorec automatické
+  tolerance pro plochy, body i objem (objem bere jen krok pojezdu, jako dosud).
+- `coverage.check_convergence` – hrubý běh hledá s tolerancí
+  `max(tolerance jemného běhu, automatická tolerance hrubých kroků)`; text porovnání uvádí
+  obě tolerance („tolerance 3 / 6 mm“), předpoklady jemného běhu (a tím CSV) nesou
+  `convergence` s pravidlem `ndt-ut-porovnani 2` (`coverage.CONVERGENCE_RULE`).
+  Příkazová řádka jemný běh nepočítá dvakrát (`fine=`).
+- Výslovná tolerance menší než `krok pojezdu × 0,71` (po čáře `× 0,6`) zapíše do souhrnu
+  i CSV upozornění „hledání nemusí najít všechny paprsky“ (`tolerance_warning`).
+- Test `test_coarse_run_finds_beams_between_its_positions`: čtyři body přesně mezi polohami
+  hrubého běhu; staré pravidlo (tolerance 3 mm) je nenajde (rozdíl 100 p. b.), nové
+  (6 mm) najde a ověří (rozdíl 0).
