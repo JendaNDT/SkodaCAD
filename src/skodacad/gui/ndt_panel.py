@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -37,10 +36,19 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.target_dialog import TargetDialog
+from skodacad.materials import material_key
 from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
 from skodacad.ndt.coverage import PERCENT_NOTE, STATES, CoverageMap
-from skodacad.ndt.devices import KINDS, Probe
+from skodacad.ndt.library import (
+    MATERIALS,
+    UserLibrary,
+    describe,
+    load_user_library,
+    save_user_probe,
+    user_library_path,
+)
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
 from skodacad.ndt.volume_drawing import UNRESOLVED_LABEL
@@ -96,6 +104,13 @@ class NdtPanel(QWidget):
         self.drag_probe_action.setToolTip(
             "Levé tlačítko myší ve 3D jezdí sondou po povrchu dílu (nebo kdykoli drž Alt)")
         self.remove_probe_action = action("Odebrat sondu", self.remove_probe)
+        self.transfer_action = action("Přepočítat úhel", self.transfer_angle)
+        self.transfer_action.setToolTip(
+            "Úhel sondy platí v jiném materiálu – přepočti ho Snellovým zákonem do materiálu "
+            "pro UT (jeden krok Zpět)")
+        self.part_material_action = action("Použít materiál dílu", self.use_part_material)
+        self.part_material_action.setToolTip(
+            "Materiál pro UT = materiál dílu z vestavěné knihovny (orientační rychlosti)")
         self.step_back_action = action("◀", lambda: self.shift_probe(-self.step_mm.value()))
         self.step_back_action.setToolTip("Posunout sondu dozadu proti směru paprsku")
         self.step_forward_action = action("▶", lambda: self.shift_probe(self.step_mm.value()))
@@ -154,6 +169,32 @@ class NdtPanel(QWidget):
         self.probe_label.setObjectName("ndt_probe")
         self.probe_label.setWordWrap(True)
         probe_layout.addWidget(self.probe_label)
+        material_row = QHBoxLayout()  # materiál pro UT (etapa 08)
+        material_row.addWidget(QLabel("Materiál pro UT:"))
+        self.ut_material = QComboBox()
+        self.ut_material.setObjectName("ndt_ut_material")
+        self.ut_material.setToolTip(
+            "Rychlosti zvuku pro přepočet úhlu sondy. Vestavěné hodnoty jsou orientační "
+            "(dva zdroje); vlastní materiál si ulož do Mých sond.")
+        self.ut_material.currentIndexChanged.connect(lambda _index: self._ut_material_chosen())
+        material_row.addWidget(self.ut_material, stretch=1)
+        probe_layout.addLayout(material_row)
+        self.material_label = QLabel()
+        self.material_label.setObjectName("ndt_ut_material_info")
+        self.material_label.setWordWrap(True)
+        self.material_label.setStyleSheet("color: #555;")
+        probe_layout.addWidget(self.material_label)
+        self.angle_check_label = QLabel()
+        self.angle_check_label.setObjectName("ndt_angle_check")
+        self.angle_check_label.setWordWrap(True)
+        self.angle_check_label.setStyleSheet("color: #b9770e;")
+        probe_layout.addWidget(self.angle_check_label)
+        buttons = QHBoxLayout()
+        for item in (self.transfer_action, self.part_material_action):
+            buttons.addWidget(window._tool_button(item))
+        buttons.addStretch()
+        probe_layout.addLayout(buttons)
+        self._library_cache: tuple[tuple, UserLibrary] | None = None
         for pair in ((self.probe_action, self.place_action),  # po dvou – vejde se do doku
                      (self.drag_probe_action, self.remove_probe_action)):
             buttons = QHBoxLayout()
@@ -457,9 +498,11 @@ class NdtPanel(QWidget):
                            self.delete_action, self.confirm_action, self.verify_action,
                            self.unverify_action, self.probe_action, self.place_action,
                            self.drag_probe_action, self.remove_probe_action,
-                           self.step_back_action, self.step_forward_action, self.scan_action):
+                           self.step_back_action, self.step_forward_action, self.scan_action,
+                           self.transfer_action, self.part_material_action):
                 action.setEnabled(False)
             self.scan_slider.setEnabled(False)
+            self.ut_material.setEnabled(False)
 
     # --- úpravy (každá přes ModelSession = jeden krok Zpět) -------------------------------
 
@@ -716,10 +759,13 @@ class NdtPanel(QWidget):
         else:
             stored = "" if "device" in record else " (výchozí)"
             probe = session.ndt_probe(record["id"])
-            beam_info = f", paprsek {probe.beam_angle:.0f}°" if probe.kind == "angle" else ""
-            self.probe_label.setText(f"{probe.label}{beam_info}{stored}; mezera nejvýš "
+            beam_info = f", paprsek {probe.beam_angle:g}°" if probe.kind == "angle" else ""
+            details = "".join(f"<br><span style='color: #555;'>{escape(line)}</span>"
+                              for line in describe(probe))
+            self.probe_label.setText(f"{escape(probe.label)}{beam_info}{stored}; mezera nejvýš "
                                      f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm, "
-                                     f"odrazy {probe.bounces}.")
+                                     f"odrazy {probe.bounces}.{details}")
+        self._show_material(record)
         if session.ndt_placement_request is not None:
             self.angle.blockSignals(True)
             self.angle.setValue(round(session.ndt_placement_request[2]))
@@ -752,11 +798,92 @@ class NdtPanel(QWidget):
             self.placement_label.setText("Klikni ve 3D na plochu a dej Přiložit sondu sem "
                                          "(nebo zapni Jezdit sondou myší / drž Alt).")
 
+    def _user_library(self) -> UserLibrary:
+        """Moje sondy (``~/SkodaCAD/ndt-knihovna.json``); znovu se čtou jen po změně souboru."""
+        path = user_library_path(self.window.user_dir)
+        try:
+            stamp = (str(path), path.stat().st_mtime_ns)
+        except OSError:
+            stamp = (str(path), None)
+        if self._library_cache is None or self._library_cache[0] != stamp:
+            self._library_cache = (stamp, load_user_library(path))
+        return self._library_cache[1]
+
+    def _show_material(self, record: dict | None) -> None:
+        """Materiál pro UT vybrané UT studie, kontrola úhlu sondy a tlačítka přepočtu."""
+        session = self.window.session
+        ut = record is not None and record.get("method") == "UT"
+        material = session.ndt_ut_material(record["id"]) if ut else None
+        library = self._user_library()
+        self.ut_material.blockSignals(True)
+        self.ut_material.clear()
+        self.ut_material.addItem("nezvolen", "")
+        for key, item in MATERIALS.items():
+            self.ut_material.addItem(f"{item.name} (orientační)", f"builtin:{key}")
+        for name in library.materials:
+            self.ut_material.addItem(f"{name} (Moje sondy)", f"user:{name}")
+        current = ""
+        if material is not None:
+            current = (f"builtin:{material.profile}" if material.profile in MATERIALS
+                       else f"user:{material.name}")
+            if self.ut_material.findData(current) < 0:
+                self.ut_material.addItem(f"{material.name} (ve studii)", current)
+        self.ut_material.setCurrentIndex(self.ut_material.findData(current))
+        self.ut_material.setEnabled(ut and not self.window.ai_busy)
+        self.ut_material.blockSignals(False)
+        self.material_label.setText(
+            "" if material is None else f"{material.text}; zdroj: {material.source}.")
+        check = session.ndt_angle_check(record["id"]) if ut else None
+        warn = check is not None and check.state in ("differs", "unknown", "error")
+        self.angle_check_label.setText(check.text if warn else "")
+        self.angle_check_label.setVisible(warn)
+        part = session.document.material if session.document is not None else ""
+        self.transfer_action.setEnabled(bool(check and check.state == "differs")
+                                        and not self.window.ai_busy)
+        self.part_material_action.setText(f"Použít materiál dílu ({part})")
+        self.part_material_action.setEnabled(
+            ut and material is None and material_key(part) in MATERIALS
+            and not self.window.ai_busy)
+
+    def _ut_material_chosen(self) -> None:
+        study_id = self.current_id()
+        data = self.ut_material.currentData()
+        if study_id is None or data is None or data.startswith("study"):
+            return
+        if data.startswith("builtin:"):
+            chosen = MATERIALS[data.removeprefix("builtin:")]
+        elif data.startswith("user:"):
+            chosen = self._user_library().materials.get(data.removeprefix("user:"))
+            if chosen is None:
+                return
+        else:
+            chosen = None
+        if chosen == self.window.session.ndt_ut_material(study_id):
+            return
+        self._apply("Materiál pro UT nejde nastavit",
+                    lambda: self.window.session.set_ndt_ut_material(study_id, chosen))
+
+    def use_part_material(self) -> None:
+        study_id = self.current_id()
+        if study_id is not None:
+            part = self.window.session.document.material
+            self._apply("Materiál pro UT nejde nastavit",
+                        lambda: self.window.session.set_ndt_ut_material(study_id, part))
+
+    def transfer_angle(self) -> None:
+        study_id = self.current_id()
+        if study_id is not None:
+            self._apply("Úhel nejde přepočítat",
+                        lambda: self.window.session.apply_ndt_angle_transfer(study_id))
+
     def edit_probe(self) -> None:
         study_id = self.current_id()
         if study_id is None:
             return
-        dialog = ProbeDialog(self.window.session.ndt_probe(study_id), self)
+        path = user_library_path(self.window.user_dir)
+        dialog = ProbeDialog(self.window.session.ndt_probe(study_id), self,
+                             library=self._user_library(),
+                             save=lambda name, probe: save_user_probe(path, name, probe))
         if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
@@ -834,78 +961,6 @@ class NdtPanel(QWidget):
             return
         self.window._busy(lambda: self.window.session.turn_ndt_probe(self.angle.value()))
         self.window._refresh_all()
-
-
-class ProbeDialog(QDialog):
-    """Nastavení virtuální sondy studie: druh, rozměry, výstupní bod, úhel paprsku, odrazy,
-    mezera a rezerva."""
-
-    FIELDS = (("diameter", "Průměr [mm]", ("straight",)), ("length", "Délka [mm]", ("angle",)),
-              ("width", "Šířka [mm]", ("angle",)), ("height", "Výška [mm]", None),
-              ("front", "Výstupní bod od čela [mm]", ("angle",)),
-              ("beam_angle", "Úhel paprsku v materiálu β [°]", ("angle",)),
-              ("max_gap", "Dovolená mezera pod sondou [mm]", None),
-              ("reserve", "Manipulační rezerva [mm]", None))
-
-    def __init__(self, probe: Probe, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Sonda NDT studie")
-        form = QFormLayout(self)
-        note = QLabel("Obecná virtuální sonda – ne katalogový výrobek. Mezera 0,5 mm odpovídá "
-                      "EN ISO 17640 (nejde o tvrzení o shodě).")
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #555;")
-        form.addRow(note)
-        self.kind = QComboBox()
-        self.kind.setObjectName("probe_kind")
-        for key, label in KINDS.items():
-            self.kind.addItem(label.capitalize(), key)
-        self.kind.setCurrentIndex(self.kind.findData(probe.kind))
-        form.addRow("Druh", self.kind)
-        self.fields: dict[str, QDoubleSpinBox] = {}
-        self.labels: dict[str, QLabel] = {}
-        for key, label, _kinds in self.FIELDS:
-            field = QDoubleSpinBox()
-            field.setObjectName(f"probe_{key}")
-            field.setDecimals(2)
-            field.setRange(1.0 if key == "beam_angle" else 0.0,
-                           85.0 if key == "beam_angle" else 1000.0)
-            field.setValue(float(getattr(probe, key)))
-            self.fields[key] = field
-            self.labels[key] = QLabel(label)
-            form.addRow(self.labels[key], field)
-        self.bounces = QSpinBox()
-        self.bounces.setObjectName("probe_bounces")
-        self.bounces.setRange(0, 10)
-        self.bounces.setValue(int(probe.bounces))
-        form.addRow("Počet odrazů v dílu", self.bounces)
-        self.kind.currentIndexChanged.connect(
-            lambda _index: self._kind_changed(switched=True))
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
-                                   | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
-        self._kind_changed()
-
-    def _kind_changed(self, switched: bool = False) -> None:
-        kind = self.kind.currentData()
-        for key, _label, kinds in self.FIELDS:
-            shown = kinds is None or kind in kinds
-            self.fields[key].setVisible(shown)
-            self.labels[key].setVisible(shown)
-        if switched:
-            if kind == "straight" and self.bounces.value() == 1:
-                self.bounces.setValue(0)
-            elif kind == "angle" and self.bounces.value() == 0:
-                self.bounces.setValue(1)
-
-    def values(self) -> dict:
-        kind = self.kind.currentData()
-        return {"kind": kind,
-                **{key: self.fields[key].value() for key, _label, kinds in self.FIELDS
-                   if kinds is None or kind in kinds},
-                "bounces": self.bounces.value()}
 
 
 def _sensitivity_html(result: CoverageMap | VolumeCoverageMap) -> str:

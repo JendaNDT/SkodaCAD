@@ -361,7 +361,14 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   cíle a tlačítko **Průřez svarem** – řez kolmo na osu cíle, posuvník v panelu *Řez* jede
   podél svaru. Šedá barva = *nerozlišeno v kresbě* (buňka s více kusy), čísla to nemění.
   Ukázky: *Soubor → Otevřít ukázku → NDT – cílové objemy*.
-* **Knihovna sond a materiálů (etapa 08, zatím příkazová řádka):**
+* **Knihovna sond a materiálů (etapa 08):** v dialogu **Sonda…** vyber *Profil* (obecné
+  profily nebo *Moje sondy*); u každé hodnoty je vidět původ (obecný profil / zadáno ručně),
+  u výstupního bodu a úhlu jde zaškrtnout **změřeno** (na kalibračním bloku). Dál *Úhel platí
+  v materiálu*, jen informativní frekvence a průměr měniče, *Zdroj údajů*, pomůcka **Úhel ze
+  Snellova zákona** (α, c₁, c₂ zadáš sám) a **Uložit do Mých sond…**. V panelu NDT je pod
+  sondou **Materiál pro UT**; když úhel sondy platí v jiném materiálu, oranžové upozornění
+  ukáže přepočtený úhel a tlačítko **Přepočítat úhel** ho použije (jeden krok Zpět).
+  *Použít materiál dílu* zvolí profil podle materiálu dílu. V příkazové řádce:
   `skodacad sonda MODEL --bod X,Y,Z --profil uhlova-standardni-70 --material-ut hliník` vybere
   obecný profil sondy (přímá Ø 10 / Ø 20, úhlová malá / standardní / velká × 45° / 60° / 70°
   v oceli) a materiál pro UT (ocel, nerez, hliník, měď, mosaz – orientační rychlosti zvuku
@@ -371,7 +378,7 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   `~/SkodaCAD/ndt-knihovna.json` (*Moje sondy*, `--profil "název"`, jiný soubor
   `--knihovna`). Výpis, souhrn pokrytí i CSV uvedou profil, původ hodnot (obecný profil /
   změřeno / zadáno ručně / katalog / přepočteno), materiál a zdroj rychlostí. Frekvence
-  a průměr měniče jsou jen informativní. Ovládání v okně přijde v kroku 08B.
+  a průměr měniče jsou jen informativní.
 
 ### Tažení a přechod
 

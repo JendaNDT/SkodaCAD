@@ -1614,6 +1614,120 @@ def test_probe_dialog_stores_probe_in_study(rib_window, slot_errors, monkeypatch
     assert slot_errors == []
 
 
+def test_probe_dialog_profiles_origins_snell_and_my_probes(ndt_window, slot_errors,
+                                                         monkeypatch):
+    from PySide6.QtWidgets import QDialog, QInputDialog
+
+    from skodacad.ndt.library import BUILTIN, PROBES, load_user_library, user_library_path
+
+    w = ndt_window
+    panel = w.ndt_panel
+    panel.select("s1")
+    seen = {}
+
+    def choose_profile(self, dialog):
+        assert dialog.profile.currentData() == ""  # výchozí sonda = vlastní, bez profilu
+        assert dialog.values() == w.session.ndt_probe("s1").to_dict()  # OK beze změny
+        dialog.profile.setCurrentIndex(dialog.profile.findData("builtin:uhlova-velka-70"))
+        assert dialog.fields["length"].value() == 50 and dialog.fields["beam_angle"].value() == 70
+        assert dialog.origins["front"].text() == "obecný profil"
+        assert dialog.angle_material.currentData() == "ocel"
+        dialog.fields["front"].setValue(15)  # ručně přepsaný výstupní bod
+        assert dialog.origins["front"].text() == "zadáno ručně"
+        dialog.measured["beam_angle"].setChecked(True)  # úhel změřený na bloku
+        assert dialog.origins["beam_angle"].text() == ""  # „změřeno“ ukazuje zaškrtávátko
+        dialog.frequency.setValue(4)
+        dialog.source.setText("blok č. 1, 18. 10. 2026")
+        seen["values"] = dialog.values()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", choose_profile)
+    panel.probe_action.trigger()
+    probe = w.session.ndt_probe("s1")
+    assert probe.profile == PROBES["uhlova-velka-70"].name and probe.library == BUILTIN
+    assert (probe.front, probe.origin("front"), probe.origin("beam_angle")) == (
+        15, "entered", "measured")
+    assert probe.frequency_mhz == 4 and probe.angle_material == "ocel"
+    text = panel.probe_label.text()
+    assert "Původ hodnot sondy: " in text and "obecný profil – " in text
+    assert "změřeno – úhel lomu v materiálu" in text and "zadáno ručně – výstupní bod" in text
+
+    def unchanged(self, dialog):
+        assert dialog.profile.currentData() == "builtin:uhlova-velka-70"
+        assert dialog.values() == probe.to_dict()  # nezměněné OK = totožný záznam
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", unchanged)
+    steps = len(w.session._undo)
+    panel.probe_action.trigger()
+    assert len(w.session._undo) == steps  # bez kroku Zpět
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Moje velká 70°", True))
+
+    def snell_and_save(self, dialog):
+        dialog.snell_alpha.setText("abc")
+        dialog.compute_snell()
+        assert "čísly" in dialog.snell_result.text()
+        dialog.snell_alpha.setText("60")
+        dialog.snell_c1.setText("2730")
+        dialog.snell_c2.setText("3240")
+        dialog.compute_snell()
+        assert "totální odraz" in dialog.snell_result.text()
+        dialog.snell_alpha.setText("36,4")
+        dialog.compute_snell()
+        assert dialog.fields["beam_angle"].value() == pytest.approx(44.77, abs=0.01)
+        assert dialog.angle_material.currentData() == ""  # β platí přímo v materiálu dílu
+        assert dialog.origins["beam_angle"].text() == "zadáno ručně"
+        dialog.save_button.click()
+        assert dialog.profile.currentData() == "user:Moje velká 70°"
+        assert "Uloženo do Mých sond" in dialog.error.text()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", snell_and_save)
+    panel.probe_action.trigger()
+    probe = w.session.ndt_probe("s1")
+    assert probe.profile == "Moje velká 70°" and "Snellův zákon: α = 36.4°" in probe.angle_note
+    mine = load_user_library(user_library_path(w.user_dir))
+    assert mine.probes["Moje velká 70°"].beam_angle == pytest.approx(44.77, abs=0.01)
+    assert slot_errors == []
+
+
+def test_panel_ut_material_angle_warning_and_transfer(ndt_window, slot_errors):
+    from skodacad.ndt.library import MATERIALS, PROBES
+
+    w = ndt_window
+    session, panel = w.session, w.ndt_panel
+    panel.select("s1")
+    session.set_ndt_device("s1", PROBES["uhlova-standardni-70"].probe)
+    w._refresh_all()
+    assert panel.ut_material.currentData() == "" and panel.ut_material.isEnabled()
+    assert not panel.angle_check_label.isVisibleTo(panel)  # díl i úhel v oceli
+    assert not panel.transfer_action.isEnabled()
+    session.set_info(material="hliník")
+    w._refresh_all()
+    assert "materiál pro UT není zvolený" in panel.angle_check_label.text()
+    assert panel.part_material_action.isEnabled()
+    assert panel.part_material_action.text() == "Použít materiál dílu (hliník)"
+    panel.part_material_action.trigger()
+    assert session.ndt_ut_material("s1") == MATERIALS["hlinik"]
+    assert panel.ut_material.currentData() == "builtin:hlinik"
+    assert "hliník – podélná 6320 m/s, příčná 3130 m/s" in panel.material_label.text()
+    assert "v něm je asi 65.2°" in panel.angle_check_label.text()
+    assert panel.transfer_action.isEnabled()
+    panel.transfer_action.trigger()
+    assert session.ndt_probe("s1").beam_angle == 65.2
+    assert not panel.angle_check_label.isVisibleTo(panel) and not panel.transfer_action.isEnabled()
+    assert "přepočteno z 70°" in panel.probe_label.text()
+    action(w, "Zpět").trigger()
+    assert session.ndt_probe("s1").beam_angle == 70
+    panel.ut_material.setCurrentIndex(panel.ut_material.findData("builtin:med"))
+    assert session.ndt_ut_material("s1") == MATERIALS["med"]
+    assert "asi 41.0°" in panel.angle_check_label.text()
+    panel.ut_material.setCurrentIndex(panel.ut_material.findData(""))
+    assert session.ndt_ut_material("s1") is None
+    assert slot_errors == []
+
+
 def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
     from skodacad.ndt import DISCLAIMER, UT_DISCLAIMER
 

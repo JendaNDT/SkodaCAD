@@ -232,3 +232,12 @@ nová knihovna Pythonu, změna výpočtu pokrytí ani sloučení do `main`.
   „zadáno ručně“. AI asistent rychlosti ani úhly nevymýšlí (`assistant.RULES`). Ukázka: deska
   20 mm, 70° v oceli – půlkrok 54,95 mm; materiál hliník a `--prepocet-uhlu` → 65,2°, půlkrok
   43,28 mm (= 20 · tg 65,2°).
+- **08B (hotovo):** `gui/probe_dialog.py` – dialog *Sonda…* s nabídkou *Profil* (obecné profily
+  a Moje sondy; profil ze studie, který v knihovně už není, se nabídne jako „ve studii“), původem
+  u každé hodnoty, zaškrtávátky *změřeno* u výstupního bodu a úhlu, *Úhel platí v materiálu*,
+  informativní frekvencí a měničem, *Zdrojem údajů*, pomůckou *Úhel ze Snellova zákona*
+  a *Uložit do Mých sond…*; nezměněné OK vrátí totožný záznam. Panel NDT: *Materiál pro UT*
+  (nezvolen / vestavěné orientační / Moje sondy), řádek s rychlostmi a zdrojem, oranžové
+  upozornění z `ndt_angle_check`, tlačítka **Přepočítat úhel** a **Použít materiál dílu**;
+  vše přes `ModelSession` (jeden krok Zpět), během práce AI zamčené. Snímky skutečného okna
+  (deska z hliníku, 70° v oceli → upozornění 65,2°; po přepočtu užší dráha paprsku).

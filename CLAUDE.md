@@ -228,6 +228,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
+| `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
@@ -599,6 +600,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Bez profilu, původu a materiálu je `describe` prázdné → výstupy starých modelů beze změny.
 - Vestavěná data nesmí tvrdit ověření/certifikaci (hlídá `test_ndt_library`); litina a titan
   chybí záměrně (rozptyl / neshoda zdrojů) – přidat jen se dvěma zdroji.
+- Dialog *Sonda…* určuje původ podle **referenční sondy** (původní ze studie, nebo zvolený
+  profil): stejná hodnota = původ reference, jiná = „zadáno ručně“ (jen když reference
+  původ sleduje – ruční sonda bez profilu zůstane bez `origins`, starý test na přesný záznam).
+  Poznámka k úhlu (`angle_note`) platí jen pro úhel a materiál, ke kterým vznikla.
+- Panel čte Moje sondy znovu jen po změně souboru (`NdtPanel._user_library`, čas změny).
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
