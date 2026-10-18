@@ -1827,7 +1827,7 @@ def test_access_panel_runs_shows_applies_and_draws_maps(rib_window, slot_errors,
     panel.access_faces.setCurrentIndex(panel.access_faces.findData("picked"))
     panel.access_directions.setCurrentIndex(panel.access_directions.findData(90.0))
     panel.access_bounces.setCurrentIndex(panel.access_bounces.findData("0"))
-    panel.access_step.setValue(20)
+    panel.access_step.setValue(40)
     panel.access_angles.setChecked(True)
     panel.refresh_actions()
     assert "Odhad: 1 plocha" in panel.access_estimate.text()

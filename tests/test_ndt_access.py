@@ -76,10 +76,10 @@ def test_coverage_is_identical_with_shared_placements(parts):
     geo = parts["deska"]
     placed = place(geo, Probe.straight(10), (0, 0, 20))
     target = [face_at(geo.part, 0, 0, 0)]
-    plain = compute(geo, placed, faces=target, scan_step=20, target_step=20)
+    plain = compute(geo, placed, faces=target, scan_step=40, target_step=40)
     with reuse_placements(geo):
-        shared = compute(geo, placed, faces=target, scan_step=20, target_step=20)
-        again = compute(geo, placed, faces=target, scan_step=20, target_step=20)
+        shared = compute(geo, placed, faces=target, scan_step=40, target_step=40)
+        again = compute(geo, placed, faces=target, scan_step=40, target_step=40)
     assert plain.states == shared.states == again.states
     assert plain.percent("covered") == again.percent("covered")
 
@@ -152,7 +152,8 @@ def gap_analysis(parts):
     geo = parts["pristup"]
     gap = face_at(geo.part, 0, 0, 15)
     analysis = Analysis(geo, Probe.angle(beam_angle=60), faces=[face_at(geo.part, 0, 0, 0)],
-                        contact_faces=[gap], options=AccessOptions(step_mm=10, bounces=(0,)))
+                        contact_faces=[gap], options=AccessOptions(step_mm=10, bounces=(0,),
+                                                                  direction_step_deg=90))
     return analysis.run()
 
 
@@ -182,7 +183,8 @@ def test_rib_root_with_reserve_honestly_not_found_unless_other_angles(parts, alt
     analysis = Analysis(geo, Probe.angle(reserve=5), points=[(0.0, 0.0, 0.0)],
                         contact_faces=[face_at(geo.part, 50, 0, 20),
                                        face_at(geo.part, -50, 0, 20)],
-                        options=AccessOptions(step_mm=10, bounces=(0,), angles=(
+                        options=AccessOptions(step_mm=20, bounces=(0,), direction_step_deg=90,
+                                              angles=(
                             ALTERNATIVE_ANGLES if alternatives else ())))
     result = analysis.run()
     if not found:
@@ -222,7 +224,7 @@ def weld():
     geo = session._ndt_geometry()
     top = face_at(geo.part, 80, 0, 12)
     analysis = Analysis(geo, Probe.from_dict(PROBE), volume=SLICE, contact_faces=[top],
-                        options=AccessOptions(step_mm=10))
+                        options=AccessOptions(step_mm=10, direction_step_deg=90))
     return geo, top, analysis.run()
 
 
@@ -244,7 +246,8 @@ def test_weld_prefers_full_skip_and_names_the_direction(weld):
 
 def test_weld_variant_recomputed_independently_gives_same_number(weld):
     geo, top, result = weld
-    best = result.variants[0]
+    best = next(r for r in result.variants  # přímý paprsek: přepočet je nejlevnější
+                if r.variant.bounces == 0 and r.variant.direction == "k cíli (180°)")
     face, at = find_face(geo.part, best.best_reference["face"])
     assert face.is_same(top)
     probe = Probe.from_dict({**PROBE, "bounces": best.variant.bounces})
@@ -258,7 +261,7 @@ def test_weld_variant_recomputed_independently_gives_same_number(weld):
 
 # --- ModelSession, pomocný proces a příkazová řádka (09A.2) -----------------------------
 
-QUICK = {"step_mm": 20, "direction_step_deg": 90, "bounces": (0,), "angles": (60,)}
+QUICK = {"step_mm": 40, "direction_step_deg": 90, "bounces": (0,), "angles": (60,)}
 
 
 def rib_session(runner=None):
@@ -280,7 +283,7 @@ def rib():
     return session, contact, result
 
 
-def test_session_analysis_is_a_view_and_keeps_through_variant_use(rib):
+def test_session_analysis_is_a_view_and_keeps_through_variant_use(rib, tmp_path):
     session, _, result = rib
     assert session.ndt_access is result and not session.dirty
     assert result.preparation.assumptions["study_id"] == "s1"
@@ -295,20 +298,18 @@ def test_session_analysis_is_a_view_and_keeps_through_variant_use(rib):
     assert session.ndt_probe("s1").beam_angle == 60 and session.dirty
     assert session.ndt_probe_preview is None and session.ndt_placement.ok
     assert session.ndt_access is result, "úhel studie analýzu nezneplatní"
+    text = session.export_ndt_access(tmp_path / "polohy.csv").read_text(encoding="utf-8-sig")
+    assert UT_DISCLAIMER in text and ORDER_NOTE in text and "vyhodnoceno" in text
     session.undo()
     assert session.ndt_probe("s1").beam_angle == 45
     session.set_ndt_device("s1", Probe.angle(length=30))  # jiné rozměry = jiná přístupnost
     assert session.ndt_access is None
 
 
-def test_session_estimate_and_csv(rib, tmp_path):
+def test_session_estimate(rib):
     session, contact, _ = rib
-    session.clear_ndt_placement()
     estimate = session.ndt_access_estimate("s1", QUICK, contact)
     assert estimate.ok and estimate.faces == 1 and "Odhad" in estimate.text
-    session.compute_ndt_access("s1", QUICK, contact)
-    text = session.export_ndt_access(tmp_path / "polohy.csv").read_text(encoding="utf-8-sig")
-    assert UT_DISCLAIMER in text and ORDER_NOTE in text and "vyhodnoceno" in text
 
 
 def test_session_rejects_non_ut_study(tmp_path):
@@ -368,8 +369,8 @@ def test_background_stop_keeps_finished_variants(runner):
 def test_cli_prints_summary_with_disclaimer(tmp_path, capsys):
     from skodacad.cli import main
 
-    code = main(["polohy", str(EXAMPLES / "ndt" / "zebro.json"), "--studie", "s1",
-                 "--krok", "40", "--smery", "90", "--odrazy", "0",
+    code = main(["polohy", str(EXAMPLES / "ndt" / "deska.json"), "--studie", "s1",
+                 "--krok", "50", "--smery", "90", "--odrazy", "0",
                  "--csv", str(tmp_path / "polohy.csv")])
     out = capsys.readouterr()
     assert code == 0

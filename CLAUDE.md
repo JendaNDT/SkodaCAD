@@ -688,6 +688,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
+- Krok *Testy* má časový limit (Windows 20 min, macOS 25 min – proti zaseknutému dialogu).
+  Etapa 09 původní 10 min na Windows překročila (testy 7:55 → přes 10 min, sestavení
+  selhalo „timed out“). Na Windows běží testy asi 0,8× déle než v cloudu na Linuxu. Nové
+  pomalé testy drž krátké: hrubý krok, málo směrů, jedna kontaktní plocha, sdílené fixtures.
 
 ## Známé pasti (macOS)
 
