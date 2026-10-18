@@ -49,6 +49,7 @@ from skodacad.ndt.coverage import (
     CoverageError,
     CoverageMap,
     _scan_positions,
+    check_convergence,
 )
 from skodacad.ndt.coverage import compute as compute_coverage
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
@@ -1319,7 +1320,8 @@ class ModelSession:
                              tolerance_mm: float | None = None,
                              convergence: bool = False) -> CoverageMap | VolumeCoverageMap:
         """Spočítá mapu bez změny dokumentu a jeho verze (CLI a synchronní testy).
-        ``convergence`` u objemu navíc porovná s hrubším během (dvojnásobné kroky)."""
+        ``convergence`` navíc porovná s hrubším během (dvojnásobné kroky) – u objemu
+        i u ploch."""
         geo, placed, target, angle = self._coverage_inputs()
         key = self._coverage_context()
         self.clear_ndt_coverage()
@@ -1335,9 +1337,10 @@ class ModelSession:
             result = (compute_volume if volume else compute_coverage)(geo, placed, **options)
         except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
             raise DocumentError(f"Pokrytí nejde spočítat: {exc}") from None
-        if volume and convergence:
+        if convergence:
             try:
-                check_volume_convergence(geo, placed, fine=result, **options)
+                (check_volume_convergence if volume else check_convergence)(
+                    geo, placed, fine=result, **options)
             except Exception as exc:  # noqa: BLE001 – jemný výsledek platí, stabilita ne
                 result.assumptions["convergence_text"] = (
                     f"Citlivost na krok se nepodařilo ověřit: {exc}")

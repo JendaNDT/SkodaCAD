@@ -56,17 +56,43 @@ def test_coverage_is_a_view_invalidated_by_part_and_probe_changes(tmp_path):
         session.compute_ndt_coverage()
 
 
+def test_face_coverage_step_comparison_and_failed_comparison(monkeypatch):
+    import skodacad.session as module
+    from skodacad.ndt.coverage import CONVERGENCE_RULE, CoverageError
+
+    session = coverage_session()
+    plain = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10)
+    assert "convergence" not in plain.assumptions
+    result = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10,
+                                          convergence=True)
+    found = result.assumptions["convergence"]
+    assert found["rule"] == CONVERGENCE_RULE and found["coarse_steps_mm"] == (20, 20)
+    assert result.percent("covered") == plain.percent("covered")  # jemný běh se nemění
+    assert result.assumptions["convergence_text"] in result.summary()
+
+    def broken(*args, **kwargs):
+        raise CoverageError("hrubší běh selhal")
+
+    monkeypatch.setattr(module, "check_convergence", broken)
+    result = session.compute_ndt_coverage(mode="line", step_mm=10, length_mm=10,
+                                          convergence=True)
+    assert "convergence" not in result.assumptions
+    assert "Citlivost na krok se nepodařilo ověřit: hrubší běh selhal" in result.summary()
+
+
 def test_coverage_background_result_and_cancel_do_not_change_model():
     runner = BackgroundRebuilder()
     try:
         session = coverage_session(runner)
         before = session.document.to_dict()
         old_part = session.result.part
-        assert session.start_ndt_coverage(mode="line", step_mm=10, length_mm=0) is None
+        assert session.start_ndt_coverage(mode="line", step_mm=10, length_mm=0,
+                                          convergence=True) is None
         assert session.computing and session.ndt_coverage is None
         assert session.wait(40), session.failure
         assert not session.failure
         assert session.ndt_coverage is not None
+        assert "convergence" in session.ndt_coverage.assumptions  # i v pomocném procesu
         assert session.result.part is old_part
         session.start_ndt_coverage(step_mm=0.5)
         assert session.cancel()

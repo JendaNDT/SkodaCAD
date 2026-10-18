@@ -309,15 +309,11 @@ def _coverage(args: argparse.Namespace) -> int:
                                part_fingerprint=part_fingerprint(document),
                                evaluated_target=(target["kind"] if target else
                                                  "points" if points else "faces"))
-    convergence = None
-    if args.konvergence:
-        convergence = (check_volume_convergence(geo, placed, fine=covered, **options)
-                       if target is not None
-                       else check_convergence(geo, placed, fine=covered, **options))
+    if args.konvergence:  # text porovnání je pak i v souhrnu
+        (check_volume_convergence if target is not None else check_convergence)(
+            geo, placed, fine=covered, **options)
     print("\n".join(covered.summary()))
     print("Předpoklady:", covered.assumptions)
-    if convergence is not None and target is None:
-        print(convergence.text)
     if args.csv:
         try:
             print("CSV:", covered.write_csv(args.csv))

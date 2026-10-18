@@ -101,6 +101,8 @@ class CoverageMap:
                   f"rozevření {self.assumptions['spread_deg']:g}°.",
                   *([self.assumptions["tolerance_warning"]]
                     if self.assumptions.get("tolerance_warning") else []),
+                  *([self.assumptions["convergence_text"]]
+                    if self.assumptions.get("convergence_text") else []),
                   f"Výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}."]
         lines.extend(dict.fromkeys(r for r in self.reasons if r))
         return lines
