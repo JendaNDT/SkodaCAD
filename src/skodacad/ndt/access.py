@@ -81,11 +81,12 @@ CONTACT_STATES = {"all": "sonda se vejde ve všech směrech mířících k cíli
 CONTACT_COLORS = {"all": (0.15, 0.70, 0.25), "some": (0.95, 0.55, 0.10),
                   "none": (0.85, 0.20, 0.15), "away": (0.60, 0.60, 0.60)}
 _CURVED = {"CYLINDER": "válec", "CONE": "kužel", "SPHERE": "koule", "TORUS": "anuloid"}
-# Odhad času (změřeno 18. 10. 2026 v cloudu na výřezu V svaru): zamíření a paprsky 1. a 2.
-# kola i s přiložením tam, odkud paprsek míří k cíli, ~6 ms na polohu a směr; jedna
-# varianta 3. kola ~7 s (přiložení 30 ms, paprsek 0,6 ms).
+# Odhad času (změřeno 18. 10. 2026 v cloudu): zamíření a paprsky 1. a 2. kola i s přiložením
+# tam, odkud paprsek míří k cíli, ~6 ms na polohu a směr; jedna varianta 3. kola ~7–11 s
+# (výřez V svaru, dno desky s žebry) až ~40 s (celý svar 100 mm) – hlavně ověřování zásahů
+# skutečným přiložením v mezipolohách. Přesnější čas ukáže průběh po první variantě.
 _AIM_SECONDS = (0.004, 0.01)
-_VARIANT_SECONDS = (4.0, 12.0)
+_VARIANT_SECONDS = (5.0, 45.0)
 
 Progress = Callable[[str, int, int], None]
 
@@ -155,6 +156,11 @@ class Variant:
     def label(self) -> str:
         beam = "přímá sonda" if self.beta == 0 else f"β {_num(self.beta)}°"
         return f"{self.face}; směr {self.direction}; {beam}; odrazy {self.bounces}"
+
+    @property
+    def short_face(self) -> str:
+        """Krátký popis plochy do úzké tabulky: „+Z (80; 0; 12)“."""
+        return self.face.removeprefix("rovina ").replace(", střed ", " ")
 
 
 @dataclass(frozen=True)

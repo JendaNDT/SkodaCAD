@@ -44,6 +44,7 @@ from skodacad.materials import density_g_cm3, material_key
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
 from skodacad.ndt.access import (
+    CONTACT_COLORS,
     AccessError,
     AccessEstimate,
     AccessOptions,
@@ -1530,7 +1531,11 @@ class ModelSession:
 
     def visible_ndt_coverage(self) -> tuple[list, list, list]:
         """Barevná síť mapy pro okno; u objemu povrch cíle (při řezu rozříznutého)."""
-        result = self.ndt_coverage
+        return self.coverage_mesh(self.ndt_coverage)
+
+    def coverage_mesh(self, result: CoverageMap | VolumeCoverageMap | None
+                      ) -> tuple[list, list, list]:
+        """Síť libovolné mapy pokrytí (i sjednocení kombinace návrhu poloh) pro okno."""
         if result is None:
             return [], [], []
         if isinstance(result, VolumeCoverageMap):
@@ -1684,7 +1689,15 @@ class ModelSession:
         if self._access_pending is None:
             return ""
         stage, done, total = self._access_pending["progress"]
-        return f"{stage} {done + 1 if done < total else done} z {total}" if total else stage
+        text = f"{stage} {done + 1 if done < total else done} z {total}" if total else stage
+        results = [r for r in self._access_pending["results"] if isinstance(r, VariantResult)]
+        prepared = self._access_pending["preparation"]
+        if results and prepared is not None:
+            left = len(prepared.candidates) - len(self._access_pending["results"])
+            seconds = left * sum(r.seconds for r in results) / len(results)
+            text += (f", zbývá asi {max(1, round(seconds / 60))} min" if seconds >= 90
+                     else f", zbývá asi {max(1, round(seconds))} s")
+        return text
 
     @property
     def ndt_access(self) -> AccessResult | None:
@@ -1759,6 +1772,15 @@ class ModelSession:
         self._line_scan = None
         self.ndt_scan_index = 0
         return result
+
+    def ndt_access_points(self) -> tuple[list, list, list[str]]:
+        """Mapa kontaktních ploch návrhu poloh: body, barvy a stavy (all / some / none / away)."""
+        result = self.ndt_access
+        if result is None:
+            return [], [], []
+        contact = result.preparation.contact
+        return ([c.point for c in contact], [CONTACT_COLORS[c.state] for c in contact],
+                [c.state for c in contact])
 
     def export_ndt_access(self, path: str | Path) -> Path:
         result = self.ndt_access

@@ -164,6 +164,7 @@ def test_gap_across_is_rejected_for_collision_and_along_is_found(gap_analysis):
     assert {r.variant.direction for r in gap_analysis.variants} <= {"90°", "270°"}
     best = gap_analysis.variants[0]
     assert best.covered > 0 and best.best is not None
+    assert best.variant.short_face == "+Z (0; 0; 15)"
     # 30 − 20 = 10 mm napříč: v ose mezery volno 5 mm, u x = ±5 sonda stěnu žebra dotýká
     assert best.clearance == pytest.approx(0, abs=1e-6)
     contact = Counter(c.state for c in gap_analysis.preparation.contact)
@@ -333,16 +334,18 @@ def test_background_analysis_streams_progress_and_matches_direct(rib, runner):
     _, _, direct = rib
     session, contact = rib_session(runner)
     assert session.start_ndt_access("s1", QUICK, contact) is None and session.access_pending
-    seen = set()
+    seen, remaining = set(), []
     end = time.monotonic() + 300
     while session.computing and time.monotonic() < end:
         session.poll()
         seen.add(session.ndt_access_progress.split(":")[0])
+        remaining.append(session.ndt_access_progress)
         time.sleep(0.05)
     assert not session.computing and not session.failure
     result = session.ndt_access
     assert result is not None and result.complete
     assert "1. a 2. kolo" in seen and "3. kolo" in seen
+    assert any("zbývá asi" in text for text in remaining)
     assert [r.covered for r in result.variants] == [r.covered for r in direct.variants]
 
 

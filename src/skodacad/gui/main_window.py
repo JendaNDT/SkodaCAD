@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
         self._shown_map: ThicknessMap | None = None  # mapa tloušťky právě v prohlížeči
         self._shown_coverage = None
         self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
+        self._shown_points: Any = None  # mapa kontaktních ploch návrhu poloh v prohlížeči
         self._shown_target: Any = None  # náhled cílového objemu NDT právě v prohlížeči
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -505,6 +506,18 @@ class MainWindow(QMainWindow):
 
     def _refresh_coverage(self) -> None:
         found = self.session.ndt_coverage
+        access = self.session.ndt_access
+        mode = self.ndt_panel.access_map_mode()
+        if found is None and access is not None and mode == "target":
+            found = access.union  # návrh poloh: co pokryje kombinace (mapa pokrytí má přednost)
+        points = (access, mode) if access is not None and mode == "contact" else None
+        if points != self._shown_points:
+            self._shown_points = points
+            if points is None:
+                self.viewer.hide_points()
+            else:
+                shown, colors, _states = self.session.ndt_access_points()
+                self.viewer.show_points(shown, colors)
         if found is self._shown_coverage:
             return
         if found is None:
@@ -513,11 +526,11 @@ class MainWindow(QMainWindow):
                 self._refresh_thickness_map()
         elif isinstance(found, VolumeCoverageMap):  # objem uvnitř dílu: navrch, řez šedě
             section = self.session.section
-            self.viewer.show_coverage_map(*self.session.visible_ndt_coverage(),
+            self.viewer.show_coverage_map(*self.session.coverage_mesh(found),
                                           fill=section.faces if section is not None else None,
                                           topmost=True)
         else:
-            self.viewer.show_coverage_map(*self.session.visible_ndt_coverage())
+            self.viewer.show_coverage_map(*self.session.coverage_mesh(found))
         self._shown_coverage = found
         self._refresh_target()
 
@@ -525,7 +538,7 @@ class MainWindow(QMainWindow):
         """Průhledný náhled cílového objemu (svaru) studie vybrané v panelu NDT; mapa pokrytí
         ho nahradí. Session tvar pamatuje, takže se kreslí znovu jen po změně."""
         study_id = self.ndt_panel.current_id()
-        preview = (None if self.session.ndt_coverage is not None
+        preview = (None if self._shown_coverage is not None
                    else self.session.ndt_target_preview(study_id))
         if preview is self._shown_target:
             return
@@ -696,6 +709,10 @@ class MainWindow(QMainWindow):
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.coverage_action, self.ndt_panel.clear_coverage_action,
                      self.ndt_panel.export_coverage_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.access_action, self.ndt_panel.access_show_action,
+                     self.ndt_panel.access_apply_action, self.ndt_panel.access_export_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -1025,6 +1042,7 @@ class MainWindow(QMainWindow):
             self._shown_key = (result, section)
             self._shown_map = None  # prohlížeč mapu s dílem smazal
             self._shown_coverage = None
+            self._shown_points = None  # … i body mapy kontaktních ploch
             self._shown_probe = None  # … i sondu
             self._shown_target = None  # … i náhled cílového objemu
         self._refresh_actions()
@@ -1053,6 +1071,11 @@ class MainWindow(QMainWindow):
     def _poll(self) -> None:
         """Časovač: převezme hotový přepočet z pozadí, nebo obnoví ukazatel průběhu."""
         if self.session.poll():
+            if self.session.computing:  # průběžná zpráva návrhu poloh – výpočet běží dál
+                self.ndt_panel._show_access()
+                self.ndt_panel.refresh_actions()
+                self._refresh_progress()
+                return
             self._pending_shown = False
             self._refresh_all()
             if self.session.failure:
@@ -1078,14 +1101,19 @@ class MainWindow(QMainWindow):
         self.stop_action.setEnabled(computing)
         if self.session.coverage_pending:
             self.ndt_panel._show_coverage()  # uplynulý čas výpočtu pokrytí v panelu
+        if self.session.access_pending:
+            self.ndt_panel._show_access()  # průběh návrhu poloh v panelu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
+        access = self.session.access_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage:  # zastavený výpočet pokrytí – model se neměnil
+            if coverage or access:  # zastavený výpočet pokrytí / návrhu – model se neměnil
                 self._refresh_all()
-                self.statusBar().showMessage("Výpočet mapy pokrytí zastaven.", 10000)
+                self.statusBar().showMessage(
+                    "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
+                    else "Výpočet mapy pokrytí zastaven.", 10000)
                 return
             if self.session.map_visible and self.session.thickness_map is None:
                 self.session.map_visible = False  # nedopočítaná mapa se vypne

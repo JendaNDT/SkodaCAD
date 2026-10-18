@@ -390,7 +390,15 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   a přístupnost, nikoli zjistitelnost vad; „nenalezeno“ neznamená „nemožné“. Zakřivené plochy
   se jako kontaktní nezkoušejí. Výsledek je jen pohled (model se nemění); *Použít variantu*
   uloží úhel a odrazy do studie (jeden krok Zpět) a přiloží sondu do nejlepší polohy –
-  přepočet stejným krokem dá totéž číslo. V příkazové řádce:
+  přepočet stejným krokem dá totéž číslo. V okně je to skupina **Návrh poloh sondy** v panelu
+  NDT: kontaktní plochy (všechny rovinné / vybrané ve 3D), směry, *zkusit i 45°, 60°, 70°*,
+  odrazy a krok analýzy, odhad času, **Navrhnout polohy** (běží na pozadí s průběhem,
+  **Zastavit** nechá hotové varianty), tabulka 10 nejlepších variant, kombinace, vyřazené
+  a **Mapa ve 3D**: *cíl* (sjednocení kombinace – červená = nepokryto žádnou vyzkoušenou
+  variantou; mapa ze *Spočítat pokrytí* má přednost) nebo *kontaktní plochy* (body mřížky:
+  zelená = sonda se vejde ve všech směrech mířících k cíli, oranžová = jen v některých,
+  červená = paprsek by k cíli mířil, ale sonda se nevejde, šedá = odsud k cíli nemíří).
+  **Ukázat variantu** přiloží sondu s úhlem varianty jen jako pohled. V příkazové řádce:
   `skodacad polohy MODEL --studie s1 [--krok 10] [--smery 45] [--uhly 45,60,70]
   [--odrazy 0,1] [--csv polohy.csv]` (odhad a průběh na chybový výstup, souhrn a CSV
   s povinným upozorněním). Návrh: [Etapa 09](docs/ndt/17-navrh-etapa-09.md).

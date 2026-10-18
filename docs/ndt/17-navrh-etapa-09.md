@@ -297,4 +297,21 @@ ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
   postavená **na dně samém** (55,86 %). Geometrický model Etapy 06 počítá jako pokrytou
   i plochu pod výstupním bodem sondy (rameno paprsku začíná na povrchu). Výpočet pokrytí
   jsem neměnil. Jestli má tahle místa vynechat, je otázka na samostatné rozhodnutí.
+- **09B (hotovo):** skupina **Návrh poloh sondy** v panelu NDT (`gui/ndt_panel.py`).
+  - Volby: kontaktní plochy (všechny rovinné / vybrané ve 3D), směry, *zkusit i 45°, 60°,
+    70°*, odrazy a krok analýzy. Pod nimi odhad a **Navrhnout polohy** / **Zastavit**
+    (průběh „1. a 2. kolo … / 3. kolo: pokrytí variant 7 z 24“).
+  - Tabulka 10 nejlepších variant s krátkým popisem plochy; celý popis je v bublině.
+    Pod ní kombinace a počty vyřazených podle důvodu (podrobně v CSV).
+  - **Ukázat variantu** (i dvojklikem) a **Použít variantu**, export CSV.
+  - **Mapa ve 3D**: *cíl* (sjednocení kombinace, mapa ze *Spočítat pokrytí* má přednost),
+    *kontaktní plochy* (`viewer.show_points`, kuličky ve čtyřech barvách s legendou) nebo
+    *nic*.
+  - Akce jsou i v nabídce NDT a během práce AI jsou zamčené. Testy okna a snímky pod Xvfb.
+  - Celý 100mm V svar, plochy horní a spodní vpravo, krok 10 mm, směry po 90°: 12 variant
+    za 502 s. #1 zespodu 70° s odrazem 79,93 %, shora bez odrazu 11,79 % (srovnej
+    referenci 12,2 % při kroku 5 mm). Obtížný přístup, cíl dno, plochy mezera a vnější
+    vpravo, směry po 90°, bez odrazů: 6 variant za 66 s.
+  - Odhad počítá s 5–45 s na variantu. Po první spočítané variantě průběh ukáže
+    **zbývající čas** podle skutečně naměřených variant.
 

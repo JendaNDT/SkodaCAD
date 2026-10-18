@@ -237,12 +237,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D) |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
-| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění |
+| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
 | `.github/workflows/` | `windows.yml` (vydání „nejnovejsi“) a samostatný `macos.yml` (Apple Silicon, předběžné vydání „nejnovejsi-mac“) |
 
@@ -642,6 +642,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Pomocný proces posílá `progress` / `prepared` / `variant` průběžně; `session.poll` je
   vybírá ve smyčce. *Zastavit* (`cancel`) složí z hotových variant neúplný výsledek
   (`complete=False`), nic nezahodí.
+- Okno: průběžná zpráva (`session.poll()` vrátí True, ale `computing` trvá) obnoví jen panel
+  návrhu a ukazatel průběhu, ne celé okno. Mapa ve 3D: mapa ze *Spočítat pokrytí* má přednost
+  před sjednocením kombinace (`MainWindow._refresh_coverage`); body kontaktních ploch kreslí
+  `viewer.show_points` (kuličky `Aspect_TOM_BALL` po barvách, vrstva `Topmost`, self-test
+  „points“), prohlížeč je maže s dílem → `_shown_points = None`.
 - Plocha, na které sonda stojí, je v geometrickém modelu Etapy 06 „pokrytá“ v místech výstupu
   paprsku (rameno začíná na povrchu). Když je cílem kontaktní plocha sama, analýza ji proto
   řadí vysoko – je to vlastnost stávajícího výpočtu pokrytí, ne analýzy.
@@ -752,7 +757,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [ ] 09 návrh poloh UT sondy (schváleno 18. 10. 2026): [x] 09A.1 jádro `ndt/access.py`,
-  [x] 09A.2 ModelSession, pomocný proces, CLI a CSV, [ ] 09B okno.
+  [x] 09A.2 ModelSession, pomocný proces, CLI a CSV, [x] 09B okno (čeká na PR a ruční zkoušku).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

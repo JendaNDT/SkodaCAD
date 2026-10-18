@@ -31,6 +31,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QSlider,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +42,15 @@ from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.target_dialog import TargetDialog
 from skodacad.materials import material_key
 from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
+from skodacad.ndt.access import (
+    ALTERNATIVE_ANGLES,
+    CONTACT_COLORS,
+    CONTACT_STATES,
+    KINDS,
+    NOT_FOUND_NOTE,
+    ORDER_NOTE,
+    AccessEstimate,
+)
 from skodacad.ndt.coverage import PERCENT_NOTE, STATES, CoverageMap
 from skodacad.ndt.library import (
     MATERIALS,
@@ -121,6 +132,20 @@ class NdtPanel(QWidget):
         self.coverage_action = action("Spočítat pokrytí", self.compute_coverage)
         self.clear_coverage_action = action("Skrýt mapu", self.clear_coverage)
         self.export_coverage_action = action("Export CSV…", self.export_coverage)
+        self.access_action = action("Navrhnout polohy", self.start_access)
+        self.access_action.setToolTip(
+            "Program sám vyzkouší rovinné plochy, směry, úhly a odrazy a seřadí varianty podle "
+            "geometrického pokrytí (jen pohled, model se nemění)")
+        self.access_stop_action = action("Zastavit", self.stop_access)
+        self.access_stop_action.setToolTip("Zastaví návrh poloh; hotové varianty zůstanou")
+        self.access_show_action = action("Ukázat variantu", self.show_variant)
+        self.access_show_action.setToolTip(
+            "Přiloží sondu do nejlepší polohy vybrané varianty – jen pohled, model se nemění")
+        self.access_apply_action = action("Použít variantu", self.apply_variant)
+        self.access_apply_action.setToolTip(
+            "Uloží úhel a odrazy varianty do studie (jeden krok Zpět) a přiloží sondu; pak "
+            "Spočítat pokrytí stejným krokem dá totéž číslo")
+        self.access_export_action = action("Export CSV…", self.export_access)
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -349,6 +374,7 @@ class NdtPanel(QWidget):
         self.coverage_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         coverage_layout.addWidget(self.coverage_label)
         layout.addWidget(self.coverage_box)
+        self._build_access(layout)
         self.details = QLabel()
         self.details.setObjectName("ndt_details")
         self.details.setWordWrap(True)
@@ -356,6 +382,113 @@ class NdtPanel(QWidget):
         layout.addWidget(self.details)
         layout.addStretch()
         self.refresh()
+
+    def _build_access(self, layout: QVBoxLayout) -> None:
+        """Skupina Návrh poloh sondy (etapa 09): volby, odhad, průběh, tabulka, kombinace."""
+        window = self.window
+        self.access_box = QGroupBox("Návrh poloh sondy")
+        self.access_box.setObjectName("ndt_access")
+        box = QVBoxLayout(self.access_box)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.access_faces = QComboBox()
+        self.access_faces.setObjectName("ndt_access_faces")
+        self.access_faces.addItem("všechny rovinné plochy", "all")
+        self.access_faces.addItem("plochy vybrané ve 3D", "picked")
+        form.addRow("Kontaktní plochy:", self.access_faces)
+        self.access_directions = QComboBox()
+        self.access_directions.setObjectName("ndt_access_directions")
+        for step in (45.0, 30.0, 90.0):
+            self.access_directions.addItem(f"po {step:g}° + k cíli a kolmo na svar", step)
+        form.addRow("Směry paprsku:", self.access_directions)
+        self.access_angles = QCheckBox("zkusit i 45°, 60°, 70° (stejné rozměry sondy)")
+        self.access_angles.setObjectName("ndt_access_angles")
+        form.addRow(self.access_angles)
+        self.access_bounces = QComboBox()
+        self.access_bounces.setObjectName("ndt_access_bounces")
+        for label, data in (("0 a 1 (půlkrok i celý krok)", "0,1"), ("jen 0", "0"),
+                            ("0 až 2", "0,1,2")):
+            self.access_bounces.addItem(label, data)
+        form.addRow("Odrazy:", self.access_bounces)
+        self.access_step = QDoubleSpinBox()
+        self.access_step.setObjectName("ndt_access_step")
+        self.access_step.setRange(2, 100)
+        self.access_step.setDecimals(1)
+        self.access_step.setValue(10.0)
+        self.access_step.setToolTip("Krok mřížky poloh sondy i pojezdu pro hrubé pokrytí "
+                                    "(u ploch i krok cíle). Jemnější = pomalejší.")
+        form.addRow("Krok analýzy [mm]:", self.access_step)
+        box.addLayout(form)
+        self.access_estimate = QLabel()
+        self.access_estimate.setObjectName("ndt_access_estimate")
+        self.access_estimate.setWordWrap(True)
+        box.addWidget(self.access_estimate)
+        self._access_estimate_cache: tuple[tuple, AccessEstimate] | None = None
+        row = QHBoxLayout()
+        for item in (self.access_action, self.access_stop_action, self.access_export_action):
+            row.addWidget(window._tool_button(item))
+        row.addStretch()
+        box.addLayout(row)
+        self.access_progress = QLabel()
+        self.access_progress.setObjectName("ndt_access_progress")
+        self.access_progress.setWordWrap(True)
+        box.addWidget(self.access_progress)
+        self.access_table = QTableWidget(0, 8)
+        self.access_table.setObjectName("ndt_access_table")
+        self.access_table.setHorizontalHeaderLabels(
+            ["#", "Plocha", "Směr", "β", "Odrazy", "Pokryto", "Platné polohy", "Poznámka"])
+        self.access_table.verticalHeader().setVisible(False)
+        self.access_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.access_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.access_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.access_table.setMinimumHeight(120)
+        self.access_table.setMaximumHeight(240)
+        self.access_table.itemSelectionChanged.connect(self.refresh_actions)
+        self.access_table.itemDoubleClicked.connect(lambda _item: self.show_variant())
+        box.addWidget(self.access_table)
+        self.access_combination = QLabel()
+        self.access_combination.setObjectName("ndt_access_combination")
+        self.access_combination.setWordWrap(True)
+        self.access_combination.setTextFormat(Qt.TextFormat.RichText)
+        self.access_combination.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.access_combination)
+        row = QHBoxLayout()
+        for item in (self.access_show_action, self.access_apply_action):
+            row.addWidget(window._tool_button(item))
+        row.addStretch()
+        box.addLayout(row)
+        map_row = QHBoxLayout()
+        map_row.addWidget(QLabel("Mapa ve 3D:"))
+        self.access_map = QComboBox()
+        self.access_map.setObjectName("ndt_access_map")
+        self.access_map.addItem("cíl – co pokryje kombinace", "target")
+        self.access_map.addItem("kontaktní plochy – kde se sonda vejde", "contact")
+        self.access_map.addItem("nic", "none")
+        self.access_map.currentIndexChanged.connect(lambda _index: self._access_map_changed())
+        map_row.addWidget(self.access_map)
+        map_row.addStretch()
+        box.addLayout(map_row)
+        self.access_legend = QLabel()
+        self.access_legend.setObjectName("ndt_access_legend")
+        self.access_legend.setWordWrap(True)
+        box.addWidget(self.access_legend)
+        self.access_rejected = QLabel()
+        self.access_rejected.setObjectName("ndt_access_rejected")
+        self.access_rejected.setWordWrap(True)
+        self.access_rejected.setStyleSheet("color: #555;")
+        self.access_rejected.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.access_rejected)
+        note = QLabel(f"{ORDER_NOTE} {NOT_FOUND_NOTE}")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #8a5a00; font-style: italic;")
+        box.addWidget(note)
+        for signal in (self.access_faces.currentIndexChanged,
+                       self.access_directions.currentIndexChanged, self.access_angles.toggled,
+                       self.access_bounces.currentIndexChanged, self.access_step.valueChanged):
+            signal.connect(lambda *_args: self.refresh_actions())
+        layout.addWidget(self.access_box)
 
     # --- zobrazení ---------------------------------------------------------------------
 
@@ -408,6 +541,7 @@ class NdtPanel(QWidget):
         self._show_details()
         self._show_probe()
         self._show_coverage()
+        self._show_access()
         self.refresh_actions()
 
     def _row_changed(self) -> None:
@@ -415,6 +549,7 @@ class NdtPanel(QWidget):
         self._show_details()
         self._show_probe()
         self._show_coverage()
+        self._show_access()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
 
@@ -491,6 +626,8 @@ class NdtPanel(QWidget):
         self.clear_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.export_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.coverage_box.setVisible(bool(ut or has_coverage or session.coverage_pending))
+        self._refresh_access_actions(ut and has_part and result is not None
+                                     and result.state == "ok")
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,
@@ -499,7 +636,9 @@ class NdtPanel(QWidget):
                            self.unverify_action, self.probe_action, self.place_action,
                            self.drag_probe_action, self.remove_probe_action,
                            self.step_back_action, self.step_forward_action, self.scan_action,
-                           self.transfer_action, self.part_material_action):
+                           self.transfer_action, self.part_material_action,
+                           self.access_action, self.access_show_action,
+                           self.access_apply_action, self.access_export_action):
                 action.setEnabled(False)
             self.scan_slider.setEnabled(False)
             self.ut_material.setEnabled(False)
@@ -748,6 +887,181 @@ class NdtPanel(QWidget):
         if path:
             self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_coverage(path))
 
+    # --- návrh poloh sondy (etapa 09) -------------------------------------------------
+
+    def _access_options(self) -> dict:
+        return {"step_mm": self.access_step.value(),
+                "direction_step_deg": self.access_directions.currentData(),
+                "angles": ALTERNATIVE_ANGLES if self.access_angles.isChecked() else (),
+                "bounces": tuple(int(v) for v in self.access_bounces.currentData().split(","))}
+
+    def _access_contact(self) -> list | None:
+        if self.access_faces.currentData() != "picked":
+            return None
+        return self.window.session.ndt_access_contact(self.window._picked)
+
+    def _access_estimate(self) -> AccessEstimate:
+        """Odhad analýzy (bez přiložení a paprsků); pamatuje se pro stejné zadání."""
+        session = self.window.session
+        options = self._access_options()
+        picked = (tuple(id(s) for s in self.window._picked)
+                  if self.access_faces.currentData() == "picked" else ())
+        key = (id(session.result), self.current_id(), repr(self._record(self.current_id())),
+               repr(sorted(options.items())), picked)
+        if self._access_estimate_cache is None or self._access_estimate_cache[0] != key:
+            try:
+                found = session.ndt_access_estimate(self.current_id(), options,
+                                                    self._access_contact())
+            except DocumentError as exc:
+                found = AccessEstimate(0, 0, 0, (0.0, 0.0), False, str(exc))
+            self._access_estimate_cache = (key, found)
+        return self._access_estimate_cache[1]
+
+    def _selected_rank(self) -> int | None:
+        rows = self.access_table.selectionModel().selectedRows()
+        return rows[0].row() if rows else None
+
+    def _refresh_access_actions(self, possible: bool) -> None:
+        session = self.window.session
+        ai = self.window.ai_busy
+        pending = session.access_pending
+        estimate = (self._access_estimate() if possible and not pending
+                    and not session.computing else None)
+        self.access_action.setEnabled(bool(estimate is not None and estimate.ok and not ai))
+        self.access_stop_action.setEnabled(pending)
+        access = session.ndt_access
+        rank = self._selected_rank()
+        chosen = (access is not None and rank is not None and rank < len(access.variants)
+                  and access.variants[rank].best_reference is not None)
+        ready = session.document is not None and not session.computing
+        self.access_show_action.setEnabled(ready and chosen and not ai)
+        self.access_apply_action.setEnabled(ready and chosen and not ai)
+        self.access_export_action.setEnabled(access is not None and not ai)
+        for widget in (self.access_faces, self.access_directions, self.access_angles,
+                       self.access_bounces, self.access_step):
+            widget.setEnabled(not pending and not ai)
+        ut = (self._record(self.current_id()) or {}).get("method") == "UT"
+        self.access_box.setVisible(bool(ut or access is not None or pending))
+        if estimate is not None:
+            self.access_estimate.setStyleSheet("color: #555;" if estimate.ok
+                                               else "color: #b9770e;")
+            self.access_estimate.setText(estimate.text)
+        elif not pending:
+            self.access_estimate.setStyleSheet("color: #555;")
+            self.access_estimate.setText("Návrh poloh potřebuje platnou UT studii s "
+                                         "kontrolovanou oblastí (plochy nebo cílový objem).")
+
+    def _show_access(self) -> None:
+        """Průběh, tabulka nejlepších variant, kombinace a vyřazené varianty."""
+        session = self.window.session
+        result = session.ndt_access
+        if session.access_pending:
+            self.access_progress.setText(
+                f"⏳ {escape(session.ndt_access_progress)} · {session.computing_seconds:.0f} s "
+                "– Zastavit nechá hotové varianty.")
+        else:
+            self.access_progress.setText("")
+        selected = self._selected_rank()
+        self.access_table.blockSignals(True)
+        self.access_table.setRowCount(0)
+        variants = result.variants[:10] if result is not None else []
+        for rank, found in enumerate(variants):
+            v = found.variant
+            covered = f"{found.covered:.2f} %".replace(".", ",")
+            if found.uncertain > 0.005:
+                covered += f" (+{found.uncertain:.2f} % nejisté)".replace(".", ",")
+            cells = [f"#{rank + 1}", v.short_face, v.direction,
+                     "přímá" if v.beta == 0 else f"{v.beta:g}°", str(v.bounces), covered,
+                     f"{found.coverage.valid_positions}/{found.coverage.positions}", found.note]
+            self.access_table.insertRow(rank)
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setToolTip(v.label if column == 1 else text)
+                self.access_table.setItem(rank, column, item)
+        self.access_table.resizeColumnsToContents()
+        if selected is not None and selected < len(variants):
+            self.access_table.selectRow(selected)
+        self.access_table.blockSignals(False)
+        self.access_table.setVisible(bool(variants))
+        if result is None:
+            self.access_combination.setText("")
+            self.access_rejected.setText("")
+        else:
+            lines = []
+            if not result.complete:
+                lines.append(f"<b>Neúplná analýza</b> – zastavena po {len(result.variants)} "
+                             f"z {result.expected} variant.")
+            if result.combination:
+                lines.append(f"<b>{escape(result.combination_text())}</b>")
+            elif result.variants:
+                lines.append("<b>Žádná vyzkoušená varianta z cíle nic geometricky "
+                             "nepokryje.</b>")
+            else:
+                lines.append("<b>Žádnou variantu, ze které by sonda šla přiložit a paprsek "
+                             "mířil k cíli, jsem nenašel.</b>")
+            if len(result.variants) > 10:
+                lines.append(f"V tabulce je 10 nejlepších z {len(result.variants)} – "
+                             "všechny v CSV.")
+            study = result.preparation.assumptions.get("study_id")
+            if study != self.current_id():
+                lines.append(f"Návrh patří ke studii {escape(str(study))}.")
+            self.access_combination.setText("<br>".join(lines))
+            counts: dict[str, int] = {}
+            for rejected in result.rejected:
+                counts[rejected.kind] = counts.get(rejected.kind, 0) + 1
+            self.access_rejected.setText(
+                ("Vyřazeno: " + ", ".join(f"{KINDS[k]} {n}" for k, n in counts.items())
+                 + ". Důvody u každé plochy jsou v CSV.") if counts else "")
+        mode = self.access_map.currentData()
+        if mode == "contact":
+            self.access_legend.setText(" · ".join(
+                f'<span style="color:{_hex(CONTACT_COLORS[state])}">■</span> {label}'
+                for state, label in CONTACT_STATES.items()))
+        elif mode == "target":
+            self.access_legend.setText("Zelená: pokryto kombinací · červená: nepokryto žádnou "
+                                       "vyzkoušenou variantou · žlutá: nejisté. (Mapa "
+                                       "pokrytí ze Spočítat pokrytí má přednost.)")
+        else:
+            self.access_legend.setText("")
+
+    def access_map_mode(self) -> str:
+        return self.access_map.currentData()
+
+    def _access_map_changed(self) -> None:
+        self._show_access()
+        self.window._refresh_probe()  # mapa ve 3D
+
+    def start_access(self) -> None:
+        study_id = self.current_id()
+        options = self._access_options()
+
+        def work() -> object:
+            return self.window.session.start_ndt_access(study_id, options,
+                                                        self._access_contact())
+
+        self._apply("Návrh poloh nejde spustit", work)
+
+    def stop_access(self) -> None:
+        self.window.stop_rebuild()
+
+    def show_variant(self) -> None:
+        rank = self._selected_rank()
+        if rank is not None:
+            self._apply("Variantu nejde ukázat",
+                        lambda: self.window.session.show_ndt_access_variant(rank))
+
+    def apply_variant(self) -> None:
+        rank = self._selected_rank()
+        if rank is not None:
+            self._apply("Variantu nejde použít",
+                        lambda: self.window.session.apply_ndt_access_variant(rank))
+
+    def export_access(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Export návrhu poloh UT sondy",
+                                             "navrh-poloh-ut.csv", "CSV (*.csv)")
+        if path:
+            self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_access(path))
+
     def _show_probe(self) -> None:
         """Sonda vybrané studie, výsledek přiložení, čára posuvu a geometrická dráha paprsku."""
         session = self.window.session
@@ -988,3 +1302,7 @@ def _volume_text(record: dict, result: StudyResult) -> str:
 
 def _count(n: int, one: str, few: str, many: str) -> str:
     return f"{n} {one if n == 1 else few if 2 <= n <= 4 else many}"
+
+
+def _hex(color: tuple[float, float, float]) -> str:
+    return "#" + "".join(f"{round(c * 255):02x}" for c in color)
