@@ -1,6 +1,8 @@
 # NDT – návrh etapy 08: knihovna sond a materiálových profilů (UT)
 
-Stav: **návrh 18. 10. 2026, ke schválení autorem.** Nic z něj zatím není implementované.
+Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 08 včetně doporučení 1–7“);
+implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
+v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `a141f00` ([PR #21](https://github.com/JendaNDT/SkodaCAD/pull/21)).
 Navazuje na [plán, etapa 08](03-implementacni-plan.md), [virtuální sondu (etapa 03)](07-navrh-etapa-03.md),
 [model UT paprsku (etapa 04)](09-navrh-etapa-04.md) a [závazné vymezení UT](04-zavazne-vymezeni-ut.md),
@@ -207,3 +209,15 @@ Export CSV musí uvést profil, materiál, rychlosti a jejich zdroj.
 
 Schválením se **neschvaluje**: fyzikální model svazku, katalog konkrétních výrobků,
 nová knihovna Pythonu, změna výpočtu pokrytí ani sloučení do `main`.
+
+## 11. Provedení a upřesnění
+
+- **08A.1 (hotovo):** `ndt/library.py` – vestavěné materiály ocel, nerez, hliník, měď, mosaz
+  (rychlosti ověřené 18. 10. 2026 ze dvou zdrojů, zdroje v docstringu i v záznamu), 11 obecných
+  profilů sond (přímá Ø 10 a Ø 20, úhlová malá/standardní/velká × 45°/60°/70° v oceli),
+  přenos úhlu `transfer_angle` a kontrola `check_angle` (stavy none / ok / differs / unknown /
+  error), přepočet jen funkcí `transferred`, popis `describe` pro výstupy, Moje sondy
+  (`load_user_library`, `save_user_probe`, `save_user_material`; poškozený soubor se nikdy
+  nepřepíše). `Probe` nese nepovinné `profile`, `library`, `origins`, `angle_material`,
+  `angle_note`, `wave`, `frequency_mhz`, `crystal_mm`, `source`; bez nich je záznam totožný
+  jako dřív. Původ „přepočteno“ přibyl k původům z návrhu.

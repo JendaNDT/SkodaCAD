@@ -132,6 +132,12 @@
   (`docs/ndt/15-rozbor-citlivosti-v-svaru.md`, oddíl 8): `coverage.check_convergence` hledá
   v hrubém běhu s `max(jemná, auto_tolerance hrubých kroků)` (pravidlo `ndt-ut-porovnani 2`),
   malá výslovná tolerance dostane upozornění. Výpočet pokrytí ani formát se nemění.
+- (18. 10. 2026, schváleno včetně doporučení 1–7) **NDT etapa 08 – knihovna sond a materiálů
+  (jen UT)** (`docs/ndt/16-navrh-etapa-08.md`): `ndt/library.py` – obecné profily sond bez
+  značek, materiály s rychlostmi ze dvou zdrojů (litina a titan záměrně chybí), Moje sondy
+  v `~/SkodaCAD/ndt-knihovna.json` + kopie hodnot ve studii, původ hodnot, přenos úhlu
+  Snellovým zákonem **jen na pokyn**, frekvence jen informativně, formát 17, tvarovaná
+  předsádka (08C) odložena.
 
 ## Architektura (`src/skodacad/`)
 
