@@ -19,6 +19,8 @@ materiál, ve kterém platí úhel, informativní frekvence). Geometrii ani výp
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -284,21 +286,17 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
     """
     from build123d import Location, Plane, Vector
 
-    try:
-        surface = geo.surface_at(point, face)
-    except GeometryError as exc:
-        raise DeviceError(str(exc)) from None
-    if surface.distance > SNAP:
-        raise DeviceError(f"Bod přiložení leží {surface.distance:.2f} mm od povrchu dílu – "
-                          "klikni přímo na plochu.")
-    normal = Vector(*surface.normal)
-    if normal.length < 0.5:
-        raise DeviceError("Směr plochy v bodě přiložení nejde určit – zkus jiné místo.")
-    if angle is not None:
-        base, turn = _tangent(normal, None, False), math.radians(float(angle))
-        x_dir = (base * math.cos(turn) + normal.cross(base) * math.sin(turn)).normalized()
-    else:
-        x_dir = _tangent(normal, beam, probe.kind == "angle")
+    memo = getattr(geo, "_placement_memo", None)
+    key = None
+    if memo is not None and beam is None and angle is not None and face is not None:
+        # Úhel a odrazy přiložení nemění (tělo i otisk na nich nezávisí): sdílí se poloha.
+        key = (probe.kind, probe.diameter, probe.length, probe.width, probe.height,
+               probe.front, probe.max_gap, probe.reserve,
+               tuple(float(v) for v in point), float(angle), hash(face.wrapped))
+        known = memo.get(key)
+        if known is not None and known[0].IsSame(face.wrapped):
+            return known[1] if known[1].probe == probe else replace(known[1], probe=probe)
+    surface, x_dir, normal = _frame(geo, point, beam, angle, face, probe.kind == "angle")
     plane = Plane(origin=Vector(*surface.point), x_dir=x_dir, z_dir=normal)
     templates = getattr(geo, "_probe_templates", None)
     if templates is None:
@@ -352,9 +350,85 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
         free = (f"volno k překážkám {clearance:.2f} mm" if clearance is not None
                 else "kolem žádné překážky")
         messages.append(f"Mezera pod sondou {gap or 0:.2f} mm, {free}.")
-    return Placement(probe, state, tuple(messages), surface.point, _tuple(x_dir),
-                     _tuple(normal.cross(x_dir)), _tuple(normal), gap, overhang, volume,
-                     clearance, body, surface)
+    placed = Placement(probe, state, tuple(messages), surface.point, _tuple(x_dir),
+                       _tuple(normal.cross(x_dir)), _tuple(normal), gap, overhang, volume,
+                       clearance, body, surface)
+    if key is not None:
+        memo[key] = (face.wrapped, placed)
+    return placed
+
+
+def _frame(geo: PartGeometry, point: Any, beam: Any, angle: float | None, face: Any,
+           required: bool) -> tuple[SurfacePoint, Any, Any]:
+    """Bod plochy, směr paprsku v tečné rovině a normála ven – společné pro přiložení
+    i rychlé zamíření (``aim``)."""
+    from build123d import Vector
+
+    try:
+        surface = geo.surface_at(point, face)
+    except GeometryError as exc:
+        raise DeviceError(str(exc)) from None
+    if surface.distance > SNAP:
+        raise DeviceError(f"Bod přiložení leží {surface.distance:.2f} mm od povrchu dílu – "
+                          "klikni přímo na plochu.")
+    normal = Vector(*surface.normal)
+    if normal.length < 0.5:
+        raise DeviceError("Směr plochy v bodě přiložení nejde určit – zkus jiné místo.")
+    if angle is not None:
+        base, turn = _tangent(normal, None, False), math.radians(float(angle))
+        x_dir = (base * math.cos(turn) + normal.cross(base) * math.sin(turn)).normalized()
+    else:
+        x_dir = _tangent(normal, beam, required)
+    return surface, x_dir, normal
+
+
+@dataclass(frozen=True)
+class Aim:
+    """Souřadný systém sondy v bodě **bez kontrol přiložení** (kolize, mezera, přesah) – jen
+    aby šlo levně spočítat, kam paprsek míří (návrh poloh, etapa 09). Nikdy nenahrazuje
+    ``Placement``: platnost polohy vždy rozhoduje ``place``."""
+
+    probe: Probe
+    origin: Point
+    x_dir: Point
+    y_dir: Point
+    z_dir: Point
+
+
+def aim(geo: PartGeometry, probe: Probe, point: Any, angle: float, face: Any = None) -> Aim:
+    """Zamíření sondy do bodu plochy stejným výpočtem směru jako ``place``."""
+    surface, x_dir, normal = _frame(geo, point, None, angle, face, probe.kind == "angle")
+    return Aim(probe, surface.point, _tuple(x_dir), _tuple(normal.cross(x_dir)),
+               _tuple(normal))
+
+
+@contextmanager
+def reuse_placements(geo: PartGeometry, memo: dict | None = None) -> Iterator[dict]:
+    """Návrh poloh (etapa 09) přikládá sondu do týchž bodů pro různé úhly a odrazy; výsledek
+    přiložení na nich nezávisí, proto se po dobu analýzy pamatuje (``memo`` jde předat
+    znovu). Čísla zůstanou stejná."""
+    previous = getattr(geo, "_placement_memo", None)
+    memo = ({} if previous is None else previous) if memo is None else memo
+    object.__setattr__(geo, "_placement_memo", memo)
+    try:
+        yield memo
+    finally:
+        object.__setattr__(geo, "_placement_memo", previous)
+
+
+def direction_angle(normal: Any, vector: Any) -> float | None:
+    """Směr ``vector`` sklopený do tečné roviny jako úhel pro ``place(angle=…)`` (0–360°);
+    None = vektor míří kolmo k ploše."""
+    from build123d import Vector
+
+    n = Vector(*_vector(normal, "Normála plochy")).normalized()
+    v = Vector(*_vector(vector, "Směr"))
+    projected = v - n * v.dot(n)
+    if projected.length <= 1e-9 * max(1.0, v.length):
+        return None
+    base = _tangent(n, None, False)
+    angle = math.degrees(math.atan2(projected.dot(n.cross(base)), projected.dot(base)))
+    return angle % 360.0
 
 
 @dataclass(frozen=True)

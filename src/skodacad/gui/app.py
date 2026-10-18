@@ -523,7 +523,7 @@ def _self_test_drawing(viewer, lines: _Report) -> bool:
     OpenGL spadne, poslední řádek ukáže, na čem."""
     done = []
     for variant in ("line", "point", "ball", "label", "arial", "map", "map_top", "accent",
-                    "probe", "target"):
+                    "probe", "target", "points"):
         lines.stream.write(f"  … kreslení „{variant}“\n")
         lines.stream.flush()
         viewer.probe_drawing(variant)

@@ -131,6 +131,22 @@ def main(argv: list[str] | None = None) -> int:
     coverage.add_argument("--konvergence", action="store_true", help="porovnej krok a 2× krok")
     coverage.add_argument("--csv", type=Path)
     coverage.add_argument("--set", dest="overrides", action="append", default=[])
+    access = commands.add_parser("polohy", help="návrh poloh UT sondy: přístupnost "
+                                 "a geometrické pokrytí variant")
+    access.add_argument("model", type=Path)
+    access.add_argument("--studie", required=True, help="UT studie se sondou a cílem")
+    access.add_argument("--krok", type=float, default=10.0, help="krok analýzy [mm]")
+    access.add_argument("--smery", type=float, choices=(30, 45, 90), default=45,
+                        help="směry paprsku po … stupních (+ k cíli, od cíle, kolmo na svar)")
+    access.add_argument("--uhly", metavar="B1,B2,…",
+                        help="zkus i další úhly β [°], např. 45,60,70 (stejné rozměry sondy)")
+    access.add_argument("--odrazy", default="0,1", metavar="0,1",
+                        help="počty odrazů k vyzkoušení (0–2)")
+    access.add_argument("--krok-cile", type=float,
+                        help="krok sítě cíle [mm]; jinak u objemu doporučený, u ploch --krok")
+    access.add_argument("--tolerance", type=float, help="numerický poloměr zachycení [mm]")
+    access.add_argument("--rozevreni", type=float, default=0.0, help="poloviční úhel [°]")
+    access.add_argument("--csv", type=Path)
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -140,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe(args)
         if args.command == "pokryti":
             return _coverage(args)
+        if args.command == "polohy":
+            return _access(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -397,6 +415,34 @@ def _coverage(args: argparse.Namespace) -> int:
             print("CSV:", covered.write_csv(args.csv))
         except OSError as exc:
             raise ValueError(f"CSV nejde uložit: {exc}") from None
+    return 0
+
+
+def _access(args: argparse.Namespace) -> int:
+    from skodacad.session import ModelSession
+
+    def numbers(text: str, option: str, kind: type) -> tuple:
+        try:
+            return tuple(kind(v) for v in text.split(",") if v.strip())
+        except ValueError:
+            raise ValueError(f"{option} čeká čísla oddělená čárkou.") from None
+
+    options = {"step_mm": args.krok, "direction_step_deg": args.smery,
+               "angles": numbers(args.uhly, "--uhly", float) if args.uhly else (),
+               "bounces": numbers(args.odrazy, "--odrazy", int),
+               "target_step_mm": args.krok_cile, "tolerance_mm": args.tolerance,
+               "spread_deg": args.rozevreni}
+    session = ModelSession()
+    session.open(args.model)
+    print(session.ndt_access_estimate(args.studie, options).text, file=sys.stderr)
+
+    def progress(stage: str, done: int, total: int) -> None:
+        print(f"{stage}: {min(done + 1, total)} z {total}", file=sys.stderr, flush=True)
+
+    result = session.compute_ndt_access(args.studie, options, progress=progress)
+    print("\n".join(result.summary()))
+    if args.csv:
+        print("CSV:", session.export_ndt_access(args.csv))
     return 0
 
 

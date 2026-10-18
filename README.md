@@ -379,6 +379,29 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   `--knihovna`). Výpis, souhrn pokrytí i CSV uvedou profil, původ hodnot (obecný profil /
   změřeno / zadáno ručně / katalog / přepočteno), materiál a zdroj rychlostí. Frekvence
   a průměr měniče jsou jen informativní.
+* **Návrh poloh UT sondy (etapa 09):** program sám vyzkouší varianty *rovinná plocha × směr
+  paprsku × úhel × počet odrazů* (směry po 45° + k cíli, od cíle a kolmo na svar; úhel ze
+  studie, na přání i 45°, 60°, 70° se stejnými rozměry sondy; odrazy 0 a 1). Nejdřív levně
+  zjistí, odkud paprsek k cíli vůbec míří, sondu přiloží jen tam a varianty, kde se nevejde
+  nebo k cíli nemíří, vyřadí s českým důvodem. Zbylé spočítá stávajícím výpočtem pokrytí
+  krokem analýzy (výchozí 10 mm, nejvýš 40 variant), seřadí (pokrytí, při rozdílu do 1 p. b.
+  víc platných poloh, méně nejistého, jednodušší postup) a složí **kombinaci** nejvýš tří
+  variant sjednocenou vzorek po vzorku. Pořadí vyjadřuje jen geometrické pokrytí
+  a přístupnost, nikoli zjistitelnost vad; „nenalezeno“ neznamená „nemožné“. Zakřivené plochy
+  se jako kontaktní nezkoušejí. Výsledek je jen pohled (model se nemění); *Použít variantu*
+  uloží úhel a odrazy do studie (jeden krok Zpět) a přiloží sondu do nejlepší polohy –
+  přepočet stejným krokem dá totéž číslo. V okně je to skupina **Návrh poloh sondy** v panelu
+  NDT: kontaktní plochy (všechny rovinné / vybrané ve 3D), směry, *zkusit i 45°, 60°, 70°*,
+  odrazy a krok analýzy, odhad času, **Navrhnout polohy** (běží na pozadí s průběhem,
+  **Zastavit** nechá hotové varianty), tabulka 10 nejlepších variant, kombinace, vyřazené
+  a **Mapa ve 3D**: *cíl* (sjednocení kombinace – červená = nepokryto žádnou vyzkoušenou
+  variantou; mapa ze *Spočítat pokrytí* má přednost) nebo *kontaktní plochy* (body mřížky:
+  zelená = sonda se vejde ve všech směrech mířících k cíli, oranžová = jen v některých,
+  červená = paprsek by k cíli mířil, ale sonda se nevejde, šedá = odsud k cíli nemíří).
+  **Ukázat variantu** přiloží sondu s úhlem varianty jen jako pohled. V příkazové řádce:
+  `skodacad polohy MODEL --studie s1 [--krok 10] [--smery 45] [--uhly 45,60,70]
+  [--odrazy 0,1] [--csv polohy.csv]` (odhad a průběh na chybový výstup, souhrn a CSV
+  s povinným upozorněním). Návrh: [Etapa 09](docs/ndt/17-navrh-etapa-09.md).
 
 ### Tažení a přechod
 

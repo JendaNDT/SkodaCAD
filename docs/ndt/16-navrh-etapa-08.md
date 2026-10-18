@@ -1,7 +1,8 @@
 # NDT – návrh etapy 08: knihovna sond a materiálových profilů (UT)
 
-Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 08 včetně doporučení 1–7“);
-implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
+Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 08 včetně doporučení 1–7“),
+provedeno a sloučeno v [PR #22](https://github.com/JendaNDT/SkodaCAD/pull/22) (`afce8c7`);
+po vydání autor napsal „ok funguje to“.** Co se při implementaci upřesnilo, je
 v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `a141f00` ([PR #21](https://github.com/JendaNDT/SkodaCAD/pull/21)).
 Navazuje na [plán, etapa 08](03-implementacni-plan.md), [virtuální sondu (etapa 03)](07-navrh-etapa-03.md),
@@ -241,3 +242,6 @@ nová knihovna Pythonu, změna výpočtu pokrytí ani sloučení do `main`.
   upozornění z `ndt_angle_check`, tlačítka **Přepočítat úhel** a **Použít materiál dílu**;
   vše přes `ModelSession` (jeden krok Zpět), během práce AI zamčené. Snímky skutečného okna
   (deska z hliníku, 70° v oceli → upozornění 65,2°; po přepočtu užší dráha paprsku).
+- **Sloučení (18. 10. 2026):** PR #22 po prošlých sestaveních Windows a macOS, vydání
+  „nejnovejsi“ a „nejnovejsi-mac“ z `afce8c7`. Autor k vydání napsal „ok funguje to“.
+  08C (tvarovaná předsádka) zůstává odložená.

@@ -17,7 +17,8 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 13. [Návrh etapy 07B](13-navrh-etapa-07b.md) – geometrické pokrytí skutečného cílového objemu: váhy v mm³, tři stavy, zachování objemu, limity, CSV a citlivost na krok; bez nového ovládání (schváleno, sloučeno v PR #17).
 14. [Návrh etapy 07C](14-navrh-etapa-07c.md) – cílový objem a jeho pokrytí v okně: editor svaru/objemu s nákresem průřezu, průhledný náhled cíle, objemový výpočet z panelu s citlivostí na krok, barevný povrch cíle a průřez svarem (schváleno 17. 10. 2026, sloučeno v PR #19, autor po vydání napsal „ok funguje to“).
 15. [Rozbor citlivosti V svaru](15-rozbor-citlivosti-v-svaru.md) – proč objemové pokrytí V svaru „skákalo“ s krokem: správná hodnota 12,2 % nezávisle na mřížce, porovnávací běh hledal s příliš malou tolerancí, buňky 4 mm jsou pro 12mm plech příliš velké; opravy 1–3 schválené a provedené (spravedlivé porovnání kroků, výchozí krok cíle podle průřezu, referenční test); spravedlivé porovnání od 18. 10. 2026 i pro plošnou mapu Etapy 06 (oddíl 8).
-16. [Návrh etapy 08](16-navrh-etapa-08.md) – knihovna sond a materiálových profilů (jen UT): obecné profily sond, Moje sondy v `~/SkodaCAD`, původ hodnot (obecný / změřeno / zadáno / katalog), materiál pro UT s rychlostmi a zdrojem, přepočet úhlu z oceli do materiálu dílu jen tlačítkem, formát 17 (návrh 18. 10. 2026, ke schválení).
+16. [Návrh etapy 08](16-navrh-etapa-08.md) – knihovna sond a materiálových profilů (jen UT): obecné profily sond, Moje sondy v `~/SkodaCAD`, původ hodnot (obecný / změřeno / zadáno / katalog), materiál pro UT s rychlostmi a zdrojem, přepočet úhlu z oceli do materiálu dílu jen tlačítkem, formát 17 (schváleno 18. 10. 2026 včetně doporučení 1–7, sloučeno v PR #22; po vydání autor napsal „ok funguje to“).
+17. [Návrh etapy 09](17-navrh-etapa-09.md) – návrh poloh UT sondy a mapa problémových zón (milník M3): program sám vyzkouší varianty plocha × směr × úhel × odrazy, vyřadí nepřístupné s důvodem, seřadí podle geometrického pokrytí, navrhne kombinaci nejvýš 3 variant a ukáže, co nepokryje nic a kde se sonda nevejde; jen pohled, formát 17 (schváleno 18. 10. 2026 včetně doporučení 1–9, implementace probíhá).
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 
@@ -39,8 +40,10 @@ a pomocné objemy, bez nového ovládání. Objemové pokrytí 07B je schválen�
 v PR #17: samostatný výsledek v mm³, CLI/CSV a citlivost na krok. Editor a objemový
 náhled v okně (07C, [návrh](14-navrh-etapa-07c.md)) jsou schválené a na pokyn autora
 sloučené do `main` v PR #19; po vydání autor napsal „ok funguje to“.
-Další podle plánu je etapa 08 – knihovna sond a materiálových profilů, která uzavírá
-milník M2 ([návrh](16-navrh-etapa-08.md), čeká na schválení).
+Etapa 08 – knihovna sond a materiálových profilů ([návrh](16-navrh-etapa-08.md)) je
+schválená a sloučená v PR #22; po vydání autor napsal „ok funguje to“. Tím je hotový
+milník M2 (etapy 06–08). Další podle plánu je etapa 09 – automatická analýza přístupnosti
+a doporučené polohy (milník M3, [návrh](17-navrh-etapa-09.md), schválená 18. 10. 2026, implementace probíhá).
 Etapa 16 (virtuální signály) je podle závazného vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

@@ -35,6 +35,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.picked_point = None
         self.probe_drag_enabled = False
         self.target = None  # (objem náhledu cíle, objem zadaného tvaru nebo None)
+        self.points = None  # (body, barvy) mapy kontaktních ploch návrhu poloh
 
     def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
@@ -46,6 +47,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.probe = None
         self.beam = []
         self.target = None
+        self.points = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -82,6 +84,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def hide_target(self):
         self.target = None
+
+    def show_points(self, points, colors):
+        self.points = (list(points), list(colors))
+
+    def hide_points(self):
+        self.points = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -1800,3 +1808,73 @@ def test_pixel_ratio_measured_on_mac_only():
     assert pixel_ratio("darwin", 1600, 800, 2.0) == 2.0  # Retina, OCCT počítá v pixelech
     assert pixel_ratio("darwin", 800, 800, 2.0) == 1.0  # OCCT v bodech – nenásobit
     assert pixel_ratio("darwin", 0, 800, 2.0) == 2.0  # okno OCCT ještě nezná velikost
+
+
+# --- návrh poloh sondy (etapa 09) ------------------------------------------------------------
+
+
+def test_access_panel_runs_shows_applies_and_draws_maps(rib_window, slot_errors, tmp_path,
+                                                        monkeypatch):
+    from skodacad.ndt.access import ORDER_NOTE
+
+    w = rib_window
+    panel = w.ndt_panel
+    session = w.session
+    assert panel.access_box.isVisibleTo(panel) and panel.access_box.title() == \
+        "Návrh poloh sondy"
+    top = face_at(session.result.part, 50, 0, 20)
+    w.viewer.click([top], (50, 0, 20))
+    panel.access_faces.setCurrentIndex(panel.access_faces.findData("picked"))
+    panel.access_directions.setCurrentIndex(panel.access_directions.findData(90.0))
+    panel.access_bounces.setCurrentIndex(panel.access_bounces.findData("0"))
+    panel.access_step.setValue(40)
+    panel.access_angles.setChecked(True)
+    panel.refresh_actions()
+    assert "Odhad: 1 plocha" in panel.access_estimate.text()
+    assert panel.access_action.isEnabled() and not panel.access_stop_action.isEnabled()
+    panel.access_action.trigger()
+    result = session.ndt_access
+    assert result is not None and not slot_errors
+    assert panel.access_table.rowCount() == min(10, len(result.variants)) > 0
+    assert panel.access_table.item(0, 0).text() == "#1"
+    assert "Kombinace" in panel.access_combination.text()
+    assert ORDER_NOTE in " ".join(label.text() for label in panel.access_box.findChildren(
+        QtWidgets.QLabel))
+    # mapa cíle = sjednocení kombinace, kontaktní plochy = body, nic = nic
+    assert w.viewer.coverage_map is not None and w.viewer.points is None
+    panel.access_map.setCurrentIndex(panel.access_map.findData("contact"))
+    assert w.viewer.points is not None and len(w.viewer.points[0]) > 0
+    assert "sonda se nevejde" in panel.access_legend.text()
+    panel.access_map.setCurrentIndex(panel.access_map.findData("none"))
+    assert w.viewer.points is None and w.viewer.coverage_map is None
+    # Ukázat = jen pohled, Použít = jeden krok Zpět
+    rank = next(i for i, r in enumerate(result.variants)
+                if r.variant.beta == 60 and r.best_reference is not None)
+    panel.access_table.selectRow(rank)
+    assert panel.access_show_action.isEnabled() and panel.access_apply_action.isEnabled()
+    panel.access_show_action.trigger()
+    assert w.viewer.probe is not None and not session.dirty
+    assert session.ndt_probe_preview.beam_angle == 60
+    panel.access_apply_action.trigger()
+    assert session.dirty and session.ndt_probe("s1").beam_angle == 60
+    assert session.ndt_access is result and panel.access_table.rowCount() > 0
+    w.undo_action.trigger()
+    assert session.ndt_probe("s1").beam_angle == 45
+    path = tmp_path / "polohy.csv"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *a: (str(path), "CSV"))
+    panel.access_export_action.trigger()
+    assert path.exists() and not slot_errors
+
+
+def test_access_panel_is_locked_while_ai_works(rib_window):
+    w = rib_window
+    panel = w.ndt_panel
+    w.set_assistant_busy(True)
+    panel.refresh()
+    assert not any(a.isEnabled() for a in (panel.access_action, panel.access_show_action,
+                                           panel.access_apply_action,
+                                           panel.access_export_action))
+    assert not panel.access_step.isEnabled()
+    w.set_assistant_busy(False)
+    panel.refresh()
+    assert panel.access_action.isEnabled() and panel.access_step.isEnabled()

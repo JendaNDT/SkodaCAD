@@ -223,6 +223,7 @@ class OccViewer(QWidget):
         self._coverage_objects: list[Any] = []
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self._target_objects: list[Any] = []  # náhled cílového objemu NDT (svar)
+        self._point_objects: list[Any] = []  # barevné body (mapa kontaktních ploch, etapa 09)
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
         self._probe_dragging = False
@@ -257,6 +258,7 @@ class OccViewer(QWidget):
         self._remove_probe()
         self._remove_target()
         self._remove_coverage()
+        self._remove_points()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -406,6 +408,42 @@ class OccViewer(QWidget):
             self._remove_target()
             self._view.Redraw()
 
+    def show_points(self, points: list, colors: list) -> None:
+        """Barevné body (kuličky) navrch dílu – mapa kontaktních ploch návrhu poloh sondy.
+        Jedna kresba na barvu; kliknout na ně nejde, plochy dílu jdou dál vybírat."""
+        if not self.ready:
+            return
+        self._remove_points()
+        groups: dict[tuple, list] = {}
+        for point, color in zip(points, colors, strict=True):
+            groups.setdefault(tuple(color), []).append(point)
+        for color, group in groups.items():
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            for point in group:
+                builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(*point)).Vertex())
+            shown = AIS_Shape(compound)
+            quantity = _rgb(*color)
+            shown.SetColor(quantity)
+            # Kulička jako u měření: bezpečná i se základním ovladačem Windows (self-test).
+            shown.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, quantity, 2.0))
+            self._context.Display(shown, False)
+            self._context.Deactivate(shown)
+            self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+            self._point_objects.append(shown)
+        self._view.Redraw()
+
+    def hide_points(self) -> None:
+        if self.ready:
+            self._remove_points()
+            self._view.Redraw()
+
+    def _remove_points(self) -> None:
+        for shown in self._point_objects:
+            self._context.Remove(shown, False)
+        self._point_objects = []
+
     def _remove_target(self) -> None:
         for shown in self._target_objects:
             self._context.Remove(shown, False)
@@ -488,6 +526,11 @@ class OccViewer(QWidget):
             self._view.Redraw()
             self._context.Remove(body, False)
             self._view.Redraw()
+            return
+        if variant == "points":  # mapa kontaktních ploch návrhu poloh (etapa 09)
+            self.show_points([(0, 0, 0), (10, 0, 0), (0, 10, 0)],
+                             [(0.15, 0.7, 0.25), (0.95, 0.55, 0.1), (0.85, 0.2, 0.15)])
+            self.hide_points()
             return
         if variant == "target":  # průhledný cílový objem NDT a drátěný obrys zadaného tvaru
             self.show_target(BRepPrimAPI_MakeBox(10, 10, 10).Shape(),
