@@ -99,6 +99,7 @@ class CoverageMap:
                   f"cíle {self.assumptions['target_step_mm']:g} mm, "
                   f"tolerance {self.assumptions['tolerance_mm']:g} mm, "
                   f"rozevření {self.assumptions['spread_deg']:g}°.",
+                  *self.assumptions.get("device_lines", []),
                   *([self.assumptions["tolerance_warning"]]
                     if self.assumptions.get("tolerance_warning") else []),
                   *([self.assumptions["convergence_text"]]
@@ -112,6 +113,7 @@ class CoverageMap:
         with path.open("w", encoding="utf-8-sig", newline="") as stream:
             writer = csv.writer(stream, delimiter=";")
             for text in (UT_COVERAGE, UT_DISCLAIMER, PERCENT_NOTE,
+                         *self.assumptions.get("device_lines", []),
                          json.dumps(self.assumptions, ensure_ascii=False, sort_keys=True)):
                 writer.writerow([text])
             writer.writerow(["x [mm]", "y [mm]", "z [mm]", "obsah [mm²]", "stav", "důvod",

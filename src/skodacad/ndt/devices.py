@@ -11,6 +11,9 @@ kontaktní plochou (paprsky z bodů otisku kolmo dolů – přesně, ne vzorcem)
 či otvor, kolize těla s dílem a vůle k překážkám **nad** rovinou přiložení (stěna díry nebo
 vnitřek trubky pod sondou nejsou překážka). Mez mezery 0,5 mm odpovídá EN ISO 17640 (mezera
 mezi povrchem a spodkem sondy nejvýš 0,5 mm) – jde změnit, nejde o tvrzení o normové shodě.
+
+Etapa 08: sonda nese i nepovinné údaje o původu (profil z knihovny, změřeno / zadáno ručně,
+materiál, ve kterém platí úhel, informativní frekvence). Geometrii ani výpočet nemění.
 """
 
 from __future__ import annotations
@@ -40,11 +43,18 @@ STATES = {"ok": "přiloženo", "tight": "málo místa", "lift_off": "nedosedá",
 _LIMITS = {"diameter": (1, 200), "length": (1, 500), "width": (1, 300), "height": (1, 1000),
            "front": (0, 500), "beam_angle": (1, 85), "bounces": (0, 10), "max_gap": (0, 50),
            "reserve": (0, 500)}
-_LABELS = {"diameter": "Průměr sondy", "length": "Délka sondy", "width": "Šířka sondy",
+LABELS = {"diameter": "Průměr sondy", "length": "Délka sondy", "width": "Šířka sondy",
            "height": "Výška sondy", "front": "Výstupní bod od čela",
            "beam_angle": "Úhel lomu v materiálu", "bounces": "Počet odrazů",
            "max_gap": "Dovolená mezera pod sondou", "reserve": "Manipulační rezerva"}
 _UNITS = {"beam_angle": "°", "bounces": ""}
+# Původ hodnot sondy (etapa 08): klíč v JSON → popis v okně a protokolu.
+ORIGINS = {"profile": "obecný profil", "measured": "změřeno", "entered": "zadáno ručně",
+           "catalog": "katalog", "transferred": "přepočteno"}
+META_KEYS = ("profile", "library", "origins", "angle_material", "angle_note", "wave",
+             "frequency_mhz", "crystal_mm", "source")
+_WAVES = ("shear", "longitudinal")
+_INFO_LIMITS = {"frequency_mhz": (0.1, 50), "crystal_mm": (1, 100)}
 
 
 class DeviceError(ValueError):
@@ -68,6 +78,16 @@ class Probe:
     bounces: int = -1  # počet odrazů (výchozí: 0 přímá, 1 úhlová)
     max_gap: float = DEFAULT_MAX_GAP
     reserve: float = DEFAULT_RESERVE
+    # Původ a doplňkové údaje (etapa 08) – jen popisují, geometrii ani výpočet nemění.
+    profile: str = ""  # název profilu z knihovny
+    library: str = ""  # vestavěná knihovna (verze) nebo „Moje sondy“
+    origins: tuple[tuple[str, str], ...] = ()  # (položka, původ z ORIGINS); jde zadat i dict
+    angle_material: str = ""  # úhlová: materiál, ve kterém platí beam_angle ("" = materiál dílu)
+    angle_note: str = ""  # např. „přepočteno ze 70° v oceli …“
+    wave: str = ""  # shear / longitudinal; "" = obvyklá (úhlová příčná, přímá podélná)
+    frequency_mhz: float = 0.0  # jen informativně, 0 = neuvedeno
+    crystal_mm: float = 0.0  # průměr měniče, jen informativně, 0 = neuvedeno
+    source: str = ""  # zdroj údajů (katalogový list, protokol měření …)
 
     def __post_init__(self) -> None:
         if self.kind not in KINDS:
@@ -83,16 +103,56 @@ class Probe:
             if key == "bounces":
                 if not isinstance(value, int) or isinstance(value, bool) or not (
                         low <= value <= high):
-                    raise DeviceError(f"{_LABELS[key]} musí být celé číslo {low}–{high} "
+                    raise DeviceError(f"{LABELS[key]} musí být celé číslo {low}–{high} "
                                       f"(je {value!r}).")
                 continue
             if not isinstance(value, int | float) or isinstance(value, bool) or not (
                     low <= value <= high):
-                raise DeviceError(f"{_LABELS[key]} musí být číslo {low:g}–{high:g}{suffix} "
+                raise DeviceError(f"{LABELS[key]} musí být číslo {low:g}–{high:g}{suffix} "
                                   f"(je {value!r}).")
         if self.kind == "angle" and self.front > self.length:
             raise DeviceError(f"Výstupní bod ({self.front:g} mm od čela) musí ležet na sondě "
                               f"dlouhé {self.length:g} mm.")
+        self._check_meta()
+
+    def _check_meta(self) -> None:
+        for key in ("profile", "library", "angle_material", "angle_note", "source"):
+            value = getattr(self, key)
+            if not isinstance(value, str) or len(value) > 300:
+                raise DeviceError(f"Sonda: „{key}“ musí být text (nejvýš 300 znaků).")
+        origins = self.origins
+        if isinstance(origins, dict):
+            origins = tuple(sorted(origins.items()))
+            object.__setattr__(self, "origins", origins)
+        if not isinstance(origins, tuple) or not all(
+                isinstance(pair, tuple) and len(pair) == 2 for pair in origins):
+            raise DeviceError('Sonda: „origins“ musí být objekt {"beam_angle": "measured", …}.')
+        for key, origin in origins:
+            if key not in self._keys():
+                raise DeviceError(f"Sonda: původ „{key}“ – taková hodnota u této sondy není.")
+            if origin not in ORIGINS:
+                raise DeviceError(f"Sonda: původ hodnoty „{key}“ musí být jeden z "
+                                  f"{', '.join(ORIGINS)} (je {origin!r}).")
+        if self.angle_material and self.kind != "angle":
+            raise DeviceError("Materiál, ve kterém platí úhel, má smysl jen u úhlové sondy.")
+        if self.wave not in ("", *_WAVES):
+            raise DeviceError(f"Druh vlny musí být „shear“ (příčná) nebo „longitudinal“ "
+                              f"(podélná), je {self.wave!r}.")
+        for key, (low, high) in _INFO_LIMITS.items():
+            value = getattr(self, key)
+            if (not isinstance(value, int | float) or isinstance(value, bool)
+                    or not (value == 0 or low <= value <= high)):
+                raise DeviceError(f"Sonda: „{key}“ musí být 0 (neuvedeno) nebo číslo "
+                                  f"{low:g}–{high:g} (je {value!r}).")
+
+    @property
+    def wave_mode(self) -> str:
+        """Druh vlny v materiálu: zadaný, jinak úhlová příčná a přímá podélná."""
+        return self.wave or ("longitudinal" if self.kind == "straight" else "shear")
+
+    def origin(self, key: str) -> str:
+        """Původ hodnoty (klíč z ORIGINS), "" = neuvedeno."""
+        return dict(self.origins).get(key, "")
 
     def _keys(self) -> tuple[str, ...]:
         shape = ("diameter",) if self.kind == "straight" else (
@@ -114,7 +174,7 @@ class Probe:
         if not isinstance(data, dict):
             raise DeviceError('Sonda („device“) musí být objekt {"kind": "angle", …}.')
         kind = data.get("kind", "angle")
-        known = {"kind", *cls(kind if kind in KINDS else "angle")._keys()}
+        known = {"kind", *cls(kind if kind in KINDS else "angle")._keys(), *META_KEYS}
         unknown = sorted(set(data) - known)
         if unknown:
             raise DeviceError(f"Sonda: neznámá položka „{unknown[0]}“ (umím: "
@@ -123,7 +183,15 @@ class Probe:
         return cls(kind, **values)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"kind": self.kind, **{key: _clean(getattr(self, key)) for key in self._keys()}}
+        """Geometrie vždy, údaje o původu jen vyplněné (starý záznam zůstane beze změny)."""
+        data = {"kind": self.kind, **{key: _clean(getattr(self, key)) for key in self._keys()}}
+        for key in META_KEYS:
+            value = getattr(self, key)
+            if not value:
+                continue
+            data[key] = dict(value) if key == "origins" else (
+                _clean(value) if isinstance(value, float) else value)
+        return data
 
     @property
     def label(self) -> str:

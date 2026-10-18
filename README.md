@@ -361,6 +361,24 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   cíle a tlačítko **Průřez svarem** – řez kolmo na osu cíle, posuvník v panelu *Řez* jede
   podél svaru. Šedá barva = *nerozlišeno v kresbě* (buňka s více kusy), čísla to nemění.
   Ukázky: *Soubor → Otevřít ukázku → NDT – cílové objemy*.
+* **Knihovna sond a materiálů (etapa 08):** v dialogu **Sonda…** vyber *Profil* (obecné
+  profily nebo *Moje sondy*); u každé hodnoty je vidět původ (obecný profil / zadáno ručně),
+  u výstupního bodu a úhlu jde zaškrtnout **změřeno** (na kalibračním bloku). Dál *Úhel platí
+  v materiálu*, jen informativní frekvence a průměr měniče, *Zdroj údajů*, pomůcka **Úhel ze
+  Snellova zákona** (α, c₁, c₂ zadáš sám) a **Uložit do Mých sond…**. V panelu NDT je pod
+  sondou **Materiál pro UT**; když úhel sondy platí v jiném materiálu, oranžové upozornění
+  ukáže přepočtený úhel a tlačítko **Přepočítat úhel** ho použije (jeden krok Zpět).
+  *Použít materiál dílu* zvolí profil podle materiálu dílu. V příkazové řádce:
+  `skodacad sonda MODEL --bod X,Y,Z --profil uhlova-standardni-70 --material-ut hliník` vybere
+  obecný profil sondy (přímá Ø 10 / Ø 20, úhlová malá / standardní / velká × 45° / 60° / 70°
+  v oceli) a materiál pro UT (ocel, nerez, hliník, měď, mosaz – orientační rychlosti zvuku
+  ze dvou zdrojů; litina a titan zatím chybí). Když úhel sondy platí v jiném materiálu, výpis
+  upozorní a ukáže přepočtený úhel; použije ho jen s `--prepocet-uhlu` (Snellův zákon,
+  70° v oceli → 65,2° v hliníku). Vlastní sondy a materiály jsou v
+  `~/SkodaCAD/ndt-knihovna.json` (*Moje sondy*, `--profil "název"`, jiný soubor
+  `--knihovna`). Výpis, souhrn pokrytí i CSV uvedou profil, původ hodnot (obecný profil /
+  změřeno / zadáno ručně / katalog / přepočteno), materiál a zdroj rychlostí. Frekvence
+  a průměr měniče jsou jen informativní.
 
 ### Tažení a přechod
 
@@ -739,8 +757,9 @@ vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = ho
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
-(`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A).
-Starší soubory verze 1–15 se načtou beze změny. Uložení novou aplikací zapisuje verzi 16;
+(`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
+NDT (původ hodnot sondy, materiál pro UT; etapa 08).
+Starší soubory verze 1–16 se načtou beze změny. Uložení novou aplikací zapisuje verzi 17;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -771,6 +790,15 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   `beam_angle` = úhel lomu v materiálu $\beta$ [°] 1–85, `bounces` = počet odrazů 0–10,
   `max_gap` = dovolená mezera pod sondou, `reserve` = manipulační rezerva). Přiložení sondy ani
   dráha paprsku se do souboru neukládají.
+* **Původ hodnot sondy a materiál pro UT** (verze 17, nepovinné): v `device` `profile` (název
+  profilu), `library` (vestavěná knihovna nebo „Moje sondy“), `origins` – původ hodnot, např.
+  `{"beam_angle": "measured"}` (`profile` = obecný profil, `measured` = změřeno, `entered` =
+  zadáno ručně, `catalog` = katalog, `transferred` = přepočteno), `angle_material` (materiál,
+  ve kterém platí `beam_angle`; bez něj platí přímo v materiálu dílu), `angle_note`, `wave`
+  (`shear` / `longitudinal`), jen informativní `frequency_mhz` a `crystal_mm` a `source`.
+  Studie může mít `material`: `{"name": "hliník", "c_l": 6320, "c_t": 3130, "source": "…",
+  "profile": "hlinik"}` (podélná a příčná rychlost v m/s, 0 = neuvedeno). Geometrii ani výpočet
+  tyto údaje nemění; úhel se do jiného materiálu přepočítá jen na pokyn.
 
 ### Cílové objemy a svary (07A, verze 16)
 

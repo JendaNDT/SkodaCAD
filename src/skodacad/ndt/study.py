@@ -32,8 +32,8 @@ METHODS = {  # zkratka → český název metody
     "RT": "radiografická",
 }
 TARGET_KINDS = ("faces", "volume", "weld")
-STUDY_KEYS = ("id", "name", "method", "target", "device", "note", "created", "part",
-              "verified")
+STUDY_KEYS = ("id", "name", "method", "target", "device", "material", "note", "created",
+              "part", "verified")
 
 STATE_LABELS = {"ok": "platná", "stale": "zastaralá", "incomplete": "neúplná",
                 "broken": "neplatná vazba"}
@@ -91,6 +91,13 @@ def check_study(study: Any, index: int = 1) -> None:
         try:
             Probe.from_dict(study["device"])
         except DeviceError as exc:
+            raise StudyError(f"{where}: {exc}") from None
+    if "material" in study:
+        from skodacad.ndt.library import LibraryError, Material
+
+        try:
+            Material.from_dict(study["material"])
+        except LibraryError as exc:
             raise StudyError(f"{where}: {exc}") from None
     verified = study.get("verified")
     if verified is not None:
@@ -361,6 +368,14 @@ def duplicate(study: dict[str, Any], existing: list[dict[str, Any]]) -> dict[str
     copied["id"] = new_id(existing)
     copied["name"] = f"{study_name(study)} (kopie)"
     return copied
+
+
+def study_material(study: dict[str, Any]) -> Any:
+    """Materiál pro UT ve studii (etapa 08), bez něj None – rychlosti zvuku se nepoužívají."""
+    from skodacad.ndt.library import Material
+
+    material = study.get("material")
+    return Material.from_dict(material) if material is not None else None
 
 
 def study_probe(study: dict[str, Any]) -> Any:
