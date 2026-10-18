@@ -739,8 +739,9 @@ vzdálenost bodů [mm] (bez ní automaticky, asi 30 000 bodů), `scale_max` = ho
 se znovu. Soubory verze 1–9 se načtou dál. Verze 11 přidala prvky `sweep` a `loft`,
 verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13 NDT studie
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
-(`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A).
-Starší soubory verze 1–15 se načtou beze změny. Uložení novou aplikací zapisuje verzi 16;
+(`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
+NDT (původ hodnot sondy, materiál pro UT; etapa 08).
+Starší soubory verze 1–16 se načtou beze změny. Uložení novou aplikací zapisuje verzi 17;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -771,6 +772,15 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   `beam_angle` = úhel lomu v materiálu $\beta$ [°] 1–85, `bounces` = počet odrazů 0–10,
   `max_gap` = dovolená mezera pod sondou, `reserve` = manipulační rezerva). Přiložení sondy ani
   dráha paprsku se do souboru neukládají.
+* **Původ hodnot sondy a materiál pro UT** (verze 17, nepovinné): v `device` `profile` (název
+  profilu), `library` (vestavěná knihovna nebo „Moje sondy“), `origins` – původ hodnot, např.
+  `{"beam_angle": "measured"}` (`profile` = obecný profil, `measured` = změřeno, `entered` =
+  zadáno ručně, `catalog` = katalog, `transferred` = přepočteno), `angle_material` (materiál,
+  ve kterém platí `beam_angle`; bez něj platí přímo v materiálu dílu), `angle_note`, `wave`
+  (`shear` / `longitudinal`), jen informativní `frequency_mhz` a `crystal_mm` a `source`.
+  Studie může mít `material`: `{"name": "hliník", "c_l": 6320, "c_t": 3130, "source": "…",
+  "profile": "hlinik"}` (podélná a příčná rychlost v m/s, 0 = neuvedeno). Geometrii ani výpočet
+  tyto údaje nemění; úhel se do jiného materiálu přepočítá jen na pokyn.
 
 ### Cílové objemy a svary (07A, verze 16)
 

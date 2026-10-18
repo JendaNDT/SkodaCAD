@@ -221,3 +221,6 @@ nová knihovna Pythonu, změna výpočtu pokrytí ani sloučení do `main`.
   nepřepíše). `Probe` nese nepovinné `profile`, `library`, `origins`, `angle_material`,
   `angle_note`, `wave`, `frequency_mhz`, `crystal_mm`, `source`; bez nich je záznam totožný
   jako dřív. Původ „přepočteno“ přibyl k původům z návrhu.
+- **08A.2 (hotovo):** formát **17** (`document.VERSION`), studie smí mít `material` pro UT
+  (kontrola `library.Material`, `study.study_material`), README popisuje nové položky. Soubory
+  verzí 1–16 se načtou beze změny, uložení zapisuje 17.

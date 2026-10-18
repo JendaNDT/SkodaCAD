@@ -174,3 +174,28 @@ def test_user_library_save_load_and_damaged_file(tmp_path):
         with pytest.raises(LibraryError):
             save_user_probe(path, "nová", probe)  # poškozený soubor se nepřepíše
         assert path.read_text(encoding="utf-8") == content
+
+
+def test_format_17_stores_probe_origins_and_ut_material(tmp_path):
+    from conftest import EXAMPLES
+    from skodacad.document import Document, DocumentError
+    from skodacad.ndt.study import study_material, study_probe
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(EXAMPLES / "ndt" / "deska.json")  # soubor verze 16
+    probe = PROBES["uhlova-standardni-70"].probe
+    session.set_ndt_device("s1", probe)
+    document = session.document
+    study = document.ndt["studies"][0]
+    study["material"] = MATERIALS["hlinik"].to_dict()
+    path = tmp_path / "deska.json"
+    document.save(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["version"] == 17
+    loaded = Document.load(path).ndt["studies"][0]
+    assert study_probe(loaded) == probe and study_material(loaded) == MATERIALS["hlinik"]
+    loaded["material"] = {"name": "x", "c_l": 5000, "c_t": 6000, "source": "s"}
+    data["ndt"]["studies"][0] = loaded
+    with pytest.raises(DocumentError, match="příčná rychlost bývá menší"):
+        Document.from_dict(data)
