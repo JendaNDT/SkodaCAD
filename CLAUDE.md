@@ -148,6 +148,8 @@
   nejvýš 3 sjednocená vzorek po vzorku, mapy problémových zón (cíl, kontaktní plochy).
   Jen pohled, formát 17; *Použít variantu* = jeden krok Zpět; zakřivené plochy se
   nezkoušejí; CLI `skodacad polohy`, AI bez nového nástroje, souběh procesů odložen.
+  Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
+  to“. Otevřené: vynechat z pokrytí místa pod sondou, když je kontaktní plocha i cílem?
 
 ## Architektura (`src/skodacad/`)
 
@@ -760,8 +762,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (sloučeno v PR #19, autor po vydání: „ok funguje to“) …,
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
-  [ ] 09 návrh poloh UT sondy (schváleno 18. 10. 2026): [x] 09A.1 jádro `ndt/access.py`,
-  [x] 09A.2 ModelSession, pomocný proces, CLI a CSV, [x] 09B okno (čeká na PR a ruční zkoušku).
+  [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
+  [ ] 10 automatická skenovací trajektorie (dokončí milník M3).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

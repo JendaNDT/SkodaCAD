@@ -1,8 +1,9 @@
 # NDT – návrh etapy 09: návrh poloh UT sondy a mapa problémových zón
 
 Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 09 včetně doporučení 1–9“);
-implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
-v [oddílu 11](#11-provedení-a-upřesnění).
+sloučeno do `main` v [PR #23](https://github.com/JendaNDT/SkodaCAD/pull/23) (`bbc207f`);
+po vydání autor 18. 10. 2026 napsal „ok funguje to“.** Co se při implementaci upřesnilo,
+je v [oddílu 11](#11-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `afce8c7` ([PR #22](https://github.com/JendaNDT/SkodaCAD/pull/22)).
 Navazuje na [plán, etapa 09](03-implementacni-plan.md), [geometrické pokrytí (etapa 06)](11-navrh-etapa-06.md),
 [objemové pokrytí svaru (07B)](13-navrh-etapa-07b.md), [knihovnu sond (etapa 08)](16-navrh-etapa-08.md)
@@ -314,4 +315,8 @@ ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
     vpravo, směry po 90°, bez odrazů: 6 variant za 66 s.
   - Odhad počítá s 5–45 s na variantu. Po první spočítané variantě průběh ukáže
     **zbývající čas** podle skutečně naměřených variant.
-
+- **Sloučení a ověření:** sloučeno v PR #23 (`bbc207f`), obě sestavení (Windows, macOS)
+  prošla. Autor 18. 10. 2026 k vydání „nejnovejsi“ z `bbc207f` napsal „ok funguje to“.
+  Tím je hotová etapa 09; milník M3 pokračuje etapou 10 (skenovací trajektorie).
+  Otevřené zůstává rozhodnutí z pozorování výše (místa pod sondou na kontaktní ploše,
+  která je zároveň cílem).
