@@ -573,6 +573,30 @@ Schválením se **neschvaluje**:
   asi 3 s (náhled po 20 mm); objem V svaru po 5 mm (200 buněk) asi 4 s; 11 testů jádra
   11 s.
 
+- **13B (hotovo, čeká na ruční zkoušku autora):**
+  - **Skupina *Geometrie projekce RT*** (`gui/rt_box.py`) a dialogy *Nastavení RT…*
+    a *Upravit projekci…* (`gui/rt_dialog.py`), povinné upozornění RT v panelu.
+  - **3D:** zdroj a detektor vybrané projekce se kreslí jako sonda (průhledné těleso v barvě
+    stavu, čára ke zaměřenému bodu, paprsky do rohů detektoru). Mapa celkem nebo pro jednu
+    projekci; objem svaru obarvený po buňkách 07B.
+  - **Klik do mapy:** stav, tloušťka, poměr, neostrost a poloha na detektoru v každé projekci.
+  - **Náhled** v panelu a *Uložit náhled PNG…*, *Export CSV…*.
+  - **Testy:** 2 testy okna (offscreen), testy jádra kresby, náhledu, PNG a objemu svaru.
+  - **Snímky pod Xvfb:** deska s otvorem pod 30° a V svar.
+- **Upřesnění 13B proti návrhu:**
+  - **Přepínač mapy** je celkem / jednotlivé projekce. Prozařovanou tloušťku ukazuje náhled
+    na detektoru; tloušťku, poměr a neostrost místa napíše klik do mapy. Zvláštní mapy
+    tloušťky, poměru a neostrosti na oblasti nejsou – byly by to jen jiné barvy týchž čísel
+    a neostrost je u běžných projekcí všude skoro stejná (0,1 mm).
+  - **Náhled ukazuje i obrys oblasti:** buňky, kam se oblast promítá, mají obrys a slabé
+    podbarvení v barvě stavu. Tečky po místech dělaly u desky rušivé oblouky.
+  - **Sklon a natočení v dialogu** se počítají od kolmice k ploše jen tehdy, když zaměřený bod
+    na ploše leží. Jinak se počítají od nejbližší osy souřadnic. Bod uprostřed otvoru by
+    jinak měl za „plochu“ stěnu otvoru a sklon 120°.
+  - **Detektor, který naráží,** se nakreslí červeně ve své poloze. Výpočet ho dál nepoužije.
+  - **Kopírovat posunutou** chce posun x; y; z v mm. Výchozí je 0; 0; 0 – směr podél svaru
+    zadá uživatel (u ukázkového svaru osa Y).
+
 ## Zdroje (ověřeno vyhledáváním 19. 10. 2026; plné texty norem jsou placené)
 
 - **ISO 17636-1:2022 a 2013** *Non-destructive testing of welds – Radiographic testing –

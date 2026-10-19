@@ -68,9 +68,11 @@ def _area(polygon: list[Point]) -> float:
     return total
 
 
-def volume_mesh(result: VolumeCoverageMap, shape: Any) -> Mesh:
+def volume_mesh(result: VolumeCoverageMap, shape: Any, colors: dict | None = None) -> Mesh:
     """Barevná síť povrchu ``shape`` (účinný cíl, případně rozříznutý) podle stavů kusů.
-    Uzly úlomků se nesdílejí, barvy se proto mezi buňkami nepřelévají."""
+    Uzly úlomků se nesdílejí, barvy se proto mezi buňkami nepřelévají. ``colors`` = barvy
+    stavů jiného výpočtu se stejnou mřížkou 07B (RT), jinak barvy pokrytí UT."""
+    palette = COLORS if colors is None else colors
     a = result.assumptions
     frame, low, step = a["grid_frame"], a["grid_min"], a["target_step_mm"]
     counts = [max(1, math.ceil((hi - lo) / step - 1e-12))  # jako volume_coverage.grid_extent
@@ -121,7 +123,7 @@ def volume_mesh(result: VolumeCoverageMap, shape: Any) -> Mesh:
                                    for c in range(3))
                     found = by_cell.get((i, j, k))
                     state = state_at(found, center) if found else UNRESOLVED
-                    color = COLORS.get(state, GREY)
+                    color = palette.get(state, GREY)
                     start = len(nodes)
                     nodes += [world(p) for p in piece]
                     colors += [color] * len(piece)

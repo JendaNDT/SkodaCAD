@@ -497,7 +497,18 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
     [--trida A|B] [--ohnisko 3] [--vzdalenost 500] [--krok 5] [--krok-nahledu 2]
     [--ulozit] [--csv rt.csv]`.
 
-  Okno přijde v kroku 13B. Návrh: [Etapa 13](docs/ndt/23-navrh-etapa-13.md).
+  * **V okně:** u RT studie skupina *Geometrie projekce RT* v panelu NDT:
+    * *Nastavení RT…* – třída, zdroj, detektor, kroky,
+    * seznam projekcí: *Zdroj nad vybrané místo* (klikni na plochu; u svaru film podél
+      svaru), *Upravit projekci…* (zaměřený bod, sklon a natočení, vzdálenost, detektor,
+      jmenovitá tloušťka), *Kopírovat posunutou…*, *Smazat projekci*,
+    * zdroj s tělem, paprsky do rohů detektoru a deska detektoru vybrané projekce ve 3D
+      v barvě stavu (červeně = naráží),
+    * *Spočítat projekce* (na pozadí, jde zastavit), mapa celkem nebo pro jednu projekci,
+      klik do mapy (stav a čísla v každé projekci),
+    * náhled prozařované tloušťky s obrysem oblasti (*Uložit náhled PNG…*), *Export CSV…*.
+
+  Návrh: [Etapa 13](docs/ndt/23-navrh-etapa-13.md).
 
 ### Tažení a přechod
 

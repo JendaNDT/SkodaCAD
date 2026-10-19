@@ -10,7 +10,9 @@ bez výběru metoda nové studie) je nahoře povinné upozornění ``UT_DISCLAIM
 jinak obecné ``DISCLAIMER``. U PT studie je místo skupin sondy skupina *Přístupnost povrchu pro
 PT* (etapa 11): nastavení, mapa ve 3D po kontrolách, souhrn a důvod místa po kliknutí. U MT
 studie skupina *Přiložení jha a směry magnetizace* (etapa 12, ``MT_DISCLAIMER``): nastavení,
-mapa celkem i po směrech pole, důvod místa, Ukázat jho a Přiložit jho sem.
+mapa celkem i po směrech pole, důvod místa, Ukázat jho a Přiložit jho sem. U RT studie
+skupina *Geometrie projekce RT* (etapa 13, ``RT_DISCLAIMER``, ``gui/rt_box.py``): nastavení,
+projekce, mapa, důvody místa a náhled prozařované tloušťky.
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ from skodacad.document import DocumentError
 from skodacad.gui.mt_dialog import MtDialog
 from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.pt_dialog import PtDialog
+from skodacad.gui.rt_box import RtBox
 from skodacad.gui.target_dialog import TargetDialog
 from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
@@ -56,6 +59,7 @@ from skodacad.ndt import (
     PT_ACCESS,
     PT_DISCLAIMER,
     PT_MAP,
+    RT_DISCLAIMER,
     UT_ACCESS,
     UT_COVERAGE,
     UT_DISCLAIMER,
@@ -310,6 +314,8 @@ class NdtPanel(QWidget):
             layout.addLayout(buttons)
         self._build_pt(layout)
         self._build_mt(layout)
+        self.rt_box = RtBox(self)  # RT – geometrie projekce (etapa 13)
+        layout.addWidget(self.rt_box)
         probe_box = QGroupBox(UT_ACCESS)
         probe_box.setObjectName("ndt_ut")
         self.probe_box = probe_box
@@ -931,6 +937,7 @@ class NdtPanel(QWidget):
         self._show_plan()
         self._show_pt()
         self._show_mt()
+        self.rt_box.refresh()
         self.refresh_actions()
         self._start_recheck()
 
@@ -944,8 +951,10 @@ class NdtPanel(QWidget):
         self._show_plan()
         self._show_pt()
         self._show_mt()
+        self.rt_box.refresh()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
+        self.window._refresh_probe()  # zdroj a detektor RT projekce (nebo nic)
 
     def _show_warning(self) -> None:
         """UT studie (nebo nová UT bez výběru) = povinné upozornění UT, PT studie = povinné
@@ -957,12 +966,16 @@ class NdtPanel(QWidget):
             text = PT_DISCLAIMER
         elif method == "MT":
             text = MT_DISCLAIMER
+        elif method == "RT":
+            text = RT_DISCLAIMER
         elif method == "UT" or session.ndt_coverage is not None:
             text = UT_DISCLAIMER
         elif session.ndt_pt_map is not None:
             text = PT_DISCLAIMER
+        elif session.ndt_mt_map is not None:
+            text = MT_DISCLAIMER
         else:
-            text = MT_DISCLAIMER if session.ndt_mt_map is not None else DISCLAIMER
+            text = RT_DISCLAIMER if session.ndt_rt_map is not None else DISCLAIMER
         self.warning.setText(text)
 
     def _show_details(self) -> None:
@@ -1057,7 +1070,9 @@ class NdtPanel(QWidget):
         self.mt_place_yoke_action.setEnabled(bool(mt and has_part and picked is not None))
         self.mt_hide_yoke_action.setEnabled(ready and session.ndt_yoke is not None)
         self.mt_box.setVisible(bool(mt or has_mt or session.mt_pending))
-        self.probe_box.setVisible(not pt and not mt)
+        rt = selected and (record or {}).get("method") == "RT"
+        self.rt_box.refresh_actions(ready, has_part, result is not None and result.state == "ok")
+        self.probe_box.setVisible(not pt and not mt and not rt)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,

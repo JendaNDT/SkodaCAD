@@ -301,7 +301,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV); u RT studie skupina *Geometrie projekce RT* (etapa 13, `gui/rt_box.py`) |
+| `gui/rt_box.py` | skupina *Geometrie projekce RT* v panelu NDT (etapa 13): nastavení, seznam projekcí (Zdroj nad vybrané místo, Upravit, Kopírovat posunutou, Smazat), výpočet na pozadí, přepínač mapy celkem / projekce, klik do mapy, náhled prozařované tloušťky (QImage z `rt.preview_rgb`, PNG), CSV; `drawing()` = zdroj a detektor vybrané projekce pro prohlížeč |
+| `gui/rt_dialog.py` | dialogy *Nastavení RT…* a *Upravit projekci…* (čísla jako text bez zaokrouhlení, sklon a natočení vůči kolmici k ploše nebo nejbližší ose – nezměněné úhly = původní směr) |
 | `gui/mt_dialog.py` | dialog *Nastavení MT…* (jho, rozteče, meze, kroky, nanesení a prohlídka, potvrzení feromagnetického materiálu; čísla jako text s původem hodnoty, kontrola `MtSettings`) |
 | `gui/pt_dialog.py` | dialog *Nastavení PT…* (nástroje, úhly, oko, postup čištění; čísla jako text, u zvolených hodnot „zvoleno pro výpočet“, kontrola `PtSettings`) |
 | `gui/zone_dialog.py` | dialog *Zakázané zóny…* plánu dráhy (tabulka kvádrů jako text, *Z výběru*, kontrola `Zone.from_dict`) |
@@ -880,6 +882,23 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `add_ndt_rt_projection`.
 - CLI `--vzdalenost` posune zdroj; volný detektor zůstane na místě
   (`detector_distance_mm` se posune o stejný rozdíl), jinak by se změnilo i b.
+- Okno: zdroj a detektor vybrané projekce kreslí `viewer.show_probe` (tělo zdroje + deska
+  detektoru jako jeden průhledný tvar, čára zdroj → zaměřený bod, „paprsek“ = lomená čára
+  zdroj → roh → zdroj … do čtyř rohů detektoru) – žádný nový druh kreslení. Přednost má UT
+  sonda, pak jho MT, pak projekce RT (`_refresh_probe`, `_shown_probe`). Neúspěšné přiložení
+  detektoru (náraz) nese polohu desky, aby se nakreslila červeně (`prepare`, `failed(...)`).
+- Mapa RT jde přes `show_coverage_map` s klíčem („rt“, mapa, pohled, rovina řezu); objem
+  svaru kreslí `volume_drawing.volume_mesh` s barvami RT (`colors`) z mřížky 07B, kterou si
+  `RtMap.volume_grid` pamatuje (buňky `volume_samples` jsou 1 : 1 s místy mapy), navrch
+  a s plochami řezu šedě jako objem UT. UT, PT a MT mapa mají přednost.
+- Náhled: `rt.preview_rgb` (bez Qt) – buňka náhledu patří k oblasti, je-li nejbližší místo
+  oblasti blíž než `PREVIEW_REACH` × krok sítě × zvětšení (plochy 0,45 – těžiště trojúhelníků
+  jsou hustší než krok, objem 0,75); místa mimo detektor se vynechají. Tečky po místech dělaly
+  rušivé oblouky (moiré) a dosah 0,75 u ploch zakryl otvor. PNG zapisuje `rt.write_png`
+  (zlib, bez Qt) – CLI i okno stejně.
+- Dialog projekce: sklon a natočení vůči kolmici k ploše v zaměřeném bodě, jen když bod na
+  ploše leží (do 0,01 mm, `ON_SURFACE_MM`); jinak nejbližší osa souřadnic. Zaměřený bod
+  uprostřed otvoru má nejbližší plochou stěnu otvoru → sklon by vyšel 120°.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -997,7 +1016,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
   sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
   a expozice (schváleno 19. 10. 2026; dokončí milník M4): [x] 13A.1 vymezení RT a jádro
-  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [ ] 13B okno.
+  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (čeká na
+  PR a ruční zkoušku autora).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

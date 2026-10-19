@@ -4,6 +4,7 @@ import dataclasses
 import json
 import math
 import shutil
+import struct
 
 import pytest
 
@@ -11,7 +12,7 @@ from conftest import EXAMPLES
 from skodacad.cli import main
 from skodacad.document import Document, DocumentError
 from skodacad.ndt import RT_DISCLAIMER, RT_MAP
-from skodacad.ndt.rt import RtSettings
+from skodacad.ndt.rt import COLORS, RtSettings
 from skodacad.session import ModelSession
 
 NDT = EXAMPLES / "ndt"
@@ -141,6 +142,50 @@ def test_map_is_a_view_invalidated_by_part_change(tmp_path):
         session.compute_ndt_rt("s2")
     with pytest.raises(DocumentError, match="jen pro RT"):
         session.compute_ndt_rt("s1")
+
+
+def test_drawing_preview_png_and_collision_are_views():
+    session = quick(opened())
+    drawing = session.ndt_rt_drawing("s2", "P2")
+    _body, state, source, aim, text, rays = drawing
+    assert state == "ok" and source == pytest.approx((250, 0, 453.0127), abs=1e-4)
+    assert aim == (0, 0, 20) and text == "P2: f 500 mm" and len(rays) == 8
+    assert session.ndt_rt_drawing("s2", "P2") is drawing  # pamatuje se
+    assert session.ndt_rt_drawing("s1", "P1") is None  # UT studie
+    p2 = session.ndt_rt_settings("s2").projection("P2")
+    normal, tilt, turn, label = session.ndt_rt_angles(p2.aim, p2.direction)
+    assert label == "osa +Z" and (tilt, turn) == pytest.approx((30, 0))  # bod uprostřed otvoru
+    assert session.ndt_rt_angles((60, 0, 20), (0, 0, 1))[3] == "kolmice k ploše"
+    before = session.document.to_dict()
+    session.compute_ndt_rt("s2")
+    width, height, data = session.ndt_rt_preview("P1", 2)
+    assert (width, height, len(data)) == (24, 10, 3 * 24 * 10)  # 240 × 100 mm po 20 mm, 2 body
+    assert data[:3] == bytes((255, 255, 255))  # roh filmu mimo desku: bez materiálu
+    assert session.document.to_dict() == before  # kresba ani náhled model nemění
+    p1 = session.ndt_rt_settings("s2").projection("P1")
+    session.add_ndt_rt_projection("s2", dataclasses.replace(p1, name="P5",
+                                                            detector_distance_mm=510))
+    _body, state, _source, _aim, text, rays = session.ndt_rt_drawing("s2", "P5")
+    assert state == "collision" and text.endswith("detektor naráží do dílu")
+    assert len(rays) == 8  # deska, která naráží (z = 10 v desce), se nakreslí červeně
+    assert "naráží do dílu" in session.ndt_rt_setup_text("s2", "P5")
+
+
+def test_png_export_and_weld_volume_mesh(tmp_path):
+    session = quick(opened())
+    session.compute_ndt_rt("s2")
+    path = session.export_ndt_rt_png("P1", tmp_path / "p1.png")
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert struct.unpack(">II", data[16:24]) == (960, 400)  # 12 × 5 buněk po 80 bodech
+    with pytest.raises(DocumentError, match="Náhled projekce není"):
+        session.export_ndt_rt_png("P7", tmp_path / "p7.png")
+    weld = opened(WELD)
+    weld.set_ndt_rt_settings("s2", dataclasses.replace(weld.ndt_rt_settings("s2"), step_mm=5,
+                                                       image_step_mm=20))
+    weld.compute_ndt_rt("s2")
+    nodes, triangles, colors = weld.ndt_rt_mesh(None)  # povrch svaru obarvený podle buněk
+    assert len(nodes) == len(colors) > 0 and set(colors) == {COLORS["ok"]}
 
 
 def test_study_without_projection_explains_what_to_do():

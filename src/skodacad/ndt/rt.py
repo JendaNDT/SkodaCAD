@@ -21,7 +21,9 @@ import csv
 import json
 import math
 import statistics
+import struct
 import time
+import zlib
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
@@ -497,7 +499,10 @@ def prepare(geo: PartGeometry, settings: RtSettings, projection: Projection) -> 
             if far is None or far > OVERLAP_TOL:
                 amount = "nejde spočítat" if far is None else f"průnik {far:.0f} mm³"
                 return failed("detector", f"Detektor nejde přiložit – naráží do dílu i po "
-                                          f"odsunutí o {_n(PUSH_MAX_MM)} mm ({amount}).")
+                                          f"odsunutí o {_n(PUSH_MAX_MM)} mm ({amount}).",
+                              entry=entry, center=_add(source, axis, plane_at(0.0)),
+                              normal=normal, long=long, short=_cross(normal, long),
+                              plane=plane_at(0.0))  # kresba: deska, která naráží
             low, high = 0.0, PUSH_MAX_MM
             while high - low > PUSH_TOL_MM:
                 middle = (low + high) / 2
@@ -518,7 +523,8 @@ def prepare(geo: PartGeometry, settings: RtSettings, projection: Projection) -> 
         if volume is None or volume > OVERLAP_TOL:
             amount = "nejde spočítat" if volume is None else f"průnik {volume:.0f} mm³"
             return failed("detector", f"Detektor naráží do dílu ({amount}) – zvětši jeho "
-                                      "vzdálenost od zdroje.", entry=entry)
+                                      "vzdálenost od zdroje.", entry=entry, center=center,
+                          normal=normal, long=long, short=_cross(normal, long), plane=plane)
         offset = 0.0
     central = geo.cast(source, axis, plane)
     w0 = sum(segment.length for segment in central.segments)
@@ -816,6 +822,123 @@ def _image(geo: PartGeometry, setup: Setup, settings: RtSettings) -> RtImage | N
                    max(values) if values else 0.0)
 
 
+# --- náhled jako obrázek (okno i PNG bez Qt) ----------------------------------------------
+
+AIR_RGB = (255, 255, 255)  # paprsek bez materiálu
+UNCERTAIN_RGB = (150, 150, 150)  # paprsek přes hranu nebo tečně
+OUTSIDE_RGB = (70, 70, 70)  # mimo kužel svazku
+RAMP = ((0.0, (250, 238, 190)), (0.5, (105, 160, 205)), (1.0, (25, 45, 110)))  # tenká → tlustá
+PREVIEW_LEGEND = ("bílá = bez materiálu, od světle žluté po tmavě modrou = prozařovaná tloušťka "
+                  "od 0 po největší, šedá = paprsek přes hranu nebo tečně (nejistý), tmavě šedá "
+                  "= mimo kužel svazku; obrys a podbarvení = kam se promítne oblast, v barvě "
+                  "stavu projekce.")
+TINT = 0.2  # podbarvení oblasti barvou stavu
+
+
+def _ramp(share: float) -> tuple[int, int, int]:
+    share = min(1.0, max(0.0, share))
+    for (a, ca), (b, cb) in zip(RAMP, RAMP[1:], strict=False):
+        if share <= b:
+            t = (share - a) / (b - a)
+            return tuple(round(x + (y - x) * t) for x, y in zip(ca, cb, strict=True))
+    return RAMP[-1][1]
+
+
+def _region(image: RtImage, marks: list[tuple[tuple[float, float], str]], radius: float
+            ) -> list[list[str | None]]:
+    """Stav oblasti v každé buňce náhledu: nejbližší místo oblasti do ``radius`` mm, jinak
+    None (oblast se sem nepromítá)."""
+    import numpy as np
+
+    grid: list[list[str | None]] = [[None] * image.columns for _ in range(image.rows)]
+    length = image.columns * image.cell_long
+    across = image.rows * image.cell_short
+    marks = [(spot, state) for spot, state in marks  # místo mimo detektor do náhledu nepatří
+             if abs(spot[0]) <= length / 2 and abs(spot[1]) <= across / 2]
+    if not marks or radius <= 0:
+        return grid
+    spots = np.array([spot for spot, _state in marks], dtype=float)
+    states = [state for _spot, state in marks]
+    for row in range(image.rows):
+        v = -across / 2 + (row + 0.5) * image.cell_short
+        u = -length / 2 + (np.arange(image.columns) + 0.5) * image.cell_long
+        distance = ((spots[None, :, 0] - u[:, None]) ** 2
+                    + (spots[None, :, 1] - v) ** 2)  # buňky řádku × místa
+        nearest = distance.argmin(axis=1)
+        close = distance[np.arange(image.columns), nearest] <= radius * radius
+        for column in np.nonzero(close)[0]:
+            grid[row][int(column)] = states[int(nearest[column])]
+    return grid
+
+
+def preview_rgb(image: RtImage, marks: list[tuple[tuple[float, float], str]] = (),
+                scale: int = 1, radius: float = 0.0) -> tuple[int, int, bytes]:
+    """Náhled prozařované tloušťky jako obrázek RGB (šířka, výška, bajty po řádcích): delší
+    strana detektoru vodorovně, každá buňka ``scale`` × ``scale`` bodů. ``marks`` = místa
+    oblasti na detektoru ((podél, napříč) mm od středu, stav): buňky do ``radius`` mm od
+    místa se podbarví barvou jeho stavu a oblast dostane obrys."""
+    scale = max(1, int(scale))
+    width, height = image.columns * scale, image.rows * scale
+    top = image.max_mm or 1.0
+    region = _region(image, list(marks), radius)
+    palette = {state: tuple(round(255 * c) for c in rgb) for state, rgb in COLORS.items()}
+    pixels = bytearray(width * height * 3)
+
+    def fill(x0: int, y0: int, w: int, h: int, color: tuple[int, ...]) -> None:
+        line = bytes(color) * w
+        for y in range(y0, y0 + h):
+            start = (y * width + x0) * 3
+            pixels[start:start + 3 * w] = line
+
+    for row in range(image.rows):
+        for column in range(image.columns):
+            value, flag = image.value(column, row)
+            color = (OUTSIDE_RGB if flag == "b" else UNCERTAIN_RGB if flag == "u"
+                     else AIR_RGB if value <= 1e-9 else _ramp(value / top))
+            state = region[row][column]
+            if state is not None:
+                tint = palette[state]
+                color = tuple(round(c * (1 - TINT) + t * TINT)
+                              for c, t in zip(color, tint, strict=True))
+            fill(column * scale, row * scale, scale, scale, color)
+    edge = max(1, scale // 3)  # obrys oblasti (hranice mezi stavy nebo s okolím)
+    for row in range(image.rows):
+        for column in range(image.columns):
+            state = region[row][column]
+            if state is None:
+                continue
+            color = palette[state]
+            x, y = column * scale, row * scale
+
+            def other(c: int, r: int, state: str = state) -> bool:
+                inside = 0 <= c < image.columns and 0 <= r < image.rows
+                return not inside or region[r][c] != state
+
+            if other(column - 1, row):
+                fill(x, y, edge, scale, color)
+            if other(column + 1, row):
+                fill(x + scale - edge, y, edge, scale, color)
+            if other(column, row - 1):
+                fill(x, y, scale, edge, color)
+            if other(column, row + 1):
+                fill(x, y + scale - edge, scale, edge, color)
+    return width, height, bytes(pixels)
+
+
+def write_png(path: str | Path, width: int, height: int, rgb: bytes) -> Path:
+    """Obrázek RGB do souboru PNG (jen standardní knihovna)."""
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    rows = b"".join(b"\x00" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
+    path = Path(path)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+    return path
+
+
 # --- výsledek --------------------------------------------------------------------------------
 
 
@@ -835,6 +958,7 @@ class RtMap:
     material: str
     seconds: float
     volume_samples: list[Any] = field(default_factory=list)  # buňky 07B (kresba objemu)
+    volume_grid: dict[str, Any] = field(default_factory=dict)  # mřížka 07B (kresba objemu)
 
     @property
     def unit(self) -> str:
@@ -897,6 +1021,12 @@ class RtMap:
         if s.point is not None:
             lines.append("Místo " + "; ".join(_dec(v) for v in s.point) + " mm.")
         return lines
+
+    def marks(self, index: int) -> list[tuple[tuple[float, float], str]]:
+        """Místa oblasti na detektoru projekce ``index`` (tečky v náhledu): (podél, napříč)
+        mm od středu detektoru a stav místa v té projekci."""
+        return [(s.shots[index].on_detector, s.shots[index].state) for s in self.samples
+                if s.shots[index].on_detector is not None]
 
     def reason_amounts(self) -> list[tuple[str, float]]:
         """Důvody, proč místa nejsou zelená v žádné projekci (podle plochy nebo objemu)."""
@@ -1021,6 +1151,7 @@ class _Target:
     triangles: list[tuple[int, int, int]] = field(default_factory=list)
     volume_samples: list[Any] = field(default_factory=list)
     shape: Any = None  # účinný cílový objem (překryv obrazů)
+    grid: dict[str, Any] = field(default_factory=dict)  # mřížka 07B (kresba objemu)
 
 
 def study_target(geo: PartGeometry, record: dict[str, Any]) -> tuple[str, Any]:
@@ -1067,12 +1198,15 @@ def _target(geo: PartGeometry, kind: str, target: Any, settings: RtSettings) -> 
 
     try:
         step = settings.step_mm or recommended_target_step(target)
-        cells, resolved, _meta = _sample_volume(geo, target, step, 1, 1)
+        cells, resolved, meta = _sample_volume(geo, target, step, 1, 1)
     except (CoverageError, TargetError) as exc:
         raise RtError(str(exc)) from None
     return _Target("volume", [c.point for c in cells], [None] * len(cells),
                    [c.volume_mm3 for c in cells], step, [], volume_samples=cells,
-                   shape=resolved.shape)
+                   shape=resolved.shape,
+                   grid={"grid_frame": meta["grid_frame"], "grid_min": meta["grid_min"],
+                         "grid_max": meta["grid_max"], "target_step_mm": step,
+                         "target": target})
 
 
 def _material_text(material: str | None) -> str:
@@ -1162,7 +1296,7 @@ def compute(part: Any, record: dict[str, Any], settings: RtSettings,
                                 sum(1 for shot in shots if shot.state == "ok")))
     return RtMap(kind, found.nodes, found.triangles, samples, settings, tuple(results),
                  tuple(images), found.step, len(found.faces), _material_text(material),
-                 time.monotonic() - started, found.volume_samples)
+                 time.monotonic() - started, found.volume_samples, found.grid)
 
 
 def check_points(part: Any, points: list[Point], settings: RtSettings,
