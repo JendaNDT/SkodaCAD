@@ -328,4 +328,5 @@ ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
   (cíl dno, krok 10 mm): sonda na dně bez odrazu 56,35 % → **0 %**, s jedním odrazem 64,6 % →
   **41,94 %**, sonda nahoře (běžný případ) 17,04 % beze změny. Souhrn a CSV napíšou, že místa
   na ploše přiložení počítají jen odražený paprsek.
-
+  Sloučeno v [PR #25](https://github.com/JendaNDT/SkodaCAD/pull/25); autor k vydání
+  z `3297983` napsal „ok, funguje to“.

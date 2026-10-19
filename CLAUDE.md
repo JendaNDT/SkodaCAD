@@ -151,7 +151,8 @@
   Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
   to“. Otázka „místa pod sondou, když je kontaktní plocha i cílem“ rozhodnuta 19. 10. 2026:
   na ploše přiložení se **nepočítá zásah 1. ramene** (paprsek z ní jen vychází), odražené
-  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`).
+  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`;
+  sloučeno v PR #25, autor k vydání z `3297983` napsal „ok, funguje to“).
 - (18. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 10 – plán dráhy UT sondy**
   (`docs/ndt/18-navrh-etapa-10.md`, dokončí milník M3): `ndt/plan.py` – průchod = varianta
   etapy 09, řádky cik-cak s roztečí (výchozí 5 mm) ve vzoru *k cíli a zpět* nebo *podél*
@@ -176,7 +177,9 @@
   nelze spolehlivě vyhodnotit) s českými důvody. Postup čištění otřením nebo oplachem. Zvolené
   hodnoty jsou označené „zvoleno pro výpočet“. Nastavení `pt` ve studii (**formát 19**), mapa
   jen pohled. Referenční díl 9 `sterbina.json`, PT studie i v kapse. Okno, CSV, CLI
-  `skodacad kapilarni`, AI bez nového nástroje.
+  `skodacad kapilarni`, AI bez nového nástroje. Sloučeno v PR #25 (`3297983`, spolu
+  s rozhodnutím otázky z etapy 09); autor 19. 10. 2026 k vydání z `3297983` napsal „ok,
+  funguje to“. Návrh etapy 12 – MT (`docs/ndt/21-navrh-etapa-12.md`) čeká na rozhodnutí.
 
 ## Architektura (`src/skodacad/`)
 
@@ -868,9 +871,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
-  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [x] 11A.1 vymezení
-  PT a jádro `ndt/pt.py`, [x] 11A.2 formát 19, ModelSession, CLI, [x] 11B okno (čeká na PR
-  a ruční zkoušku).
+  [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
+  to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (návrh
+  `docs/ndt/21-navrh-etapa-12.md` čeká na rozhodnutí autora).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
