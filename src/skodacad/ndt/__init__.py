@@ -8,7 +8,10 @@ vad. ``UT_DISCLAIMER`` je povinné upozornění v přesném znění z tohoto dok
 vymezuje ``docs/ndt/20-vymezeni-pt.md`` (jen geometrická přístupnost povrchu – ne smáčivost,
 vzlínání, citlivost ani detekovatelnost vad), povinné upozornění je ``PT_DISCLAIMER``. Rozsah MT
 vymezuje ``docs/ndt/22-vymezeni-mt.md`` (jen geometrie zkoušky jhem – ne intenzita ani rozložení
-pole, citlivost ani detekovatelnost vad), povinné upozornění je ``MT_DISCLAIMER``.
+pole, citlivost ani detekovatelnost vad), povinné upozornění je ``MT_DISCLAIMER``. Rozsah RT
+vymezuje ``docs/ndt/24-vymezeni-rt.md`` (jen geometrie projekce – ne dávka ani radiační ochrana,
+expozice, kvalita obrazu, citlivost ani detekovatelnost vad), povinné upozornění je
+``RT_DISCLAIMER``.
 """
 
 DISCLAIMER = ("Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, "
@@ -37,3 +40,15 @@ MT_DISCLAIMER = ("ŠkodaCAD provádí pouze geometrické posouzení magnetické 
                  "odborné posouzení.")
 MT_ACCESS = "Přiložení jha a směry magnetizace pro MT"  # doporučené názvy v okně a protokolech
 MT_MAP = "Mapa geometrické proveditelnosti a směrového pokrytí MT"
+RT_DISCLAIMER = ("ŠkodaCAD provádí pouze geometrické posouzení radiografické zkoušky: kam lze "
+                 "umístit zjednodušený model zdroje a detektoru, kudy vedou přímé paprsky "
+                 "z ohniska dílem, jakou tloušťku materiálu prozařují, kam se oblast promítne "
+                 "na detektor a jaké je geometrické zvětšení a geometrická neostrost z rozměru "
+                 "ohniska. Nevyhodnocuje dávku ani radiační ochranu, expoziční parametry, "
+                 "rozptýlené záření, kontrast, zčernání ani kvalitu obrazu, viditelnost "
+                 "indikátorů kvality obrazu, citlivost zkoušky ani detekovatelnost vad. Výsledky "
+                 "nenahrazují kvalifikovaný NDT postup, odborné posouzení ani posouzení radiační "
+                 "ochrany.")
+RT_ACCESS = "Geometrie projekce RT"  # doporučené názvy v okně a protokolech
+RT_MAP = "Mapa geometrického promítnutí oblasti RT"
+RT_PREVIEW = "Náhled prozařované tloušťky – není radiografický snímek"

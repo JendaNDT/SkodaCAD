@@ -27,6 +27,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from build123d import GeomType, Vector
@@ -105,6 +106,24 @@ from skodacad.ndt.pt import PtError, PtMap, PtSettings
 from skodacad.ndt.pt import compute as compute_pt
 from skodacad.ndt.pt import estimate as estimate_pt
 from skodacad.ndt.pt import study_faces as pt_study_faces
+from skodacad.ndt.rt import COLORS as RT_COLORS
+from skodacad.ndt.rt import (
+    SETUP_FAILURES,
+    Projection,
+    RtError,
+    RtImage,
+    RtMap,
+    RtSettings,
+    along_angle,
+    angles_of,
+    next_projection_name,
+    preview_rgb,
+    setup_shapes,
+    write_png,
+)
+from skodacad.ndt.rt import compute as compute_rt
+from skodacad.ndt.rt import estimate as estimate_rt
+from skodacad.ndt.rt import prepare as prepare_rt
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
     StudyError,
@@ -205,6 +224,12 @@ def format_parameter_value(value: Any) -> str:
     return str(value)
 
 
+ON_SURFACE_MM = 0.01  # RT dialog: zaměřený bod leží na ploše, je-li k ní blíž
+# RT náhled: buňka patří k oblasti do tolika kroků sítě od místa (× zvětšení); těžiště
+# trojúhelníků ploch jsou hustší než krok, buňky objemu leží po celém kroku
+PREVIEW_REACH = {"faces": 0.45, "volume": 0.75}
+
+
 class ModelSession:
     def __init__(self, runner: BackgroundRebuilder | None = None) -> None:
         self.path: Path | None = None
@@ -249,6 +274,11 @@ class ModelSession:
         self._mt_cache: tuple[tuple[Any, ...], MtMap] | None = None
         self._mt_pending: dict[str, Any] | None = None
         self._yoke_view: tuple[tuple[Any, ...], YokePlacement] | None = None
+        # mapa RT (etapa 13, jen pohled): (klíč platnosti, mapa) a běžící výpočet
+        self._rt_cache: tuple[tuple[Any, ...], RtMap] | None = None
+        self._rt_pending: dict[str, Any] | None = None
+        self._rt_drawing_cache: tuple[tuple[Any, ...], Any] | None = None
+        self._rt_volume_cache: tuple[tuple[Any, ...], Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -266,6 +296,7 @@ class ModelSession:
         self._pt_cache = None
         self._mt_cache = None
         self._yoke_view = None
+        self._rt_cache = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -282,6 +313,7 @@ class ModelSession:
         self._pt_cache = None
         self._mt_cache = None
         self._yoke_view = None
+        self._rt_cache = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -302,6 +334,7 @@ class ModelSession:
         self._plan_pending = None
         self._pt_pending = None
         self._mt_pending = None
+        self._rt_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -339,6 +372,8 @@ class ModelSession:
                 self._pt_pending["progress"] = payload
             if self._mt_pending is not None and kind == "progress":
                 self._mt_pending["progress"] = payload
+            if self._rt_pending is not None and kind == "progress":
+                self._rt_pending["progress"] = payload
             pending = self._access_pending
             if pending is not None:
                 if kind == "progress":
@@ -348,7 +383,13 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._mt_pending is not None:
+        if self._rt_pending is not None:
+            if finished.rt is not None:
+                self._rt_cache = (self._rt_pending["key"], finished.rt)
+            else:
+                self.failure = finished.error
+            self._rt_pending = None
+        elif self._mt_pending is not None:
             if finished.mt is not None:
                 self._mt_cache = (self._mt_pending["key"], finished.mt)
             else:
@@ -400,6 +441,7 @@ class ModelSession:
         self._plan_pending = None
         self._pt_pending = None
         self._mt_pending = None
+        self._rt_pending = None
         pending, self._access_pending = self._access_pending, None
         if pending is not None:
             if pending["preparation"] is not None:
@@ -1054,6 +1096,8 @@ class ModelSession:
                 study.pop("pt", None)  # nastavení PT má jen PT studie
             if method != "MT":
                 study.pop("mt", None)  # nastavení MT má jen MT studie
+            if method != "RT":
+                study.pop("rt", None)  # nastavení a projekce RT má jen RT studie
 
         return self._edit_study(study_id, update, setup=True)
 
@@ -2016,6 +2060,376 @@ class ModelSession:
                 + ("" if placed.ok else " – nevejde se"))
         outline = placed.outline(self.ndt_yoke_settings()) if placed.ok else []
         return yoke_compound(placed), state, ends[0], ends[1], text, outline
+
+    # --- NDT RT – geometrie projekce (etapa 13; nastavení a projekce ve studii, mapa pohled) --
+
+    def ndt_rt_settings(self, study_id: str) -> RtSettings:
+        """Nastavení a projekce RT studie (výchozí bez projekcí, když ve studii žádné není)."""
+        try:
+            return RtSettings.from_dict(self.ndt_study(study_id).get("rt"))
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def set_ndt_rt_settings(self, study_id: str, settings: RtSettings | dict[str, Any]
+                            ) -> BuildResult | None:
+        """Uloží nastavení i projekce RT do studie (jeden krok Zpět); stejné = žádná změna."""
+        record = self.ndt_study(study_id)
+        if record.get("method") != "RT":
+            raise DocumentError("Nastavení RT má jen RT (radiografická) studie.")
+        try:
+            settings = (settings if isinstance(settings, RtSettings)
+                        else RtSettings.from_dict(settings))
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+        if "rt" in record and RtSettings.from_dict(record["rt"]) == settings:
+            return None
+        data = settings.to_dict()
+        return self._edit_study(study_id, lambda study: study.update(rt=data))
+
+    def _rt_projections(self, study_id: str, projections: list[Projection]
+                        ) -> BuildResult | None:
+        settings = self.ndt_rt_settings(study_id)
+        try:
+            changed = settings.with_projections(projections)
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+        return self.set_ndt_rt_settings(study_id, changed)
+
+    def _rt_projection(self, study_id: str, name: str) -> Projection:
+        try:
+            return self.ndt_rt_settings(study_id).projection(name)
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def ndt_rt_projection_at(self, study_id: str, point: Any) -> Projection:
+        """Zdroj nad vybrané místo: nová (zatím neuložená) projekce zaměřená na bod povrchu,
+        zdroj po normále ve výchozí vzdálenosti, detektor na ploše. U svaru delší strana
+        detektoru podél svaru."""
+        record = self._rt_record(study_id, "projekce RT")
+        settings = self.ndt_rt_settings(study_id)
+        geo = self._ndt_geometry()
+        try:
+            surface = geo.surface_at(tuple(float(v) for v in point))
+            aim = tuple(round(v, 6) + 0.0 for v in surface.point)
+            direction = tuple(round(v, 9) + 0.0 for v in surface.normal)
+            projection = Projection(next_projection_name(settings), aim, direction)
+            along = (record.get("target") or {}).get("frame", {}).get("axis")
+            if along is not None:
+                setup = prepare_rt(geo, settings, projection)
+                normal = setup.normal if setup.ok else setup.axis
+                projection = dataclasses.replace(
+                    projection, detector_angle_deg=along_angle(normal, along))
+        except (GeometryError, RtError) as exc:
+            raise DocumentError(str(exc)) from None
+        return projection
+
+    def add_ndt_rt_projection(self, study_id: str, projection: Projection | dict[str, Any]
+                              ) -> BuildResult | None:
+        """Přidá projekci na konec seznamu (jeden krok Zpět)."""
+        try:
+            projection = (projection if isinstance(projection, Projection)
+                          else Projection.from_dict(projection))
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+        return self._rt_projections(
+            study_id, [*self.ndt_rt_settings(study_id).projections, projection])
+
+    def set_ndt_rt_projection(self, study_id: str, name: str,
+                              projection: Projection | dict[str, Any]) -> BuildResult | None:
+        """Nahradí projekci ``name`` (i přejmenováním); stejná = žádná změna."""
+        self._rt_projection(study_id, name)
+        try:
+            projection = (projection if isinstance(projection, Projection)
+                          else Projection.from_dict(projection))
+        except RtError as exc:
+            raise DocumentError(str(exc)) from None
+        return self._rt_projections(study_id, [
+            projection if p.name == name else p
+            for p in self.ndt_rt_settings(study_id).projections])
+
+    def copy_ndt_rt_projection(self, study_id: str, name: str, shift: Any) -> BuildResult | None:
+        """Kopie projekce posunutá o vektor ``shift`` [mm] (třeba podél svaru), nový název."""
+        source = self._rt_projection(study_id, name)
+        try:
+            dx, dy, dz = (float(v) for v in shift)
+        except (TypeError, ValueError):
+            raise DocumentError("Posun kopie projekce musí být tři čísla [mm].") from None
+        if math.isclose(dx * dx + dy * dy + dz * dz, 0.0, abs_tol=1e-18):
+            raise DocumentError("Kopie by ležela na stejném místě – zadej nenulový posun.")
+        settings = self.ndt_rt_settings(study_id)
+        aim = tuple(round(a + d, 6) + 0.0 for a, d in zip(source.aim, (dx, dy, dz),
+                                                         strict=True))
+        copied = dataclasses.replace(source, name=next_projection_name(settings), aim=aim)
+        return self._rt_projections(study_id, [*settings.projections, copied])
+
+    def remove_ndt_rt_projection(self, study_id: str, name: str) -> BuildResult | None:
+        self._rt_projection(study_id, name)
+        return self._rt_projections(study_id, [
+            p for p in self.ndt_rt_settings(study_id).projections if p.name != name])
+
+    def _rt_record(self, study_id: str, what: str) -> dict[str, Any]:
+        self._require_computed(what)
+        record = self.ndt_study(study_id)
+        if record.get("method") != "RT":
+            raise DocumentError(f"{what.capitalize()} jde jen pro RT (radiografickou) studii.")
+        if self.result is None or self.result.part is None:
+            raise DocumentError(f"Model nemá těleso – {what} nemá na čem počítat.")
+        return record
+
+    def _rt_inputs(self, study_id: str, projections: list[str] | None = None
+                   ) -> tuple[Any, dict[str, Any], RtSettings, str]:
+        record = self._rt_record(study_id, "mapa RT")
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), "broken")
+        if state == "stale":
+            raise DocumentError("Studie je zastaralá (díl se změnil) – nejdřív ji potvrď.")
+        if state != "ok":
+            raise DocumentError("Mapa RT potřebuje platnou RT studii s oblastí (plochy nebo "
+                                "cílový objem svaru).")
+        settings = self.ndt_rt_settings(study_id)
+        if projections:
+            try:
+                settings = settings.with_projections(
+                    [settings.projection(name) for name in projections])
+            except RtError as exc:
+                raise DocumentError(str(exc)) from None
+        return self.result.part, record, settings, self._require().material
+
+    def _rt_key(self, study_id: str, projections: list[str] | None = None
+                ) -> tuple[Any, ...]:
+        return (self.result, study_id, repr(self.ndt_study(study_id)),
+                self._require().material, tuple(projections or ()))
+
+    def _rt_valid(self, cache: tuple[tuple[Any, ...], Any] | None) -> bool:
+        if self.computing or cache is None:
+            return False
+        key = cache[0]
+        try:
+            current = self._rt_key(key[1], list(key[4]))
+        except DocumentError:
+            return False
+        return key[0] is current[0] and key[1:] == current[1:]
+
+    @property
+    def ndt_rt_map(self) -> RtMap | None:
+        """Mapa RT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if not self._rt_valid(self._rt_cache):
+            self._rt_cache = None
+            return None
+        return self._rt_cache[1]
+
+    def ndt_rt_study(self) -> str | None:
+        """Studie, ke které patří platná mapa RT."""
+        return self._rt_cache[0][1] if self.ndt_rt_map is not None else None
+
+    def clear_ndt_rt(self) -> None:
+        self._rt_cache = None
+
+    def ndt_rt_estimate(self, study_id: str, projections: list[str] | None = None
+                        ) -> tuple[int, float, int, float]:
+        """Odhad před spuštěním: (míst oblasti, krok sítě, projekcí, doba [s])."""
+        part, record, settings, _material = self._rt_inputs(study_id, projections)
+        try:
+            return estimate_rt(part, record, settings)
+        except (RtError, GeometryError) as exc:
+            raise DocumentError(str(exc)) from None
+
+    def compute_ndt_rt(self, study_id: str,
+                       progress: Callable[[int, int], None] | None = None,
+                       projections: list[str] | None = None) -> RtMap:
+        """Spočítá mapu RT bez změny modelu (CLI, testy, pomocný proces); ``projections`` =
+        jen tyto projekce."""
+        part, record, settings, material = self._rt_inputs(study_id, projections)
+        key = self._rt_key(study_id, projections)
+        self.clear_ndt_rt()
+        try:
+            result = compute_rt(part, record, settings, material, progress=progress)
+        except (RtError, GeometryError) as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Mapu RT nejde spočítat: {exc}") from None
+        self._rt_cache = (key, result)
+        return result
+
+    @property
+    def rt_pending(self) -> bool:
+        """Počítá se zrovna mapa RT v pomocném procesu?"""
+        return self._rt_pending is not None
+
+    @property
+    def ndt_rt_progress(self) -> tuple[int, int] | None:
+        """Průběh výpočtu mapy RT (hotovo, celkem)."""
+        return self._rt_pending.get("progress") if self._rt_pending is not None else None
+
+    def start_ndt_rt(self, study_id: str) -> RtMap | None:
+        """Okno: mapa RT v pomocném procesu (jde zastavit); bez pomocného procesu hned."""
+        self.ndt_rt_estimate(study_id)  # chyba oblasti hned, ne až z pomocného procesu
+        if not self.ndt_rt_settings(study_id).projections:
+            raise DocumentError("RT studie nemá projekci – přidej ji (Zdroj nad vybrané "
+                                "místo).")
+        if self._runner is None:
+            return self.compute_ndt_rt(study_id)
+        key = self._rt_key(study_id)
+        self.clear_ndt_rt()
+        self.failure = ""
+        self._job = self._runner.submit_rt(self._require().to_dict(), study_id)
+        self._rt_pending = {"key": key, "progress": None}
+        return None
+
+    def ndt_rt_mesh(self, view: str | None = None) -> tuple[list, list, list]:
+        """Barevná síť mapy RT pro okno (celkem nebo jedna projekce „p0“ …), v řezu oříznutá;
+        objem svaru = povrch cíle obarvený podle buněk 07B."""
+        result = self.ndt_rt_map
+        if result is None:
+            return [], [], []
+        if result.kind == "volume":
+            return self._rt_volume_drawing(result, view)
+        nodes, triangles, colors = result.mesh(view)
+        plane = self.section_plane
+        return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def _rt_volume_drawing(self, result: RtMap, view: str | None) -> tuple[list, list, list]:
+        """Kresba objemové mapy RT (pamatuje se pro pohled a řez)."""
+        plane = self.section_plane
+        key = (id(result), view, plane)
+        if self._rt_volume_cache is None or self._rt_volume_cache[0] != key:
+            grid = result.volume_grid
+            try:
+                shape = _cut_preview(resolve_target(self.result.part, grid["target"]).shape,
+                                     plane)
+                states = [s.grade(view) for s in result.samples]
+                cells = SimpleNamespace(assumptions=grid, samples=result.volume_samples,
+                                        states=states)
+                drawing = (volume_mesh(cells, shape, RT_COLORS) if shape is not None
+                           else ([], [], []))
+            except Exception:  # noqa: BLE001 – kresba je jen pohled, čísla zůstávají v panelu
+                drawing = ([], [], [])
+            self._rt_volume_cache = (key, drawing)
+        return self._rt_volume_cache[1]
+
+    def ndt_rt_drawing(self, study_id: str | None, name: str | None
+                       ) -> tuple[Any, str, Any, Any, str, list] | None:
+        """Projekce pro prohlížeč (jen pohled): (tělo zdroje a deska detektoru, stav v barvách
+        sondy, zdroj, zaměřený bod, popis, paprsky ze zdroje do rohů detektoru); None = nejde
+        nakreslit (bez dílu, během přepočtu, neznámá projekce)."""
+        if (self.computing or study_id is None or name is None or self.result is None
+                or self.result.part is None):
+            return None
+        try:
+            record = self.ndt_study(study_id)
+            settings = RtSettings.from_dict(record.get("rt"))
+            projection = settings.projection(name)
+        except (DocumentError, RtError):
+            return None
+        if record.get("method") != "RT":
+            return None
+        key = (self.result, name, repr(record.get("rt")))
+        cached = self._rt_drawing_cache
+        if cached is not None and cached[0][0] is key[0] and cached[0][1:] == key[1:]:
+            return cached[1]
+        try:
+            setup = prepare_rt(self._ndt_geometry(), settings, projection)
+            shapes = [s for s in setup_shapes(setup, settings) if s is not None]
+        except Exception:  # noqa: BLE001 – kresba je jen pohled
+            return None
+        from build123d import Compound
+
+        state = ("ok" if setup.ok else "collision"
+                 if setup.kind in ("housing", "detector", "source_inside") else "uncertain")
+        corners = []
+        if setup.plane > 0:
+            half_l, half_w = settings.detector_length_mm / 2, settings.detector_width_mm / 2
+            for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                corner = tuple(c + setup.long[i] * a * half_l + setup.short[i] * b * half_w
+                               for i, c in enumerate(setup.center))
+                corners += [setup.source, corner]
+        text = (f"{name}: f {projection.distance_mm:g} mm".replace(".", ",")
+                + ("" if setup.ok else " – " + SETUP_FAILURES.get(setup.kind, "nejde")))
+        drawing = (Compound(shapes), state, setup.source, projection.aim, text, corners)
+        self._rt_drawing_cache = (key, drawing)
+        return drawing
+
+    def ndt_rt_setup_text(self, study_id: str | None, name: str | None) -> str:
+        """Jednou větou, jak projekce stojí (zdroj, detektor, odsunutí nebo proč nejde)."""
+        if self.ndt_rt_drawing(study_id, name) is None:
+            return ""
+        try:
+            settings = self.ndt_rt_settings(study_id)
+            setup = prepare_rt(self._ndt_geometry(), settings, settings.projection(name))
+        except (DocumentError, RtError, GeometryError):
+            return ""
+        return setup.text
+
+    def ndt_rt_angles(self, point: Any, direction: Any
+                      ) -> tuple[tuple[float, ...], float, float, str]:
+        """Pro dialog projekce: vztažná kolmice, (sklon, natočení) směru ke zdroji vůči ní [°]
+        a její popis. Leží-li zaměřený bod na ploše dílu, je to kolmice k ploše; jinak (střed
+        otvoru, bod mimo díl) osa souřadnic nejbližší směru ke zdroji."""
+        direction = tuple(float(v) for v in direction)
+        normal, label = None, ""
+        try:
+            surface = self._ndt_geometry().surface_at(tuple(float(v) for v in point))
+            if (abs(surface.distance) <= ON_SURFACE_MM
+                    and sum(a * b for a, b in zip(surface.normal, direction, strict=True)) > 0):
+                normal, label = tuple(surface.normal), "kolmice k ploše"
+        except (GeometryError, DocumentError):
+            pass
+        if normal is None:
+            index = max(range(3), key=lambda i: abs(direction[i]))
+            sign = 1.0 if direction[index] >= 0 else -1.0
+            normal = tuple(sign if i == index else 0.0 for i in range(3))
+            label = f"osa {'+' if sign > 0 else '−'}{'XYZ'[index]}"
+        tilt, turn = angles_of(normal, direction)
+        return normal, tilt, turn, label
+
+    def ndt_rt_preview(self, name: str, scale: int = 1) -> tuple[int, int, bytes] | None:
+        """Náhled prozařované tloušťky projekce ze spočítané mapy jako obrázek RGB (šířka,
+        výška, bajty) s tečkami míst oblasti; None = projekce bez náhledu."""
+        result = self.ndt_rt_map
+        if result is None:
+            return None
+        found = [i for i, p in enumerate(result.projections) if p.setup.name == name]
+        if not found or result.images[found[0]] is None:
+            return None
+        index = found[0]
+        radius = (PREVIEW_REACH[result.kind] * result.step_mm
+                  * (result.projections[index].magnification or 1))
+        return preview_rgb(result.images[index], result.marks(index), scale, radius)
+
+    def export_ndt_rt_png(self, name: str, path: str | Path) -> Path:
+        image = self.ndt_rt_image(name)
+        if image is None:
+            raise DocumentError("Náhled projekce není – spočítej mapu RT (projekce musí jít "
+                                "přiložit).")
+        scale = max(1, 960 // max(image.columns, 1))
+        try:
+            return write_png(path, *self.ndt_rt_preview(name, scale))
+        except OSError as exc:
+            raise DocumentError(f"PNG nejde uložit: {exc}") from None
+
+    def ndt_rt_describe(self, point: Any) -> list[str]:
+        """Stav místa mapy RT nejblíž bodu v každé projekci (klik do mapy); bez mapy prázdné."""
+        result = self.ndt_rt_map
+        if result is None or point is None:
+            return []
+        index = result.nearest(tuple(float(v) for v in point))
+        return [] if index is None else result.describe(index)
+
+    def ndt_rt_image(self, name: str) -> RtImage | None:
+        """Náhled prozařované tloušťky projekce ``name`` ze spočítané mapy (jinak None)."""
+        result = self.ndt_rt_map
+        if result is None:
+            return None
+        found = [i for i, p in enumerate(result.projections) if p.setup.name == name]
+        return result.images[found[0]] if found else None
+
+    def export_ndt_rt(self, path: str | Path) -> Path:
+        result = self.ndt_rt_map
+        if result is None:
+            raise DocumentError("Nejdřív spočítej mapu RT.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
 
     # --- NDT návrh poloh sondy (etapa 09, jen pohled) ------------------------------------
 

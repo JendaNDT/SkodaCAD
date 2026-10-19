@@ -37,7 +37,7 @@ def test_older_versions_keep_face_studies_and_original_file_until_explicit_save(
     assert session.ndt_study("s1")["target"] == data["ndt"]["studies"][0]["target"]
     session.save(tmp_path / "kopie.json")
     assert old.read_bytes() == before
-    assert json.loads((tmp_path / "kopie.json").read_text(encoding="utf-8"))["version"] == 20
+    assert json.loads((tmp_path / "kopie.json").read_text(encoding="utf-8"))["version"] == 21
 
 
 def test_loading_volume_normalizes_frame_without_mutation_and_round_trips(tmp_path):
@@ -166,7 +166,7 @@ def test_volume_study_is_transferred_as_numbers_without_occt_shapes():
 
 
 @pytest.mark.parametrize("filename,volumes,base", [
-    ("tupy_svar_objem.json", [14613.84387633061], "tupy_svar.json"),
+    ("tupy_svar_objem.json", [14613.84387633061] * 2, "tupy_svar.json"),  # UT a RT studie
     ("koutovy_svar_objem.json", [2450, 2450], "koutovy_svar.json"),
 ])
 def test_volume_examples_preserve_original_manufacturing_geometry(filename, volumes, base):

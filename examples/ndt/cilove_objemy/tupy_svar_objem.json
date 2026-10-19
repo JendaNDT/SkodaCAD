@@ -138,6 +138,68 @@
         "note": "",
         "created": "2026-10-17",
         "part": "650b773fdd7c1b67"
+      },
+      {
+        "id": "s2",
+        "name": "RT V svaru kolmo",
+        "method": "RT",
+        "target": {
+          "kind": "weld",
+          "frame": {
+            "origin": [
+              0.0,
+              -50.0,
+              0.0
+            ],
+            "axis": [
+              0.0,
+              1.0,
+              0.0
+            ],
+            "across": [
+              1.0,
+              0.0,
+              0.0
+            ]
+          },
+          "length_mm": 100.0,
+          "weld_type": "butt_v",
+          "dimensions": {
+            "angle_deg": 60.0,
+            "root_gap_mm": 2.0,
+            "thickness_mm": 12.0,
+            "cap_height_mm": 2.0,
+            "cap_top_width_mm": 14.0,
+            "cap_width_mm": 20.0,
+            "root_height_mm": 1.0,
+            "root_tip_width_mm": 4.0,
+            "root_width_mm": 6.0
+          }
+        },
+        "note": "Zdroj 500 mm nad temenem převýšení, detektor (film 10 × 24 cm) pod kořenem delší stranou podél svaru.",
+        "created": "2026-10-19",
+        "part": "650b773fdd7c1b67",
+        "rt": {
+          "class": "B",
+          "projections": [
+            {
+              "name": "P1",
+              "aim": [
+                0,
+                0,
+                14
+              ],
+              "direction": [
+                0,
+                0,
+                1
+              ],
+              "distance_mm": 500,
+              "detector": "contact",
+              "detector_angle_deg": 90
+            }
+          ]
+        }
       }
     ]
   }

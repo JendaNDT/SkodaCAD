@@ -33,7 +33,7 @@ METHODS = {  # zkratka → český název metody
 }
 TARGET_KINDS = ("faces", "volume", "weld")
 STUDY_KEYS = ("id", "name", "method", "target", "device", "material", "note", "created",
-              "part", "verified", "zones", "plan", "pt", "mt")
+              "part", "verified", "zones", "plan", "pt", "mt", "rt")
 
 STATE_LABELS = {"ok": "platná", "stale": "zastaralá", "incomplete": "neúplná",
                 "broken": "neplatná vazba"}
@@ -126,6 +126,15 @@ def check_study(study: Any, index: int = 1) -> None:
         try:
             MtSettings.from_dict(study["mt"])
         except MtError as exc:
+            raise StudyError(f"{where}: {exc}") from None
+    if "rt" in study:  # nastavení a projekce RT (etapa 13, formát 21)
+        from skodacad.ndt.rt import RtError, RtSettings
+
+        if study.get("method") != "RT":
+            raise StudyError(f"{where}: nastavení RT („rt“) má jen RT (radiografická) studie.")
+        try:
+            RtSettings.from_dict(study["rt"])
+        except RtError as exc:
             raise StudyError(f"{where}: {exc}") from None
     verified = study.get("verified")
     if verified is not None:

@@ -44,10 +44,11 @@ FORMAT = "skodacad"
 # verze 17 knihovnu NDT: původ hodnot sondy („profile“, „origins“, „angle_material“ …)
 # a materiál pro UT ve studii („material“), verze 18 plán dráhy sondy („plan“) a zakázané
 # zóny („zones“) ve studii, verze 19 nastavení PT studie („pt“: nástroje, úhly, postup),
-# verze 20 nastavení MT studie („mt“: jho, rozteče, meze, nanesení a prohlídka).
-VERSION = 20
+# verze 20 nastavení MT studie („mt“: jho, rozteče, meze, nanesení a prohlídka),
+# verze 21 nastavení a projekce RT studie („rt“: zdroj, detektor, třída, projekce).
+VERSION = 21
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20)
+                      20, 21)
 
 
 class DocumentError(ValueError):

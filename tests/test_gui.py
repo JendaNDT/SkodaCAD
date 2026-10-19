@@ -1747,7 +1747,7 @@ def test_panel_ut_material_angle_warning_and_transfer(ndt_window, slot_errors):
 
 
 def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
-    from skodacad.ndt import DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
+    from skodacad.ndt import PT_DISCLAIMER, RT_DISCLAIMER, UT_DISCLAIMER
 
     w = rib_window
     panel = w.ndt_panel
@@ -1761,7 +1761,7 @@ def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_erro
     panel.studies.setCurrentRow(-1)  # bez výběru podle metody nové studie (UT)
     assert panel.warning.text() == UT_DISCLAIMER
     panel.method_combo.setCurrentIndex(panel.method_combo.findData("RT"))
-    assert panel.warning.text() == DISCLAIMER
+    assert panel.warning.text() == RT_DISCLAIMER  # RT: povinné upozornění RT (24-vymezeni-rt)
     assert not panel.probe_action.isEnabled()
     assert slot_errors == []
 
@@ -2156,3 +2156,121 @@ def test_mt_panel_is_locked_while_ai_works(mt_window):
     w.set_assistant_busy(False)
     panel.refresh()
     assert panel.mt_settings_action.isEnabled() and panel.mt_action.isEnabled()
+
+
+@pytest.fixture
+def rt_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "otvor.json", template=True)
+    w.ndt_panel.studies.setCurrentRow(1)  # s2 – RT desky s otvorem kolmo a pod 30°
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_rt_panel_settings_projections_map_preview_and_export(rt_window, no_dialogs,
+                                                              slot_errors, tmp_path,
+                                                              monkeypatch):
+    from PySide6.QtWidgets import QDialog, QFileDialog, QInputDialog
+
+    from skodacad.ndt import RT_DISCLAIMER
+
+    w = rt_window
+    panel = w.ndt_panel
+    box = panel.rt_box
+    session = w.session
+    assert box.isVisibleTo(panel) and box.title() == "Geometrie projekce RT"
+    assert not panel.probe_box.isVisibleTo(panel) and not panel.mt_box.isVisibleTo(panel)
+    assert panel.warning.text() == RT_DISCLAIMER
+    assert box.projections.count() == 2 and box.projection_name() == "P1"
+    assert w.viewer.probe[0] == "ok" and w.viewer.probe[1] == pytest.approx((0, 0, 520))
+    assert len(w.viewer.beam) == 8  # paprsky ze zdroje do rohů detektoru
+    assert "detektor volně" in box.setup_label.text()
+    box.projections.setCurrentRow(1)  # P2 pod 30°
+    assert w.viewer.probe[1] == pytest.approx((250, 0, 453.0127), abs=1e-3)
+    box.settings_action.trigger()
+    assert "RtDialog" in no_dialogs and not session.dirty  # zrušený dialog nic nemění
+
+    def quick(self, dialog):
+        dialog.edits["step_mm"].setText("10")
+        dialog.edits["image_step_mm"].setText("20")
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", quick)
+    box.settings_action.trigger()
+    assert session.ndt_study("s2")["rt"]["image_step_mm"] == 20 and session.dirty
+    steps = len(session._undo)
+
+    def unchanged(self, dialog):
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", unchanged)
+    box.settings_action.trigger()
+    box.edit_action.trigger()  # P2: sklon 30° od osy +Z, nic nezměněno
+    assert len(session._undo) == steps  # nezměněné OK = žádný krok Zpět
+    before = session.ndt_rt_settings("s2").projection("P2")
+
+    def tilt(self, dialog):
+        assert dialog.tilt.text() == "30" and dialog.turn.text() == "0"
+        dialog.tilt.setText("45")
+        dialog.distance.setText("700")
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", tilt)
+    box.edit_action.trigger()
+    p2 = session.ndt_rt_settings("s2").projection("P2")
+    assert p2.distance_mm == 700 and p2.reference_mm == before.reference_mm
+    assert p2.direction == pytest.approx((math.sqrt(0.5), 0, math.sqrt(0.5)))
+    top = face_at(session.result.part, 60, 0, 20)
+    w.viewer.click([top], (60, 0, 20))
+    assert box.add_action.isEnabled()
+    box.add_action.trigger()  # zdroj nad kliknutým místem
+    assert box.projection_name() == "P3" and w.viewer.probe[1] == pytest.approx((60, 0, 520))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("0; 30; 0", True))
+    box.copy_action.trigger()
+    assert box.projection_name() == "P4"
+    assert session.ndt_rt_settings("s2").projection("P4").aim == (60, 30, 20)
+    box.remove_action.trigger()
+    assert [p.name for p in session.ndt_rt_settings("s2").projections] == ["P1", "P2", "P3"]
+    assert "Odhad:" in box.estimate.text() and box.compute_action.isEnabled()
+    box.compute_action.trigger()
+    found = session.ndt_rt_map
+    assert found is not None and len(found.projections) == 3 and not slot_errors
+    assert w.viewer.highlighted == []  # mapa RT je hlavní – oblast se nezvýrazňuje
+    shown = w.viewer.coverage_map
+    assert shown is not None and "Promítne se" in box.summary.text()
+    assert box.view.count() == 4  # celkem + 3 projekce
+    box.view.setCurrentIndex(box.view.findData("p1"))
+    assert w.viewer.coverage_map is not shown  # mapa jedné projekce se nakreslí znovu
+    assert box.projection_name() == "P1" and not box.preview.pixmap().isNull()
+    assert box.preview.pixmap().width() == 420  # náhled zmenšený na šířku panelu
+    w.viewer.click([top], (60, 0, 20))
+    assert "P1:" in box.pick.text() and "P3:" in box.pick.text()
+    path = tmp_path / "rt.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    box.export_action.trigger()
+    assert path.read_text(encoding="utf-8-sig").splitlines()[1] == RT_DISCLAIMER
+    png = tmp_path / "p3.png"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(png), ""))
+    box.png_action.trigger()
+    assert png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    box.stop_action.trigger()  # nic neběží – nic se nestane
+    box.clear_action.trigger()
+    assert session.ndt_rt_map is None and w.viewer.coverage_map is None
+    w.undo_action.trigger()  # smazání P4
+    assert box.projections.count() == 4
+    assert slot_errors == []
+
+
+def test_rt_panel_is_locked_while_ai_works(rt_window):
+    w = rt_window
+    box = w.ndt_panel.rt_box
+    w.set_assistant_busy(True)
+    w.ndt_panel.refresh()
+    assert not any(a.isEnabled() for a in box.actions())
+    w.set_assistant_busy(False)
+    w.ndt_panel.refresh()
+    assert box.settings_action.isEnabled() and box.compute_action.isEnabled()

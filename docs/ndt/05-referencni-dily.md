@@ -192,6 +192,30 @@ ploše, 25 mm u pólu se nepočítá) – pro rozteč 100 i 75 mm.
 | Koutový svar (`koutovy_svar.json`, s2 plochy svarů) | napříč, střed (−8,5; 0; 13,5) | póly (−8,5 − √(50² − 3,5²); 0; 10) = (**−58,38**; 0; 10) a (−5; 0; **63,38**), nohy 90° | jho přes roh |
 | | podél svaru (svar 100 mm) | 100 mm nejde; 75 mm jen \|y\| ≤ 15 (**30 %** délky) | |
 
+## RT – geometrie projekce u dílů 4, 5 a 6 (etapa 13)
+
+**Předpoklady RT** (návrh `23-navrh-etapa-13.md`, vymezení `24-vymezeni-rt.md`, jen geometrie):
+bodový zdroj s ohniskem d = 3 mm, kužel svazku 40°, plochý detektor 100 × 240 mm (film
+10 × 24 cm). Prozařovaná tloušťka w = všechny úseky v materiálu na spojnici ohnisko–detektor.
+Poměr w / w₀ (w₀ = tloušťka na středu svazku) nejvýš 1,1 (třída B) / 1,2 (třída A); nejmenší
+vzdálenost zdroje f_min = 7,5 / 15 · d · b^(2/3), když b < 1,2 t, dosadí se t (ISO 17636-1,
+ISO 5579, vzorec pro film). f a b se měří po středním paprsku od strany předmětu u zdroje.
+
+| Díl, studie | Případ | Ručně | Pozn. |
+|---|---|---|---|
+| Deska s otvorem (`otvor.json`, horní plocha) | zdroj kolmo nad otvorem, f = 500, detektor v rovině spodní plochy, jmenovitá tloušťka 20 | plech u x = 50: 20 / cos(arctg(50/500)) = **20,10 mm**; u x = 95: poměr **1,018** | |
+| | otvor kolmo | průhledné **x ∈ ⟨−10; 10⟩** (rozhoduje dolní hrana) | |
+| | zdroj sklopený o 30° k +X, S = (250; 0; 453,0), detektor na spodní ploše | průhledné **x ∈ ⟨−10; −1,09⟩ = 8,91 mm** (rovnoběžně by 8,45) | podmínka dokončení z plánu |
+| | vzdálenosti | f = 500, b = 20 (kolmo) / b = 20 / cos 30° = **23,09** (30°); f_min A **165,8**, B **331,6 mm**; U_g **0,12 mm**; zvětšení **1,04** | |
+| | okraj filmu | horní plocha na filmu do \|y\| ≤ 50 · 500/520 = **48,08 mm** (96,1 % plochy) | |
+| Tupý svar V (`cilove_objemy/tupy_svar_objem.json`, objem svaru) | zdroj kolmo nad převýšením, f = 500, detektor na kořeni (z = −1) podél svaru | w₀ = 2 + 12 + 1 = **15 mm**; f_min A **136,8**, B **273,7 mm**; U_g **0,09 mm**; celý svar na filmu | při f = 250 třída B nevyhoví, A ano |
+| | konec svaru y = 49 | poměr 1 / cos(arctg(49/507)) = **1,005** | |
+| | detektor vedle svaru (x = 30) | kořen vyčnívá 1 mm → detektor odsunut o **1 mm** | |
+| Trubka (`trubka.json`, plášť Ø 114,3 × 6) | zdroj nad osou, f = 500, detektor dole tečně | w₀ = 2 × 6 = **12 mm** (dvě stěny); poměr 1,1 rovnoběžně x = ±22,52 mm, ze zdroje na detektoru **±24,85 mm** | |
+| | vzdálenost | b = 114,3: f_min A **529,9**, B **1 059,8 mm** → f = 500 nevyhoví ani A | |
+| | obraz | paprsek projde oběma stěnami → **překryv obrazů** (oblast = celý plášť) | |
+| | zdroj v ose trubky | tělo zdroje Ø 120 se do otvoru Ø 102,3 **nevejde**; bez těla projde | |
+
 ## Záznam ověření
 
 | Díl | Ověřil | Datum | Poznámka / oprava |
@@ -199,3 +223,4 @@ ploše, 25 mm u pólu se nepočítá) – pro rozteč 100 i 75 mm.
 | 1–8 | *čeká na kolegu NDT technika* | | |
 | 9 a PT u dílů 2 a 7 | *čeká na kolegu NDT technika* | | |
 | MT u dílů 1, 2, 5 a 7 | *čeká na kolegu NDT technika* | | |
+| RT u dílů 4, 5 a 6 | *čeká na kolegu NDT technika* | | |
