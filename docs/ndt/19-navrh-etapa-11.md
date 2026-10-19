@@ -401,4 +401,12 @@ knihovna Pythonu ani sloučení do `main`.
   bodech ověřují testy přesně (`tests/test_ndt_pt.py`: pásy u rohů 135° a 90°, štěrbina
   1,73 / 11,43 mm i u čela, úhel ke stěně otvoru atan(d/6) ± 0,3°, oko se nevejde do otvoru
   hlubokého 700 mm, oplach, nejisté nikdy jako přístupné).
+- **11A.2 (hotovo):** formát **19** (`VERSION`, `SUPPORTED_VERSIONS`), `pt` ve studii (jen PT
+  studie, kontrola `PtSettings.from_dict` při načtení, změna metody `pt` smaže).
+  `ModelSession`: `ndt_pt_settings` / `set_ndt_pt_settings` (jeden krok Zpět, stejné nastavení
+  = žádná změna), `ndt_pt_estimate`, `compute_ndt_pt`, `start_ndt_pt` (pomocný proces s průběhem
+  `ndt_pt_progress`, *Zastavit* = `cancel`), `ndt_pt_map` (jen pro výsledek přepočtu
+  a nezměněný záznam studie), `ndt_pt_mesh` (i v řezu), `ndt_pt_describe`, `export_ndt_pt`.
+  Pomocný proces: úloha `pt` (`BackgroundRebuilder.submit_pt`, `Finished.pt`). Příkazová řádka
+  `skodacad kapilarni` a `build` vypíše u PT studií `PT_DISCLAIMER`. AI pravidla: věta o PT.
 

@@ -429,6 +429,22 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   (--plocha X,Y,Z --smer 180 | --varianta N | --kombinace | --prepocet) [--vzor auto|k-cili|podel]
   [--roztec 5] [--najezd 20] [--kontrola 1] [--zona X1,Y1,Z1:X2,Y2,Z2] [--srovnani]
   [--odolnost] [--ulozit] [--csv plan.csv]`. Návrh: [Etapa 10](docs/ndt/18-navrh-etapa-10.md).
+* **PT – přístupnost povrchu pro kapilární zkoušku (etapa 11):** jen geometrie podle
+  [závazného vymezení PT](docs/ndt/20-vymezeni-pt.md) – žádná smáčivost, vzlínání, citlivost
+  ani detekovatelnost vad. Plochy PT studie se rozdělí na drobné plošky a pro každou se zjistí
+  **nástřik** (volná přímka zvenku do 60° od kolmice, šikmo do 85°), **otření nástrojem**
+  (kulička špičky + dřík s libovolným sklonem, hlavní Ø 10 a jemný Ø 3, dřík 100 mm – přesný
+  průnik s dílem) a **prohlídka** (aspoň 30° k povrchu, oko do 600 mm s volným prostorem
+  Ø 50 mm; meze z ASME V čl. 9 a BINDT CP25). K tomu upozornění na **úzkou mezeru** a **hluboké
+  nebo zakryté místo** (otevřenost pod 10 % směrů). Výsledek: přístupné / omezené / nepřístupné
+  / nelze spolehlivě vyhodnotit, s českými důvody, souhrnem po kontrolách a CSV s povinným
+  upozorněním PT. Zvolené hodnoty (nástroje, úhly nástřiku, oko) jsou označené „zvoleno pro
+  výpočet, ne z normy“; osvětlení a UV (ISO 3059) se nepočítají. Postup čištění **otřením**
+  (výchozí) nebo **oplachem**. Nastavení se ukládá do PT studie (formát 19), mapa je jen pohled.
+  Ukázka: referenční díl 9 (štěrbina a slepý otvor) a PT studie v kapse a koutovém svaru.
+  V příkazové řádce: `skodacad kapilarni MODEL --studie s1 [--krok 2] [--nastroj 10]
+  [--jemny 3] [--delka 100] [--oplach] [--ulozit] [--csv pt.csv]`.
+  Návrh: [Etapa 11](docs/ndt/19-navrh-etapa-11.md).
 
 ### Tažení a přechod
 
@@ -809,8 +825,8 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
 (`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
 NDT (původ hodnot sondy, materiál pro UT; etapa 08), verze 18 plán dráhy sondy a zakázané
-zóny ve studii (`plan`, `zones`; etapa 10).
-Starší soubory verze 1–17 se načtou beze změny. Uložení novou aplikací zapisuje verzi 18;
+zóny ve studii (`plan`, `zones`; etapa 10), verze 19 nastavení PT studie (`pt`; etapa 11).
+Starší soubory verze 1–18 se načtou beze změny. Uložení novou aplikací zapisuje verzi 19;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -868,6 +884,13 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   `target`, `probe` jsou otisky dílu, cíle a rozměrů sondy, pro které plán vznikl – jiný
   otisk = plán zastaralý; sám se nikdy nepřepočítá ani neposune. `edited` = ručně upravený.
   Výsledek ověření a pokrytí se do souboru neukládá.
+* **Nastavení PT** (verze 19, nepovinné, jen u PT studie, etapa 11): `pt` –
+  `{"step_mm": 2, "cleaning": "wipe", "tool_mm": 10, "fine_tool_mm": 3,
+  "tool_length_mm": 100, "spray_deg": 60, "spray_limit_deg": 85, "view_deg": 30,
+  "view_limit_deg": 5, "view_distance_mm": 600, "eye_mm": 50, "open_warning": 10}`.
+  Chybějící hodnota = výchozí (bez `step_mm` = automaticky asi 1500 vzorků), `cleaning`
+  `wipe` = otřením, `rinse` = oplachem, `fine_tool_mm` 0 = bez jemného nástroje. Úhly
+  nástřiku jsou od kolmice, úhly prohlídky k povrchu. Mapa PT se do souboru neukládá.
 
 ### Cílové objemy a svary (07A, verze 16)
 

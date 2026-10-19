@@ -255,3 +255,131 @@ def test_study_faces_need_pt_study_with_faces(pocket, weld):
     weld_session, _ = weld
     assert len(study_faces(PartGeometry(weld_session.result.part),
                            weld_session.ndt_study("s1"))) == 2
+
+
+# --- formát 19, ModelSession, pomocný proces, příkazová řádka (11A.2) ------------------------
+
+QUICK = PtSettings(step_mm=20)  # horní plocha dílu 9 hrubě: málo rychlých vzorků
+
+
+def test_settings_are_saved_in_pt_study_as_one_undo_step(tmp_path):
+    from skodacad.document import Document, DocumentError
+
+    session = opened("sterbina")
+    assert session.ndt_pt_settings("s3") == PtSettings()
+    assert session.set_ndt_pt_settings("s3", QUICK) is not None
+    assert session.ndt_study("s3")["pt"]["step_mm"] == 20 and session.dirty
+    assert session.set_ndt_pt_settings("s3", {"step_mm": 20}) is None  # beze změny
+    session.undo()
+    assert "pt" not in session.ndt_study("s3")
+    session.redo()
+    path = session.save(tmp_path / "pt.json")
+    data = Document.load(path).to_dict()
+    assert data["version"] == 19 and data["ndt"]["studies"][2]["pt"]["step_mm"] == 20
+    with pytest.raises(DocumentError, match="jen PT"):
+        opened("kapsa").set_ndt_pt_settings("s1", QUICK)  # s1 kapsy je UT studie
+    with pytest.raises(DocumentError, match="Hlavní nástroj"):
+        session.set_ndt_pt_settings("s3", {"tool_mm": 0})
+    session.set_ndt_method("s3", "UT")  # nastavení PT má jen PT studie
+    assert "pt" not in session.ndt_study("s3")
+    session.undo()
+    assert session.ndt_study("s3")["pt"]["step_mm"] == 20
+
+
+def test_pt_key_in_file_is_checked(tmp_path):
+    import json
+
+    from skodacad.document import Document, DocumentError
+
+    data = json.loads((NDT / "kapsa.json").read_text(encoding="utf-8"))
+    data["ndt"]["studies"][1]["pt"] = {"tool_mm": 8}
+    Document.from_dict(data)  # PT studie může mít nastavení
+    data["ndt"]["studies"][0]["pt"] = {"tool_mm": 8}
+    with pytest.raises(DocumentError, match="nastavení PT .* má jen PT"):
+        Document.from_dict(data)
+    data["ndt"]["studies"][0].pop("pt")
+    data["ndt"]["studies"][1]["pt"] = {"nastroj": 8}
+    with pytest.raises(DocumentError, match="nezná nastroj"):
+        Document.from_dict(data)
+
+
+def test_session_map_is_a_view_for_valid_study_and_disappears_with_change(tmp_path):
+    from skodacad.document import DocumentError
+
+    session = opened("sterbina")
+    session.set_ndt_pt_settings("s1", QUICK)
+    count, step, _ = session.ndt_pt_estimate("s1")
+    assert step == 20 and 0 < count < 400
+    result = session.compute_ndt_pt("s1")
+    assert session.ndt_pt_map is result and session.ndt_pt_study() == "s1"
+    assert len(result.samples) == count and result.percent("ok") == pytest.approx(100)
+    nodes, triangles, colors = session.ndt_pt_mesh("view")
+    assert len(triangles) == count and len(colors) == 3 * count
+    assert session.ndt_pt_describe((0.0, 20.0, 30.0))[0].startswith("Přístupné")
+    csv = session.export_ndt_pt(tmp_path / "pt.csv")
+    assert csv.read_text(encoding="utf-8-sig").splitlines()[1] == PT_DISCLAIMER
+    session.set_ndt_pt_settings("s1", PtSettings(step_mm=25))  # jiné zadání → mapa neplatí
+    assert session.ndt_pt_map is None
+    with pytest.raises(DocumentError, match="Nejdřív spočítej mapu PT"):
+        session.export_ndt_pt(tmp_path / "x.csv")
+    session.set_parameter("d", "8")  # jiný díl → studie zastaralá
+    with pytest.raises(DocumentError, match="zastaralá"):
+        session.compute_ndt_pt("s1")
+    with pytest.raises(DocumentError, match="jen pro PT"):
+        opened("kapsa").compute_ndt_pt("s1")
+
+
+@pytest.fixture(scope="module")
+def runner():
+    from skodacad.worker import BackgroundRebuilder
+
+    rebuilder = BackgroundRebuilder()
+    yield rebuilder
+    rebuilder.close()
+
+
+def test_background_map_matches_direct_and_reports_progress(runner):
+    import time
+
+    direct = opened("sterbina")
+    direct.set_ndt_pt_settings("s1", QUICK)
+    expected = [s.state for s in direct.compute_ndt_pt("s1").samples]
+    session = ModelSession(runner)
+    session.open(NDT / "sterbina.json")
+    session.wait(120)
+    session.set_ndt_pt_settings("s1", QUICK)
+    session.wait(120)
+    assert session.start_ndt_pt("s1") is None and session.pt_pending
+    seen = set()
+    end = time.monotonic() + 300
+    while session.computing and time.monotonic() < end:
+        session.poll()
+        seen.add(session.ndt_pt_progress)
+        time.sleep(0.05)
+    assert not session.failure, session.failure
+    assert [s.state for s in session.ndt_pt_map.samples] == expected
+    assert any(item is not None for item in seen)
+
+
+def test_cli_prints_pt_summary_saves_settings_and_build_shows_disclaimer(tmp_path, capsys):
+    import json
+    import shutil
+
+    from skodacad.cli import main
+
+    model = tmp_path / "sterbina.json"
+    shutil.copy(NDT / "sterbina.json", model)
+    code = main(["kapilarni", str(model), "--studie", "s1", "--krok", "20", "--jemny", "2",
+                 "--ulozit", "--csv", str(tmp_path / "pt.csv")])
+    out = capsys.readouterr()
+    assert code == 0, out.err
+    assert PT_MAP in out.out and PT_DISCLAIMER in out.out and "Odhad" in out.err
+    saved = json.loads(model.read_text(encoding="utf-8"))
+    assert saved["version"] == 19
+    assert saved["ndt"]["studies"][0]["pt"]["fine_tool_mm"] == 2
+    assert (tmp_path / "pt.csv").exists()
+    assert main(["kapilarni", str(model), "--studie", "s9"]) == 2
+    capsys.readouterr()
+    assert main(["build", str(NDT / "koutovy_svar.json"), "-o", str(tmp_path),
+                 "--format", "step"]) == 0
+    assert f"({PT_DISCLAIMER})" in capsys.readouterr().out

@@ -23,7 +23,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
-from skodacad.ndt import DISCLAIMER, UT_DISCLAIMER
+from skodacad.ndt import DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -177,6 +177,19 @@ def main(argv: list[str] | None = None) -> int:
                       help="spočítej i pokrytí po posunu řádků o ± půl rozteče")
     plan.add_argument("--ulozit", action="store_true", help="ulož model s plánem a zónami")
     plan.add_argument("--csv", type=Path)
+
+    pt = commands.add_parser("kapilarni", help="PT: geometrická přístupnost povrchu pro "
+                             "kapilární zkoušku (nástřik, otření, prohlídka)")
+    pt.add_argument("model", type=Path)
+    pt.add_argument("--studie", required=True, help="PT studie s vybranými plochami")
+    pt.add_argument("--krok", type=float, help="krok sítě [mm]; jinak automaticky")
+    pt.add_argument("--nastroj", type=float, help="průměr hlavního nástroje [mm] (výchozí 10)")
+    pt.add_argument("--jemny", type=float, help="průměr jemného nástroje [mm], 0 = bez něj")
+    pt.add_argument("--delka", type=float, help="délka dříku nástroje [mm] (výchozí 100)")
+    pt.add_argument("--oplach", action="store_true",
+                    help="čištění a odstranění přebytku oplachem (ne otřením)")
+    pt.add_argument("--ulozit", action="store_true", help="ulož nastavení PT do modelu")
+    pt.add_argument("--csv", type=Path)
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -190,6 +203,8 @@ def main(argv: list[str] | None = None) -> int:
             return _access(args)
         if args.command == "draha":
             return _plan(args)
+        if args.command == "kapilarni":
+            return _pt(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -540,6 +555,42 @@ def _plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _pt(args: argparse.Namespace) -> int:
+    from dataclasses import replace
+
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    study = args.studie
+    settings = session.ndt_pt_settings(study)
+    changes = {key: value for key, value in (("step_mm", args.krok), ("tool_mm", args.nastroj),
+                                             ("fine_tool_mm", args.jemny),
+                                             ("tool_length_mm", args.delka)) if value is not None}
+    if args.oplach:
+        changes["cleaning"] = "rinse"
+    if changes:
+        settings = replace(settings, **changes)
+        session.set_ndt_pt_settings(study, settings)
+    count, step, seconds = session.ndt_pt_estimate(study)
+    print(f"Odhad: {count} vzorků při kroku {step:g} mm, asi {seconds:.0f} s.", file=sys.stderr)
+
+    def progress(done: int, total: int) -> None:
+        if done == total or done % 200 == 0:
+            print(f"Vzorky: {done} z {total}", file=sys.stderr, flush=True)
+
+    result = session.compute_ndt_pt(study, progress=progress)
+    print("\n".join(result.summary()))
+    if args.csv:
+        try:
+            print("CSV:", result.write_csv(args.csv))
+        except OSError as exc:
+            raise ValueError(f"CSV nejde uložit: {exc}") from None
+    if args.ulozit:
+        print("Model uložen:", session.save())
+    return 0
+
+
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
     glued: list[str] = []
@@ -614,6 +665,8 @@ def _build(args: argparse.Namespace) -> int:
         print(f"  ({DISCLAIMER})")
         if any(study.method == "UT" for study in result.ndt):
             print(f"  ({UT_DISCLAIMER})")
+        if any(study.method == "PT" for study in result.ndt):
+            print(f"  ({PT_DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

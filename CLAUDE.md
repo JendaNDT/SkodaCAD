@@ -245,10 +245,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy) a `draha` (plán dráhy UT sondy) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy) a `kapilarni` (mapa PT) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh a plán dráhy (`submit_plan`, průběžné zprávy `Finished.update`) |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`) a mapa PT (`submit_pt`), průběžné zprávy `Finished.update` |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -736,6 +736,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   koutový svar 135° → 2,07 / 0,62 mm, kapsa 90° → r.
 - Rychlost 20–95 ms na vzorek (stěny kapes a štěrbin pomalu: dohledání úhlu a dříku). Testy
   proto zkoušejí body (`Sampler.sample`), celou mapu jen na malé ploše.
+- ModelSession: nastavení `pt` ve studii (formát 19, `set_ndt_pt_settings` = jeden krok Zpět,
+  stejné nastavení = žádná změna; `pt` smí mít jen PT studie, změna metody ho smaže). Mapa
+  (`compute_ndt_pt` / `start_ndt_pt`, `ndt_pt_map`) platí pro výsledek přepočtu a nezměněný
+  záznam studie (`_pt_key`), zastaralou studii je třeba potvrdit.
 - Výsledek je pohled. `PT_DISCLAIMER` a „zvoleno pro výpočet, ne z normy“ u zvolených hodnot
   jsou v souhrnu i CSV; meze prohlídky 30° a 600 mm jsou z ASME V čl. 9 a BINDT CP25 (EN ISO
   17637 a EN 13018 neověřené – placené).
@@ -853,7 +857,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
   [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [x] 11A.1 vymezení
-  PT a jádro `ndt/pt.py`, [ ] 11A.2 formát 19, ModelSession, CLI, [ ] 11B okno.
+  PT a jádro `ndt/pt.py`, [x] 11A.2 formát 19, ModelSession, CLI, [ ] 11B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
