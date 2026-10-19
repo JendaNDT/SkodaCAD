@@ -149,7 +149,9 @@
   Jen pohled, formát 17; *Použít variantu* = jeden krok Zpět; zakřivené plochy se
   nezkoušejí; CLI `skodacad polohy`, AI bez nového nástroje, souběh procesů odložen.
   Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
-  to“. Otevřené: vynechat z pokrytí místa pod sondou, když je kontaktní plocha i cílem?
+  to“. Otázka „místa pod sondou, když je kontaktní plocha i cílem“ rozhodnuta 19. 10. 2026:
+  na ploše přiložení se **nepočítá zásah 1. ramene** (paprsek z ní jen vychází), odražené
+  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`).
 - (18. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 10 – plán dráhy UT sondy**
   (`docs/ndt/18-navrh-etapa-10.md`, dokončí milník M3): `ndt/plan.py` – průchod = varianta
   etapy 09, řádky cik-cak s roztečí (výchozí 5 mm) ve vzoru *k cíli a zpět* nebo *podél*
@@ -678,9 +680,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   před sjednocením kombinace (`MainWindow._refresh_coverage`); body kontaktních ploch kreslí
   `viewer.show_points` (kuličky `Aspect_TOM_BALL` po barvách, vrstva `Topmost`, self-test
   „points“), prohlížeč je maže s dílem → `_shown_points = None`.
-- Plocha, na které sonda stojí, je v geometrickém modelu Etapy 06 „pokrytá“ v místech výstupu
-  paprsku (rameno začíná na povrchu). Když je cílem kontaktní plocha sama, analýza ji proto
-  řadí vysoko – je to vlastnost stávajícího výpočtu pokrytí, ne analýzy.
+- Plocha, na které sonda stojí: zásah **1. ramene** se na ní nepočítá (`coverage._on_contact`,
+  rozhodnutí autora 19. 10. 2026, algoritmus `ndt-ut-pokryti 2`) – paprsek z ní jen vychází.
+  Dřív tam výpočet hlásil pokrytí (žebro, sonda na dně, cíl dno: 56,35 % → 0 %; s 1 odrazem
+  64,6 % → 41,94 % – zůstává jen celý krok) a návrh poloh takovou polohu řadil nahoru.
+  Běžný případ (sonda nahoře, cíl dno) beze změny. Souhrn a CSV pak nesou `CONTACT_NOTE`.
 
 ## Známé pasti (NDT – plán dráhy)
 

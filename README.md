@@ -334,7 +334,9 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   Po změně dílu, studie, sondy či přiložení výsledek zanikne; do JSON se neukládá (verze 15).
   Numerická tolerance sama neospravedlňuje kolidující polohu sondy: na rovinném pojezdu se
   mezilehlé polohy znovu ověřují. Procento je geometrický podíl, nikoli pravděpodobnost nálezu
-  vady. Krok zjemni a porovnej výsledky; u bodových dotazů jde o podíl bodů, nikoli plochu.
+  vady. Na ploše, kde sonda stojí, se nepočítá místo, odkud paprsek jen vychází (první
+  rameno); odražený paprsek, který se na plochu vrátí (celý krok), se počítá. Krok zjemni
+  a porovnej výsledky; u bodových dotazů jde o podíl bodů, nikoli plochu.
   Zaškrtnuté **Ověřit citlivost na krok** (výchozí, výpočet trvá zhruba o polovinu déle)
   nebo `--konvergence` porovná krok a 2× krok a nahoře v souhrnu napíše zeleně nízkou
   citlivost, nebo oranžově „Výsledek je citlivý na krok – zjemni krok“. Hrubý běh hledá

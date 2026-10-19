@@ -263,3 +263,24 @@ def test_invalid_settings_fail_before_expensive_scan(parts, kwargs):
     geo = parts["deska"]
     with pytest.raises(CoverageError):
         compute(geo, place(geo, Probe.straight(), (0, 0, 20)), points=[(0, 0, 0)], **kwargs)
+
+
+def test_contact_face_is_not_covered_by_the_beam_leaving_it(tmp_path):
+    """Rozhodnutí autora 19. 10. 2026 (otázka z etapy 09): sonda stojí na dně žebra, které je
+    zároveň cílem. První rameno z plochy jen vychází – nepočítá se (dřív 56,35 % při kroku
+    10 mm). Odražené rameno, které se na dno vrátí (celý krok), se počítá dál."""
+    from skodacad.ndt.coverage import CONTACT_NOTE
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(EXAMPLES / "ndt" / "zebro.json")
+    bottom = face_at(session.result.part, 50, 0, 0)
+    session.place_ndt_probe("s1", [bottom.wrapped], (50, 0, 0), 180)
+    direct = session.compute_ndt_coverage(mode="face", step_mm=20, bounces=0)
+    assert direct.percent("covered") == 0 and direct.assumptions["contact_samples"] > 0
+    assert CONTACT_NOTE in direct.summary()
+    assert CONTACT_NOTE in direct.write_csv(tmp_path / "pokryti.csv").read_text(
+        encoding="utf-8-sig")
+    skip = session.compute_ndt_coverage(mode="face", step_mm=20, bounces=1)
+    covered = [h for s, h in zip(skip.states, skip.hits, strict=True) if s == "covered"]
+    assert covered and all(hit.leg >= 2 for hit in covered)  # jen odražený paprsek

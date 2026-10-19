@@ -2,6 +2,10 @@
 
 Tolerance je numerický poloměr zachycení, nikoli fyzikální šířka paprsku. Procenta ploch
 jsou vážená obsahy trojúhelníků. Bodové dotazy se počítají odděleně, bez fiktivní plochy.
+
+Na ploše přiložení se nepočítá zásah prvního ramene: paprsek z ní jen vychází, do místa
+nemíří (rozhodnutí autora 19. 10. 2026 k otázce z etapy 09). Odražené rameno, které se na
+plochu vrátí (celý krok), se počítá dál.
 """
 
 from __future__ import annotations
@@ -21,9 +25,11 @@ from skodacad.ndt.geometry import PartGeometry, Point
 from skodacad.ndt.ut import BeamLeg, BeamPath, Refraction, trace_beam
 from skodacad.thickness_map import _Surface
 
-ALGORITHM = "ndt-ut-pokryti 1"
+ALGORITHM = "ndt-ut-pokryti 2"  # 2: bez zásahu 1. ramene na ploše přiložení (19. 10. 2026)
 PERCENT_NOTE = ("Procento vyjadřuje pouze geometrický podíl zasažené oblasti, "
                 "nikoli pravděpodobnost nalezení vady.")
+CONTACT_NOTE = ("Místa na ploše přiložení: nepočítá se, odkud paprsek vychází (první rameno), "
+                "jen odražený paprsek, který se na plochu vrátí.")
 STATES = {"covered": "Geometricky pokryto", "uncovered": "Geometricky nepokryto",
           "uncertain": "Nelze spolehlivě vyhodnotit"}
 COLORS = {"covered": (0.15, 0.70, 0.25), "uncovered": (0.85, 0.20, 0.15),
@@ -129,6 +135,7 @@ class CoverageMap:
                   *self.assumptions.get("device_lines", []),
                   *([self.assumptions["tolerance_warning"]]
                     if self.assumptions.get("tolerance_warning") else []),
+                  *([CONTACT_NOTE] if self.assumptions.get("contact_samples") else []),
                   *([self.assumptions["convergence_text"]]
                     if self.assumptions.get("convergence_text") else []),
                   f"Výpočet {self.seconds:.1f} s; algoritmus {ALGORITHM}."]
@@ -140,6 +147,7 @@ class CoverageMap:
         with path.open("w", encoding="utf-8-sig", newline="") as stream:
             writer = csv.writer(stream, delimiter=";")
             for text in (UT_COVERAGE, UT_DISCLAIMER, PERCENT_NOTE,
+                         *([CONTACT_NOTE] if self.assumptions.get("contact_samples") else []),
                          *self.assumptions.get("device_lines", []),
                          json.dumps(self.assumptions, ensure_ascii=False, sort_keys=True)):
                 writer.writerow([text])
@@ -410,6 +418,25 @@ def _scan_positions(placement: Placement, mode: str, scan_step: float,
     return candidates
 
 
+def _on_contact(geo: PartGeometry, face: Any, centers: list[Point | None]) -> set[int]:
+    """Vzorky ležící na ploše přiložení. První rameno paprsku z nich jen vychází – do místa
+    nemíří, takže ho nepokrývá (jinak by sonda „pokryla“ plochu, na které stojí)."""
+    from build123d import Face
+
+    face = face if isinstance(face, Face) else Face(face)
+    box = face.bounding_box()
+    low = (box.min.X - 1e-6, box.min.Y - 1e-6, box.min.Z - 1e-6)
+    high = (box.max.X + 1e-6, box.max.Y + 1e-6, box.max.Z + 1e-6)
+    found = set()
+    for k, point in enumerate(centers):
+        if point is None or not all(lo <= v <= hi for v, lo, hi in zip(point, low, high,
+                                                                     strict=True)):
+            continue
+        if geo.surface_at(point, face).distance < 1e-6:
+            found.add(k)
+    return found
+
+
 def _evaluate_samples(geo: PartGeometry, placement: Placement,
                       centers: list[Point | None], reasons: list[str], candidates: list[Point],
                       initial_beam: BeamPath, *, mode: str, scan_step: float,
@@ -427,6 +454,7 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
             or len(candidates) * len(centers) * (initial_beam.bounces + 1) > MAX_COMPARISONS):
         raise CoverageError("Výpočet je příliš jemný – zvětši krok nebo zmenši cílovou oblast.")
     face = placement.surface.face
+    on_contact = _on_contact(geo, face, centers)  # první rameno z nich jen vychází
     states = ["uncertain" if r else "uncovered" for r in reasons]
     hits: list[CoverageHit | None] = [None] * len(centers)
     valid, uncertain = 0, 0
@@ -450,8 +478,9 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
             ax, ay, az = leg.start
             dx, dy, dz = leg.direction
             previous = leg.cumulative_length - leg.length
+            skip = on_contact if leg.index == 1 else ()
             for k, point in enumerate(centers):
-                if point is None or states[k] == "covered":
+                if point is None or states[k] == "covered" or k in skip:
                     continue
                 tx, ty, tz = point
                 vx, vy, vz = tx - ax, ty - ay, tz - az
@@ -493,7 +522,8 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
                    "mode": mode, "scan_step_mm": scan_step, "target_step_mm": target_step,
                    "length_mm": length_mm, "angle_deg": angle_deg, "tolerance_mm": tolerance,
                    "spread_deg": spread_deg, "probe": placement.probe.to_dict(),
-                   "source": placement.origin, "interpolated_positions_checked": len(resolved)}
+                   "source": placement.origin, "interpolated_positions_checked": len(resolved),
+                   "contact_samples": len(on_contact)}
     return states, hits, reasons, len(candidates), valid, uncertain, assumptions
 
 

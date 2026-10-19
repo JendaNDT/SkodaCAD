@@ -385,5 +385,6 @@ a paprsku, nová knihovna Pythonu ani sloučení do `main`.
   a sloučit“) po prošlých kontrolách; obě vydání („nejnovejsi“ pro Windows,
   „nejnovejsi-mac“) jsou z `5e59c28` a prošla kontrolou staženého balíčku. Autor
   19. 10. 2026 k vydání napsal „ok funguje to“. Tím jsou hotové etapy 09 a 10 – **milník M3
-  (asistovaný UT)**. Otevřené zůstává rozhodnutí z etapy 09 (místa pod sondou na kontaktní
-  ploše, která je zároveň cílem); ruční zkouška na skutečném Macu zatím neproběhla.
+  (asistovaný UT)**. Rozhodnutí z etapy 09 (místa pod sondou na kontaktní
+  ploše, která je zároveň cílem) padlo 19. 10. 2026 – viz konec návrhu etapy 09; ruční
+  zkouška na skutečném Macu zatím neproběhla.

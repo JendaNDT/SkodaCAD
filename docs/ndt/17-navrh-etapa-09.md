@@ -318,5 +318,14 @@ ani pokrytí, nová knihovna Pythonu, změna formátu ani sloučení do `main`.
 - **Sloučení a ověření:** sloučeno v PR #23 (`bbc207f`), obě sestavení (Windows, macOS)
   prošla. Autor 18. 10. 2026 k vydání „nejnovejsi“ z `bbc207f` napsal „ok funguje to“.
   Tím je hotová etapa 09; milník M3 pokračuje etapou 10 (skenovací trajektorie).
-  Otevřené zůstává rozhodnutí z pozorování výše (místa pod sondou na kontaktní ploše,
-  která je zároveň cílem).
+  Rozhodnutí z pozorování výše (místa pod sondou na kontaktní ploše, která je zároveň cílem)
+  padlo 19. 10. 2026 – viz níže.
+- **Rozhodnutí autora 19. 10. 2026 (pozorování výše):** na ploše, kde sonda stojí, se
+  **nepočítá zásah prvního ramene paprsku** – paprsek z místa jen vychází, do něj nemíří.
+  Odražené rameno, které se na plochu vrátí (celý krok), se počítá dál. Změna je ve společném
+  výpočtu pokrytí (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`), platí tedy pro mapu
+  pokrytí (etapa 06), návrh poloh (09) i plán dráhy (10); formát se nemění. Změřeno na žebru
+  (cíl dno, krok 10 mm): sonda na dně bez odrazu 56,35 % → **0 %**, s jedním odrazem 64,6 % →
+  **41,94 %**, sonda nahoře (běžný případ) 17,04 % beze změny. Souhrn a CSV napíšou, že místa
+  na ploše přiložení počítají jen odražený paprsek.
+
