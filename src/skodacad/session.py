@@ -75,6 +75,18 @@ from skodacad.ndt.library import (
     transferred,
 )
 from skodacad.ndt.library import describe as describe_device
+from skodacad.ndt.mt import (
+    MtError,
+    MtMap,
+    MtSettings,
+    YokePlacement,
+    find_yoke,
+    place_yoke,
+    yoke_compound,
+)
+from skodacad.ndt.mt import compute as compute_mt
+from skodacad.ndt.mt import estimate as estimate_mt
+from skodacad.ndt.mt import study_faces as mt_study_faces
 from skodacad.ndt.plan import (
     STEP_COLORS,
     PassSpec,
@@ -233,6 +245,10 @@ class ModelSession:
         # mapa PT (etapa 11, jen pohled): (klíč platnosti, mapa) a běžící výpočet
         self._pt_cache: tuple[tuple[Any, ...], PtMap] | None = None
         self._pt_pending: dict[str, Any] | None = None
+        # mapa MT a přiložené jho (etapa 12, jen pohled): (klíč platnosti, výsledek)
+        self._mt_cache: tuple[tuple[Any, ...], MtMap] | None = None
+        self._mt_pending: dict[str, Any] | None = None
+        self._yoke_view: tuple[tuple[Any, ...], YokePlacement] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -248,6 +264,8 @@ class ModelSession:
         self._access_cache = None
         self._plan_cache = None
         self._pt_cache = None
+        self._mt_cache = None
+        self._yoke_view = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -262,6 +280,8 @@ class ModelSession:
         self._access_cache = None
         self._plan_cache = None
         self._pt_cache = None
+        self._mt_cache = None
+        self._yoke_view = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -281,6 +301,7 @@ class ModelSession:
         self._access_pending = None
         self._plan_pending = None
         self._pt_pending = None
+        self._mt_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -316,6 +337,8 @@ class ModelSession:
                 self._plan_pending["progress"] = payload
             if self._pt_pending is not None and kind == "progress":
                 self._pt_pending["progress"] = payload
+            if self._mt_pending is not None and kind == "progress":
+                self._mt_pending["progress"] = payload
             pending = self._access_pending
             if pending is not None:
                 if kind == "progress":
@@ -325,7 +348,13 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._pt_pending is not None:
+        if self._mt_pending is not None:
+            if finished.mt is not None:
+                self._mt_cache = (self._mt_pending["key"], finished.mt)
+            else:
+                self.failure = finished.error
+            self._mt_pending = None
+        elif self._pt_pending is not None:
             if finished.pt is not None:
                 self._pt_cache = (self._pt_pending["key"], finished.pt)
             else:
@@ -370,6 +399,7 @@ class ModelSession:
         self._coverage_pending = None
         self._plan_pending = None
         self._pt_pending = None
+        self._mt_pending = None
         pending, self._access_pending = self._access_pending, None
         if pending is not None:
             if pending["preparation"] is not None:
@@ -1022,6 +1052,8 @@ class ModelSession:
             study.update(method=method)
             if method != "PT":
                 study.pop("pt", None)  # nastavení PT má jen PT studie
+            if method != "MT":
+                study.pop("mt", None)  # nastavení MT má jen MT studie
 
         return self._edit_study(study_id, update, setup=True)
 
@@ -1759,6 +1791,231 @@ class ModelSession:
             return result.write_csv(path)
         except OSError as exc:
             raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    # --- NDT MT – přiložení jha a směry magnetizace (etapa 12, jen pohled) ---------------
+
+    def ndt_mt_settings(self, study_id: str) -> MtSettings:
+        """Nastavení mapy MT studie (výchozí, když ve studii žádné není)."""
+        try:
+            return MtSettings.from_dict(self.ndt_study(study_id).get("mt"))
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def set_ndt_mt_settings(self, study_id: str, settings: MtSettings | dict[str, Any]
+                            ) -> BuildResult | None:
+        """Uloží nastavení MT do studie (jeden krok Zpět); stejné nastavení = žádná změna."""
+        record = self.ndt_study(study_id)
+        if record.get("method") != "MT":
+            raise DocumentError("Nastavení MT má jen MT (magnetická prášková) studie.")
+        try:
+            settings = (settings if isinstance(settings, MtSettings)
+                        else MtSettings.from_dict(settings))
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+        if "mt" in record and MtSettings.from_dict(record["mt"]) == settings:
+            return None
+        data = settings.to_dict()
+        return self._edit_study(study_id, lambda study: study.update(mt=data))
+
+    def _mt_record(self, study_id: str, what: str) -> dict[str, Any]:
+        self._require_computed(what)
+        record = self.ndt_study(study_id)
+        if record.get("method") != "MT":
+            raise DocumentError(f"{what.capitalize()} jde jen pro MT (magnetickou práškovou) "
+                                "studii.")
+        if self.result is None or self.result.part is None:
+            raise DocumentError(f"Model nemá těleso – {what} nemá na čem počítat.")
+        return record
+
+    def _mt_inputs(self, study_id: str) -> tuple[Any, list[Any], MtSettings, str]:
+        record = self._mt_record(study_id, "mapa MT")
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), "broken")
+        if state == "stale":
+            raise DocumentError("Studie je zastaralá (díl se změnil) – nejdřív ji potvrď.")
+        if state != "ok":
+            raise DocumentError("Mapa MT potřebuje platnou MT studii s vybranými plochami.")
+        try:
+            faces = mt_study_faces(self._ndt_geometry(), record)
+            settings = MtSettings.from_dict(record.get("mt"))
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+        return self.result.part, faces, settings, self._require().material
+
+    def _mt_key(self, study_id: str) -> tuple[Any, ...]:
+        return (self.result, study_id, repr(self.ndt_study(study_id)),
+                self._require().material)
+
+    def _mt_valid(self, cache: tuple[tuple[Any, ...], Any] | None) -> bool:
+        if self.computing or cache is None:
+            return False
+        key = cache[0]
+        try:
+            current = self._mt_key(key[1])
+        except DocumentError:
+            return False
+        return key[0] is current[0] and key[1:] == current[1:]
+
+    @property
+    def ndt_mt_map(self) -> MtMap | None:
+        """Mapa MT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if not self._mt_valid(self._mt_cache):
+            self._mt_cache = None
+            return None
+        return self._mt_cache[1]
+
+    def ndt_mt_study(self) -> str | None:
+        """Studie, ke které patří platná mapa MT."""
+        return self._mt_cache[0][1] if self.ndt_mt_map is not None else None
+
+    def clear_ndt_mt(self) -> None:
+        self._mt_cache = None
+
+    def ndt_mt_estimate(self, study_id: str) -> tuple[int, float, int, float, float]:
+        """Odhad před spuštěním: (místa, krok sítě, středy jha, krok středů, doba [s])."""
+        part, faces, settings, material = self._mt_inputs(study_id)
+        try:
+            return estimate_mt(part, faces, settings, material)
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def compute_ndt_mt(self, study_id: str,
+                       progress: Callable[[int, int], None] | None = None) -> MtMap:
+        """Spočítá mapu MT bez změny modelu (CLI, testy, pomocný proces)."""
+        part, faces, settings, material = self._mt_inputs(study_id)
+        key = self._mt_key(study_id)
+        self.clear_ndt_mt()
+        try:
+            result = compute_mt(part, faces, settings, material, progress=progress)
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Mapu MT nejde spočítat: {exc}") from None
+        self._mt_cache = (key, result)
+        return result
+
+    @property
+    def mt_pending(self) -> bool:
+        """Počítá se zrovna mapa MT v pomocném procesu?"""
+        return self._mt_pending is not None
+
+    @property
+    def ndt_mt_progress(self) -> tuple[int, int] | None:
+        """Průběh výpočtu mapy MT (hotovo, celkem)."""
+        return self._mt_pending.get("progress") if self._mt_pending is not None else None
+
+    def start_ndt_mt(self, study_id: str) -> MtMap | None:
+        """Okno: mapa MT v pomocném procesu (jde zastavit); bez pomocného procesu hned."""
+        part, faces, settings, material = self._mt_inputs(study_id)
+        try:
+            estimate_mt(part, faces, settings, material)  # chyba materiálu hned, ne až v procesu
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+        if self._runner is None:
+            return self.compute_ndt_mt(study_id)
+        key = self._mt_key(study_id)
+        self.clear_ndt_mt()
+        self.failure = ""
+        self._job = self._runner.submit_mt(self._require().to_dict(), study_id)
+        self._mt_pending = {"key": key, "progress": None}
+        return None
+
+    def ndt_mt_mesh(self, view: str | None = None) -> tuple[list, list, list]:
+        """Barevná síť mapy MT pro okno (celkem, jeden směr pole, nanesení, prohlídka),
+        v řezu oříznutá."""
+        result = self.ndt_mt_map
+        if result is None:
+            return [], [], []
+        nodes, triangles, colors = result.mesh(view)
+        plane = self.section_plane
+        return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def ndt_mt_describe(self, point: Any) -> list[str]:
+        """Stav, směry a důvody místa mapy MT nejblíž bodu (klik do mapy); bez mapy prázdné."""
+        result = self.ndt_mt_map
+        if result is None or point is None:
+            return []
+        index = result.nearest(tuple(float(v) for v in point))
+        return [] if index is None else result.describe(index)
+
+    def export_ndt_mt(self, path: str | Path) -> Path:
+        result = self.ndt_mt_map
+        if result is None:
+            raise DocumentError("Nejdřív spočítej mapu MT.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    @property
+    def ndt_yoke(self) -> YokePlacement | None:
+        """Přiložené jho (jen pohled) – platí pro díl a studii, pro které vzniklo."""
+        if not self._mt_valid(self._yoke_view):
+            self._yoke_view = None
+            return None
+        return self._yoke_view[1]
+
+    def ndt_yoke_settings(self) -> MtSettings | None:
+        """Nastavení studie, se kterým vzniklo přiložené jho (obrys účinné oblasti)."""
+        if self.ndt_yoke is None:
+            return None
+        return self.ndt_mt_settings(self._yoke_view[0][1])
+
+    def clear_ndt_yoke(self) -> None:
+        self._yoke_view = None
+
+    def place_ndt_yoke(self, study_id: str, point: Any, angle: float) -> YokePlacement:
+        """Přiložit jho sem: jho se středem v bodě povrchu, natočené o ``angle`` [°] (0° =
+        průmět osy +X do plochy); jen pohled."""
+        record = self._mt_record(study_id, "přiložení jha")
+        settings = self.ndt_mt_settings(study_id)
+        geo = self._ndt_geometry()
+        try:
+            surface = geo.surface_at(tuple(float(v) for v in point))
+            placed = place_yoke(self.result.part, surface.point, surface.normal, float(angle),
+                                settings, geo=geo)
+        except (GeometryError, MtError) as exc:
+            raise DocumentError(str(exc)) from None
+        self._yoke_view = (self._mt_key(record["id"]), placed)
+        return placed
+
+    def ndt_mt_yoke_at(self, point: Any, view: str | None) -> YokePlacement | None:
+        """Ukázat jho: pro místo mapy nejblíž bodu najde jho, jehož účinná oblast místo
+        pokryje ve směru ``view`` (u „celkem“ v prvním platném směru); když žádné, ukáže
+        nevyhovující jho se středem v místě. Jen pohled."""
+        result, study_id = self.ndt_mt_map, self.ndt_mt_study()
+        if result is None or point is None:
+            return None
+        index = result.nearest(tuple(float(v) for v in point))
+        if index is None:
+            return None
+        sample = result.samples[index]
+        if view is not None and view.startswith("d"):
+            angle = int(view[1:]) * 22.5
+        else:
+            angle = sample.angles[0] if sample.angles else 0.0
+        try:
+            placed = find_yoke(self.result.part, sample.point, sample.normal, angle,
+                               result.settings, geo=self._ndt_geometry())
+        except MtError as exc:
+            raise DocumentError(str(exc)) from None
+        self._yoke_view = (self._mt_key(study_id), placed)
+        return placed
+
+    def ndt_yoke_drawing(self) -> tuple[Any, str, Any, Any, str, list] | None:
+        """Jho pro prohlížeč: (tvar, stav v barvách sondy, pól, pól, popis, obrys účinné
+        oblasti); None = žádné jho nebo ještě nemá tvar (pól nemá kam dosednout)."""
+        placed = self.ndt_yoke
+        if placed is None or not placed.shapes:
+            return None
+        if placed.ok:
+            state = "uncertain" if placed.uncertain else "ok"
+        else:
+            state = "collision" if placed.kind in ("shoe", "body") else "overhang"
+        ends = (*placed.poles, placed.center, placed.center)[:2]
+        text = (f"jho {placed.spacing:g} mm".replace(".", ",")
+                + ("" if placed.ok else " – nevejde se"))
+        outline = placed.outline(self.ndt_yoke_settings()) if placed.ok else []
+        return yoke_compound(placed), state, ends[0], ends[1], text, outline
 
     # --- NDT návrh poloh sondy (etapa 09, jen pohled) ------------------------------------
 

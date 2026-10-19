@@ -23,7 +23,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
-from skodacad.ndt import DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
+from skodacad.ndt import DISCLAIMER, MT_DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -190,6 +190,25 @@ def main(argv: list[str] | None = None) -> int:
                     help="čištění a odstranění přebytku oplachem (ne otřením)")
     pt.add_argument("--ulozit", action="store_true", help="ulož nastavení PT do modelu")
     pt.add_argument("--csv", type=Path)
+
+    mag = commands.add_parser("magneticka", help="MT: přiložení jha a směry magnetizace "
+                              "(geometrie zkoušky jhem)")
+    mag.add_argument("model", type=Path)
+    mag.add_argument("--studie", required=True, help="MT studie s vybranými plochami")
+    mag.add_argument("--roztec", type=float, help="rozteč pólů [mm] (výchozí 100)")
+    mag.add_argument("--nejmensi", type=float,
+                     help="nejmenší rozteč, zkusí se, když hlavní nejde [mm] (výchozí 75)")
+    mag.add_argument("--krok", type=float, help="krok sítě míst [mm]; jinak automaticky")
+    mag.add_argument("--krok-stredu", type=float, dest="krok_stredu",
+                     help="krok mřížky středů jha [mm]; jinak automaticky")
+    mag.add_argument("--feromagneticky", action="store_true",
+                     help="potvrď, že je materiál feromagnetický (nerez, neuvedený)")
+    mag.add_argument("--bez-naneseni", action="store_true", dest="bez_naneseni",
+                     help="nepočítej nanesení detekčního prostředku")
+    mag.add_argument("--bez-prohlidky", action="store_true", dest="bez_prohlidky",
+                     help="nepočítej prohlídku")
+    mag.add_argument("--ulozit", action="store_true", help="ulož nastavení MT do modelu")
+    mag.add_argument("--csv", type=Path)
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -205,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
             return _plan(args)
         if args.command == "kapilarni":
             return _pt(args)
+        if args.command == "magneticka":
+            return _mt(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -591,6 +612,54 @@ def _pt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mt(args: argparse.Namespace) -> int:
+    from dataclasses import replace
+
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    study = args.studie
+    settings = session.ndt_mt_settings(study)
+    changes: dict[str, object] = {
+        key: value for key, value in (("spacing_mm", args.roztec),
+                                      ("min_spacing_mm", args.nejmensi),
+                                      ("step_mm", args.krok),
+                                      ("center_step_mm", args.krok_stredu)) if value is not None}
+    if args.nejmensi is None and args.roztec is not None:
+        changes["min_spacing_mm"] = min(settings.min_spacing_mm, args.roztec)
+    if args.feromagneticky:
+        changes["ferromagnetic"] = True
+    if args.bez_naneseni:
+        changes["apply"] = False
+    if args.bez_prohlidky:
+        changes["inspect"] = False
+    if changes:
+        try:
+            settings = replace(settings, **changes)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
+        session.set_ndt_mt_settings(study, settings)
+    samples, step, centers, center_step, seconds = session.ndt_mt_estimate(study)
+    print(f"Odhad: {samples} míst při kroku {step:g} mm, {centers} středů jha po "
+          f"{center_step:g} mm, asi {seconds:.0f} s.", file=sys.stderr)
+
+    def progress(done: int, total: int) -> None:
+        if done == total or done % 200 == 0:
+            print(f"Výpočet: {done} z {total}", file=sys.stderr, flush=True)
+
+    result = session.compute_ndt_mt(study, progress=progress)
+    print("\n".join(result.summary()))
+    if args.csv:
+        try:
+            print("CSV:", result.write_csv(args.csv))
+        except OSError as exc:
+            raise ValueError(f"CSV nejde uložit: {exc}") from None
+    if args.ulozit:
+        print("Model uložen:", session.save())
+    return 0
+
+
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
     glued: list[str] = []
@@ -667,6 +736,8 @@ def _build(args: argparse.Namespace) -> int:
             print(f"  ({UT_DISCLAIMER})")
         if any(study.method == "PT" for study in result.ndt):
             print(f"  ({PT_DISCLAIMER})")
+        if any(study.method == "MT" for study in result.ndt):
+            print(f"  ({MT_DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

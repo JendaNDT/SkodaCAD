@@ -166,9 +166,36 @@ plochami na straně vzduchu (90° → x₀ = r, 135° → 0,414 r).
 | Kapsa: kratší stěna 30 × 25 | (30−10)(25−5) = **53,33 %** | 27 · 23,5 = **84,6 %** | |
 | Koutový svar (`koutovy_svar.json`, studie s1): plochy svarů 9,90 mm | 9,90 − 2 · 2,07 = **58,16 %** | 9,90 − 2 · 0,62 = **87,45 %** | rohy 135°; nástřik a prohlídka 100 % |
 
+## MT – přiložení jha u dílů 1, 2, 5 a 7 (etapa 12)
+
+**Předpoklady MT** (návrh `21-navrh-etapa-12.md`, vymezení `22-vymezeni-mt.md`, jen geometrie):
+kloubové jho s póly Ø 20 (botka 15 mm přiléhá k ploše), výška nohy 60 mm, tělo 40 × 40;
+rozteč d = 100 mm, záloha 75 mm (ISO 17638: d ≥ 75). Místo pólu = první dotyk kružnice
+o poloměru d/2 sklápěné od kolmice nad místem. Účinná oblast (d − 50) × d/2 kolem středu jha
+(u pólu 25 mm ne). Vada se počítá, když je k poli skloněná aspoň o 30°; všechny orientace vad
+pokryjí dva směry pole aspoň 60° od sebe. Úhel 0° = průmět osy +X do plochy.
+
+**Pravidlo okraje:** ve směru pole končí pokrytí 10 + 25 = **35 mm od okraje** (pól celý na
+ploše, 25 mm u pólu se nepočítá) – pro rozteč 100 i 75 mm.
+
+| Díl, studie | Případ | Ručně | Pozn. |
+|---|---|---|---|
+| Deska (`deska.json`, s2 horní plocha 200 × 100) | pole 0° (podél X) | x ∈ ⟨−65; 65⟩ = **65 %** | |
+| | pole 90° (podél Y) | 100 mm nejde (100 + 2·10 > 100), 75 mm: y ∈ ⟨−15; 15⟩ = **30 %** | |
+| | pole 45°, jen rozteč 100 | osmiúhelník 4ab + 4r(a+b) + 2r² = 11 899 mm² = **59,5 %** (a = 54,64, b = 4,64, r = 35,36) | mřížka středů dá méně (zubatý okraj) |
+| | místo (0; 0) | směry 0° i 90° → všechny orientace | |
+| | místo (0; 45) | jen −22,5°, 0°, 22,5° → nepokryté vady **−7,5° až 7,5°** | |
+| | místo (95; 0) | jen 67,5°, 90°, 112,5° → nepokryté vady **82,5° až 97,5°** | |
+| Trubka (`trubka.json`, s2 plášť Ø 114,3 × 300) | podél osy | ⟨−115; 115⟩ = **76,7 %** | mezera pod pólem Ø 20: 57,15 − √(57,15² − 10²) = **0,88 mm** |
+| | po obvodu | 100 mm: nohy 2·2·asin(50/114,3) = **103,7° > 90°**; 75 mm: **76,6°** ✓ | |
+| Kapsa (`kapsa.json`, s3 dno 40 × 30) | celé dno | **nepokryto** – mezi místem a pólem je stěna (kapsa menší než rozteč) | |
+| Koutový svar (`koutovy_svar.json`, s2 plochy svarů) | napříč, střed (−8,5; 0; 13,5) | póly (−8,5 − √(50² − 3,5²); 0; 10) = (**−58,38**; 0; 10) a (−5; 0; **63,38**), nohy 90° | jho přes roh |
+| | podél svaru (svar 100 mm) | 100 mm nejde; 75 mm jen \|y\| ≤ 15 (**30 %** délky) | |
+
 ## Záznam ověření
 
 | Díl | Ověřil | Datum | Poznámka / oprava |
 |---|---|---|---|
 | 1–8 | *čeká na kolegu NDT technika* | | |
 | 9 a PT u dílů 2 a 7 | *čeká na kolegu NDT technika* | | |
+| MT u dílů 1, 2, 5 a 7 | *čeká na kolegu NDT technika* | | |

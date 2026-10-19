@@ -489,11 +489,17 @@ class MainWindow(QMainWindow):
         self._refresh_plan()
         self._refresh_coverage()
         placement = self.session.ndt_placement
-        if placement is self._shown_probe:
+        shown = placement if placement is not None else self.session.ndt_yoke
+        if shown is self._shown_probe:
             return
-        self._shown_probe = placement
+        self._shown_probe = shown
         if placement is None:
-            self.viewer.hide_probe()
+            drawing = self.session.ndt_yoke_drawing()  # jho MT (etapa 12) kreslí stejně jako sonda
+            if drawing is None:
+                self.viewer.hide_probe()
+            else:
+                body, state, start, end, text, outline = drawing
+                self.viewer.show_probe(body, state, start, end, text, outline)
             return
         origin = placement.origin
         if placement.probe.kind == "straight":
@@ -528,6 +534,9 @@ class MainWindow(QMainWindow):
         pt_view = self.ndt_panel.pt_view() if found is None else None
         if pt_view is not None:  # mapa PT (etapa 11): klíč = mapa, kontrola a řez
             found = ("pt", id(pt_view[0]), pt_view[1], self.session.section_plane)
+        mt_view = self.ndt_panel.mt_map_view() if found is None else None
+        if mt_view is not None:  # mapa MT (etapa 12): klíč = mapa, pohled a řez
+            found = ("mt", id(mt_view[0]), mt_view[1], self.session.section_plane)
         points = (access, mode) if access is not None and mode == "contact" else None
         if points != self._shown_points:
             self._shown_points = points
@@ -543,6 +552,8 @@ class MainWindow(QMainWindow):
             self.viewer.hide_coverage_map()
             if self.session.map_visible:
                 self._refresh_thickness_map()
+        elif isinstance(found, tuple) and found[0] == "mt":
+            self.viewer.show_coverage_map(*self.session.ndt_mt_mesh(mt_view[1]))
         elif isinstance(found, tuple):
             self.viewer.show_coverage_map(*self.session.ndt_pt_mesh(pt_view[1]))
         elif isinstance(found, VolumeCoverageMap):  # objem uvnitř dílu: navrch, řez šedě
@@ -742,6 +753,10 @@ class MainWindow(QMainWindow):
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.pt_settings_action, self.ndt_panel.pt_action,
                      self.ndt_panel.pt_export_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.mt_settings_action, self.ndt_panel.mt_action,
+                     self.ndt_panel.mt_place_yoke_action, self.ndt_panel.mt_export_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -1105,6 +1120,7 @@ class MainWindow(QMainWindow):
                 self.ndt_panel._show_access()
                 self.ndt_panel._show_plan()
                 self.ndt_panel._show_pt()
+                self.ndt_panel._show_mt()
                 self.ndt_panel.refresh_actions()
                 self._refresh_progress()
                 return
@@ -1139,20 +1155,24 @@ class MainWindow(QMainWindow):
             self.ndt_panel._show_plan()  # průběh plánu dráhy v panelu
         if self.session.pt_pending:
             self.ndt_panel._show_pt()  # průběh mapy PT v panelu
+        if self.session.mt_pending:
+            self.ndt_panel._show_mt()  # průběh mapy MT v panelu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
         access = self.session.access_pending
         plan = self.session.plan_pending
         pt = self.session.pt_pending
+        mt = self.session.mt_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage or access or plan or pt:  # zastavený výpočet NDT – model se neměnil
+            if coverage or access or plan or pt or mt:  # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
                 self.statusBar().showMessage(
                     "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
                     else "Výpočet plánu dráhy zastaven – uložený plán zůstal beze změny."
                     if plan else "Výpočet mapy PT zastaven." if pt
+                    else "Výpočet mapy MT zastaven." if mt
                     else "Výpočet mapy pokrytí zastaven.", 10000)
                 return
             if self.session.map_visible and self.session.thickness_map is None:
@@ -1166,8 +1186,10 @@ class MainWindow(QMainWindow):
         nebo kontrolovanou oblast studie vybrané v panelu NDT."""
         study_id = self.ndt_panel.current_id()
         if study_id is not None and (self.session.ndt_placement_request is not None
-                                     or self.session.ndt_pt_map is not None):
-            shapes = []  # sonda nebo mapa PT je teď hlavní – zvýraznění oblasti by je přebarvilo
+                                     or self.session.ndt_pt_map is not None
+                                     or self.session.ndt_mt_map is not None
+                                     or self.session.ndt_yoke is not None):
+            shapes = []  # sonda, jho nebo mapa PT/MT je hlavní – zvýraznění by je přebarvilo
         elif study_id is not None:
             shapes = self.session.ndt_highlight(study_id)
         elif self._selected_id:
@@ -1328,6 +1350,7 @@ class MainWindow(QMainWindow):
         self._refresh_selection_actions()
         self.ndt_panel.refresh_actions()
         self.ndt_panel.show_pt_pick()
+        self.ndt_panel.show_mt_pick()
         self._refresh_measure_list()
         self.section_face_action.setEnabled(
             self.session.display_part is not None

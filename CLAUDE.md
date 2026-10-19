@@ -151,7 +151,8 @@
   Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
   to“. Otázka „místa pod sondou, když je kontaktní plocha i cílem“ rozhodnuta 19. 10. 2026:
   na ploše přiložení se **nepočítá zásah 1. ramene** (paprsek z ní jen vychází), odražené
-  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`).
+  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`;
+  sloučeno v PR #25, autor k vydání z `3297983` napsal „ok, funguje to“).
 - (18. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 10 – plán dráhy UT sondy**
   (`docs/ndt/18-navrh-etapa-10.md`, dokončí milník M3): `ndt/plan.py` – průchod = varianta
   etapy 09, řádky cik-cak s roztečí (výchozí 5 mm) ve vzoru *k cíli a zpět* nebo *podél*
@@ -176,7 +177,22 @@
   nelze spolehlivě vyhodnotit) s českými důvody. Postup čištění otřením nebo oplachem. Zvolené
   hodnoty jsou označené „zvoleno pro výpočet“. Nastavení `pt` ve studii (**formát 19**), mapa
   jen pohled. Referenční díl 9 `sterbina.json`, PT studie i v kapse. Okno, CSV, CLI
-  `skodacad kapilarni`, AI bez nového nástroje.
+  `skodacad kapilarni`, AI bez nového nástroje. Sloučeno v PR #25 (`3297983`, spolu
+  s rozhodnutím otázky z etapy 09); autor 19. 10. 2026 k vydání z `3297983` napsal „ok,
+  funguje to“.
+- (19. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 12 – MT, přiložení jha
+  a směry magnetizace** (`docs/ndt/21-navrh-etapa-12.md`, milník M4): závazné vymezení MT
+  `docs/ndt/22-vymezeni-mt.md` s povinným upozorněním `ndt.MT_DISCLAIMER` (jen geometrie –
+  ne intenzita ani rozložení pole, citlivost ani detekovatelnost vad). Jen jho: virtuální
+  kloubové jho (póly Ø 20, výška 60, tělo 40 × 40 + 20), místo pólu = první dotyk kružnice
+  o poloměru d/2 sklápěné od kolmice, pól dosedá jako přímá sonda (mezera do 1 mm),
+  nohy nejvýš 90°, spojnice 10 mm nad povrchem bez stěny, kolize těla; rozteč 100 mm se
+  zálohou 75 mm (ISO 17638); účinná oblast (d − 50) × d/2, orientační směr pole, 8 směrů
+  po 22,5°, všechny orientace vad = dva směry aspoň 60° od sebe (ISO 9934-1, ISO 17638);
+  nanesení a prohlídka z PT; kontrola feromagnetického materiálu (nerez a neuvedený jen
+  s potvrzením). Nastavení `mt` ve studii (**formát 20**), mapa jen pohled. Okno (mapa,
+  směry, klik, Ukázat jho, Přiložit jho sem), CSV, CLI `skodacad magneticka`, AI bez
+  nového nástroje.
 
 ## Architektura (`src/skodacad/`)
 
@@ -247,10 +263,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy) a `kapilarni` (mapa PT) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT) a `magneticka` (mapa MT) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`) a mapa PT (`submit_pt`), průběžné zprávy `Finished.update` |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`) a mapa MT (`submit_mt`), průběžné zprávy `Finished.update` |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -263,12 +279,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/access.py` | návrh poloh UT sondy (etapa 09): `Analysis` (varianty, 1. a 2. kolo `prepare`, 3. kolo `evaluate` stávajícím výpočtem pokrytí, `run`), `finish` (pořadí `rank`, kombinace, `union` vzorek po vzorku), `AccessResult.summary` / `write_csv`, mapa kontaktních ploch `ContactPoint` |
 | `ndt/plan.py` | plán dráhy UT sondy (etapa 10): `Planner` (`build` – mřížka, dosah, úseky, cik-cak, oprava po 1 mm; `check` – kroky jízdy `PlanStep`, nájezd, ústup po projeté dráze, tabulka `PlanPosition`, boční rezerva; `coverage` – režim `plan`, sjednocení průchodů, srovnání, odolnost; `run`/`evaluate`), `Plan`/`PlanPass`/`PlanSegment` (JSON), `Zone`, `PlanResult.summary`/`write_csv` |
 | `ndt/pt.py` | PT – geometrická přístupnost povrchu (etapa 11): `PtSettings` (nástroje, úhly, oko, postup čištění), `Sampler` (nástřik, otření nástrojem – kulička + dřík s přesným průnikem –, prohlídka s okem, mezera, otevřenost), `compute` / `estimate`, `PtMap` (souhrn, CSV, síť po kontrolách, `nearest`, `describe`), `study_faces`, `self_check` |
+| `ndt/mt.py` | MT – přiložení jha a směry magnetizace (etapa 12): `MtSettings`, `material_status` (feromagnetický materiál), `Yoker` (místa pólů kružnicí, stěna, póly jako přímá sonda bez vůle, nohy, přesná kolize nohou a těla), `place_yoke`, `compute` / `estimate` / `check_points` (středy na mřížce ploch v dosahu, 8 směrů, dohledání hranic a rohů), `MtMap` (souhrn, CSV, síť po směrech, `nearest`, `describe`), `study_faces`, `self_check`; nanesení a prohlídka přes `pt.Sampler.access` |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV) |
+| `gui/mt_dialog.py` | dialog *Nastavení MT…* (jho, rozteče, meze, kroky, nanesení a prohlídka, potvrzení feromagnetického materiálu; čísla jako text s původem hodnoty, kontrola `MtSettings`) |
 | `gui/pt_dialog.py` | dialog *Nastavení PT…* (nástroje, úhly, oko, postup čištění; čísla jako text, u zvolených hodnot „zvoleno pro výpočet“, kontrola `PtSettings`) |
 | `gui/zone_dialog.py` | dialog *Zakázané zóny…* plánu dráhy (tabulka kvádrů jako text, *Z výběru*, kontrola `Zone.from_dict`) |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
@@ -756,6 +774,57 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   jsou v souhrnu i CSV; meze prohlídky 30° a 600 mm jsou z ASME V čl. 9 a BINDT CP25 (EN ISO
   17637 a EN 13018 neověřené – placené).
 
+## Známé pasti (NDT – MT jho)
+
+- Místo pólu: kružnice o poloměru d/2 v rovině (normála, směr jha) se sklápí **od kolmice
+  dolů** a bere se první vstup do materiálu (`Yoker._site`). Hledání od tečny by u koutového
+  svaru našlo vzdálenou stranu stojiny. Spojnice místa a pólu 10 mm nad povrchem nesmí
+  narazit do dílu (stěna kapsy); na vypouklé trubce by spojnice bez zvednutí vedla materiálem.
+- Botka pólu (15 mm) = přímá sonda `devices.place(..., measure_clearance=False)` – vůle nad
+  rovinou je nejdražší část přiložení a pól ji nepotřebuje. Noha pokračuje ve směru osy jha
+  (půlí úhel normál), jinak se nohy u rohu 90° kříží. Nohy a tělo = jeden průnik OCCT
+  (`geometry.overlap` se složeným tvarem); nespočítaný průnik = nejisté, nikdy pokryté.
+- Účinná oblast: obdélník (d − 2 · 25) × d/2 v tečné rovině středu, hloubka do d/4, plocha místa
+  natočená do **60°** (`FACING`) a místo nejvýš **45°** pod nebo nad rovinou středu; mimo rovinu
+  (> 2 mm) musí patřit k materiálu pod jhem (`_reaches`, paměť podle středu a místa): pod
+  rovinou spojnice se středem vede materiálem (vypouklá trubka), nad rovinou je pod místem
+  materiál až k rovině jha (koutový svar na pásnici) a místo je vidět (spojnice zvednutá
+  o 10 mm). Jen „vidět“ pouštělo dno kapsy od jha vedle kapsy (26 % místo 0 %), jen spojnice
+  materiálem ubírala koutový svar podél svaru (27 % → 11 %). `covers` s `geo` to kontroluje
+  také (Ukázat jho).
+- Středy jha jen na plochách v dosahu míst (d/4 + poloměr pólu) a natočených k nim do 60° –
+  spodek desky by jinak zdvojnásobil výpočet. Dohledání hranic jen tam, kde by místo získalo
+  nový směr (`_Field._gain`); jinak by 5 bodů trvalo 2,5 min místo 28 s.
+- Mřížka středů pokrytí jen podhodnotí (zubatý okraj šikmých směrů, úzký pruh platných
+  poloh mezi uzly se mine – deska 90° s krokem 20 mm = 0 %). Testy proto volí krok středů,
+  jehož uzel leží na ose desky (25 mm).
+- Úhly směrů pole jsou v rámu místa (0° = průmět +X, u plochy kolmé na X osa +Y): jho
+  „0°“ na boční ploše kolmé na X dá na horní ploše pole 90°. `directions` v `compute` zužuje
+  směry v rámu **středu** (jen pro testy).
+- Ukázky deska (s2), trubka (s2), kapsa (s3) a koutový svar (s2) mají MT studii – testy okna
+  a ModelSession počítají s druhou studií desky (nová studie je s3, „UT studie 3“).
+- Rychlost přiložení: pořadí v `Yoker.place` je místa a stěna obou pólů → rychlý přesah
+  (`_overhangs`, 4 paprsky, bez průniku OCCT) → úhel nohou → přesné dosednutí pólu (`_pole`,
+  paměť podle zaokrouhleného bodu a plochy – sousední středy sdílí místo pólu) → průnik nohou
+  a těla. Automatická mapa desky tím 3 min → 50 s. Přehozené pořadí změní jen důvod
+  (přesah × nohy), test hrany čeká „přesah“.
+- ModelSession: nastavení `mt` ve studii (formát 20, `set_ndt_mt_settings` = jeden krok
+  Zpět, stejné nastavení = žádná změna; `mt` smí mít jen MT studie, změna metody ho smaže).
+  Materiál je v otisku receptu → po jeho změně je studie zastaralá a mapa chce potvrzení;
+  klíč mapy (`_mt_key`) materiál nese také. Mapa i jho (`place_ndt_yoke`, `ndt_mt_yoke_at`,
+  `_yoke_view`) jsou jen pohled – po změně dílu zmizí. `start_ndt_mt` volá napřed odhad,
+  aby chyba materiálu přišla hned, ne z pomocného procesu.
+- Testy ModelSession a okna volí rychlé nastavení (síť 25 mm, středy 50 mm, bez nanesení
+  a prohlídky) – mapa desky asi 15 s. Mapu počítá jen pár testů (Windows limit 20 min).
+- Okno: jho se kreslí stávajícím `viewer.show_probe` (průhledné botky, nohy a tělo v barvě
+  stavu, obrys účinné oblasti jako čára „paprsku“) – žádný nový druh kreslení. Přiložená UT
+  sonda má přednost; `_shown_probe` drží sondu **nebo** jho. Mapa MT jde přes
+  `show_coverage_map`, klíč kresby je n-tice („mt“, mapa, pohled, rovina řezu); UT mapa
+  pokrytí i mapa PT mají přednost. Se spočítanou mapou MT nebo jhem se oblast studie
+  nezvýrazňuje (jako u PT).
+- V panelu je přepínač `mt_view` (QComboBox) – metoda pro okno se proto jmenuje
+  `mt_map_view` (stejné jméno by atribut přepsalo: „QComboBox is not callable“).
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -868,9 +937,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
-  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [x] 11A.1 vymezení
-  PT a jádro `ndt/pt.py`, [x] 11A.2 formát 19, ModelSession, CLI, [x] 11B okno (čeká na PR
-  a ruční zkoušku).
+  [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
+  to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (schváleno
+  19. 10. 2026): [x] 12A.1 vymezení MT a jádro `ndt/mt.py`, [x] 12A.2 formát 20,
+  ModelSession, pomocný proces, CLI, [x] 12B okno (čeká na PR a ruční zkoušku autora).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

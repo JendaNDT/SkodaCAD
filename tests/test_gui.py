@@ -1455,7 +1455,7 @@ def ndt_texts(w):
 
 def test_ndt_panel_shows_sample_study_and_highlights_its_target(ndt_window, slot_errors):
     w = ndt_window
-    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná", "✓ MT horní plochy (MT) – platná"]
     assert w.ndt_panel.findChildren(QtWidgets.QLabel)[0] is w.ndt_panel.warning  # nahoře
     assert "nenahrazují kvalifikovaný NDT postup" in w.ndt_panel.warning.text()  # UT studie
     w.ndt_panel.studies.setCurrentRow(0)
@@ -1476,11 +1476,12 @@ def test_ndt_panel_stale_confirm_and_verify(ndt_window, slot_errors, monkeypatch
     w = ndt_window
     w.ndt_panel.studies.setCurrentRow(0)
     edit(w, "t", "30")
-    assert ndt_texts(w) == ["⚠ UT desky shora (UT) – zastaralá"]
+    assert ndt_texts(w)[0] == "⚠ UT desky shora (UT) – zastaralá"
     assert "posunula o 10.00 mm" in w.ndt_panel.details.text()
     assert not w.ndt_panel.verify_action.isEnabled()
     w.ndt_panel.confirm_action.trigger()
-    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    assert ndt_texts(w)[0] == "✓ UT desky shora (UT) – platná"
+    assert ndt_texts(w)[1] == "⚠ MT horní plochy (MT) – zastaralá"  # potvrzuje se po jedné
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("J. N.", True))
     w.ndt_panel.verify_action.trigger()
     assert "Ověřil(a) J. N." in w.ndt_panel.details.text()
@@ -1500,15 +1501,15 @@ def test_ndt_panel_new_study_from_click_and_edits(ndt_window, slot_errors, monke
     w.viewer.click([face_at(part, 0, 0, 0)], (0, 0, 0))  # spodní plocha
     w.ndt_panel.method_combo.setCurrentIndex(w.ndt_panel.method_combo.findData("MT"))
     w.ndt_panel.new_action.trigger()
-    assert ndt_texts(w)[1] == "✓ MT studie 2 (MT) – platná"
-    assert w.ndt_panel.current_id() == "s2"
+    assert ndt_texts(w)[2] == "✓ MT studie 3 (MT) – platná"  # deska má UT a MT studii
+    assert w.ndt_panel.current_id() == "s3"
     w.ndt_panel.rename_action.trigger()  # dialog zrušen (no_dialogs) – nic se nezmění
-    assert ndt_texts(w)[1].startswith("✓ MT studie 2")
+    assert ndt_texts(w)[2].startswith("✓ MT studie 3")
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("MT zespodu", True))
     w.ndt_panel.rename_action.trigger()
     monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("PT – kapilární", True))
     w.ndt_panel.method_action.trigger()
-    assert ndt_texts(w)[1] == "✓ MT zespodu (PT) – platná"
+    assert ndt_texts(w)[2] == "✓ MT zespodu (PT) – platná"
     monkeypatch.setattr(QInputDialog, "getMultiLineText",
                         lambda *a, **k: ("Celá spodní plocha.", True))
     w.ndt_panel.note_action.trigger()
@@ -1519,18 +1520,18 @@ def test_ndt_panel_new_study_from_click_and_edits(ndt_window, slot_errors, monke
     w.ndt_panel.target_action.trigger()
     assert "kontrolovaná oblast: 2 plochy" in w.ndt_panel.details.text()
     w.ndt_panel.duplicate_action.trigger()
-    assert ndt_texts(w)[2] == "✓ MT zespodu (kopie) (PT) – platná"
+    assert ndt_texts(w)[3] == "✓ MT zespodu (kopie) (PT) – platná"
     w.ndt_panel.delete_action.trigger()
-    assert len(ndt_texts(w)) == 2
-    action(w, "Zpět").trigger()
     assert len(ndt_texts(w)) == 3
+    action(w, "Zpět").trigger()
+    assert len(ndt_texts(w)) == 4
     assert slot_errors == []
 
 
 def test_ndt_new_study_without_selection_is_incomplete(ndt_window, slot_errors):
     w = ndt_window
     action(w, "Nová NDT studie z výběru").trigger()
-    assert ndt_texts(w)[1] == "⚠ UT studie 2 (UT) – neúplná"
+    assert ndt_texts(w)[2] == "⚠ UT studie 3 (UT) – neúplná"
     assert "Chybí kontrolovaná oblast" in w.ndt_panel.details.text()
     w.viewer.click([edge_at(w.session.result.part, 0, -50, 20)])
     assert not w.ndt_panel.target_action.isEnabled()  # hrana není plocha
@@ -2060,3 +2061,98 @@ def test_pt_panel_is_locked_while_ai_works(pt_window):
     w.set_assistant_busy(False)
     panel.refresh()
     assert panel.pt_settings_action.isEnabled() and panel.pt_action.isEnabled()
+
+
+@pytest.fixture
+def mt_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "deska.json", template=True)
+    w.ndt_panel.studies.setCurrentRow(1)  # s2 – MT horní plochy desky
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_mt_panel_settings_map_views_pick_yoke_and_export(mt_window, no_dialogs, slot_errors,
+                                                          tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QFileDialog
+
+    from skodacad.ndt import MT_DISCLAIMER
+
+    w = mt_window
+    panel = w.ndt_panel
+    session = w.session
+    assert panel.mt_box.isVisibleTo(panel)
+    assert panel.mt_box.title() == "Přiložení jha a směry magnetizace pro MT"
+    assert not panel.probe_box.isVisibleTo(panel) and not panel.pt_box.isVisibleTo(panel)
+    assert panel.warning.text() == MT_DISCLAIMER
+    assert "je feromagnetický" in panel.mt_material.text()
+    assert "zvoleno pro výpočet" in panel.mt_settings_label.text()
+    panel.mt_settings_action.trigger()
+    assert "MtDialog" in no_dialogs and not session.dirty  # zrušený dialog nic nemění
+
+    def accept(self, dialog):
+        dialog.edits["step_mm"].setText("25")
+        dialog.edits["center_step_mm"].setText("50")
+        dialog.checks["apply"].setChecked(False)
+        dialog.checks["inspect"].setChecked(False)
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
+    panel.mt_settings_action.trigger()
+    assert session.ndt_study("s2")["mt"]["center_step_mm"] == 50 and session.dirty
+    steps = len(session._undo)
+
+    def unchanged(self, dialog):
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", unchanged)
+    panel.mt_settings_action.trigger()
+    assert len(session._undo) == steps  # nezměněné OK = žádný krok Zpět
+    assert "Odhad:" in panel.mt_estimate.text() and panel.mt_action.isEnabled()
+    panel.mt_action.trigger()
+    assert session.ndt_mt_map is not None and not slot_errors
+    assert w.viewer.highlighted == []  # mapa MT je hlavní – oblast se nezvýrazňuje
+    shown = w.viewer.coverage_map
+    assert shown is not None
+    assert "Pokryto ve všech orientacích vad" in panel.mt_summary.text()
+    panel.mt_view.setCurrentIndex(panel.mt_view.findData("d4"))
+    assert w.viewer.coverage_map is not shown  # mapa jednoho směru se nakreslí znovu
+    assert "Pole 90°" in panel.mt_legend.text()
+    panel.mt_view.setCurrentIndex(panel.mt_view.findData("d0"))
+    top = face_at(session.result.part, 0, 0, 20)
+    w.viewer.click([top], (0, 30, 20))
+    assert "Místo" in panel.mt_pick.text() and panel.mt_show_yoke_action.isEnabled()
+    panel.mt_show_yoke_action.trigger()  # jho, které místo pokryje polem 0°
+    assert session.ndt_yoke is not None and session.ndt_yoke.ok
+    assert w.viewer.probe is not None and w.viewer.probe[0] == "ok"
+    panel.mt_angle.setValue(90)
+    w.viewer.click([top], (0, 0, 20))
+    panel.mt_place_yoke_action.trigger()  # deska je široká jen 100 mm → rozteč 75
+    assert session.ndt_yoke.spacing == 75 and "rozteč 75 mm" in panel.mt_yoke.text()
+    assert w.viewer.probe[0] == "ok"
+    panel.mt_hide_yoke_action.trigger()
+    assert session.ndt_yoke is None and w.viewer.probe is None
+    path = tmp_path / "mt.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    panel.mt_export_action.trigger()
+    assert path.read_text(encoding="utf-8-sig").splitlines()[1] == MT_DISCLAIMER
+    panel.mt_stop_action.trigger()  # nic neběží – nic se nestane
+    panel.mt_clear_action.trigger()
+    assert session.ndt_mt_map is None and w.viewer.coverage_map is None
+    w.undo_action.trigger()
+    assert "mt" not in session.ndt_study("s2")
+    assert slot_errors == []
+
+
+def test_mt_panel_is_locked_while_ai_works(mt_window):
+    w = mt_window
+    panel = w.ndt_panel
+    w.set_assistant_busy(True)
+    panel.refresh()
+    assert not any(a.isEnabled() for a in panel._mt_actions())
+    w.set_assistant_busy(False)
+    panel.refresh()
+    assert panel.mt_settings_action.isEnabled() and panel.mt_action.isEnabled()

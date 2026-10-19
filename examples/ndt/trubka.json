@@ -18,6 +18,11 @@
      "target": {"kind": "faces", "faces": [
                    {"face": {"at": [0, 0, 57.15], "normal": [0, 0, 1], "type": "cylinder", "radius": 57.15}}]},
      "note": "Přímá sonda radiálně, rovná kontaktní plocha na válci.",
-     "created": "2026-10-16", "part": "e63772e05c9560ea"}
+     "created": "2026-10-16", "part": "e63772e05c9560ea"},
+    {"id": "s2", "name": "MT pláště trubky", "method": "MT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 57.15], "normal": [0, 0, 1], "type": "cylinder", "radius": 57.15}}]},
+     "note": "Podél osy jho 100 mm, po obvodu jen 75 mm (nohy by svíraly 104°).",
+     "created": "2026-10-19", "part": "e63772e05c9560ea"}
   ]}
 }

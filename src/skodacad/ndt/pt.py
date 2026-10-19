@@ -466,6 +466,22 @@ def compute(part: Any, faces: list[Any], settings: PtSettings | None = None,
                  time.monotonic() - started)
 
 
+@dataclass(frozen=True)
+class Access:
+    """Nástřik a prohlídka v jednom bodě (``Sampler.access``) a podklady pro kontrolu nástroje."""
+
+    spray: str  # GRADES
+    spray_angle: float | None  # nejmenší volný úhel od kolmice (jistý paprsek) [°]
+    view: str
+    view_angle: float | None  # úhel výhledu k povrchu, pod kterým se oko vejde [°]
+    gap: float | None  # mezera po kolmici k protější stěně [mm]
+    openness: float  # podíl volných směrů [%]
+    reasons: tuple[tuple[str, str], ...]
+    dirs: list[Point]
+    rays: list[Any]
+    best: list[tuple[float, Point]]
+
+
 class Sampler:
     """Tři kontroly v jednom bodě povrchu (bod na ploše, normála ven z materiálu)."""
 
@@ -477,6 +493,53 @@ class Sampler:
     # --- jeden vzorek ------------------------------------------------------------------------
 
     def sample(self, point: Point, normal: Point, area: float = 0.0) -> PtSample:
+        s = self.settings
+        normal = _unit(normal)
+        access = self.access(point, normal)
+        dirs, rays, best = access.dirs, access.rays, access.best
+        alpha, gap, openness = access.spray_angle, access.gap, access.openness
+        spray, view, view_angle = access.spray, access.view, access.view_angle
+        reasons = list(access.reasons)
+
+        # otření nástrojem
+        tool, tool_mm = "off", None
+        if s.cleaning == "wipe":
+            tool, tool_mm, why = self._tools(point, normal, dirs, rays, best)
+            if tool in ("limited", "blocked"):
+                reasons.append(("tool_limited" if tool == "limited" else "tool_blocked", why))
+            elif tool == "uncertain":
+                reasons.append(("uncertain", why))
+
+        if "uncertain" in (spray, view):
+            reasons.append(("uncertain", "Rozhodující paprsek je nejistý – prochází hranou "
+                                         "nebo se plochy jen dotýká."))
+
+        # upozornění
+        if gap is not None and gap < s.tool_mm:
+            if s.fine_tool_mm and gap < s.fine_tool_mm:
+                reasons.append(("slit", f"Úzká štěrbina {_dec(gap)} mm – {SLIT_TEXT}."))
+            else:
+                reasons.append(("gap", f"Mezera {_dec(gap)} mm – nástroj Ø {_n(s.tool_mm)} se "
+                                       f"nevejde."))
+        if openness < s.open_warning:
+            reasons.append(("deep", f"Hluboké nebo zakryté místo – otevřené jen do "
+                                    f"{_dec(openness)} % směrů; nanesení vývojky a prohlídka "
+                                    f"jsou obtížné."))
+
+        grades = [g for g in (spray, tool, view) if g != "off"]
+        if "blocked" in grades:
+            state = "blocked"
+        elif "limited" in grades or any(kind in WARNINGS for kind, _ in reasons):
+            state = "limited"
+        elif "uncertain" in grades:
+            state = "uncertain"
+        else:
+            state = "ok"
+        return PtSample(point, normal, area, state, spray, tool, view, alpha, view_angle,
+                        tool_mm, gap, openness, tuple(dict.fromkeys(reasons)))
+
+    def access(self, point: Point, normal: Point) -> Access:
+        """Nástřik a prohlídka v bodě (bez nástroje a bez upozornění) – sdílí je i MT."""
         s = self.settings
         normal = _unit(normal)
         frame = _frame(normal)
@@ -521,44 +584,8 @@ class Sampler:
                                             f"{_n(s.view_deg)}°)."))
         if view == "uncertain":
             view_angle = None
-
-        # otření nástrojem
-        tool, tool_mm = "off", None
-        if s.cleaning == "wipe":
-            tool, tool_mm, why = self._tools(point, normal, dirs, rays, best)
-            if tool in ("limited", "blocked"):
-                reasons.append(("tool_limited" if tool == "limited" else "tool_blocked", why))
-            elif tool == "uncertain":
-                reasons.append(("uncertain", why))
-
-        if "uncertain" in (spray, view):
-            reasons.append(("uncertain", "Rozhodující paprsek je nejistý – prochází hranou "
-                                         "nebo se plochy jen dotýká."))
-
-        # upozornění
-        if gap is not None and gap < s.tool_mm:
-            if s.fine_tool_mm and gap < s.fine_tool_mm:
-                reasons.append(("slit", f"Úzká štěrbina {_dec(gap)} mm – {SLIT_TEXT}."))
-            else:
-                reasons.append(("gap", f"Mezera {_dec(gap)} mm – nástroj Ø {_n(s.tool_mm)} se "
-                                       f"nevejde."))
-        if openness < s.open_warning:
-            reasons.append(("deep", f"Hluboké nebo zakryté místo – otevřené jen do "
-                                    f"{_dec(openness)} % směrů; nanesení vývojky a prohlídka "
-                                    f"jsou obtížné."))
-
-        grades = [g for g in (spray, tool, view) if g != "off"]
-        if "blocked" in grades:
-            state = "blocked"
-        elif "limited" in grades or any(kind in WARNINGS for kind, _ in reasons):
-            state = "limited"
-        elif "uncertain" in grades:
-            state = "uncertain"
-        else:
-            state = "ok"
-        return PtSample(point, normal, area, state, spray, tool, view, alpha,
-                        view_angle if isinstance(view_angle, float) else None, tool_mm,
-                        gap, openness, tuple(dict.fromkeys(reasons)))
+        return Access(spray, alpha, view, view_angle if isinstance(view_angle, float) else None,
+                      gap, openness, tuple(reasons), dirs, rays, best)
 
     # --- směry -------------------------------------------------------------------------------
 

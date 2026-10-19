@@ -1,7 +1,8 @@
 # NDT – návrh etapy 11: PT – přístupnost povrchu pro kapilární zkoušku
 
 Stav: **schváleno autorem 19. 10. 2026 („schvaluji etapu 11 včetně doporučení 1–9“);
-implementace po krocích ve vývojové větvi.**
+provedeno a sloučeno v [PR #25](https://github.com/JendaNDT/SkodaCAD/pull/25) (`3297983`).
+Autor 19. 10. 2026 k vydání z `3297983` napsal „ok, funguje to“.**
 Výchozí stav: `main`, commit `5e59c28` ([PR #24](https://github.com/JendaNDT/SkodaCAD/pull/24)).
 Navazuje na [plán, etapa 11](03-implementacni-plan.md), [NDT studie (etapa 01)](04-navrh-etapa-00-01.md),
 [geometrické jádro (etapa 02)](06-navrh-etapa-02.md), [referenční díly](05-referencni-dily.md)
@@ -409,7 +410,7 @@ knihovna Pythonu ani sloučení do `main`.
   a nezměněný záznam studie), `ndt_pt_mesh` (i v řezu), `ndt_pt_describe`, `export_ndt_pt`.
   Pomocný proces: úloha `pt` (`BackgroundRebuilder.submit_pt`, `Finished.pt`). Příkazová řádka
   `skodacad kapilarni` a `build` vypíše u PT studií `PT_DISCLAIMER`. AI pravidla: věta o PT.
-- **11B (hotovo, čeká na PR a ruční zkoušku):** skupina **Přístupnost povrchu pro PT** v panelu
+- **11B (hotovo, sloučeno v PR #25, autor po vydání: „ok, funguje to“):** skupina **Přístupnost povrchu pro PT** v panelu
   NDT (`gui/ndt_panel.py`) u PT studie místo skupin sondy UT: popis nastavení, **Nastavení PT…**
   (`gui/pt_dialog.py`, čísla jako text, u zvolených hodnot „zvoleno pro výpočet, ne z normy“,
   nezměněné *OK* = žádný krok Zpět), **Spočítat mapu PT** s odhadem a průběhem (pomocný proces),

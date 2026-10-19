@@ -16,6 +16,11 @@
      "target": {"kind": "faces", "faces": [
                    {"face": {"at": [0, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
      "note": "Přímá sonda z horní plochy, dráha k dolní ploše.",
-     "created": "2026-10-16", "part": "d2adca0f544474d6"}
+     "created": "2026-10-16", "part": "d2adca0f544474d6"},
+    {"id": "s2", "name": "MT horní plochy", "method": "MT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Jho na desce 200 × 100: podél X se vejde rozteč 100 mm, podél Y jen 75 mm.",
+     "created": "2026-10-19", "part": "d2adca0f544474d6"}
   ]}
 }

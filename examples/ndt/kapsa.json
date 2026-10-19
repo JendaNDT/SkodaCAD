@@ -29,6 +29,11 @@
                    {"face": {"at": [-20, 0, 27.5], "normal": [1, 0, 0], "type": "plane"}},
                    {"face": {"at": [20, 0, 27.5], "normal": [-1, 0, 0], "type": "plane"}}]},
      "note": "Dno a stěny kapsy: nástroj Ø 10 se nedostane blíž než 5 mm ke stěně.",
+     "created": "2026-10-19", "part": "763df241f51dc800"},
+    {"id": "s3", "name": "MT dna kapsy", "method": "MT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 15], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Kapsa 40 × 30 je pro jho malá – mezi místem a pólem je stěna.",
      "created": "2026-10-19", "part": "763df241f51dc800"}
   ]}
 }
