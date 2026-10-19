@@ -162,6 +162,19 @@
   neposune; ruční úpravy úseků = kroky Zpět; CLI `skodacad draha`, AI bez nového nástroje.
   Sloučeno v PR #24 (`5e59c28`); autor 19. 10. 2026 k vydání z `5e59c28` napsal „ok funguje
   to“. Tím je hotový milník M3 (etapy 09–10).
+- (19. 10. 2026, schváleno včetně doporučení 1–9) **NDT etapa 11 – PT, přístupnost povrchu
+  pro kapilární zkoušku** (`docs/ndt/19-navrh-etapa-11.md`, otevírá milník M4): závazné
+  vymezení PT `docs/ndt/20-vymezeni-pt.md` s povinným upozorněním `ndt.PT_DISCLAIMER`
+  (jen geometrická přístupnost – ne smáčivost, vzlínání, citlivost ani detekovatelnost vad).
+  `ndt/pt.py`: vzorky = síť ploch PT studie, pevná sada 65 směrů, tři kontroly – **nástřik**
+  (volný paprsek do 60° / omezeně do 85° od kolmice), **otření** nástrojem (kulička + dřík
+  s libovolným sklonem, hlavní Ø 10 a jemný Ø 3, dřík 100 mm, přesná kolize OCCT), **prohlídka**
+  (≥ 30° k povrchu, oko do 600 mm s volnou koulí Ø 50 mm; ASME V čl. 9, BINDT CP25) – plus
+  upozornění úzká mezera a otevřenost pod 10 %; čtyři stavy (přístupné / omezené / nepřístupné /
+  nelze spolehlivě vyhodnotit) s českými důvody. Postup čištění otřením nebo oplachem. Zvolené
+  hodnoty jsou označené „zvoleno pro výpočet“. Nastavení `pt` ve studii (**formát 19**), mapa
+  jen pohled. Referenční díl 9 `sterbina.json`, PT studie i v kapse. Okno, CSV, CLI
+  `skodacad kapilarni`, AI bez nového nástroje.
 
 ## Architektura (`src/skodacad/`)
 
@@ -819,7 +832,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
-  to“) – milník M3 hotov.
+  to“) – milník M3 hotov,
+  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [ ] 11A.1 vymezení
+  PT a jádro `ndt/pt.py`, [ ] 11A.2 formát 19, ModelSession, CLI, [ ] 11B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
