@@ -946,7 +946,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
   to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
   sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
-  a expozice (návrh zatím není; dokončí milník M4).
+  a expozice (návrh `docs/ndt/23-navrh-etapa-13.md` čeká na rozhodnutí autora; dokončí milník M4).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
