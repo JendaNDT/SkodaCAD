@@ -179,7 +179,20 @@
   jen pohled. Referenční díl 9 `sterbina.json`, PT studie i v kapse. Okno, CSV, CLI
   `skodacad kapilarni`, AI bez nového nástroje. Sloučeno v PR #25 (`3297983`, spolu
   s rozhodnutím otázky z etapy 09); autor 19. 10. 2026 k vydání z `3297983` napsal „ok,
-  funguje to“. Návrh etapy 12 – MT (`docs/ndt/21-navrh-etapa-12.md`) čeká na rozhodnutí.
+  funguje to“.
+- (19. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 12 – MT, přiložení jha
+  a směry magnetizace** (`docs/ndt/21-navrh-etapa-12.md`, milník M4): závazné vymezení MT
+  `docs/ndt/22-vymezeni-mt.md` s povinným upozorněním `ndt.MT_DISCLAIMER` (jen geometrie –
+  ne intenzita ani rozložení pole, citlivost ani detekovatelnost vad). Jen jho: virtuální
+  kloubové jho (póly Ø 20, výška 60, tělo 40 × 40 + 20), místo pólu = první dotyk kružnice
+  o poloměru d/2 sklápěné od kolmice, pól dosedá jako přímá sonda (mezera do 1 mm),
+  nohy nejvýš 90°, spojnice 10 mm nad povrchem bez stěny, kolize těla; rozteč 100 mm se
+  zálohou 75 mm (ISO 17638); účinná oblast (d − 50) × d/2, orientační směr pole, 8 směrů
+  po 22,5°, všechny orientace vad = dva směry aspoň 60° od sebe (ISO 9934-1, ISO 17638);
+  nanesení a prohlídka z PT; kontrola feromagnetického materiálu (nerez a neuvedený jen
+  s potvrzením). Nastavení `mt` ve studii (**formát 20**), mapa jen pohled. Okno (mapa,
+  směry, klik, Ukázat jho, Přiložit jho sem), CSV, CLI `skodacad magneticka`, AI bez
+  nového nástroje.
 
 ## Architektura (`src/skodacad/`)
 
@@ -872,8 +885,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
   [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
-  to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (návrh
-  `docs/ndt/21-navrh-etapa-12.md` čeká na rozhodnutí autora).
+  to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (schváleno
+  19. 10. 2026): [ ] 12A.1 vymezení MT a jádro `ndt/mt.py`, [ ] 12A.2 formát 20,
+  ModelSession, CLI, [ ] 12B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

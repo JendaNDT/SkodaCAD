@@ -1,6 +1,7 @@
 # NDT – návrh etapy 12: MT – přiložení jha a směry magnetizace
 
-Stav: **návrh k rozhodnutí autora (19. 10. 2026)** – zatím nic neimplementováno.
+Stav: **schváleno autorem 19. 10. 2026 („schvaluji etapu 12 včetně doporučení 1–10“);
+implementace po krocích ve vývojové větvi.**
 Výchozí stav: `main`, commit `3297983` ([PR #25](https://github.com/JendaNDT/SkodaCAD/pull/25)).
 Navazuje na [plán, etapa 12](03-implementacni-plan.md), [geometrické jádro (etapa 02)](06-navrh-etapa-02.md),
 [virtuální sondu (etapa 03)](07-navrh-etapa-03.md), [PT (etapa 11)](19-navrh-etapa-11.md),
