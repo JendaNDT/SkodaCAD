@@ -23,6 +23,7 @@ from skodacad.ndt.mt import (
     _missing,
     check_points,
     compute,
+    covers,
     estimate,
     material_status,
     place_yoke,
@@ -192,6 +193,28 @@ def test_pocket_bottom_is_not_covered_because_of_wall():
         assert sample.state == "blocked" and sample.field == "blocked"
         assert any(kind == "field_blocked" for kind, _ in sample.reasons)
     assert samples[0].directions[0] == "wall"
+
+
+def test_off_plane_place_must_belong_to_material_under_the_yoke():
+    settings = MtSettings()
+    shape = part("kapsa")  # jho na horní ploše vedle kapsy, dno o 25 mm níž
+    kapsa = PartGeometry(shape)
+    beside = place_yoke(shape, (0, -22.86, 40), (0, 0, 1), 0.0, geo=kapsa)
+    assert beside.ok and beside.spacing == 100
+    assert covers(beside, (-15, 0, 15), (0, 0, 1), settings) == 0.0  # oblast dno zasáhne,
+    assert covers(beside, (-15, 0, 15), (0, 0, 1), settings, kapsa) is None  # tok ale ne
+    shape = part("koutovy_svar")  # jho na pásnici podél svaru, svar nad ní
+    svar = PartGeometry(shape)
+    along = place_yoke(shape, (26, 0, 10), (0, 0, 1), 90.0, geo=svar)  # tělo jha těsně u stojiny
+    assert along.ok and along.spacing == 75
+    assert covers(along, (8.5, 0, 13.5), (S, 0, S), settings, svar) == pytest.approx(90)
+    shape = part("trubka")  # vypouklá trubka: spojnice vede materiálem
+    trubka = PartGeometry(shape)
+    axial = place_yoke(shape, (0, 0, R), (0, 0, 1), 0.0, geo=trubka)
+    phi = math.asin(20 / R)
+    point, normal = (10, R * math.sin(phi), R * math.cos(phi)), (0, math.sin(phi), math.cos(phi))
+    assert axial.ok and R - point[2] > 2  # mimo rovinu středu
+    assert covers(axial, point, normal, settings, trubka) == pytest.approx(0, abs=1e-6)
 
 
 def test_fillet_weld_across_everywhere_along_only_in_the_middle():

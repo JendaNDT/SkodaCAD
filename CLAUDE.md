@@ -263,10 +263,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy) a `kapilarni` (mapa PT) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT) a `magneticka` (mapa MT) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`) a mapa PT (`submit_pt`), průběžné zprávy `Finished.update` |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`) a mapa MT (`submit_mt`), průběžné zprávy `Finished.update` |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -785,7 +785,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`geometry.overlap` se složeným tvarem); nespočítaný průnik = nejisté, nikdy pokryté.
 - Účinná oblast: obdélník (d − 2 · 25) × d/2 v tečné rovině středu, hloubka do d/4, plocha místa
   natočená do **60°** (`FACING`) a místo nejvýš **45°** pod nebo nad rovinou středu; mimo rovinu
-  (> 2 mm) musí být vidět (spojnice zvednutá o 10 mm, paměť podle středu a místa).
+  (> 2 mm) musí patřit k materiálu pod jhem (`_reaches`, paměť podle středu a místa): pod
+  rovinou spojnice se středem vede materiálem (vypouklá trubka), nad rovinou je pod místem
+  materiál až k rovině jha (koutový svar na pásnici) a místo je vidět (spojnice zvednutá
+  o 10 mm). Jen „vidět“ pouštělo dno kapsy od jha vedle kapsy (26 % místo 0 %), jen spojnice
+  materiálem ubírala koutový svar podél svaru (27 % → 11 %). `covers` s `geo` to kontroluje
+  také (Ukázat jho).
 - Středy jha jen na plochách v dosahu míst (d/4 + poloměr pólu) a natočených k nim do 60° –
   spodek desky by jinak zdvojnásobil výpočet. Dohledání hranic jen tam, kde by místo získalo
   nový směr (`_Field._gain`); jinak by 5 bodů trvalo 2,5 min místo 28 s.
@@ -797,6 +802,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   směry v rámu **středu** (jen pro testy).
 - Ukázky deska (s2), trubka (s2), kapsa (s3) a koutový svar (s2) mají MT studii – testy okna
   a ModelSession počítají s druhou studií desky (nová studie je s3, „UT studie 3“).
+- Rychlost přiložení: pořadí v `Yoker.place` je místa a stěna obou pólů → rychlý přesah
+  (`_overhangs`, 4 paprsky, bez průniku OCCT) → úhel nohou → přesné dosednutí pólu (`_pole`,
+  paměť podle zaokrouhleného bodu a plochy – sousední středy sdílí místo pólu) → průnik nohou
+  a těla. Automatická mapa desky tím 3 min → 50 s. Přehozené pořadí změní jen důvod
+  (přesah × nohy), test hrany čeká „přesah“.
+- ModelSession: nastavení `mt` ve studii (formát 20, `set_ndt_mt_settings` = jeden krok
+  Zpět, stejné nastavení = žádná změna; `mt` smí mít jen MT studie, změna metody ho smaže).
+  Materiál je v otisku receptu → po jeho změně je studie zastaralá a mapa chce potvrzení;
+  klíč mapy (`_mt_key`) materiál nese také. Mapa i jho (`place_ndt_yoke`, `ndt_mt_yoke_at`,
+  `_yoke_view`) jsou jen pohled – po změně dílu zmizí. `start_ndt_mt` volá napřed odhad,
+  aby chyba materiálu přišla hned, ne z pomocného procesu.
+- Testy ModelSession a okna volí rychlé nastavení (síť 25 mm, středy 50 mm, bez nanesení
+  a prohlídky) – mapa desky asi 15 s. Mapu počítá jen pár testů (Windows limit 20 min).
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -912,8 +930,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“) – milník M3 hotov,
   [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
   to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (schváleno
-  19. 10. 2026): [x] 12A.1 vymezení MT a jádro `ndt/mt.py`, [ ] 12A.2 formát 20,
-  ModelSession, CLI, [ ] 12B okno.
+  19. 10. 2026): [x] 12A.1 vymezení MT a jádro `ndt/mt.py`, [x] 12A.2 formát 20,
+  ModelSession, pomocný proces, CLI, [ ] 12B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

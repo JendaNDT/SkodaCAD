@@ -447,6 +447,26 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   V příkazové řádce: `skodacad kapilarni MODEL --studie s1 [--krok 2] [--nastroj 10]
   [--jemny 3] [--delka 100] [--oplach] [--ulozit] [--csv pt.csv]`.
   Návrh: [Etapa 11](docs/ndt/19-navrh-etapa-11.md).
+* **MT – přiložení jha a směry magnetizace (etapa 12):** jen geometrie zkoušky jhem podle
+  [závazného vymezení MT](docs/ndt/22-vymezeni-mt.md) – žádná intenzita ani rozložení
+  magnetického pole, citlivost ani detekovatelnost vad. Virtuální **kloubové jho** (dva póly
+  Ø 20 mm, výška nohy 60 mm, tělo 40 × 40 mm; zvolené hodnoty) se zkouší přiložit z mřížky
+  středů v **8 směrech po 22,5°**: póly musí mít kam dosednout (mezera pod pólem do 1 mm,
+  pól celý na ploše), nohy svírají nejvýš 90°, mezi místem a pólem nesmí být stěna a nohy ani
+  tělo nesmí narazit (přesný průnik). Rozteč pólů **100 mm**, když nejde, **75 mm** (ISO 17638:
+  aspoň 75 mm). **Účinná oblast** mezi póly je obdélník (d − 50) × d/2 (u pólu 25 mm ne) a směr
+  pole v ní je jen orientační (přímka mezi póly). Místo mimo rovinu jha se počítá, jen když
+  patří k materiálu pod jhem (vypouklá trubka, svar na plechu – ne dno kapsy vedle jha). Místo je **pokryté ve všech orientacích vad**,
+  když ho zasáhnou dva směry pole aspoň 60° od sebe (vada skloněná k poli aspoň o 30°, ISO 9934-1
+  a ISO 17638); jinak výstup uvede nepokryté orientace. Nanesení detekčního prostředku a
+  prohlídka se počítají kontrolami PT. Materiál musí být feromagnetický (ocel, litina; nerez
+  a neuvedený jen s potvrzením). Mapa: celkem, zvlášť pro směry pole 0°/45°/90°/135°
+  (**rozdíl při otočení magnetizace**), nanesení a prohlídka; CSV s povinným upozorněním MT.
+  Nastavení se ukládá do MT studie (formát 20), mapa je jen pohled. Ukázky: MT studie desky,
+  trubky, kapsy a koutového svaru. V příkazové řádce: `skodacad magneticka MODEL --studie s2
+  [--roztec 100] [--nejmensi 75] [--krok 5] [--krok-stredu 10] [--feromagneticky]
+  [--bez-naneseni] [--bez-prohlidky] [--ulozit] [--csv mt.csv]`.
+  Návrh: [Etapa 12](docs/ndt/21-navrh-etapa-12.md).
 
 ### Tažení a přechod
 
@@ -827,8 +847,9 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
 (`ndt`), verze 14 sonda ve studii (`device`), verze 15 úhel paprsku a počet odrazů sondy
 (`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
 NDT (původ hodnot sondy, materiál pro UT; etapa 08), verze 18 plán dráhy sondy a zakázané
-zóny ve studii (`plan`, `zones`; etapa 10), verze 19 nastavení PT studie (`pt`; etapa 11).
-Starší soubory verze 1–18 se načtou beze změny. Uložení novou aplikací zapisuje verzi 19;
+zóny ve studii (`plan`, `zones`; etapa 10), verze 19 nastavení PT studie (`pt`; etapa 11),
+verze 20 nastavení MT studie (`mt`; etapa 12).
+Starší soubory verze 1–19 se načtou beze změny. Uložení novou aplikací zapisuje verzi 20;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -893,6 +914,15 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   Chybějící hodnota = výchozí (bez `step_mm` = automaticky asi 1500 vzorků), `cleaning`
   `wipe` = otřením, `rinse` = oplachem, `fine_tool_mm` 0 = bez jemného nástroje. Úhly
   nástřiku jsou od kolmice, úhly prohlídky k povrchu. Mapa PT se do souboru neukládá.
+* **Nastavení MT** (verze 20, nepovinné, jen u MT studie, etapa 12): `mt` –
+  `{"spacing_mm": 100, "min_spacing_mm": 75, "pole_zone_mm": 25, "pole_mm": 20, "leg_mm": 60,
+  "body_mm": 40, "body_overhang_mm": 20, "max_gap_mm": 1, "leg_angle_deg": 90,
+  "step_over_mm": 10, "detect_deg": 30, "apply": true, "inspect": true, "spray_deg": 60,
+  "spray_limit_deg": 85, "view_deg": 30, "view_limit_deg": 5, "view_distance_mm": 600,
+  "eye_mm": 50}`, nepovinně `step_mm` a `center_step_mm` (krok sítě míst a středů jha; bez nich
+  automaticky) a `ferromagnetic: true` (materiál potvrzený uživatelem – jen u nerezi
+  a neuvedeného materiálu, u neferomagnetického nic nezmění). Chybějící hodnota = výchozí;
+  `min_spacing_mm` = `spacing_mm` vypne zálohu menší roztečí. Mapa MT se do souboru neukládá.
 
 ### Cílové objemy a svary (07A, verze 16)
 

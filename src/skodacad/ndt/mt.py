@@ -27,8 +27,23 @@ from typing import Any
 
 from skodacad.materials import DISPLAY_NAMES, material_key
 from skodacad.ndt import MT_DISCLAIMER, MT_MAP
-from skodacad.ndt.devices import DeviceError, Probe, place, reuse_placements
-from skodacad.ndt.geometry import OVERLAP_TOL, GeometryError, PartGeometry, Point, overlap
+from skodacad.ndt.devices import (
+    INSET,
+    LIFT,
+    SEARCH_DEPTH,
+    DeviceError,
+    Probe,
+    place,
+    reuse_placements,
+)
+from skodacad.ndt.geometry import (
+    LENGTH_TOL,
+    OVERLAP_TOL,
+    GeometryError,
+    PartGeometry,
+    Point,
+    overlap,
+)
 from skodacad.ndt.pt import COLORS, GRADES, PtError, PtSettings, Sampler
 from skodacad.thickness_map import MapError, _Surface
 
@@ -40,10 +55,11 @@ SHOE_MM = 15.0  # botka pólu přiléhá k ploše; zbytek nohy vede ve směru jh
 SWEEP_DEG = 5.0  # krok sklápění kružnice při hledání místa pólu
 SWEEP_ITER = 18  # půlení úhlu kružnice (5° / 2^18 – setiny mikrometru)
 REFINE_MM = 0.5  # hranice platných poloh jha se dohledá na tuto přesnost
-SIGHT_MM = 2.0  # místo mimo rovinu středu o víc než tolik musí být ze středu vidět
+SIGHT_MM = 2.0  # místo mimo rovinu středu o víc než tolik musí patřit k materiálu pod jhem
+AIR_MM = 0.5  # nejvýš tolik spojnice smí vést vzduchem (konce na povrchu)
 FACING = 0.5  # plocha místa a plocha středu jha svírají nejvýš 60° (cos 60°)
 # Místo mimo tečnou rovinu středu leží nejvýš 45° pod ní nebo nad ní (|w| ≤ vzdálenost v rovině):
-# převýšení svaru a koutový svar ano, dno kapsy pod jhem stojícím vedle ní ne.
+# převýšení svaru a koutový svar ano, dno kapsy přímo pod jhem ne (vedle jha hlídá ``_reaches``).
 UNCLEAR = 0.5  # sklopený směr pole kratší než polovina → směr pole v místě nejasný
 ORIENT_STEP = 0.5  # orientace vad se zkouší po půl stupni
 TARGET_SAMPLES = 1000  # automatický krok sítě míst
@@ -239,7 +255,9 @@ class MtSettings:
                  f"nejvýš {_n(self.leg_angle_deg)}°, spojnice místa a pólu "
                  f"{_n(self.step_over_mm)} mm nad povrchem bez stěny ({CHOSEN}).",
                  f"Účinná oblast: obdélník (d − {_n(2 * self.pole_zone_mm)} mm) × d/2 mezi póly, "
-                 f"u každého pólu se {_n(self.pole_zone_mm)} mm nepočítá ({ZONE_SOURCE}).",
+                 f"u každého pólu se {_n(self.pole_zone_mm)} mm nepočítá ({ZONE_SOURCE}); "
+                 f"místo mimo rovinu jha jen na materiálu pod jhem (vypouklá trubka, svar na "
+                 f"plechu – ne dno kapsy vedle jha).",
                  f"Orientace vad: vada se počítá, když je k poli skloněná aspoň o "
                  f"{_n(self.detect_deg)}°; všechny orientace pokryjí dva směry pole aspoň "
                  f"{_n(2 * self.detect_deg)}° od sebe ({DETECT_SOURCE}).",
@@ -367,6 +385,7 @@ class Yoker:
         self.shape = geo.part.wrapped
         self.probe = Probe("straight", diameter=settings.pole_mm, height=SHOE_MM,
                            max_gap=settings.max_gap_mm, reserve=0.0)
+        self._poles: dict[tuple, Any] = {}  # přiložené póly podle místa (opakují se)
 
     def best(self, center: Point, normal: Point, along: Point, shapes: bool = False
              ) -> YokePlacement:
@@ -397,6 +416,7 @@ class Yoker:
 
         if along is None:
             return fail("no_site", "Směr jha leží kolmo k ploše.")
+        sites = []  # napřed levné kontroly obou pólů, přesné přiložení až potom
         for sign in (1.0, -1.0):
             site = self._site(center, normal, (along[0] * sign, along[1] * sign,
                                                along[2] * sign), spacing / 2)
@@ -417,9 +437,20 @@ class Yoker:
             if length > 1e-9 and self.geo.cast(a, _unit(gap), length).hits:
                 return fail("wall", "Mezi místem a pólem je stěna (spojnice "
                                     f"{_n(s.step_over_mm)} mm nad povrchem narazí do dílu).")
+            sites.append((q, nq, surface.face))
+        for q, nq, _ in sites:
+            if self._overhangs(q, nq):
+                return fail("overhang", "Pól přesahuje okraj (část plochy pólu nemá pod sebou "
+                                        "povrch).")
+        (q1, n1, _), (q2, n2, _) = sites
+        legs = math.degrees(math.acos(max(-1.0, min(1.0, _dot(n1, n2)))))
+        up = _unit(_add(n1, n2))
+        if legs > s.leg_angle_deg + 1e-9 or up is None:
+            return fail("legs", f"Nohy svírají {legs:.0f}° (nejvýš {_n(s.leg_angle_deg)}°) – "
+                                "plochy pod póly jsou k sobě příliš skloněné.")
+        for q, nq, face in sites:
             try:
-                pole = place(self.geo, self.probe, q, angle=0.0, face=surface.face,
-                             measure_clearance=False)
+                pole = self._pole(q, face)
             except DeviceError as exc:
                 return fail("no_site", str(exc))
             poles.append(q)
@@ -436,12 +467,6 @@ class Yoker:
                                         f"dovoleno {_n(s.max_gap_mm)} mm.")
             if pole.state == "uncertain":
                 uncertain = True
-        (q1, q2), (n1, n2) = poles, normals
-        legs = math.degrees(math.acos(max(-1.0, min(1.0, _dot(n1, n2)))))
-        up = _unit(_add(n1, n2))
-        if legs > s.leg_angle_deg + 1e-9 or up is None:
-            return fail("legs", f"Nohy svírají {legs:.0f}° (nejvýš {_n(s.leg_angle_deg)}°) – "
-                                "plochy pod póly jsou k sobě příliš skloněné.")
         rise = s.leg_mm - SHOE_MM
         tops = [_add(q, n, SHOE_MM) for q, n in ((q1, n1), (q2, n2))]
         solids = [_cylinder(top, up, s.pole_mm / 2, rise) for top in tops]
@@ -458,6 +483,29 @@ class Yoker:
                 + (" (nejisté)." if uncertain else "."))
         return YokePlacement(center, normal, along, spacing, True, uncertain, "ok", text,
                              tuple(poles), tuple(normals), tuple(placed_shapes))
+
+    def _overhangs(self, q: Point, normal: Point) -> bool:
+        """Rychlá kontrola přesahu: čtyři krajní body otisku pólu (podmnožina otisku přímé
+        sondy) – když některý nemá pod sebou povrch, přesné přiložení by vyšlo stejně."""
+        base = _base(normal)
+        side = _cross(normal, base)
+        reach = self.settings.pole_mm / 2 - INSET
+        for axis, sign in ((base, 1.0), (base, -1.0), (side, 1.0), (side, -1.0)):
+            start = _add(_add(q, axis, sign * reach), normal, LIFT)
+            ray = self.geo.cast(start, (-normal[0], -normal[1], -normal[2]),
+                                LIFT + SEARCH_DEPTH)
+            if not ray.hits and not (ray.segments and ray.segments[0].start <= LENGTH_TOL):
+                return True
+        return False
+
+    def _pole(self, q: Point, face: Any) -> Any:
+        """Přesné přiložení pólu jako přímé sondy; stejné místo se počítá jen jednou."""
+        key = (round(q[0], 6), round(q[1], 6), round(q[2], 6), hash(face.wrapped))
+        known = self._poles.get(key)
+        if known is None:
+            known = place(self.geo, self.probe, q, angle=0.0, face=face, measure_clearance=False)
+            self._poles[key] = known
+        return known
 
     def _site(self, center: Point, normal: Point, along: Point, radius: float
               ) -> Point | str | None:
@@ -1034,16 +1082,12 @@ class _Field:
                 entry[0] += 1
 
     def _seen(self, placed: YokePlacement, center_index: int | None, i: int) -> bool:
-        """Místo mimo rovinu středu: je ze středu vidět (spojnice nad povrchem bez dílu)?"""
+        """Místo mimo rovinu středu: patří k materiálu pod jhem (``_reaches``)?"""
         key = (center_index, i) if center_index is not None else None
         if key is not None and key in self.sight:
             return self.sight[key]
-        lift = self.settings.step_over_mm
-        a = _add(placed.center, placed.normal, lift)
-        b = _add(tuple(self.P[i]), tuple(self.N[i]), lift)
-        gap = _sub(b, a)
-        length = math.sqrt(_dot(gap, gap))
-        seen = length < 1e-9 or not self.geo.cast(a, _unit(gap), length).hits
+        seen = _reaches(self.geo, placed, tuple(self.P[i]), tuple(self.N[i]),
+                        self.settings.step_over_mm)
         if key is not None:
             self.sight[key] = seen
         return seen
@@ -1272,11 +1316,117 @@ def _evaluate(geo: PartGeometry, settings: MtSettings, field_: _Field, points: l
 
 
 def place_yoke(part: Any, point: Point, normal: Point, angle: float,
-               settings: MtSettings | None = None, shapes: bool = True) -> YokePlacement:
-    """Přiložení jha do bodu pod úhlem ``angle`` [°] (Přiložit jho sem, Ukázat jho)."""
+               settings: MtSettings | None = None, shapes: bool = True,
+               geo: PartGeometry | None = None) -> YokePlacement:
+    """Přiložení jha se středem v bodě, natočené o ``angle`` [°] (Přiložit jho sem)."""
     settings = settings or MtSettings()
-    yoker = Yoker(PartGeometry(part), settings)
+    yoker = Yoker(geo or PartGeometry(part), settings)
     return yoker.best(point, normal, direction(_unit(normal), angle), shapes)
+
+
+def yoke_compound(placed: YokePlacement) -> Any:
+    """Botky, nohy a tělo jha jako jeden tvar build123d (kresba v okně)."""
+    from build123d import Compound
+
+    return Compound(list(placed.shapes))
+
+
+def _through(geo: PartGeometry, a: Point, b: Point) -> bool:
+    """Vede spojnice dvou bodů materiálem (vzduchem nejvýš ``AIR_MM``)?"""
+    gap = _sub(b, a)
+    length = math.sqrt(_dot(gap, gap))
+    if length < 1e-9:
+        return True
+    ray = geo.cast(a, _unit(gap), length)
+    return length - sum(segment.length for segment in ray.segments) <= AIR_MM
+
+
+def _reaches(geo: PartGeometry, placed: YokePlacement, point: Point, normal: Point,
+             lift: float) -> bool:
+    """Místo mimo rovinu středu jha (o víc než ``SIGHT_MM``) patří k materiálu pod jhem?
+    Tok mezi póly vede materiálem pod plochou, na které jho stojí:
+
+    - **pod rovinou** se místo počítá, když spojnice se středem jha vede materiálem (vypouklý
+      povrch – trubka); schod dolů nebo dno kapsy vedle jha ne (spojnice vede vzduchem),
+    - **nad rovinou**, když pod místem je materiál až k rovině středu (koutový svar nebo
+      převýšení na ploše jha) a místo je ze středu vidět (spojnice zvednutá o ``lift`` bez
+      dílu – ne svar za stojinou).
+    """
+    w = _dot(_sub(point, placed.center), placed.normal)
+    if w < 0:
+        return _through(geo, placed.center, point)
+    if not _through(geo, point, _add(point, placed.normal, -w)):
+        return False
+    a = _add(placed.center, placed.normal, lift)
+    gap = _sub(_add(point, normal, lift), a)
+    length = math.sqrt(_dot(gap, gap))
+    return length < 1e-9 or not geo.cast(a, _unit(gap), length).hits
+
+
+def covers(placed: YokePlacement, point: Point, normal: Point, settings: MtSettings,
+           geo: PartGeometry | None = None) -> float | None:
+    """Zasáhne účinná oblast platného jha místo? Vrátí směr pole v místě [°, 0–180), jinak
+    None (stejná pravidla jako mapa; místo mimo rovinu středu kontroluje ``_reaches`` jen
+    s ``geo``)."""
+    if not placed.ok:
+        return None
+    d = _sub(point, placed.center)
+    side = _cross(placed.normal, placed.direction)
+    u, v, w = _dot(d, placed.direction), _dot(d, side), _dot(d, placed.normal)
+    half_u, half_v, depth = placed.zone(settings)
+    if (abs(u) > half_u + 1e-9 or abs(v) > half_v + 1e-9 or abs(w) > depth + 1e-9
+            or _dot(normal, placed.normal) < FACING - 1e-9
+            or abs(w) > max(SIGHT_MM, math.hypot(u, v)) + 1e-9):
+        return None
+    if geo is not None and abs(w) > SIGHT_MM and not _reaches(geo, placed, point, normal,
+                                                              settings.step_over_mm):
+        return None
+    field_ = _add(placed.direction, normal, -_dot(placed.direction, normal))
+    if math.sqrt(_dot(field_, field_)) < UNCLEAR:
+        return None
+    base = _base(normal)
+    return math.degrees(math.atan2(_dot(field_, _cross(normal, base)),
+                                   _dot(field_, base))) % 180.0
+
+
+def find_yoke(part: Any, point: Point, normal: Point, angle: float,
+              settings: MtSettings | None = None, geo: PartGeometry | None = None
+              ) -> YokePlacement:
+    """Ukázat jho: hledá platné jho, jehož účinná oblast místo zasáhne s polem ve směru
+    ``angle`` (± půl kroku směrů) – nejdřív se středem v místě, pak posunuté v oblasti.
+    Když žádné nejde, vrátí nevyhovující jho se středem v místě (s důvodem)."""
+    settings = settings or MtSettings()
+    geo = geo or PartGeometry(part)
+    yoker = Yoker(geo, settings)
+    normal = _unit(normal)
+    along = direction(normal, angle)
+    side = _cross(normal, along)
+    half_u = (settings.spacing_mm - 2 * settings.pole_zone_mm) / 2
+    half_v = settings.spacing_mm / 4
+    shifts = sorted({(a * half_u, b * half_v) for a in (0.0, 0.5, -0.5, 0.9, -0.9)
+                     for b in (0.0, 0.5, -0.5, 0.9, -0.9)},
+                    key=lambda ab: (ab[0] ** 2 + ab[1] ** 2, ab))
+    first = None
+    for du, dv in shifts:
+        guess = _add(_add(point, along, du), side, dv)
+        try:
+            surface = geo.surface_at(guess)
+        except GeometryError:
+            continue
+        t = _unit(_add(along, surface.normal, -_dot(along, surface.normal)))
+        if t is None:
+            continue
+        placed = yoker.best(surface.point, surface.normal, t, shapes=True)
+        if first is None:
+            first = placed
+        if placed.uncertain:
+            continue
+        field_ = covers(placed, point, normal, settings, geo)
+        if field_ is not None and _axial(field_, angle) <= DIRECTION_STEP / 2 + 1e-9:
+            return placed
+    if first is None:
+        raise MtError("Jho v tomto místě nejde přiložit – bod neleží na povrchu dílu.")
+    return first
 
 
 def self_check(folder: Any) -> tuple[bool, str]:

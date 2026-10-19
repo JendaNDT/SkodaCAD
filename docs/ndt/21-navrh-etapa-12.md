@@ -533,6 +533,14 @@ Schválením se **neschvaluje**:
   - **Místo mimo rovinu středu jha nejvýš 45° pod ní nebo nad ní.** Jinak jho stojící na horní
     ploše vedle kapsy „pokrylo“ dno kapsy 25 mm pod sebou. Převýšení svaru a koutový svar
     tím neprojdou o nic hůř.
+  - **Místo mimo rovinu (víc než 2 mm) musí patřit k materiálu pod jhem** (12A.2, místo
+    původního „musí být vidět“): pod rovinou se počítá, když spojnice se středem jha vede
+    materiálem (vypouklá trubka). Nad rovinou se počítá, když je pod místem materiál až
+    k rovině jha (koutový svar, převýšení) a místo je vidět. Automatická mapa kapsy totiž
+    našla jho stojící na horní ploše 7,9 mm od kapsy, jehož oblast podle pravidla 45°
+    zasáhla dno (26 % dna „jen část orientací“). Ručně je dno nepokryté a s novým pravidlem
+    vyjde 0 %. Pravidlo jen spojnicí by zase ubralo koutový svar podél svaru (27 % → 11 %),
+    protože svar leží na pásnici nad rovinou jha.
   - **Dohledání hranic:** mezi platným a neplatným uzlem mřížky se půlí na 0,5 mm a z nalezeného
     bodu se zkusí i kolmý směr (rohy oblasti platných středů). Dohledání se vynechá, když by
     žádné místo nezískalo nový směr.
@@ -558,6 +566,31 @@ Schválením se **neschvaluje**:
   - platné přiložení jha 25–80 ms,
   - celá mapa desky (8 směrů, automatický krok) asi 1,5 min,
   - 5 bodů desky se všemi směry asi 28 s.
+- **12A.2 (hotovo):** nastavení `mt` ve studii (**formát 20**; jen MT studie, změna metody ho
+  smaže, `set_ndt_mt_settings` = jeden krok Zpět), `ModelSession`:
+  - mapa jen jako pohled (`compute_ndt_mt`, `start_ndt_mt`, `ndt_mt_map`, `ndt_mt_mesh`,
+    `ndt_mt_describe`, `export_ndt_mt`), zastaralou studii je třeba potvrdit; materiál je
+    v otisku receptu, takže po jeho změně je studie zastaralá,
+  - jho jako pohled (`place_ndt_yoke` = Přiložit jho sem, `ndt_mt_yoke_at` = Ukázat jho
+    pro místo mapy, `ndt_yoke_drawing` pro prohlížeč).
+
+  Dál: pomocný proces (`worker.submit_mt`, průběh, *Zastavit*), příkazová řádka
+  `skodacad magneticka` (souhrn, CSV, `--ulozit`), `skodacad build` vypíše u MT studií
+  `MT_DISCLAIMER`, pravidlo pro AI v `assistant.RULES`, README (formát 20, `mt`).
+
+  Zrychlení přiložení: napřed místa a stěna obou pólů, pak rychlá kontrola přesahu
+  (4 paprsky), úhel nohou, přesné dosednutí pólu (paměť podle místa – sousední středy
+  sdílí místo pólu) a průnik nohou a těla.
+- **Automatické mapy referenčních dílů** (19. 10. 2026, cloud, výchozí nastavení včetně
+  nanesení a prohlídky, automatický krok sítě i středů):
+  - deska (1 056 míst, středy 10 mm): celkem 52,7 % pokryto, pole 0° 65,6 % (ručně 65 %),
+    pole 90° 29,3 % (ručně 30 %), asi 1 min (dřív 3 min),
+  - trubka (1 404 míst): celkem 88,5 %, podél osy 75 % (ručně 76,7 %), 2,3 min,
+  - kapsa (dno, 1 024 míst): 0 %, všude důvod stěna (ručně nepokryto), 1,3 min,
+  - koutový svar (984 míst): celkem 100 %, pole podél svaru 27,2 % (ručně 30 %, mřížka
+    středů podhodnocuje), 1,8 min.
+
+  Odhad doby před spuštěním vychází o 10–50 % vyšší než skutečnost.
 
 ## Zdroje (ověřeno vyhledáním 19. 10. 2026; plné texty norem jsou placené)
 

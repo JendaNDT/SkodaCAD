@@ -43,9 +43,11 @@ FORMAT = "skodacad"
 # jsou podmnožinou – načtou se beze změny. Verze 16 přidává cílové objemy a svary NDT,
 # verze 17 knihovnu NDT: původ hodnot sondy („profile“, „origins“, „angle_material“ …)
 # a materiál pro UT ve studii („material“), verze 18 plán dráhy sondy („plan“) a zakázané
-# zóny („zones“) ve studii, verze 19 nastavení PT studie („pt“: nástroje, úhly, postup).
-VERSION = 19
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
+# zóny („zones“) ve studii, verze 19 nastavení PT studie („pt“: nástroje, úhly, postup),
+# verze 20 nastavení MT studie („mt“: jho, rozteče, meze, nanesení a prohlídka).
+VERSION = 20
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                      20)
 
 
 class DocumentError(ValueError):
