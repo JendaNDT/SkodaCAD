@@ -1,8 +1,9 @@
 # NDT – návrh etapy 10: plán dráhy UT sondy (automatická skenovací trajektorie)
 
 Stav: **schváleno autorem 18. 10. 2026 („schvaluji etapu 10 včetně doporučení 1–10“);
-implementace po krocích ve vývojové větvi.** Co se při implementaci upřesnilo, je
-v [oddílu 13](#13-provedení-a-upřesnění).
+sloučeno do `main` v [PR #24](https://github.com/JendaNDT/SkodaCAD/pull/24) (`5e59c28`);
+po vydání autor 19. 10. 2026 napsal „ok funguje to“. Tím je hotový milník M3.** Co se při
+implementaci upřesnilo, je v [oddílu 13](#13-provedení-a-upřesnění).
 Výchozí stav: `main`, commit `bbc207f` ([PR #23](https://github.com/JendaNDT/SkodaCAD/pull/23)).
 Navazuje na [plán, etapa 10](03-implementacni-plan.md), [návrh poloh sondy (etapa 09)](17-navrh-etapa-09.md),
 [ruční pohyb sondy (etapa 05)](10-navrh-etapa-05.md), [geometrické pokrytí (etapa 06)](11-navrh-etapa-06.md),
@@ -317,7 +318,7 @@ a paprsku, nová knihovna Pythonu ani sloučení do `main`.
     pak *Ověřit znovu* převezme nové otisky, jen když projde celou kontrolou.
   - Úsek přidaný z přiložené sondy vede od výstupního bodu ve směru paprsku (jako *Projet
     čáru*); patří do průchodu se stejnou plochou, směrem, úhlem a odrazy, jinak vznikne nový.
-- **10B (hotovo, čeká na PR a ruční zkoušku):** skupina **Plán dráhy sondy** v panelu NDT
+- **10B (hotovo):** skupina **Plán dráhy sondy** v panelu NDT
   (`gui/ndt_panel.py`): z čeho (přiložená sonda / vybraná varianta / kombinace návrhu poloh),
   vzor, rozteč, výška nájezdu, srovnání a odolnost, odhad, **Naplánovat dráhu** /
   **Ověřit a spočítat** / **Zastavit** / **Export CSV**, stav plánu barevně, souhrn hodnocení,
@@ -380,3 +381,9 @@ a paprsku, nová knihovna Pythonu ani sloučení do `main`.
   a žádný bod do ní nezasáhne, dva průchody (zprava a zleva) 15,22 % s jedním přestavením,
   převis (spuštění i zvednutí mimo střechu, s nájezdem 0 bez přejezdů), úzká mezera (napříč
   nic, podél jen pás ±5 mm), režim `plan` přes celou plochu = režim `face`.
+- **Sloučení a ověření:** sloučeno v PR #24 (`5e59c28`) na pokyn autora („udělej PR
+  a sloučit“) po prošlých kontrolách; obě vydání („nejnovejsi“ pro Windows,
+  „nejnovejsi-mac“) jsou z `5e59c28` a prošla kontrolou staženého balíčku. Autor
+  19. 10. 2026 k vydání napsal „ok funguje to“. Tím jsou hotové etapy 09 a 10 – **milník M3
+  (asistovaný UT)**. Otevřené zůstává rozhodnutí z etapy 09 (místa pod sondou na kontaktní
+  ploše, která je zároveň cílem); ruční zkouška na skutečném Macu zatím neproběhla.

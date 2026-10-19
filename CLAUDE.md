@@ -160,6 +160,8 @@
   stávajícím výpočtem v režimu `plan` (pás šířky rozteče = spojitý pojezd), přehrávání,
   tabulka poloh, CSV. Plán a zóny ve studii (**formát 18**), plán se sám nepřepočítá ani
   neposune; ruční úpravy úseků = kroky Zpět; CLI `skodacad draha`, AI bez nového nástroje.
+  Sloučeno v PR #24 (`5e59c28`); autor 19. 10. 2026 k vydání z `5e59c28` napsal „ok funguje
+  to“. Tím je hotový milník M3 (etapy 09–10).
 
 ## Architektura (`src/skodacad/`)
 
@@ -816,9 +818,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
-  [ ] 10 plán dráhy UT sondy (schváleno 18. 10. 2026, dokončí milník M3):
-  [x] 10A.1 jádro `ndt/plan.py`, [x] 10A.2 formát 18, ModelSession, CLI a CSV,
-  [x] 10B okno (čeká na PR a ruční zkoušku).
+  [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
+  to“) – milník M3 hotov.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
