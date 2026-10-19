@@ -148,6 +148,18 @@
   nejvýš 3 sjednocená vzorek po vzorku, mapy problémových zón (cíl, kontaktní plochy).
   Jen pohled, formát 17; *Použít variantu* = jeden krok Zpět; zakřivené plochy se
   nezkoušejí; CLI `skodacad polohy`, AI bez nového nástroje, souběh procesů odložen.
+  Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
+  to“. Otevřené: vynechat z pokrytí místa pod sondou, když je kontaktní plocha i cílem?
+- (18. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 10 – plán dráhy UT sondy**
+  (`docs/ndt/18-navrh-etapa-10.md`, dokončí milník M3): `ndt/plan.py` – průchod = varianta
+  etapy 09, řádky cik-cak s roztečí (výchozí 5 mm) ve vzoru *k cíli a zpět* nebo *podél*
+  (automaticky: méně přestavení → kratší → méně řádků), úseky jen kde se sonda vejde a paprsek
+  míří k cíli, kontrola po 1 mm, přesun po povrchu jen přes platné polohy, jinak přestavení
+  s nájezdem kolmo k ploše (výchozí 20 mm), zakázané zóny = kvádry (jen pro plán), hodnocení
+  bez skóre (pokrytí, délka, přestavení, boční rezerva, volno, volitelně odolnost), pokrytí
+  stávajícím výpočtem v režimu `plan` (pás šířky rozteče = spojitý pojezd), přehrávání,
+  tabulka poloh, CSV. Plán a zóny ve studii (**formát 18**), plán se sám nepřepočítá ani
+  neposune; ruční úpravy úseků = kroky Zpět; CLI `skodacad draha`, AI bez nového nástroje.
 
 ## Architektura (`src/skodacad/`)
 
@@ -218,10 +230,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti` a `polohy` (návrh poloh UT sondy) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy) a `draha` (plán dráhy UT sondy) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí a návrh poloh (průběžné zprávy `Finished.update`) |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh a plán dráhy (`submit_plan`, průběžné zprávy `Finished.update`) |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -232,17 +244,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/devices.py` | virtuální sonda (`Probe` přímá/úhlová, `beam_angle`, `bounces`, meze), `place` (souřadný systém, mezera a přesah z paprsků otisku, kolize, vůle nad rovinou přiložení, stavy), `scan_line` (posun po přímce) |
 | `ndt/library.py` | knihovna NDT (etapa 08, jen UT): vestavěné materiály `MATERIALS` (rychlosti ze 2 zdrojů, zdroje v docstringu) a obecné sondy `PROBES`, `transfer_angle` / `check_angle` / `transferred` (přepočet úhlu jen na pokyn), `describe` pro výstupy, Moje sondy (`ndt-knihovna.json`) |
 | `ndt/access.py` | návrh poloh UT sondy (etapa 09): `Analysis` (varianty, 1. a 2. kolo `prepare`, 3. kolo `evaluate` stávajícím výpočtem pokrytí, `run`), `finish` (pořadí `rank`, kombinace, `union` vzorek po vzorku), `AccessResult.summary` / `write_csv`, mapa kontaktních ploch `ContactPoint` |
+| `ndt/plan.py` | plán dráhy UT sondy (etapa 10): `Planner` (`build` – mřížka, dosah, úseky, cik-cak, oprava po 1 mm; `check` – kroky jízdy `PlanStep`, nájezd, ústup po projeté dráze, tabulka `PlanPosition`, boční rezerva; `coverage` – režim `plan`, sjednocení průchodů, srovnání, odolnost; `run`/`evaluate`), `Plan`/`PlanPass`/`PlanSegment` (JSON), `Zone`, `PlanResult.summary`/`write_csv` |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání) |
+| `gui/zone_dialog.py` | dialog *Zakázané zóny…* plánu dráhy (tabulka kvádrů jako text, *Z výběru*, kontrola `Zone.from_dict`) |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
-| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch) |
+| `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch); plán dráhy `show_plan` (čáry po barvách, začátek, zóny) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
 | `.github/workflows/` | `windows.yml` (vydání „nejnovejsi“) a samostatný `macos.yml` (Apple Silicon, předběžné vydání „nejnovejsi-mac“) |
 
@@ -651,6 +665,47 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   paprsku (rameno začíná na povrchu). Když je cílem kontaktní plocha sama, analýza ji proto
   řadí vysoko – je to vlastnost stávajícího výpočtu pokrytí, ne analýzy.
 
+## Známé pasti (NDT – plán dráhy)
+
+- Plán počítá s polohami **zaokrouhlenými na 1 nm** (`plan._r`) – uložený JSON pak dá při
+  přepočtu tytéž polohy a paměť přiložení (`reuse_placements`) je pozná. Nové výpočty
+  polohy v `plan.py` vždy přes `_r` / `_checks_along` / `_spaced`.
+- Mřížka průchodu je zarovnaná se směrem paprsku a ukotvená v bodě přiložení; **oba vzory
+  řádků sdílejí tutéž mřížku** (řádky jen po jiné ose), proto se vzory porovnávají levně
+  z mřížky a jemně se počítá jen zvolený.
+- Konec úseku se dohledává jen u **překážky** (sousední uzel neplatný nebo mimo plochu);
+  konec oříznutý dosahem zůstane na uzlu. Síto dosahu má rezervu tolerance + rozteč.
+- Režim pokrytí `plan`: mezipolohy (`_resolve_axis_hit`) jen v pásech úseků
+  (`PlanRegion.contains`) a mimo zóny (`PlanRegion.allows` i pro polohy plánu). Polohy plánu
+  jdou do výpočtu v pořadí jízdy – první zásah vzorku je tak nejdřívější poloha
+  (přehrávání `PlanCoverage.until`).
+- Nájezd = tělo sondy prodloužené nahoru o výšku nájezdu (`_approach`, jen průnik OCCT, bez
+  paprsků otisku). Zvednutí, které na místě nejde, se vrátí po projeté dráze (`_retreat`);
+  spuštění hledá jen v rámci úseku (`_entry_point`) – jinak úsek `build` vynechá.
+- ModelSession: plán je ve studii (`plan`, `zones`, formát 18) s otisky `part` / `target` /
+  `probe` (`plan.probe_fingerprint` – rozměry a meze, ne úhel). Stav `ndt_plan_state`: none /
+  stale (jiný otisk) / unchecked / invalid / ok. Ověřený výsledek (`ndt_plan_result`) platí
+  pro klíč `_plan_key` (recept, JSON plánu, zón, cíle a sondy) – uložení plánu ho nezruší.
+  Zastaralou **studii** je třeba nejdřív potvrdit (plánovač chce platnou UT studii), pak
+  `check_ndt_plan(confirm=True)` převezme otisky jen u platného plánu (jeden krok Zpět).
+- Sestavení v pomocném procesu vrátí `PlanResult` a **uloží ho až `poll`** (`_plan_finished`
+  → `_store_plan` → `_change`, tedy i přepočet dílu). Plán bez úseků se neuloží, důvody jsou
+  v `failure`. Úpravy úseků (`_edit_plan`) nastaví `edited` a plán je pak *neověřený*.
+- Síto dosahu: napřed obalový kvádr (levné), pak body skutečného cíle (`_target_points`,
+  numpy; objem = mřížka po kroku cíle klasifikovaná `PartGeometry(cíl).classify`). Jen
+  kvádr pouštěl u V svaru řádky, ze kterých paprsek svar mine.
+- **Úsek bez přínosu** = žádný vzorek nemá první zásah z jeho polohy
+  (`PlanCoverage.segment_hits`). Smazání všech takových úseků pokrytí nezmenší (první zásah
+  každého vzorku zůstane) – `remove_ndt_useless_segments`, pak nový výpočet to ověří.
+- Zóny platí jen pro plán: ruční přiložení v zóně panel jen upozorní
+  (`ndt_placement_zone` přes sdílené `plan.zone_hit`), *Spočítat pokrytí* a návrh poloh je
+  nezohledňují.
+- Okno: po úpravě plánu panel nastaví `_plan_recheck` a ověření (bez pokrytí) spustí až
+  v `refresh`, když neběží přepočet dílu (`ndt_planner` chce spočítaný díl). Přehrávání
+  přikládá sondu `show_ndt_plan_position` (jen pohled, jako *Ukázat variantu*) a mapa je
+  `ndt_plan_view_map(index)` (stavy `PlanCoverage.until`); prohlížeč maže plán s dílem →
+  `_shown_plan = None`. Mapa ze *Spočítat pokrytí* má přednost před mapou plánu.
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -760,8 +815,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (sloučeno v PR #19, autor po vydání: „ok funguje to“) …,
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
-  [ ] 09 návrh poloh UT sondy (schváleno 18. 10. 2026): [x] 09A.1 jádro `ndt/access.py`,
-  [x] 09A.2 ModelSession, pomocný proces, CLI a CSV, [x] 09B okno (čeká na PR a ruční zkoušku).
+  [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
+  [ ] 10 plán dráhy UT sondy (schváleno 18. 10. 2026, dokončí milník M3):
+  [x] 10A.1 jádro `ndt/plan.py`, [x] 10A.2 formát 18, ModelSession, CLI a CSV,
+  [x] 10B okno (čeká na PR a ruční zkoušku).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

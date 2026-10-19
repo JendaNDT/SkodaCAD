@@ -10,6 +10,7 @@ import csv
 import json
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,32 @@ CONVERGENCE_RULE = "ndt-ut-porovnani 2: tolerance hrubého běhu ≥ jeho automa
 
 class CoverageError(ValueError):
     """Výpočet není možný nebo nastavení není platné (česky)."""
+
+
+@dataclass(frozen=True)
+class PlanRegion:
+    """Pásy úseků plánu dráhy (etapa 10, režim pojezdu ``plan``).
+
+    Řádky plánu s roztečí r se počítají jako spojitě projetý pás šířky r – stejný předpoklad
+    jako pojezd po ploše. Mezipoloha sondy, kterou výpočet dohledá mezi polohami plánu, proto
+    smí ležet jen v pásu některého úseku: podél od začátku do konce, napříč ± ``half``.
+    ``allowed`` navíc vyřadí přiložení, které plán zakazuje (zakázané zóny)."""
+
+    strips: tuple[tuple[Point, Point, float, Point, float], ...]  # začátek, směr, délka,
+    # směr napříč (jednotkové vektory v rovině plochy), polovina šířky pásu [mm]
+    allowed: Callable[[Placement], bool] | None = None
+
+    def contains(self, point: Point) -> bool:
+        for start, along, length, across, half in self.strips:
+            offset = tuple(p - s for p, s in zip(point, start, strict=True))
+            a = sum(o * d for o, d in zip(offset, along, strict=True))
+            b = sum(o * d for o, d in zip(offset, across, strict=True))
+            if -1e-6 <= a <= length + 1e-6 and abs(b) <= half + 1e-6:
+                return True
+        return False
+
+    def allows(self, placed: Placement) -> bool:
+        return self.allowed is None or self.allowed(placed)
 
 
 @dataclass(frozen=True)
@@ -133,9 +160,10 @@ class CoverageMap:
 
 def auto_tolerance(mode: str, scan_step: float, target_step: float = 0.0) -> float:
     """Automatická tolerance zachycení: polovina úhlopříčky mřížky pojezdu (po čáře 0,6 kroku),
-    nejméně polovina úhlopříčky kroku cíle (ve 2D je nejvzdálenější bod buňky půl úhlopříčky)."""
+    nejméně polovina úhlopříčky kroku cíle (ve 2D je nejvzdálenější bod buňky půl úhlopříčky).
+    Plán dráhy (``plan``) má polohy po rozteči v obou směrech jako pojezd po ploše."""
     return max(target_step * math.sqrt(0.5),
-               scan_step * (math.sqrt(0.5) if mode == "face" else 0.6))
+               scan_step * (math.sqrt(0.5) if mode in ("face", "plan") else 0.6))
 
 
 def _number(value: float, label: str, minimum: float, maximum: float) -> float:
@@ -184,7 +212,8 @@ def _grid_face(face: Any, step: float) -> list[Point]:
 def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, beam: BeamPath,
                       leg: BeamLeg, options: dict[str, Any], source: Point, mode: str,
                       length: float, step: float, angle: float,
-                      cache: dict) -> tuple[CoverageHit, bool] | None:
+                      cache: dict, region: PlanRegion | None = None
+                      ) -> tuple[CoverageHit, bool] | None:
     """Numerická blízkost sama nezakryje slepé místo u překážky.
 
     Na rovinném pojezdu dopočítá mezi uzly polohu osového paprsku, znovu ověří otisk,
@@ -222,6 +251,8 @@ def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, beam: 
                        for v, d in zip(offset, placed.x_dir, strict=True))
         if not -1e-6 <= along <= length + 1e-6 or off_line > 1e-10:
             return None
+    if mode == "plan" and (region is None or not region.contains(origin)):
+        return None  # mimo pásy úseků plánu sonda nejede
     key = tuple(round(v, 7) for v in origin)
     if key not in cache:
         surface = geo.surface_at(origin, placed.surface.face)
@@ -229,8 +260,10 @@ def _resolve_axis_hit(geo: PartGeometry, placed: Placement, point: Point, beam: 
             cache[key] = None
         else:
             candidate = place(geo, placed.probe, origin, angle=angle, face=placed.surface.face)
-            cache[key] = (trace_beam(geo, candidate, **options)
-                          if candidate.ok or candidate.state == "uncertain" else None)
+            usable = candidate.ok or candidate.state == "uncertain"
+            if usable and region is not None and not region.allows(candidate):
+                usable = False  # zakázaná zóna plánu
+            cache[key] = trace_beam(geo, candidate, **options) if usable else None
     beam = cache[key]
     if beam is None:
         return None
@@ -278,11 +311,15 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
             target_step: float = 4.0, length_mm: float = 50.0, angle_deg: float = 0.0,
             tolerance_mm: float | None = None, spread_deg: float = 0.0,
             beta: float | None = None, bounces: int | None = None,
-            max_length: float | None = None, refraction: Refraction | None = None) -> CoverageMap:
+            max_length: float | None = None, refraction: Refraction | None = None,
+            positions: list[Point] | None = None,
+            region: PlanRegion | None = None) -> CoverageMap:
     """Pokrytí cílových ploch NEBO bodů. Neplatná poloha nikdy nepřispívá k pokrytí.
 
     Výpočet je diskrétní: 85,5 % pro desku je limit osového spojitého pojezdu bez tolerance,
-    nikoli přesná hodnota při libovolné mřížce a nenulové toleranci.
+    nikoli přesná hodnota při libovolné mřížce a nenulové toleranci. Režim ``plan`` (etapa 10)
+    bere polohy sondy z plánu dráhy (``positions`` v pořadí jízdy) a mezipolohy jen z pásů
+    ``region``.
     """
     started = time.monotonic()
     scan_step = _number(scan_step, "Krok pojezdu [mm]", 0.1, 1000)
@@ -293,8 +330,10 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
     default_tolerance = auto_tolerance(mode, scan_step, target_step)
     tolerance = default_tolerance if tolerance_mm is None else _number(
         tolerance_mm, "Tolerance zachycení [mm]", 0, 1000)
-    if mode not in ("line", "face"):
+    if mode not in ("line", "face", "plan"):
         raise CoverageError("Zvol pojezd po ploše (face) nebo po přímce (line).")
+    if mode == "plan" and (not positions or region is None):
+        raise CoverageError("Plán dráhy nemá žádnou polohu sondy.")
     if bool(faces) == bool(points):
         raise CoverageError("Vyber cílové plochy, nebo kontrolované body (právě jednu možnost).")
     # Ověřit parametry paprsku i tehdy, když na pojezdu nebude žádná platná poloha.
@@ -321,22 +360,32 @@ def compute(geo: PartGeometry, placement: Placement, *, faces: list[Any] | None 
             reasons.append(reason)
     if not centers:
         raise CoverageError("Kontrolovanou oblast se nepodařilo rozdělit – vyber jinou plochu.")
-    candidates = _scan_positions(placement, mode, scan_step, length_mm)
+    candidates = (plan_positions(positions) if mode == "plan"
+                  else _scan_positions(placement, mode, scan_step, length_mm))
     result = _evaluate_samples(geo, placement, centers, reasons, candidates, initial_beam,
                                mode=mode, scan_step=scan_step, target_step=target_step,
                                length_mm=length_mm, angle_deg=angle_deg, tolerance=tolerance,
                                spread_deg=spread_deg, beta=beta, bounces=bounces,
                                max_length=max_length, refraction=refraction,
-                               nodes=nodes, triangles=triangles, faces=bool(faces))
+                               nodes=nodes, triangles=triangles, faces=bool(faces),
+                               region=region)
     covered = CoverageMap(nodes, triangles, centers, areas, *result,
                           time.monotonic() - started)
     search = auto_tolerance(mode, scan_step)  # krok cíle hledání paprsků nezhustí
     if tolerance < search - 1e-9:
         covered.assumptions["tolerance_warning"] = (
             f"Tolerance zachycení {tolerance:g} mm je menší než krok pojezdu × "
-            f"{'0,71' if mode == 'face' else '0,6'} = {search:.3g} mm – hledání nemusí najít "
-            "všechny paprsky a pokrytí může vyjít nižší.")
+            f"{'0,71' if mode in ('face', 'plan') else '0,6'} = {search:.3g} mm – hledání "
+            "nemusí najít všechny paprsky a pokrytí může vyjít nižší.")
     return covered
+
+
+def plan_positions(positions: Any) -> list[Point]:
+    """Polohy plánu dráhy jako trojice čísel (v pořadí jízdy) se stejnou mezí jako pojezd."""
+    candidates = [tuple(float(v) for v in p) for p in positions or ()]
+    if len(candidates) > MAX_POSITIONS:
+        raise CoverageError("Plán dráhy má příliš mnoho poloh – zvětši rozteč.")
+    return candidates
 
 
 def _scan_positions(placement: Placement, mode: str, scan_step: float,
@@ -368,7 +417,7 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
                       spread_deg: float, beta: float | None, bounces: int | None,
                       max_length: float | None, refraction: Refraction | None,
                       nodes: list | None = None, triangles: list | None = None,
-                      faces: bool = False) -> tuple:
+                      faces: bool = False, region: PlanRegion | None = None) -> tuple:
     """Stejné ověřování přiložení a ramen pro plochy, body i objemové vzorky.
 
     None znamená známou objemovou váhu bez spolehlivého vnitřního bodu.
@@ -392,6 +441,8 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
         placed = place(geo, placement.probe, candidate, angle=angle_deg, face=face)
         if not placed.ok and placed.state != "uncertain":
             continue
+        if region is not None and not region.allows(placed):
+            continue  # zakázaná zóna plánu
         valid += int(placed.ok)
         uncertain += int(not placed.ok)
         beam = trace_beam(geo, placed, beta, bounces, max_length, refraction)
@@ -425,7 +476,7 @@ def _evaluate_samples(geo: PartGeometry, placement: Placement,
                     if placed.surface.kind == "plane":
                         verified = _resolve_axis_hit(geo, placed, target, beam, leg, beam_options,
                                                      placement.origin, mode, length_mm,
-                                                     scan_step, angle_deg, resolved)
+                                                     scan_step, angle_deg, resolved, region)
                         if verified is None:
                             continue
                         hit, verified_certain = verified

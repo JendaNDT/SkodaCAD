@@ -42,9 +42,10 @@ FORMAT = "skodacad"
 # („device“), verze 15 úhel lomu a počet odrazů sondy („beam_angle“, „bounces“). Starší verze
 # jsou podmnožinou – načtou se beze změny. Verze 16 přidává cílové objemy a svary NDT,
 # verze 17 knihovnu NDT: původ hodnot sondy („profile“, „origins“, „angle_material“ …)
-# a materiál pro UT ve studii („material“).
-VERSION = 17
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
+# a materiál pro UT ve studii („material“), verze 18 plán dráhy sondy („plan“) a zakázané
+# zóny („zones“) ve studii.
+VERSION = 18
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 
 
 class DocumentError(ValueError):

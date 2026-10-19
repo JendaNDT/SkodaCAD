@@ -36,6 +36,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.probe_drag_enabled = False
         self.target = None  # (objem náhledu cíle, objem zadaného tvaru nebo None)
         self.points = None  # (body, barvy) mapy kontaktních ploch návrhu poloh
+        self.plan = None  # ({barva: [(od, do)]}, začátek, zóny) plánu dráhy sondy
 
     def show_part(self, part, fit=False, accent=None):
         self.parts.append((part, fit))
@@ -48,6 +49,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.beam = []
         self.target = None
         self.points = None
+        self.plan = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def highlight(self, shapes):
@@ -90,6 +92,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def hide_points(self):
         self.points = None
+
+    def show_plan(self, lines, start=None, zones=()):
+        self.plan = ({tuple(c): list(v) for c, v in lines.items()}, start, list(zones))
+
+    def hide_plan(self):
+        self.plan = None
 
     def clear_selection(self):
         self.picked_point = None
@@ -1878,3 +1886,94 @@ def test_access_panel_is_locked_while_ai_works(rib_window):
     w.set_assistant_busy(False)
     panel.refresh()
     assert panel.access_action.isEnabled() and panel.access_step.isEnabled()
+
+
+def test_plan_panel_builds_plays_edits_zones_and_exports(rib_window, no_dialogs, slot_errors,
+                                                         tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    from skodacad.ndt.plan import PLAN_NOTE, STEP_COLORS
+
+    w = rib_window
+    panel = w.ndt_panel
+    session = w.session
+    assert panel.plan_box.isVisibleTo(panel) and panel.plan_box.title() == "Plán dráhy sondy"
+    top = face_at(session.result.part, 50, 0, 20)
+    w.viewer.click([top], (50, 0, 20))
+    panel.angle.setValue(180)
+    panel.place_action.trigger()
+    panel.plan_step.setValue(20)
+    panel.refresh_actions()
+    assert "Odhad: 1 průchod" in panel.plan_estimate.text() and panel.plan_action.isEnabled()
+    panel.plan_action.trigger()
+    result = session.ndt_plan_result
+    assert result is not None and result.coverage is not None and session.dirty
+    assert "Plán platí" in panel.plan_state.text() and not slot_errors
+    assert panel.plan_segments.rowCount() == result.plan.segment_count
+    assert "Geometricky pokryto" in panel.plan_summary.text()
+    assert PLAN_NOTE in " ".join(label.text() for label in panel.plan_box.findChildren(
+        QtWidgets.QLabel))
+    lines, start, zones = w.viewer.plan
+    assert lines[STEP_COLORS["scan"]] and start == result.check.steps[0].start and not zones
+    full = w.viewer.coverage_map  # pokrytí plánu ve 3D
+    assert full is not None
+    # přehrávání: sonda na první poloze, mapa jen to, co do té doby paprsek zasáhl
+    panel.plan_slider.setValue(0)
+    assert w.viewer.probe is not None
+    assert w.viewer.probe[1] == pytest.approx(result.check.positions[0].point, abs=1e-6)
+    green = (0.15, 0.70, 0.25)
+    assert w.viewer.coverage_map[2].count(green) <= full[2].count(green)
+    assert "Poloha 1 z" in panel.plan_position.text()
+    panel.plan_next_action.trigger()
+    assert panel.plan_slider.value() == 1
+    panel.plan_play_action.trigger()
+    for _ in range(len(result.check.positions) + 2):
+        panel._play_tick()
+    assert not panel.plan_play_action.isChecked()
+    assert panel.plan_slider.value() == panel.plan_slider.maximum()
+    # úpravy jsou kroky Zpět; plán se po nich znovu ověří
+    panel.plan_segments.selectRow(0)
+    panel.plan_reverse_action.trigger()
+    assert session.ndt_plan("s1").edited and "ručně upravený" in panel.plan_state.text()
+    w.undo_action.trigger()
+    assert not session.ndt_plan("s1").edited
+    first = session.ndt_plan("s1").passes[0].segments[0]
+    monkeypatch.setattr(QtWidgets.QInputDialog, "getText", lambda *a, **k: (
+        f"{first.start[0]:g}; {first.start[1]:g}; 20 → 40; {first.start[1]:g}; 20", True))
+    panel.plan_segments.selectRow(0)
+    panel.plan_edit_action.trigger()
+    assert session.ndt_plan("s1").passes[0].segments[0].end == (40.0, first.start[1], 20.0)
+    # zakázaná zóna přes úsek: plán neplatí, zóna je ve 3D
+    panel.plan_zones_action.trigger()
+    assert "ZoneDialog" in no_dialogs  # zrušený dialog nic nemění
+    zone = {"name": "štítek", "min": [43, first.start[1] - 1, 20],
+            "max": [47, first.start[1] + 1, 23]}
+
+    def accept(self, dialog):
+        dialog._add_row(zone)
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
+    panel.plan_zones_action.trigger()
+    assert session.ndt_zones("s1")[0].to_dict() == zone
+    assert "neplatí" in panel.plan_state.text() and len(w.viewer.plan[2]) == 1
+    path = tmp_path / "plan.csv"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *a: (str(path), "CSV"))
+    panel.plan_export_action.trigger()
+    assert path.exists()
+    panel.plan_delete_action.trigger()
+    assert session.ndt_plan("s1") is None and panel.plan_segments.rowCount() == 0
+    assert not slot_errors
+
+
+def test_plan_panel_is_locked_while_ai_works(rib_window):
+    w = rib_window
+    panel = w.ndt_panel
+    w.set_assistant_busy(True)
+    panel.refresh()
+    assert not any(a.isEnabled() for a in panel._plan_actions())
+    assert not panel.plan_step.isEnabled()
+    w.set_assistant_busy(False)
+    panel.refresh()
+    assert panel.plan_step.isEnabled() and panel.plan_zones_action.isEnabled()

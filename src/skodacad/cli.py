@@ -147,6 +147,36 @@ def main(argv: list[str] | None = None) -> int:
     access.add_argument("--tolerance", type=float, help="numerický poloměr zachycení [mm]")
     access.add_argument("--rozevreni", type=float, default=0.0, help="poloviční úhel [°]")
     access.add_argument("--csv", type=Path)
+    plan = commands.add_parser("draha", help="plán dráhy UT sondy: řádky cik-cak, přestavení, "
+                               "nájezd, zakázané zóny a geometrické pokrytí")
+    plan.add_argument("model", type=Path)
+    plan.add_argument("--studie", required=True, help="UT studie se sondou a cílem")
+    plan.add_argument("--plocha", metavar="X,Y,Z",
+                      help="plánuj z přiložené sondy: bod na rovinné kontaktní ploše [mm]")
+    plan.add_argument("--smer", type=float, default=0.0, help="směr paprsku [°] k --plocha")
+    plan.add_argument("--varianta", type=int, metavar="N",
+                      help="plánuj N-tou variantu návrhu poloh (spustí návrh poloh)")
+    plan.add_argument("--kombinace", action="store_true",
+                      help="plánuj kombinaci návrhu poloh (spustí návrh poloh)")
+    plan.add_argument("--prepocet", action="store_true",
+                      help="ověř a spočítej plán uložený ve studii")
+    plan.add_argument("--vzor", default="auto", help="auto, k-cili nebo podel")
+    plan.add_argument("--roztec", type=float, default=5.0, help="rozteč řádků [mm]")
+    plan.add_argument("--najezd", type=float, default=20.0,
+                      help="výška nájezdu [mm], 0 = nekontrolovat")
+    plan.add_argument("--kontrola", type=float, default=1.0, help="kontrolní krok [mm]")
+    plan.add_argument("--zona", action="append", metavar="X1,Y1,Z1:X2,Y2,Z2",
+                      help="přidej zakázanou zónu – kvádr dvěma rohy (lze opakovat)")
+    plan.add_argument("--krok-cile", type=float,
+                      help="krok sítě cíle [mm]; jinak u objemu doporučený, u ploch rozteč")
+    plan.add_argument("--tolerance", type=float, help="numerický poloměr zachycení [mm]")
+    plan.add_argument("--rozevreni", type=float, default=0.0, help="poloviční úhel [°]")
+    plan.add_argument("--srovnani", action="store_true",
+                      help="spočítej i pojezd po celých plochách průchodů")
+    plan.add_argument("--odolnost", action="store_true",
+                      help="spočítej i pokrytí po posunu řádků o ± půl rozteče")
+    plan.add_argument("--ulozit", action="store_true", help="ulož model s plánem a zónami")
+    plan.add_argument("--csv", type=Path)
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -158,6 +188,8 @@ def main(argv: list[str] | None = None) -> int:
             return _coverage(args)
         if args.command == "polohy":
             return _access(args)
+        if args.command == "draha":
+            return _plan(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -446,12 +478,75 @@ def _access(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plan(args: argparse.Namespace) -> int:
+    from build123d import Vector
+
+    from skodacad.ndt.plan import PATTERN_CHOICES, Zone
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    study = args.studie
+
+    def progress(stage: str, done: int, total: int) -> None:
+        text = f"{stage}: {min(done + 1, total)} z {total}" if total > 1 else stage
+        print(text, file=sys.stderr, flush=True)
+
+    zones = list(session.ndt_zones(study))
+    for text in args.zona or []:
+        low_text, separator, high_text = text.partition(":")
+        if not separator:
+            raise ValueError(f"--zona „{text}“ musí být X1,Y1,Z1:X2,Y2,Z2 (dva rohy kvádru).")
+        low, high = _vector(low_text, "--zona"), _vector(high_text, "--zona")
+        corners = [tuple(min(a, b) for a, b in zip(low, high, strict=True)),
+                   tuple(max(a, b) for a, b in zip(low, high, strict=True))]
+        zones.append(Zone(f"zóna {len(zones) + 1}", *corners))
+    if args.zona:
+        session.set_ndt_zones(study, zones)
+    options = {"pattern": {"k-cili": "toward", "podel": "along"}.get(args.vzor, args.vzor),
+               "row_step_mm": args.roztec, "approach_mm": args.najezd,
+               "check_step_mm": args.kontrola, "target_step_mm": args.krok_cile,
+               "tolerance_mm": args.tolerance, "spread_deg": args.rozevreni,
+               "compare": args.srovnani, "robustness": args.odolnost}
+    if options["pattern"] not in PATTERN_CHOICES:
+        raise ValueError("--vzor musí být auto, k-cili nebo podel.")
+    if args.prepocet:
+        result = session.check_ndt_plan(study, options, progress=progress)
+    else:
+        if args.plocha is not None:
+            point = _vector(args.plocha, "--plocha")
+            face = min(session.result.part.faces(),
+                       key=lambda f: f.distance_to(Vector(*point)))
+            session.place_ndt_probe(study, [face.wrapped], point, args.smer)
+            passes = session.ndt_plan_passes(study)
+        elif args.varianta is not None or args.kombinace:
+            print("Návrh poloh sondy (výchozí nastavení etapy 09) …", file=sys.stderr)
+            session.compute_ndt_access(study, progress=progress)
+            passes = (session.ndt_plan_passes(study, "combination") if args.kombinace
+                      else session.ndt_plan_passes(study, "variant", args.varianta - 1))
+        else:
+            raise ValueError("Zadej, odkud plánovat: --plocha X,Y,Z (a --smer), "
+                             "--varianta N, --kombinace, nebo --prepocet uloženého plánu.")
+        print(session.ndt_plan_estimate(study, passes, options).text, file=sys.stderr)
+        result = session.compute_ndt_plan(study, passes, options, progress=progress)
+    print("\n".join(result.summary()))
+    if args.csv:
+        try:
+            print("CSV:", result.write_csv(args.csv))
+        except OSError as exc:
+            raise ValueError(f"CSV nejde uložit: {exc}") from None
+    if args.ulozit:
+        print("Model uložen:", session.save())
+    return 0
+
+
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
     glued: list[str] = []
     items = iter(argv)
     for item in items:
-        if item in ("--z", "--smer", "--bod", "--posun", "--plocha", "--cil", "--cil-plocha"):
+        if item in ("--z", "--smer", "--bod", "--posun", "--plocha", "--cil", "--cil-plocha",
+                    "--zona"):
             value = next(items, None)
             glued.append(item if value is None else f"{item}={value}")
         else:

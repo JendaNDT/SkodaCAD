@@ -428,6 +428,37 @@ def _face_label(face: Any) -> str:
     return f"rovina {side}, střed ({_num(center.X)}; {_num(center.Y)}; {_num(center.Z)})"
 
 
+def target_box(geo: PartGeometry, *, faces: list[Any] | None = None,
+               points: list[Point] | None = None, volume: dict[str, Any] | None = None
+               ) -> tuple[tuple[Point, Point], Point, Point | None]:
+    """Obalový kvádr cíle, jeho těžiště a u objemu směr napříč (sdílí plán dráhy, etapa 10)."""
+    if volume is not None:
+        try:
+            saved = normalize_target(volume)
+            shape = resolve_target(geo.part, saved).shape
+        except TargetError as exc:
+            raise AccessError(str(exc)) from None
+        box = shape.bounding_box()
+        across = tuple(float(v) for v in saved["frame"]["across"])
+        return ((_xyz(box.min), _xyz(box.max)), _xyz(shape.center()), across)
+    if faces:
+        boxes = [(_xyz(b.min), _xyz(b.max)) for b in (f.bounding_box() for f in faces)]
+        low = tuple(min(b[0][i] for b in boxes) for i in range(3))
+        high = tuple(max(b[1][i] for b in boxes) for i in range(3))
+        areas = [f.area for f in faces]
+        total = sum(areas) or 1.0
+        centers = [_xyz(f.center()) for f in faces]
+        centroid = tuple(sum(a * c[i] for a, c in zip(areas, centers, strict=True)) / total
+                         for i in range(3))
+        return ((low, high), centroid, None)
+    pts = [tuple(float(v) for v in p) for p in points or ()]
+    if not pts:
+        raise AccessError("Cíl nemá žádnou plochu, bod ani objem.")
+    low = tuple(min(p[i] for p in pts) for i in range(3))
+    high = tuple(max(p[i] for p in pts) for i in range(3))
+    return ((low, high), tuple(sum(p[i] for p in pts) / len(pts) for i in range(3)), None)
+
+
 def rank(results: list[VariantResult], study_beta: float) -> list[VariantResult]:
     """Pořadí: pokrytí; v rozdílu do 1 p. b. víc platných poloh, méně nejistého, méně odrazů,
     úhel beze změny. Pravidlo, ne souhrnné skóre."""
@@ -504,30 +535,7 @@ class Analysis:
     # --- cíl -----------------------------------------------------------------------------
 
     def _target_box(self) -> tuple[tuple[Point, Point], Point, Point | None]:
-        across = None
-        if self.volume is not None:
-            try:
-                saved = normalize_target(self.volume)
-                shape = resolve_target(self.geo.part, saved).shape
-            except TargetError as exc:
-                raise AccessError(str(exc)) from None
-            box = shape.bounding_box()
-            across = tuple(float(v) for v in saved["frame"]["across"])
-            return ((_xyz(box.min), _xyz(box.max)), _xyz(shape.center()), across)
-        if self.faces is not None:
-            boxes = [(_xyz(b.min), _xyz(b.max)) for b in (f.bounding_box() for f in self.faces)]
-            low = tuple(min(b[0][i] for b in boxes) for i in range(3))
-            high = tuple(max(b[1][i] for b in boxes) for i in range(3))
-            areas = [f.area for f in self.faces]
-            total = sum(areas) or 1.0
-            centers = [_xyz(f.center()) for f in self.faces]
-            centroid = tuple(sum(a * c[i] for a, c in zip(areas, centers, strict=True)) / total
-                             for i in range(3))
-            return ((low, high), centroid, None)
-        pts = [tuple(float(v) for v in p) for p in self.points]
-        low = tuple(min(p[i] for p in pts) for i in range(3))
-        high = tuple(max(p[i] for p in pts) for i in range(3))
-        return ((low, high), tuple(sum(p[i] for p in pts) / len(pts) for i in range(3)), None)
+        return target_box(self.geo, faces=self.faces, points=self.points, volume=self.volume)
 
     # --- varianty ------------------------------------------------------------------------
 

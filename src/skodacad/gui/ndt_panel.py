@@ -14,7 +14,7 @@ from __future__ import annotations
 from html import escape
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.target_dialog import TargetDialog
+from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
 from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
 from skodacad.ndt.access import (
@@ -59,6 +60,15 @@ from skodacad.ndt.library import (
     load_user_library,
     save_user_probe,
     user_library_path,
+)
+from skodacad.ndt.plan import (
+    EDGE_MM,
+    PATTERN_CHOICES,
+    PLAN_NOTE,
+    STEP_COLORS,
+    ZONE_COLOR,
+    PlanError,
+    PlanEstimate,
 )
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
@@ -146,6 +156,46 @@ class NdtPanel(QWidget):
             "Uloží úhel a odrazy varianty do studie (jeden krok Zpět) a přiloží sondu; pak "
             "Spočítat pokrytí stejným krokem dá totéž číslo")
         self.access_export_action = action("Export CSV…", self.export_access)
+        # plán dráhy sondy (etapa 10)
+        self.plan_action = action("Naplánovat dráhu", self.start_plan)
+        self.plan_action.setToolTip(
+            "Sestaví souvislou dráhu sondy (řádky tam a zpět) z přiložené sondy nebo z varianty "
+            "návrhu poloh, zkontroluje ji po 1 mm, spočítá pokrytí a uloží do studie (jeden "
+            "krok Zpět)")
+        self.plan_check_action = action("Ověřit a spočítat", self.check_plan)
+        self.plan_check_action.setToolTip(
+            "Ověří uložený plán na současném dílu a spočítá geometrické pokrytí. Zastaralý "
+            "plán, který celou kontrolou projde, převezme současný díl (jeden krok Zpět).")
+        self.plan_stop_action = action("Zastavit", self.stop_plan)
+        self.plan_stop_action.setToolTip("Zastaví výpočet plánu; uložený plán zůstane beze změny")
+        self.plan_export_action = action("Export CSV…", self.export_plan)
+        self.plan_remove_action = action("Smazat úsek", self.remove_plan_segment)
+        self.plan_reverse_action = action("Obrátit", self.reverse_plan_segment)
+        self.plan_reverse_action.setToolTip("Sonda pojede úsekem opačně")
+        self.plan_up_action = action("Nahoru", lambda: self.move_plan_segment(-1))
+        self.plan_up_action.setToolTip("Úsek dřív v pořadí jízdy")
+        self.plan_down_action = action("Dolů", lambda: self.move_plan_segment(1))
+        self.plan_down_action.setToolTip("Úsek později v pořadí jízdy")
+        self.plan_edit_action = action("Upravit…", self.edit_plan_segment)
+        self.plan_edit_action.setToolTip(
+            "Začátek a konec úseku v mm (zkrátit, prodloužit, posunout)")
+        self.plan_add_action = action("Přidat z přiložené sondy", self.add_plan_segment)
+        self.plan_add_action.setToolTip(
+            "Nový úsek od výstupního bodu přiložené sondy ve směru paprsku, délka jako Délka čáry")
+        self.plan_zones_action = action("Zakázané zóny…", self.edit_zones)
+        self.plan_zones_action.setToolTip("Kvádry, kam sonda nesmí (štítek, upínka …)")
+        self.plan_delete_action = action("Smazat plán", self.delete_plan)
+        self.plan_prune_action = action("Smazat úseky bez přínosu", self.prune_plan)
+        self.plan_prune_action.setToolTip(
+            "Smaže úseky, ze kterých paprsek žádný vzorek cíle nezasáhne jako první (sloupec "
+            "Přínos = 0); pokrytí se tím nezmenší – ověří ho Ověřit a spočítat")
+        self.plan_play_action = action("Přehrát", self.toggle_play)
+        self.plan_play_action.setCheckable(True)
+        self.plan_play_action.setToolTip("Sonda s paprskem jede po dráze, mapa pokrytí narůstá")
+        self.plan_prev_action = action("◀", lambda: self.step_plan(-1))
+        self.plan_prev_action.setToolTip("Předchozí poloha plánu")
+        self.plan_next_action = action("▶", lambda: self.step_plan(1))
+        self.plan_next_action.setToolTip("Další poloha plánu")
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -375,6 +425,7 @@ class NdtPanel(QWidget):
         coverage_layout.addWidget(self.coverage_label)
         layout.addWidget(self.coverage_box)
         self._build_access(layout)
+        self._build_plan(layout)
         self.details = QLabel()
         self.details.setObjectName("ndt_details")
         self.details.setWordWrap(True)
@@ -490,6 +541,143 @@ class NdtPanel(QWidget):
             signal.connect(lambda *_args: self.refresh_actions())
         layout.addWidget(self.access_box)
 
+    def _build_plan(self, layout: QVBoxLayout) -> None:
+        """Skupina Plán dráhy sondy (etapa 10): volby, sestavení, stav, úseky, přehrávání."""
+        window = self.window
+        self.plan_box = QGroupBox("Plán dráhy sondy")
+        self.plan_box.setObjectName("ndt_plan")
+        box = QVBoxLayout(self.plan_box)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.plan_source = QComboBox()
+        self.plan_source.setObjectName("ndt_plan_source")
+        for label, data in (("přiložená sonda", "placement"),
+                            ("vybraná varianta návrhu poloh", "variant"),
+                            ("kombinace návrhu poloh", "combination")):
+            self.plan_source.addItem(label, data)
+        form.addRow("Z čeho:", self.plan_source)
+        self.plan_pattern = QComboBox()
+        self.plan_pattern.setObjectName("ndt_plan_pattern")
+        for key, label in PATTERN_CHOICES.items():
+            self.plan_pattern.addItem(label, key)
+        self.plan_pattern.setToolTip("Automaticky: méně přestavení, pak kratší dráha, pak méně "
+                                     "řádků")
+        form.addRow("Vzor řádků:", self.plan_pattern)
+        self.plan_step = QDoubleSpinBox()
+        self.plan_step.setObjectName("ndt_plan_step")
+        self.plan_step.setRange(0.5, 100)
+        self.plan_step.setDecimals(1)
+        self.plan_step.setValue(5.0)
+        self.plan_step.setToolTip("Vzdálenost sousedních řádků; řádek se počítá jako spojitě "
+                                  "projetý pás této šířky (jako pojezd po ploše)")
+        form.addRow("Rozteč řádků [mm]:", self.plan_step)
+        self.plan_approach = QDoubleSpinBox()
+        self.plan_approach.setObjectName("ndt_plan_approach")
+        self.plan_approach.setRange(0, 500)
+        self.plan_approach.setDecimals(0)
+        self.plan_approach.setValue(20)
+        self.plan_approach.setToolTip("O kolik se sonda zvedá a spouští kolmo k ploše; tělo "
+                                      "prodloužené o tuto výšku nesmí narazit. 0 = nekontrolovat.")
+        form.addRow("Výška nájezdu [mm]:", self.plan_approach)
+        self.plan_compare = QCheckBox("porovnat s pojezdem po celé ploše")
+        self.plan_compare.setObjectName("ndt_plan_compare")
+        self.plan_compare.setToolTip("Další výpočet pokrytí – trvá déle")
+        form.addRow(self.plan_compare)
+        self.plan_robust = QCheckBox("ověřit odolnost (posun řádků o ± půl rozteče)")
+        self.plan_robust.setObjectName("ndt_plan_robust")
+        self.plan_robust.setToolTip("Dva další výpočty pokrytí – trvá déle")
+        form.addRow(self.plan_robust)
+        box.addLayout(form)
+        self.plan_estimate = QLabel()
+        self.plan_estimate.setObjectName("ndt_plan_estimate")
+        self.plan_estimate.setWordWrap(True)
+        box.addWidget(self.plan_estimate)
+        self._plan_estimate_cache: tuple[tuple, PlanEstimate] | None = None
+        for row_items in ((self.plan_action, self.plan_check_action),
+                          (self.plan_stop_action, self.plan_export_action)):
+            row = QHBoxLayout()
+            for item in row_items:
+                row.addWidget(window._tool_button(item))
+            row.addStretch()
+            box.addLayout(row)
+        self.plan_progress = QLabel()
+        self.plan_progress.setObjectName("ndt_plan_progress")
+        self.plan_progress.setWordWrap(True)
+        box.addWidget(self.plan_progress)
+        self.plan_state = QLabel()
+        self.plan_state.setObjectName("ndt_plan_state")
+        self.plan_state.setWordWrap(True)
+        self.plan_state.setTextFormat(Qt.TextFormat.RichText)
+        box.addWidget(self.plan_state)
+        self.plan_summary = QLabel()
+        self.plan_summary.setObjectName("ndt_plan_summary")
+        self.plan_summary.setWordWrap(True)
+        self.plan_summary.setTextFormat(Qt.TextFormat.RichText)
+        self.plan_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.plan_summary)
+        self.plan_segments = QTableWidget(0, 7)
+        self.plan_segments.setObjectName("ndt_plan_segments")
+        self.plan_segments.setHorizontalHeaderLabels(
+            ["Průchod", "Úsek", "Od [mm]", "Do [mm]", "Délka", "Návaznost", "Přínos"])
+        self.plan_segments.verticalHeader().setVisible(False)
+        self.plan_segments.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.plan_segments.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.plan_segments.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.plan_segments.setMinimumHeight(100)
+        self.plan_segments.setMaximumHeight(200)
+        self.plan_segments.itemSelectionChanged.connect(self.refresh_actions)
+        self._plan_rows: list[tuple[int, int]] = []
+        box.addWidget(self.plan_segments)
+        for row_items in ((self.plan_remove_action, self.plan_reverse_action,
+                           self.plan_up_action, self.plan_down_action),
+                          (self.plan_edit_action, self.plan_add_action),
+                          (self.plan_zones_action, self.plan_prune_action),
+                          (self.plan_delete_action,)):
+            row = QHBoxLayout()
+            for item in row_items:
+                row.addWidget(window._tool_button(item))
+            row.addStretch()
+            box.addLayout(row)
+        play = QHBoxLayout()
+        play.addWidget(QLabel("Poloha:"))
+        for item in (self.plan_prev_action, self.plan_play_action, self.plan_next_action):
+            play.addWidget(window._tool_button(item))
+        self.plan_slider = QSlider(Qt.Orientation.Horizontal)
+        self.plan_slider.setObjectName("ndt_plan_slider")
+        self.plan_slider.setRange(0, 0)
+        self.plan_slider.valueChanged.connect(self._plan_slider_changed)
+        play.addWidget(self.plan_slider, stretch=1)
+        box.addLayout(play)
+        self.plan_position = QLabel()
+        self.plan_position.setObjectName("ndt_plan_position")
+        self.plan_position.setWordWrap(True)
+        box.addWidget(self.plan_position)
+        self.plan_map = QCheckBox("ukázat pokrytí plánu ve 3D (při přehrávání narůstá)")
+        self.plan_map.setObjectName("ndt_plan_map")
+        self.plan_map.setChecked(True)
+        self.plan_map.toggled.connect(lambda _checked: self.window._refresh_probe())
+        box.addWidget(self.plan_map)
+        legend = QLabel(" · ".join(f'<span style="color:{_hex(color)}">■</span> {label}'
+                                   for label, color in PLAN_LEGEND))
+        legend.setObjectName("ndt_plan_legend")
+        legend.setWordWrap(True)
+        box.addWidget(legend)
+        note = QLabel(PLAN_NOTE)
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #8a5a00; font-style: italic;")
+        box.addWidget(note)
+        self._plan_index: int | None = None  # poloha přehrávání (None = celý plán)
+        self._plan_recheck: str | None = None  # po úpravě ověřit, až doběhne přepočet dílu
+        self._plan_timer = QTimer(self)
+        self._plan_timer.setInterval(150)
+        self._plan_timer.timeout.connect(self._play_tick)
+        for signal in (self.plan_source.currentIndexChanged,
+                       self.plan_pattern.currentIndexChanged, self.plan_step.valueChanged,
+                       self.plan_approach.valueChanged, self.plan_compare.toggled,
+                       self.plan_robust.toggled):
+            signal.connect(lambda *_args: self.refresh_actions())
+        layout.addWidget(self.plan_box)
+
     # --- zobrazení ---------------------------------------------------------------------
 
     def current_id(self) -> str | None:
@@ -542,7 +730,9 @@ class NdtPanel(QWidget):
         self._show_probe()
         self._show_coverage()
         self._show_access()
+        self._show_plan()
         self.refresh_actions()
+        self._start_recheck()
 
     def _row_changed(self) -> None:
         self._show_warning()
@@ -550,6 +740,8 @@ class NdtPanel(QWidget):
         self._show_probe()
         self._show_coverage()
         self._show_access()
+        self._plan_index = None
+        self._show_plan()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
 
@@ -628,6 +820,8 @@ class NdtPanel(QWidget):
         self.coverage_box.setVisible(bool(ut or has_coverage or session.coverage_pending))
         self._refresh_access_actions(ut and has_part and result is not None
                                      and result.state == "ok")
+        self._refresh_plan_actions(bool(ut and has_part and result is not None
+                                        and result.state == "ok"))
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,
@@ -638,7 +832,8 @@ class NdtPanel(QWidget):
                            self.step_back_action, self.step_forward_action, self.scan_action,
                            self.transfer_action, self.part_material_action,
                            self.access_action, self.access_show_action,
-                           self.access_apply_action, self.access_export_action):
+                           self.access_apply_action, self.access_export_action,
+                           *self._plan_actions()):
                 action.setEnabled(False)
             self.scan_slider.setEnabled(False)
             self.ut_material.setEnabled(False)
@@ -1062,6 +1257,404 @@ class NdtPanel(QWidget):
         if path:
             self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_access(path))
 
+    # --- plán dráhy sondy (etapa 10) -------------------------------------------------------
+
+    def _plan_actions(self) -> tuple:
+        return (self.plan_action, self.plan_check_action, self.plan_export_action,
+                self.plan_remove_action, self.plan_reverse_action, self.plan_up_action,
+                self.plan_down_action, self.plan_edit_action, self.plan_add_action,
+                self.plan_zones_action, self.plan_delete_action, self.plan_prune_action,
+                self.plan_play_action,
+                self.plan_prev_action, self.plan_next_action)
+
+    def _plan_options(self) -> dict:
+        return {"pattern": self.plan_pattern.currentData(),
+                "row_step_mm": self.plan_step.value(),
+                "approach_mm": self.plan_approach.value(),
+                "compare": self.plan_compare.isChecked(),
+                "robustness": self.plan_robust.isChecked()}
+
+    def _plan_passes(self) -> list:
+        source = self.plan_source.currentData()
+        rank = self._selected_rank() if source == "variant" else None
+        return self.window.session.ndt_plan_passes(self.current_id(), source, rank)
+
+    def _plan_estimate(self) -> PlanEstimate:
+        """Odhad plánu (jen mřížka); pamatuje se pro stejné zadání."""
+        session = self.window.session
+        options = self._plan_options()
+        key = (id(session.result), self.current_id(), repr(self._record(self.current_id())),
+               repr(sorted(options.items())), self.plan_source.currentData(),
+               self._selected_rank(), repr(session.ndt_placement_request),
+               id(session.ndt_access))
+        if self._plan_estimate_cache is None or self._plan_estimate_cache[0] != key:
+            try:
+                found = session.ndt_plan_estimate(self.current_id(), self._plan_passes(),
+                                                  options)
+            except DocumentError as exc:
+                found = PlanEstimate(0, 0, (0.0, 0.0), False, str(exc))
+            self._plan_estimate_cache = (key, found)
+        return self._plan_estimate_cache[1]
+
+    def _plan_result(self):
+        """Ověřený plán vybrané studie (jen když patří k ní)."""
+        session = self.window.session
+        if session.ndt_plan_study() != self.current_id():
+            return None
+        return session.ndt_plan_result
+
+    def _selected_segment(self) -> tuple[int, int] | None:
+        rows = self.plan_segments.selectionModel().selectedRows()
+        if not rows or rows[0].row() >= len(self._plan_rows):
+            return None
+        return self._plan_rows[rows[0].row()]
+
+    def _refresh_plan_actions(self, possible: bool) -> None:
+        session = self.window.session
+        ai = self.window.ai_busy
+        pending = session.plan_pending
+        ready = session.document is not None and not session.computing
+        record = self._record(self.current_id()) or {}
+        ut = record.get("method") == "UT"
+        has_plan = "plan" in record
+        estimate = self._plan_estimate() if possible and not pending and ready else None
+        self.plan_action.setEnabled(bool(estimate is not None and estimate.ok and not ai))
+        self.plan_check_action.setEnabled(possible and has_plan and ready and not ai)
+        self.plan_stop_action.setEnabled(pending)
+        result = self._plan_result()
+        self.plan_export_action.setEnabled(result is not None and not ai)
+        segment = self._selected_segment()
+        editable = ready and has_plan and not ai
+        for item in (self.plan_remove_action, self.plan_reverse_action, self.plan_edit_action):
+            item.setEnabled(editable and segment is not None)
+        count = len(record.get("plan", {}).get("passes", [{}])[segment[0]]["segments"]) \
+            if editable and segment is not None else 0
+        self.plan_up_action.setEnabled(editable and segment is not None and segment[1] > 0)
+        self.plan_down_action.setEnabled(editable and segment is not None
+                                         and segment[1] < count - 1)
+        matching = (session.ndt_placement_request is not None
+                    and session.ndt_placement_request[0] == self.current_id())
+        self.plan_add_action.setEnabled(ready and ut and matching and not ai
+                                        and session.ndt_placement is not None)
+        self.plan_zones_action.setEnabled(ready and ut and not ai)
+        self.plan_delete_action.setEnabled(editable)
+        self.plan_prune_action.setEnabled(editable and result is not None
+                                          and bool(result.useless_segments()))
+        moving = result is not None and bool(result.check.positions) and not ai
+        for item in (self.plan_play_action, self.plan_prev_action, self.plan_next_action):
+            item.setEnabled(moving and not pending)
+        self.plan_slider.setEnabled(moving and not pending)
+        for widget in (self.plan_source, self.plan_pattern, self.plan_step,
+                       self.plan_approach, self.plan_compare, self.plan_robust):
+            widget.setEnabled(not pending and not ai)
+        self.plan_box.setVisible(bool(ut or has_plan or pending))
+        if estimate is not None:
+            self.plan_estimate.setStyleSheet("color: #555;" if estimate.ok
+                                             else "color: #b9770e;")
+            self.plan_estimate.setText(estimate.text)
+        elif not pending:
+            self.plan_estimate.setStyleSheet("color: #555;")
+            self.plan_estimate.setText("Plán dráhy potřebuje platnou UT studii a přiloženou "
+                                       "sondu na rovinné ploše (nebo návrh poloh).")
+
+    def _show_plan(self) -> None:
+        """Stav plánu, souhrn hodnocení, úseky a přehrávání."""
+        session = self.window.session
+        study_id = self.current_id()
+        record = self._record(study_id) or {}
+        if session.plan_pending:
+            self.plan_progress.setText(
+                f"⏳ {escape(session.ndt_plan_progress)} · {session.computing_seconds:.0f} s")
+        else:
+            self.plan_progress.setText("")
+        if "plan" in record:
+            try:
+                state, text = session.ndt_plan_state(study_id)
+            except DocumentError as exc:
+                state, text = "invalid", str(exc)
+        else:
+            state, text = "none", "Studie zatím nemá plán dráhy."
+        color = {"ok": "#1b7f3b", "invalid": "#c0392b", "none": "#555"}.get(state, "#b9770e")
+        self.plan_state.setText(f'<span style="color: {color};"><b>{escape(text)}</b></span>')
+        result = self._plan_result()
+        lines = []
+        if result is not None:
+            lines += [escape(line) for line in result.check.lines()]
+            if result.coverage is not None:
+                cov = result.coverage
+                lines.append(f"<b>Geometricky pokryto {cov.covered:.2f} %</b>, nelze spolehlivě "
+                             f"vyhodnotit {cov.coverage.percent('uncertain'):.2f} %"
+                             .replace(".", ","))
+                if cov.face_coverage is not None:
+                    lines.append(f"Srovnání: pojezd po celé ploše "
+                                 f"{cov.face_coverage.percent('covered'):.2f} %"
+                                 .replace(".", ","))
+                if cov.robustness is not None:
+                    lines.append(f"Odolnost: po posunu řádků pokryto {cov.robustness[0]:.2f}–"
+                                 f"{cov.robustness[1]:.2f} %".replace(".", ","))
+            else:
+                lines.append("Pokrytí zatím není spočítané – dej Ověřit a spočítat.")
+            lines += [escape(d.text) + (" <b>(zvolen)</b>" if d.chosen else "")
+                      for d in result.drafts]
+            lines += [escape(note) for note in result.dropped]
+        self.plan_summary.setText("<br>".join(lines))
+        self._show_plan_segments(record, result)
+        positions = result.check.positions if result is not None else ()
+        self.plan_slider.blockSignals(True)
+        self.plan_slider.setRange(0, max(0, len(positions) - 1))
+        if self._plan_index is not None and self._plan_index < len(positions):
+            self.plan_slider.setValue(self._plan_index)
+        else:
+            self.plan_slider.setValue(max(0, len(positions) - 1))
+        self.plan_slider.blockSignals(False)
+        self._show_plan_position(result)
+
+    def _show_plan_segments(self, record: dict, result) -> None:
+        links, hits = {}, {}
+        if result is not None and result.plan.to_dict()["passes"] == \
+                record.get("plan", {}).get("passes"):
+            if result.coverage is not None:
+                hits = result.coverage.segment_hits(result.check)
+            previous = None
+            for step in result.check.steps:
+                if step.kind == "scan":
+                    links[(step.pass_index, step.segment)] = (
+                        "začátek" if previous is None else
+                        "přestavení" if previous == "air" else "po povrchu")
+                previous = step.kind
+        selected = self._selected_segment()
+        self.plan_segments.blockSignals(True)
+        self.plan_segments.setRowCount(0)
+        self._plan_rows = []
+        for p_index, plan_pass in enumerate(record.get("plan", {}).get("passes", [])):
+            for s_index, segment in enumerate(plan_pass["segments"]):
+                row = len(self._plan_rows)
+                self._plan_rows.append((p_index, s_index))
+                length = sum((a - b) ** 2 for a, b in zip(segment["end"], segment["start"],
+                                                          strict=True)) ** 0.5
+                cells = [str(p_index + 1), str(s_index + 1), _point_text(segment["start"]),
+                         _point_text(segment["end"]), f"{length:.1f} mm".replace(".", ","),
+                         links.get((p_index, s_index), ""),
+                         ("bez přínosu" if hits.get((p_index, s_index)) == 0 else
+                          str(hits[(p_index, s_index)]) if (p_index, s_index) in hits
+                          else "")]
+                self.plan_segments.insertRow(row)
+                for column, text in enumerate(cells):
+                    self.plan_segments.setItem(row, column, QTableWidgetItem(text))
+        self.plan_segments.resizeColumnsToContents()
+        if selected in self._plan_rows:
+            self.plan_segments.selectRow(self._plan_rows.index(selected))
+        self.plan_segments.blockSignals(False)
+        self.plan_segments.setVisible(bool(self._plan_rows))
+
+    def _show_plan_position(self, result=None) -> None:
+        result = result if result is not None else self._plan_result()
+        if result is None or not result.check.positions:
+            self.plan_position.setText("")
+            return
+        index = self.plan_slider.value()
+        position = result.check.positions[min(index, len(result.check.positions) - 1)]
+        margin = ""
+        if position.margin is not None:
+            margin = (f", boční rezerva {'aspoň ' if position.margin_capped else ''}"
+                      f"{position.margin:.1f} mm".replace(".", ","))
+            if position.margin < EDGE_MM:
+                margin += " – na hraně"
+        self.plan_position.setText(
+            f"Poloha {index + 1} z {len(result.check.positions)}: průchod "
+            f"{position.pass_index + 1}, úsek {position.segment + 1}, "
+            f"({_point_text(position.point)}){margin}"
+            + (f" – {position.note}" if position.note else ""))
+
+    def plan_view(self):
+        """Mapa pokrytí plánu do 3D (po poloze přehrávání), None = žádná."""
+        result = self._plan_result()
+        if not self.plan_map.isChecked() or result is None or result.coverage is None:
+            return None
+        return self.window.session.ndt_plan_view_map(self._plan_index)
+
+    def _start_recheck(self) -> None:
+        """Po úpravě plánu ověřit (bez pokrytí), až doběhne přepočet dílu."""
+        session = self.window.session
+        study_id = self._plan_recheck
+        if study_id is None or session.computing or session.document is None:
+            return
+        self._plan_recheck = None
+        if self._record(study_id) is None or "plan" not in self._record(study_id):
+            return
+        try:
+            session.start_ndt_plan_check(study_id, coverage=False)
+        except DocumentError as exc:
+            self.window.statusBar().showMessage(f"Plán nejde ověřit: {exc}", 8000)
+            return
+        if not session.computing:  # bez pomocného procesu je hotovo hned
+            self.window._refresh_probe()
+            self._show_plan()
+            self.refresh_actions()
+
+    def start_plan(self) -> None:
+        study_id = self.current_id()
+        options = self._plan_options()
+        passes = self._plan_passes()
+        self._plan_index = None
+        found = self._apply("Plán dráhy nejde spustit",
+                            lambda: self.window.session.start_ndt_plan(study_id, passes, options))
+        if found is not None and not found.plan.passes:
+            self.window._error("Plán dráhy nenašel žádný úsek", " ".join(found.dropped))
+
+    def check_plan(self) -> None:
+        study_id = self.current_id()
+        session = self.window.session
+        confirm = session.ndt_plan_state(study_id)[0] == "stale"
+        self._plan_index = None
+        self._apply("Plán dráhy nejde ověřit", lambda: session.start_ndt_plan_check(
+            study_id, self._plan_options(), coverage=True, confirm=confirm))
+
+    def stop_plan(self) -> None:
+        self.window.stop_rebuild()
+
+    def export_plan(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Export plánu dráhy UT sondy",
+                                             "plan-drahy-ut.csv", "CSV (*.csv)")
+        if path:
+            self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_plan(path))
+
+    def _edit_plan(self, title: str, work) -> None:
+        study_id = self.current_id()
+        self._plan_index = None
+        if self._apply(title, work) is not None:
+            self._plan_recheck = study_id
+            self._start_recheck()
+
+    def remove_plan_segment(self) -> None:
+        found = self._selected_segment()
+        if found is not None:
+            self._edit_plan("Úsek nejde smazat", lambda: self.window.session
+                            .remove_ndt_plan_segment(self.current_id(), *found))
+
+    def reverse_plan_segment(self) -> None:
+        found = self._selected_segment()
+        if found is not None:
+            self._edit_plan("Úsek nejde obrátit", lambda: self.window.session
+                            .reverse_ndt_plan_segment(self.current_id(), *found))
+
+    def move_plan_segment(self, offset: int) -> None:
+        found = self._selected_segment()
+        if found is None:
+            return
+        self._edit_plan("Úsek nejde přeřadit", lambda: self.window.session
+                        .move_ndt_plan_segment(self.current_id(), *found, offset))
+        target = (found[0], found[1] + offset)
+        if target in self._plan_rows:
+            self.plan_segments.selectRow(self._plan_rows.index(target))
+
+    def edit_plan_segment(self) -> None:
+        found = self._selected_segment()
+        record = self._record(self.current_id()) or {}
+        if found is None or "plan" not in record:
+            return
+        segment = record["plan"]["passes"][found[0]]["segments"][found[1]]
+        text, ok = QInputDialog.getText(
+            self, "Upravit úsek", "Začátek → konec úseku [mm] (x; y; z → x; y; z):",
+            text=f"{_point_text(segment['start'])} → {_point_text(segment['end'])}")
+        if not ok:
+            return
+        try:
+            start, end = (_parse_point(part) for part in text.replace("->", "→").split("→"))
+        except ValueError:
+            self.window._error("Úsek nejde upravit", "Zadej začátek a konec jako "
+                               "„x; y; z → x; y; z“ (mm).")
+            return
+        self._edit_plan("Úsek nejde upravit", lambda: self.window.session
+                        .set_ndt_plan_segment(self.current_id(), *found, start, end))
+
+    def add_plan_segment(self) -> None:
+        length = self.scan_length.value()
+        self._edit_plan("Úsek nejde přidat", lambda: self.window.session
+                        .add_ndt_plan_segment(self.current_id(), length))
+
+    def prune_plan(self) -> None:
+        self._edit_plan("Úseky nejde smazat", lambda: self.window.session
+                        .remove_ndt_useless_segments(self.current_id()))
+
+    def delete_plan(self) -> None:
+        self._plan_index = None
+        self._apply("Plán nejde smazat",
+                    lambda: self.window.session.remove_ndt_plan(self.current_id()))
+
+    def edit_zones(self) -> None:
+        study_id = self.current_id()
+        session = self.window.session
+        try:
+            current = [zone.to_dict() for zone in session.ndt_zones(study_id)]
+        except DocumentError as exc:
+            self.window._error("Zóny nejde načíst", str(exc))
+            return
+        picked = list(self.window._picked)
+
+        def from_selection() -> dict:
+            if not picked:
+                raise DocumentError("Nejdřív ve 3D vyber plochu nebo hranu, kolem které má "
+                                    "zóna být.")
+            return session.ndt_zone_from_selection(picked)
+
+        dialog = ZoneDialog(self, current, from_selection)
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        try:
+            zones = dialog.zones()
+        except PlanError as exc:
+            self.window._error("Zóny nejde uložit", str(exc))
+            return
+        if zones == current:
+            return
+        self._edit_plan("Zóny nejde uložit",
+                        lambda: session.set_ndt_zones(study_id, zones))
+
+    def toggle_play(self) -> None:
+        if not self.plan_play_action.isChecked():
+            self._plan_timer.stop()
+            return
+        if self.plan_slider.value() >= self.plan_slider.maximum():
+            self.plan_slider.setValue(0)
+        self._plan_timer.start()
+
+    def _play_tick(self) -> None:
+        if self.plan_slider.value() >= self.plan_slider.maximum() or \
+                not self.plan_slider.isEnabled():
+            self._plan_timer.stop()
+            self.plan_play_action.setChecked(False)
+            return
+        self.plan_slider.setValue(self.plan_slider.value() + 1)
+
+    def step_plan(self, delta: int) -> None:
+        value = min(max(self.plan_slider.value() + delta, 0), self.plan_slider.maximum())
+        if value == self.plan_slider.value():
+            self._plan_slider_changed(value)
+        else:
+            self.plan_slider.setValue(value)
+
+    def _plan_slider_changed(self, index: int) -> None:
+        if self._plan_result() is None:
+            return
+        try:
+            self.window.session.show_ndt_plan_position(index)
+        except DocumentError as exc:
+            self.window.statusBar().showMessage(str(exc), 8000)
+            return
+        self._plan_index = index
+        self.window._refresh_probe()  # sonda, paprsek a narůstající mapa
+        self._show_probe()
+        self._show_plan_position()
+        if self._plan_rows:
+            result = self._plan_result()
+            position = result.check.positions[index]
+            key = (position.pass_index, position.segment)
+            if key in self._plan_rows:
+                self.plan_segments.blockSignals(True)
+                self.plan_segments.selectRow(self._plan_rows.index(key))
+                self.plan_segments.blockSignals(False)
+
     def _show_probe(self) -> None:
         """Sonda vybrané studie, výsledek přiložení, čára posuvu a geometrická dráha paprsku."""
         session = self.window.session
@@ -1103,8 +1696,11 @@ class NdtPanel(QWidget):
             color = _PLACEMENT_COLORS.get(placement.state, "#b9770e")
             beam = session.ndt_beam
             beam_html = f"<br>{beam.text.replace(chr(10), '<br>')}" if beam is not None else ""
+            zone = session.ndt_placement_zone
+            zone_html = (f'<br><span style="color: #b9770e;"><b>{escape(zone)}</b></span>'
+                         if zone else "")
             self.placement_label.setText(f'<span style="color: {color};"><b>'
-                                         f"{placement.text}</b></span>{beam_html}")
+                                         f"{placement.text}</b></span>{zone_html}{beam_html}")
         elif session.ndt_placement_request is not None and session.ndt_placement_error:
             self.placement_label.setText(f'<span style="color: #c0392b;">'
                                          f"{session.ndt_placement_error}</span>")
@@ -1275,6 +1871,21 @@ class NdtPanel(QWidget):
             return
         self.window._busy(lambda: self.window.session.turn_ndt_probe(self.angle.value()))
         self.window._refresh_all()
+
+
+PLAN_LEGEND = (("úsek", STEP_COLORS["scan"]), ("přesun po povrchu", STEP_COLORS["slide"]),
+               ("přestavení (nad dílem)", STEP_COLORS["air"]), ("zakázaná zóna", ZONE_COLOR))
+
+
+def _point_text(point: tuple) -> str:
+    return "; ".join(f"{round(v, 3) + 0.0:g}".replace(".", ",") for v in point)
+
+
+def _parse_point(text: str) -> list[float]:
+    parts = [part.strip().replace(",", ".") for part in text.split(";")]
+    if len(parts) != 3:
+        raise ValueError(text)
+    return [float(part) for part in parts]
 
 
 def _sensitivity_html(result: CoverageMap | VolumeCoverageMap) -> str:
