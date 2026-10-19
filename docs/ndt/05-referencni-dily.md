@@ -137,8 +137,38 @@ m = 30 mm (vnitřní plochy žeber x = ±15). Objem 300 000 + 2·10·100·50 = *
 | Přímá sonda zespodu pod mezerou / pod žebrem | **15 mm / 65 mm** | t, t + v |
 | Výška sondy 25 < výška žeber 50 | manipulace jen shora mezi žebry – poznámka pro etapu 03 | |
 
+## 9. Blok se štěrbinou a slepým otvorem – `sterbina.json` (PT, etapa 11)
+
+Blok A × B × H = 100 × 60 × 30. Uzavřená štěrbina délky l = 40, šířky **w = 1** a hloubky
+h = 20 ve x = −25 (dlouhé stěny x = −25,5 a −24,5). Slepý otvor **Ø d = 6** hloubky 20 ve
+x = +25. Objem 100·60·30 − 40·1·20 − π·3²·20 = **178 634,51 mm³**. Tři PT studie: s1 horní
+plocha, s2 dlouhé stěny štěrbiny, s3 dno a stěna otvoru.
+
+**Předpoklady PT** (návrh `19-navrh-etapa-11.md`, jen geometrie): nástroj = kulička o průměru
+nástroje dotýkající se místa + dřík 100 mm; hlavní nástroj Ø 10, jemný Ø 3. Nástřik jde do 60°
+od kolmice, šikmo do 85°. Prohlídka aspoň 30° k povrchu (šikmo aspoň 5°), oko do 600 mm.
+Pás u vnitřního rohu, kam se kulička poloměru r nedostane: x₀ = r · cot(θ/2), θ = úhel mezi
+plochami na straně vzduchu (90° → x₀ = r, 135° → 0,414 r).
+
+| Plocha | Otření | Nástřik i prohlídka | Upozornění |
+|---|---|---|---|
+| Horní plocha | jde 100 % | jde 100 % | – |
+| Stěny štěrbiny (2 × 40 × 20) | **nejde** (w = 1 < 3) | jde do hloubky w·tg 60° = **1,73 mm** (8,66 %), šikmo do w·tg 85° = **11,43 mm** (48,49 %), hlouběji **nejde** (42,85 %) | úzká štěrbina 1 mm |
+| Dno otvoru (28,27 mm²) | Ø 10 nejde; Ø 3 jen do 1,5 mm od osy = **25 %** | jde 100 % | otevřenost středu 1 − cos(atan(3/20)) = **1,1 %** |
+| Stěna otvoru (376,99 mm²) | Ø 10 nejde; Ø 3 kromě pásu 1,5 mm u dna = **92,5 %** | jde do hloubky 6·tg 60° = **10,39 mm** (51,96 %), hlouběji šikmo | mezera 6 mm < Ø 10 |
+
+**PT u dalších dílů** (stejné předpoklady):
+
+| Díl, plocha | Ø 10 jde | Ø 3 jde | Poznámka |
+|---|---|---|---|
+| Kapsa (`kapsa.json`, studie s2): dno 40 × 30 | (40−10)(30−10) = **50 %** | 37 · 27 = **83,25 %** | nástřik a prohlídka 100 %, otevřenost středu dna 20,8 % |
+| Kapsa: delší stěna 40 × 25 | (40−10)(25−5) = **60 %** | 37 · 23,5 = **86,95 %** | prohlídka 100 % (25 < 30 · tg 60°) |
+| Kapsa: kratší stěna 30 × 25 | (30−10)(25−5) = **53,33 %** | 27 · 23,5 = **84,6 %** | |
+| Koutový svar (`koutovy_svar.json`, studie s1): plochy svarů 9,90 mm | 9,90 − 2 · 2,07 = **58,16 %** | 9,90 − 2 · 0,62 = **87,45 %** | rohy 135°; nástřik a prohlídka 100 % |
+
 ## Záznam ověření
 
 | Díl | Ověřil | Datum | Poznámka / oprava |
 |---|---|---|---|
 | 1–8 | *čeká na kolegu NDT technika* | | |
+| 9 a PT u dílů 2 a 7 | *čeká na kolegu NDT technika* | | |

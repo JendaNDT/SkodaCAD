@@ -260,6 +260,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/library.py` | knihovna NDT (etapa 08, jen UT): vestavěné materiály `MATERIALS` (rychlosti ze 2 zdrojů, zdroje v docstringu) a obecné sondy `PROBES`, `transfer_angle` / `check_angle` / `transferred` (přepočet úhlu jen na pokyn), `describe` pro výstupy, Moje sondy (`ndt-knihovna.json`) |
 | `ndt/access.py` | návrh poloh UT sondy (etapa 09): `Analysis` (varianty, 1. a 2. kolo `prepare`, 3. kolo `evaluate` stávajícím výpočtem pokrytí, `run`), `finish` (pořadí `rank`, kombinace, `union` vzorek po vzorku), `AccessResult.summary` / `write_csv`, mapa kontaktních ploch `ContactPoint` |
 | `ndt/plan.py` | plán dráhy UT sondy (etapa 10): `Planner` (`build` – mřížka, dosah, úseky, cik-cak, oprava po 1 mm; `check` – kroky jízdy `PlanStep`, nájezd, ústup po projeté dráze, tabulka `PlanPosition`, boční rezerva; `coverage` – režim `plan`, sjednocení průchodů, srovnání, odolnost; `run`/`evaluate`), `Plan`/`PlanPass`/`PlanSegment` (JSON), `Zone`, `PlanResult.summary`/`write_csv` |
+| `ndt/pt.py` | PT – geometrická přístupnost povrchu (etapa 11): `PtSettings` (nástroje, úhly, oko, postup čištění), `Sampler` (nástřik, otření nástrojem – kulička + dřík s přesným průnikem –, prohlídka s okem, mezera, otevřenost), `compute` / `estimate`, `PtMap` (souhrn, CSV, síť po kontrolách, `nearest`, `describe`), `study_faces`, `self_check` |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
@@ -721,6 +722,24 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ndt_plan_view_map(index)` (stavy `PlanCoverage.until`); prohlížeč maže plán s dílem →
   `_shown_plan = None`. Mapa ze *Spočítat pokrytí* má přednost před mapou plánu.
 
+## Známé pasti (NDT – PT přístupnost povrchu)
+
+- Směry: kolmice + spirála 64 (rovnoměrně po polokouli – jen z ní se počítá **otevřenost**)
+  + **prstenec 16 směrů 88° od kolmice** (úzký volný pruh podél stěny štěrbiny a otvoru,
+  spirála ho mezi 85° a 90° míjela). Nejmenší volný úhel: půlení po poledníku s přesností
+  0,1° od nejbližšího volného směru i od středu volných, pak **natáčení kolem kolmice**
+  (`Sampler._climb`) – u čela štěrbiny jinak hledání vybralo šikmou rovinu.
+- Nástroj = kulička (vzdálenost středu od dílu `BRepExtrema` ≥ r − 0,001 a střed vně) + dřík
+  o 2 % užší (`SHANK`) – přesný dotyk dříku se stěnou otvoru je pro `BRepAlgoAPI_Common`
+  nejistý. Paprsky dříku (osa + 4 přímky v 0,9 r) jsou jen síto, rozhoduje `geometry.overlap`.
+- Pás u vnitřního rohu, kam kulička r nedosáhne: r · cot(θ/2) (θ na straně vzduchu) –
+  koutový svar 135° → 2,07 / 0,62 mm, kapsa 90° → r.
+- Rychlost 20–95 ms na vzorek (stěny kapes a štěrbin pomalu: dohledání úhlu a dříku). Testy
+  proto zkoušejí body (`Sampler.sample`), celou mapu jen na malé ploše.
+- Výsledek je pohled. `PT_DISCLAIMER` a „zvoleno pro výpočet, ne z normy“ u zvolených hodnot
+  jsou v souhrnu i CSV; meze prohlídky 30° a 600 mm jsou z ASME V čl. 9 a BINDT CP25 (EN ISO
+  17637 a EN 13018 neověřené – placené).
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -833,7 +852,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
-  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [ ] 11A.1 vymezení
+  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [x] 11A.1 vymezení
   PT a jádro `ndt/pt.py`, [ ] 11A.2 formát 19, ModelSession, CLI, [ ] 11B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,

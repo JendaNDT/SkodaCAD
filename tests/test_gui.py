@@ -620,8 +620,9 @@ def test_ndt_reference_parts_are_in_examples_menu_in_order(window, slot_errors):
 
     menu = next(m for m in window.findChildren(QMenu) if m.title() == "NDT – referenční díly")
     labels = [a.text() for a in menu.actions()]
-    assert len(labels) == 8
-    assert labels[0] == "NDT 1 – Deska" and labels[-1] == "NDT 8 – Obtížný přístup"
+    assert len(labels) == 9
+    assert labels[0] == "NDT 1 – Deska"
+    assert labels[-1] == "NDT 9 – Blok se štěrbinou a slepým otvorem"
     window.session.dirty = False
     action(window, "NDT 3 – Deska se žebrem").trigger()
     assert "žebrem" in window.windowTitle()

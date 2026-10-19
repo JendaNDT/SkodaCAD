@@ -160,6 +160,20 @@ class Collision:
 # --- jádro ---------------------------------------------------------------------------------
 
 
+def overlap(a: Any, b: Any) -> float | None:
+    """Objem průniku dvou těles [mm³]; None = průnik nejde spočítat (bere se jako kolize)."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    common = BRepAlgoAPI_Common(getattr(a, "wrapped", a), getattr(b, "wrapped", b))
+    if not common.IsDone():  # OCCT 8: chyby hlásí jen IsDone
+        return None
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(common.Shape(), props)
+    return abs(props.Mass())
+
+
 class PartGeometry:
     """Dotazy na jeden díl; jádro se načte jednou a další dotazy jsou rychlé (desetiny ms)."""
 

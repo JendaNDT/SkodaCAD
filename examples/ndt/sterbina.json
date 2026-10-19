@@ -1,0 +1,42 @@
+{
+  "format": "skodacad",
+  "version": 18,
+  "name": "NDT 9 – Blok se štěrbinou a slepým otvorem",
+  "description": "Referenční díl NDT č. 9 (PT): blok A × B × H se štěrbinou délky l, šířky w a hloubky h ve x = −25 a slepým otvorem Ø d hloubky h ve x = +25. Stěny štěrbiny: nástroj Ø 10 ani Ø 3 se nevejde (w = 1 mm), výhled pod 30° k povrchu jen do hloubky w·tg 60° = 1,73 mm. Dno otvoru: jemný nástroj Ø 3 jen do 1,5 mm od osy (25 %), otevřenost středu 1,1 %. Očekávané výsledky jsou v docs/ndt/05-referencni-dily.md.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"A": 100, "B": 60, "H": 30, "l": 40, "w": 1, "h": 20, "d": 6},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys bloku", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "A", "height": "B"}]},
+    {"id": "blok", "type": "extrude", "name": "Blok", "sketch": "obrys", "distance": "H"},
+    {"id": "sterbina_obrys", "type": "sketch", "name": "Obrys štěrbiny", "plane": "top",
+     "elements": [{"shape": "rectangle", "width": "w", "height": "l", "center": [-25, 0]}]},
+    {"id": "sterbina", "type": "extrude", "name": "Štěrbina", "sketch": "sterbina_obrys",
+     "operation": "cut", "distance": "h"},
+    {"id": "otvor_obrys", "type": "sketch", "name": "Obrys otvoru", "plane": "top",
+     "elements": [{"shape": "circle", "diameter": "d", "center": [25, 0]}]},
+    {"id": "otvor", "type": "extrude", "name": "Slepý otvor", "sketch": "otvor_obrys",
+     "operation": "cut", "distance": "h"}
+  ],
+  "ndt": {"studies": [
+    {"id": "s1", "name": "PT horní plochy", "method": "PT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 20, 30], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Volná horní plocha – vše přístupné.",
+     "created": "2026-10-19", "part": "227f4e2b1dbff067"},
+    {"id": "s2", "name": "PT stěn štěrbiny", "method": "PT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [-25.5, 0, 20], "normal": [1, 0, 0], "type": "plane"}},
+                   {"face": {"at": [-24.5, 0, 20], "normal": [-1, 0, 0], "type": "plane"}}]},
+     "note": "Štěrbina šířky 1 mm: nástroj se nevejde, výhled jen u horního okraje.",
+     "created": "2026-10-19", "part": "227f4e2b1dbff067"},
+    {"id": "s3", "name": "PT slepého otvoru", "method": "PT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [25, 0, 10], "normal": [0, 0, 1], "type": "plane"}},
+                   {"face": {"at": [22, 0, 20], "normal": [1, 0, 0], "type": "cylinder",
+                             "radius": 3}}]},
+     "note": "Slepý otvor Ø 6 × 20: jen jemný nástroj, dno hluboké a zakryté.",
+     "created": "2026-10-19", "part": "227f4e2b1dbff067"}
+  ]}
+}

@@ -359,3 +359,46 @@ Každý krok zvlášť: `ruff`, `pytest`, commit. Do `main` až na tvůj pokyn.
 
 Schválením se **neschvaluje**: fyzikální výpočty PT, odtékání kapaliny, sestavy, MT a RT, nová
 knihovna Pythonu ani sloučení do `main`.
+
+## 14. Provedení a upřesnění
+
+- **11A.1 (hotovo):** závazné vymezení [`20-vymezeni-pt.md`](20-vymezeni-pt.md),
+  `ndt.PT_DISCLAIMER`, `PT_ACCESS`, `PT_MAP` (test `test_ndt_scope.py` hlídá doslovné znění
+  a zakázaná označení „mapa citlivosti“, „mapa smáčivosti“). Jádro `ndt/pt.py`: `PtSettings`
+  (kontrola hodnot česky), `Sampler` (tři kontroly v bodě), `compute` / `estimate`, `PtMap`
+  (souhrn, CSV, síť obarvená celkem nebo po kontrolách, `nearest` a `describe` pro klik),
+  `study_faces`, `self_check` (self-test aplikace). Průnik těles `geometry.overlap` je teď
+  společný s plánem dráhy. Referenční díl 9 `examples/ndt/sterbina.json` (tři PT studie)
+  a PT studie s2 v kapse, ruční výsledky v `05-referencni-dily.md`.
+- **Upřesnění proti návrhu:**
+  - Ke kolmici a spirále 64 směrů přibyl **prstenec 16 směrů 88° od kolmice**. Ve štěrbině
+    a otvoru je volný jen úzký pruh směrů podél stěny a spirála ho mezi 85° a 90° často
+    minula (stěna štěrbiny vyšla „šikmo“ 45,6 % místo 48,5 %). Otevřenost se dál počítá jen
+    ze spirály (rovnoměrný podíl prostorového úhlu).
+  - Nejmenší volný úhel se dohledává s přesností **0,1°** (ne 0,5°). V hloubce 11 mm je mez
+    štěrbiny 84,8°, s 0,5° vyšlo 85,01° = těsně za mezí.
+  - Navíc **dohledání do stran**: směr se natočí kolem kolmice (22,5° → 2,8°) a znovu dohledá.
+    U konce štěrbiny (1 mm od čela) jinak hledání zvolilo šikmou rovinu a vyšlo „nejde“.
+  - Dřík nástroje je o **2 % užší** než špička. Přesný dotyk dříku se stěnou otvoru by byl
+    pro jádro nejistý průnik; kulička špičky má plný průměr.
+  - Automatický krok sítě se po prvním pokusu upraví podle skutečného počtu vzorků.
+    Výchozí počet je **asi 1500** (ne 2000), protože výpočet je pomalejší, než návrh odhadl:
+    **20–95 ms na vzorek** (volná plocha rychle, stěny kapes a štěrbin pomalu) místo 45–60 ms.
+    Odhad před spuštěním počítá s 80 ms.
+- **Změřeno 19. 10. 2026** (cloud, automatický krok, ruční výpočet z oddílu 4 v závorce):
+
+  | Studie | Vzorků, krok | Čas | Výsledek |
+  |---|---|---|---|
+  | koutový svar s1 (Ø 10 / jen Ø 3 / nevejde) | 1104, 3,9 mm | 41 s | 55,9 / 30,9 / 13,3 % (58,2 / 29,3 / 12,6) |
+  | kapsa s2 – dno | 2048 celkem, 3,4 mm | 140 s | 51,6 / 30,5 / 18,0 % (50 / 33,25 / 16,75) |
+  | kapsa s2 – delší stěna | | | 58,6 / 32,0 / 9,4 % (60 / 26,95 / 13,05) |
+  | díl 9 s2 – stěny štěrbiny, výhled jde / šikmo / nejde | 1568, 2,5 mm | 146 s | 9,4 / 47,8 / 42,9 % (8,66 / 48,49 / 42,85) |
+  | díl 9 s3 – dno otvoru, jen Ø 3 | 1476 celkem, 2,6 mm | 124 s | 24,7 % (25) |
+  | díl 9 s3 – stěna otvoru, jen Ø 3 / výhled jde | | | 93,8 % / 50,0 % (92,5 / 51,96) |
+  | díl 9 s1 – horní plocha, deska | 2468 / 1536 | 43 / 18 s | 100 % přístupné |
+
+  Rozdíly dělá síť: pás 1,5 mm u rohu vzorkuje krok 3–4 mm jen hrubě. Hranice v jednotlivých
+  bodech ověřují testy přesně (`tests/test_ndt_pt.py`: pásy u rohů 135° a 90°, štěrbina
+  1,73 / 11,43 mm i u čela, úhel ke stěně otvoru atan(d/6) ± 0,3°, oko se nevejde do otvoru
+  hlubokého 700 mm, oplach, nejisté nikdy jako přístupné).
+
