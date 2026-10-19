@@ -1,6 +1,7 @@
 # NDT – návrh etapy 13: RT – geometrie projekce a expozice
 
-Stav: **návrh k rozhodnutí autora (19. 10. 2026).**
+Stav: **schváleno autorem 19. 10. 2026 („schvaluji etapu 13 včetně doporučení 1–10“);
+implementace po krocích ve vývojové větvi.**
 Výchozí stav: `main`, commit `5cb6ef4` ([PR #26](https://github.com/JendaNDT/SkodaCAD/pull/26)).
 Navazuje na [plán, etapa 13](03-implementacni-plan.md), [geometrické jádro (etapa 02)](06-navrh-etapa-02.md),
 [virtuální sondu (etapa 03)](07-navrh-etapa-03.md), [svar a cílový objem (etapa 07)](12-navrh-etapa-07.md),
@@ -504,6 +505,43 @@ Schválením se **neschvaluje**:
 - ohebný film ani automatický plán projekcí,
 - nová knihovna Pythonu,
 - sloučení do `main`.
+
+## 17. Provedení a upřesnění
+
+- **13A.1 (hotovo):** závazné vymezení [`24-vymezeni-rt.md`](24-vymezeni-rt.md),
+  `ndt.RT_DISCLAIMER`, `RT_ACCESS`, `RT_MAP`, `RT_PREVIEW` (test `test_ndt_scope.py` hlídá
+  doslovné znění a zakázaná označení „simulovaný radiogram“, „simulovaný snímek“, „mapa
+  dávky“, „mapa zčernání“). Jádro `ndt/rt.py`:
+  - `RtSettings` a `Projection` (kontrola hodnot česky; směr ke zdroji se ukládá jako
+    jednotkový vektor, `tilted` / `angles_of` převádějí sklon a natočení),
+  - `prepare` (zdroj, střední paprsek, přiložení detektoru na plochu s odsunutím při nárazu
+    nebo volně, kolize těla zdroje a detektoru přesným průnikem, zdroj v materiálu),
+  - `compute` / `estimate` / `check_points` / `image_of`, `RtMap` (souhrn, CSV, síť po
+    projekcích, `nearest`, `describe`), `RtImage` (náhled prozařované tloušťky),
+    `study_target`, `self_check` (self-test aplikace).
+
+  Ruční výsledky jsou v `05-referencni-dily.md` jako NEOVĚŘENO. RT studie v ukázkách přibudou
+  v 13A.2 spolu s formátem 21 (bez něj by studie s projekcemi nešla uložit).
+- **Upřesnění proti návrhu:**
+  - **f a b ze strany předmětu u zdroje u místa oblasti nejblíž středu svazku.** Střední
+    paprsek namířený do otvoru by dal nesmyslné b (pod 30° vstoupí do materiálu až ve stěně
+    otvoru: b = 3,1 mm). Proto se vezme paprsek k místu oblasti s nejmenším úhlem od
+    středního paprsku. Jeho vstup do dílu se převede na střední paprsek průsečíkem s tečnou
+    rovinou plochy vstupu, takže na šikmém plechu nezáleží, jak daleko od osy místo leží.
+    U plného plechu je to totéž co střední paprsek. Deska s otvorem: kolmo f = 500, b = 20;
+    pod 30° f = 500, b = 23,094 (= 20 / cos 30°).
+  - **Překryv obrazů jen přes vzduch.** Za překryv se počítá průchod oblastí v jiném kusu
+    materiálu na paprsku (protější stěna trubky, druhý svar). Kořen a převýšení téhož V svaru
+    leží ve stejném kusu materiálu – dřív to vyšlo jako překryv u 65 % objemu svaru.
+  - **Prozařovaná tloušťka sčítá všechny úseky**, nejistotu jen vyznačí (zjištěno zkušebním
+    skriptem: jinak by paprsek otřený o stěnu otvoru „prošel vzduchem“).
+  - **Místo přesně v rovině detektoru** (spodek trubky na detektoru) se promítne, b = 0.
+  - **Ruční odhad u kraje desky pod 30°** počítal s nekonečným plechem. Paprsek od místa
+    u kraje vyjde boční stěnou, prozáří méně a poměr tloušťky nepřekročí – program to počítá
+    správně.
+- **Změřeno 19. 10. 2026** (cloud, testy jádra): deska s otvorem 1 086 míst a 2 projekce
+  asi 3 s (náhled po 20 mm); objem V svaru po 5 mm (200 buněk) asi 4 s; 11 testů jádra
+  11 s.
 
 ## Zdroje (ověřeno vyhledáváním 19. 10. 2026; plné texty norem jsou placené)
 
