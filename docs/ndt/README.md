@@ -19,7 +19,8 @@ Dokumentace pro plánované rozšíření ŠkodaCAD o podporu předběžného po
 15. [Rozbor citlivosti V svaru](15-rozbor-citlivosti-v-svaru.md) – proč objemové pokrytí V svaru „skákalo“ s krokem: správná hodnota 12,2 % nezávisle na mřížce, porovnávací běh hledal s příliš malou tolerancí, buňky 4 mm jsou pro 12mm plech příliš velké; opravy 1–3 schválené a provedené (spravedlivé porovnání kroků, výchozí krok cíle podle průřezu, referenční test); spravedlivé porovnání od 18. 10. 2026 i pro plošnou mapu Etapy 06 (oddíl 8).
 16. [Návrh etapy 08](16-navrh-etapa-08.md) – knihovna sond a materiálových profilů (jen UT): obecné profily sond, Moje sondy v `~/SkodaCAD`, původ hodnot (obecný / změřeno / zadáno / katalog), materiál pro UT s rychlostmi a zdrojem, přepočet úhlu z oceli do materiálu dílu jen tlačítkem, formát 17 (schváleno 18. 10. 2026 včetně doporučení 1–7, sloučeno v PR #22; po vydání autor napsal „ok funguje to“).
 17. [Návrh etapy 09](17-navrh-etapa-09.md) – návrh poloh UT sondy a mapa problémových zón (milník M3): program sám vyzkouší varianty plocha × směr × úhel × odrazy, vyřadí nepřístupné s důvodem, seřadí podle geometrického pokrytí, navrhne kombinaci nejvýš 3 variant a ukáže, co nepokryje nic a kde se sonda nevejde; jen pohled, formát 17 (schváleno 18. 10. 2026 včetně doporučení 1–9, sloučeno v PR #23; po vydání autor napsal „ok funguje to“).
-18. [Návrh etapy 10](18-navrh-etapa-10.md) – plán dráhy UT sondy (dokončí milník M3): souvislá dráha cik-cak z přiložené sondy nebo varianty návrhu poloh, úseky jen tam, kde se sonda vejde a paprsek míří k cíli, přestavení s kontrolou nájezdu, zakázané zóny, ruční úpravy, hodnocení (pokrytí, délka, přestavení, robustnost), přehrávání ve 3D a tabulka poloh; plán a zóny ve studii, formát 18 (schváleno 18. 10. 2026 včetně doporučení 1–10, implementace probíhá).
+18. [Návrh etapy 10](18-navrh-etapa-10.md) – plán dráhy UT sondy (dokončí milník M3): souvislá dráha cik-cak z přiložené sondy nebo varianty návrhu poloh, úseky jen tam, kde se sonda vejde a paprsek míří k cíli, přestavení s kontrolou nájezdu, zakázané zóny, ruční úpravy, hodnocení (pokrytí, délka, přestavení, robustnost), přehrávání ve 3D a tabulka poloh; plán a zóny ve studii, formát 18 (schváleno 18. 10. 2026 včetně doporučení 1–10, sloučeno v PR #24; po vydání autor napsal „ok funguje to“).
+19. [Návrh etapy 11](19-navrh-etapa-11.md) – PT: geometrická přístupnost povrchu pro kapilární zkoušku (milník M4): tři kontroly (nástřik, otření nástrojem – kulička a dřík, hlavní Ø 10 a jemný Ø 3 –, prohlídka ≥ 30° a do 600 mm), upozornění na úzkou mezeru a hluboké místo, mapa ve čtyřech barvách s důvody, navržené vymezení PT s povinným upozorněním `PT_DISCLAIMER`, nastavení ve studii (formát 19), referenční díl 9 se štěrbinou a slepým otvorem (schváleno 19. 10. 2026 včetně doporučení 1–9, implementace probíhá).
 
 **Závazná rozhodnutí autora (16. 10. 2026)** – mají přednost před staršími návrhy a plánem:
 
@@ -45,8 +46,10 @@ Etapa 08 – knihovna sond a materiálových profilů ([návrh](16-navrh-etapa-0
 schválená a sloučená v PR #22; po vydání autor napsal „ok funguje to“. Tím je hotový
 milník M2 (etapy 06–08). Etapa 09 – automatická analýza přístupnosti a doporučené polohy
 (milník M3, [návrh](17-navrh-etapa-09.md)) je schválená a sloučená v PR #23; po vydání autor
-napsal „ok funguje to“. Další podle plánu je etapa 10 – automatická skenovací trajektorie
-(dokončí milník M3, [návrh](18-navrh-etapa-10.md), schválená 18. 10. 2026, implementace probíhá).
+napsal „ok funguje to“. Etapa 10 – automatická skenovací trajektorie ([návrh](18-navrh-etapa-10.md))
+je schválená a sloučená v PR #24; po vydání autor napsal „ok funguje to“. Tím je hotový
+milník M3 (etapy 09–10). Další podle plánu je milník M4 – PT, MT a RT v geometrické úrovni
+(etapy 11–13); etapa 11 – PT ([návrh](19-navrh-etapa-11.md)) je schválená 19. 10. 2026, implementace probíhá.
 Etapa 16 (virtuální signály) je podle závazného vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.

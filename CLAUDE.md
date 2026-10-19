@@ -149,7 +149,9 @@
   Jen pohled, formát 17; *Použít variantu* = jeden krok Zpět; zakřivené plochy se
   nezkoušejí; CLI `skodacad polohy`, AI bez nového nástroje, souběh procesů odložen.
   Sloučeno v PR #23 (`bbc207f`); autor 18. 10. 2026 k vydání z `bbc207f` napsal „ok funguje
-  to“. Otevřené: vynechat z pokrytí místa pod sondou, když je kontaktní plocha i cílem?
+  to“. Otázka „místa pod sondou, když je kontaktní plocha i cílem“ rozhodnuta 19. 10. 2026:
+  na ploše přiložení se **nepočítá zásah 1. ramene** (paprsek z ní jen vychází), odražené
+  rameno, které se na plochu vrátí, ano (`coverage._on_contact`, algoritmus `ndt-ut-pokryti 2`).
 - (18. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 10 – plán dráhy UT sondy**
   (`docs/ndt/18-navrh-etapa-10.md`, dokončí milník M3): `ndt/plan.py` – průchod = varianta
   etapy 09, řádky cik-cak s roztečí (výchozí 5 mm) ve vzoru *k cíli a zpět* nebo *podél*
@@ -160,6 +162,21 @@
   stávajícím výpočtem v režimu `plan` (pás šířky rozteče = spojitý pojezd), přehrávání,
   tabulka poloh, CSV. Plán a zóny ve studii (**formát 18**), plán se sám nepřepočítá ani
   neposune; ruční úpravy úseků = kroky Zpět; CLI `skodacad draha`, AI bez nového nástroje.
+  Sloučeno v PR #24 (`5e59c28`); autor 19. 10. 2026 k vydání z `5e59c28` napsal „ok funguje
+  to“. Tím je hotový milník M3 (etapy 09–10).
+- (19. 10. 2026, schváleno včetně doporučení 1–9) **NDT etapa 11 – PT, přístupnost povrchu
+  pro kapilární zkoušku** (`docs/ndt/19-navrh-etapa-11.md`, otevírá milník M4): závazné
+  vymezení PT `docs/ndt/20-vymezeni-pt.md` s povinným upozorněním `ndt.PT_DISCLAIMER`
+  (jen geometrická přístupnost – ne smáčivost, vzlínání, citlivost ani detekovatelnost vad).
+  `ndt/pt.py`: vzorky = síť ploch PT studie, pevná sada 65 směrů, tři kontroly – **nástřik**
+  (volný paprsek do 60° / omezeně do 85° od kolmice), **otření** nástrojem (kulička + dřík
+  s libovolným sklonem, hlavní Ø 10 a jemný Ø 3, dřík 100 mm, přesná kolize OCCT), **prohlídka**
+  (≥ 30° k povrchu, oko do 600 mm s volnou koulí Ø 50 mm; ASME V čl. 9, BINDT CP25) – plus
+  upozornění úzká mezera a otevřenost pod 10 %; čtyři stavy (přístupné / omezené / nepřístupné /
+  nelze spolehlivě vyhodnotit) s českými důvody. Postup čištění otřením nebo oplachem. Zvolené
+  hodnoty jsou označené „zvoleno pro výpočet“. Nastavení `pt` ve studii (**formát 19**), mapa
+  jen pohled. Referenční díl 9 `sterbina.json`, PT studie i v kapse. Okno, CSV, CLI
+  `skodacad kapilarni`, AI bez nového nástroje.
 
 ## Architektura (`src/skodacad/`)
 
@@ -230,10 +247,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy) a `draha` (plán dráhy UT sondy) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy) a `kapilarni` (mapa PT) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh a plán dráhy (`submit_plan`, průběžné zprávy `Finished.update`) |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`) a mapa PT (`submit_pt`), průběžné zprávy `Finished.update` |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -245,12 +262,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/library.py` | knihovna NDT (etapa 08, jen UT): vestavěné materiály `MATERIALS` (rychlosti ze 2 zdrojů, zdroje v docstringu) a obecné sondy `PROBES`, `transfer_angle` / `check_angle` / `transferred` (přepočet úhlu jen na pokyn), `describe` pro výstupy, Moje sondy (`ndt-knihovna.json`) |
 | `ndt/access.py` | návrh poloh UT sondy (etapa 09): `Analysis` (varianty, 1. a 2. kolo `prepare`, 3. kolo `evaluate` stávajícím výpočtem pokrytí, `run`), `finish` (pořadí `rank`, kombinace, `union` vzorek po vzorku), `AccessResult.summary` / `write_csv`, mapa kontaktních ploch `ContactPoint` |
 | `ndt/plan.py` | plán dráhy UT sondy (etapa 10): `Planner` (`build` – mřížka, dosah, úseky, cik-cak, oprava po 1 mm; `check` – kroky jízdy `PlanStep`, nájezd, ústup po projeté dráze, tabulka `PlanPosition`, boční rezerva; `coverage` – režim `plan`, sjednocení průchodů, srovnání, odolnost; `run`/`evaluate`), `Plan`/`PlanPass`/`PlanSegment` (JSON), `Zone`, `PlanResult.summary`/`write_csv` |
+| `ndt/pt.py` | PT – geometrická přístupnost povrchu (etapa 11): `PtSettings` (nástroje, úhly, oko, postup čištění), `Sampler` (nástřik, otření nástrojem – kulička + dřík s přesným průnikem –, prohlídka s okem, mezera, otevřenost), `compute` / `estimate`, `PtMap` (souhrn, CSV, síť po kontrolách, `nearest`, `describe`), `study_faces`, `self_check` |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV) |
+| `gui/pt_dialog.py` | dialog *Nastavení PT…* (nástroje, úhly, oko, postup čištění; čísla jako text, u zvolených hodnot „zvoleno pro výpočet“, kontrola `PtSettings`) |
 | `gui/zone_dialog.py` | dialog *Zakázané zóny…* plánu dráhy (tabulka kvádrů jako text, *Z výběru*, kontrola `Zone.from_dict`) |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
@@ -661,9 +680,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   před sjednocením kombinace (`MainWindow._refresh_coverage`); body kontaktních ploch kreslí
   `viewer.show_points` (kuličky `Aspect_TOM_BALL` po barvách, vrstva `Topmost`, self-test
   „points“), prohlížeč je maže s dílem → `_shown_points = None`.
-- Plocha, na které sonda stojí, je v geometrickém modelu Etapy 06 „pokrytá“ v místech výstupu
-  paprsku (rameno začíná na povrchu). Když je cílem kontaktní plocha sama, analýza ji proto
-  řadí vysoko – je to vlastnost stávajícího výpočtu pokrytí, ne analýzy.
+- Plocha, na které sonda stojí: zásah **1. ramene** se na ní nepočítá (`coverage._on_contact`,
+  rozhodnutí autora 19. 10. 2026, algoritmus `ndt-ut-pokryti 2`) – paprsek z ní jen vychází.
+  Dřív tam výpočet hlásil pokrytí (žebro, sonda na dně, cíl dno: 56,35 % → 0 %; s 1 odrazem
+  64,6 % → 41,94 % – zůstává jen celý krok) a návrh poloh takovou polohu řadil nahoru.
+  Běžný případ (sonda nahoře, cíl dno) beze změny. Souhrn a CSV pak nesou `CONTACT_NOTE`.
 
 ## Známé pasti (NDT – plán dráhy)
 
@@ -705,6 +726,35 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   přikládá sondu `show_ndt_plan_position` (jen pohled, jako *Ukázat variantu*) a mapa je
   `ndt_plan_view_map(index)` (stavy `PlanCoverage.until`); prohlížeč maže plán s dílem →
   `_shown_plan = None`. Mapa ze *Spočítat pokrytí* má přednost před mapou plánu.
+
+## Známé pasti (NDT – PT přístupnost povrchu)
+
+- Směry: kolmice + spirála 64 (rovnoměrně po polokouli – jen z ní se počítá **otevřenost**)
+  + **prstenec 16 směrů 88° od kolmice** (úzký volný pruh podél stěny štěrbiny a otvoru,
+  spirála ho mezi 85° a 90° míjela). Nejmenší volný úhel: půlení po poledníku s přesností
+  0,1° od nejbližšího volného směru i od středu volných, pak **natáčení kolem kolmice**
+  (`Sampler._climb`) – u čela štěrbiny jinak hledání vybralo šikmou rovinu.
+- Nástroj = kulička (vzdálenost středu od dílu `BRepExtrema` ≥ r − 0,001 a střed vně) + dřík
+  o 2 % užší (`SHANK`) – přesný dotyk dříku se stěnou otvoru je pro `BRepAlgoAPI_Common`
+  nejistý. Paprsky dříku (osa + 4 přímky v 0,9 r) jsou jen síto, rozhoduje `geometry.overlap`.
+- Pás u vnitřního rohu, kam kulička r nedosáhne: r · cot(θ/2) (θ na straně vzduchu) –
+  koutový svar 135° → 2,07 / 0,62 mm, kapsa 90° → r.
+- Rychlost 20–95 ms na vzorek (stěny kapes a štěrbin pomalu: dohledání úhlu a dříku). Testy
+  proto zkoušejí body (`Sampler.sample`), celou mapu jen na malé ploše.
+- ModelSession: nastavení `pt` ve studii (formát 19, `set_ndt_pt_settings` = jeden krok Zpět,
+  stejné nastavení = žádná změna; `pt` smí mít jen PT studie, změna metody ho smaže). Mapa
+  (`compute_ndt_pt` / `start_ndt_pt`, `ndt_pt_map`) platí pro výsledek přepočtu a nezměněný
+  záznam studie (`_pt_key`), zastaralou studii je třeba potvrdit.
+- Okno: mapa PT se kreslí stávajícím `viewer.show_coverage_map` (žádný nový druh kreslení);
+  klíč kresby je n-tice (mapa, kontrola, rovina řezu) – `_refresh_coverage` ji porovnává
+  rovností, ne totožností. UT mapa pokrytí má přednost. U PT studie je nahoře
+  `PT_DISCLAIMER` a skupina sondy UT (`probe_box`) skrytá. Klik do mapy: `show_pt_pick`
+  z `_selection_changed` (bod `viewer.picked_point`). Se spočítanou mapou PT se oblast studie
+  **nezvýrazňuje** (`_update_highlight`) – průsvitné zvýraznění by barvy mapy vybělilo
+  (zelená šedla, červená růžověla; u UT to dělá přiložená sonda).
+- Výsledek je pohled. `PT_DISCLAIMER` a „zvoleno pro výpočet, ne z normy“ u zvolených hodnot
+  jsou v souhrnu i CSV; meze prohlídky 30° a 600 mm jsou z ASME V čl. 9 a BINDT CP25 (EN ISO
+  17637 a EN 13018 neověřené – placené).
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -816,9 +866,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 08 knihovna sond a materiálů (formát v17, sloučeno v PR #22, autor po vydání: „ok funguje
   to“; 08C tvarovaná předsádka odložena) – milník M2 hotov,
   [x] 09 návrh poloh UT sondy (sloučeno v PR #23, autor po vydání: „ok funguje to“),
-  [ ] 10 plán dráhy UT sondy (schváleno 18. 10. 2026, dokončí milník M3):
-  [x] 10A.1 jádro `ndt/plan.py`, [x] 10A.2 formát 18, ModelSession, CLI a CSV,
-  [x] 10B okno (čeká na PR a ruční zkoušku).
+  [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
+  to“) – milník M3 hotov,
+  [ ] 11 PT přístupnost povrchu (schváleno 19. 10. 2026, otevírá milník M4): [x] 11A.1 vymezení
+  PT a jádro `ndt/pt.py`, [x] 11A.2 formát 19, ModelSession, CLI, [x] 11B okno (čeká na PR
+  a ruční zkoušku).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

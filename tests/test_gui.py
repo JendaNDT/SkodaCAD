@@ -620,8 +620,9 @@ def test_ndt_reference_parts_are_in_examples_menu_in_order(window, slot_errors):
 
     menu = next(m for m in window.findChildren(QMenu) if m.title() == "NDT – referenční díly")
     labels = [a.text() for a in menu.actions()]
-    assert len(labels) == 8
-    assert labels[0] == "NDT 1 – Deska" and labels[-1] == "NDT 8 – Obtížný přístup"
+    assert len(labels) == 9
+    assert labels[0] == "NDT 1 – Deska"
+    assert labels[-1] == "NDT 9 – Blok se štěrbinou a slepým otvorem"
     window.session.dirty = False
     action(window, "NDT 3 – Deska se žebrem").trigger()
     assert "žebrem" in window.windowTitle()
@@ -1745,7 +1746,7 @@ def test_panel_ut_material_angle_warning_and_transfer(ndt_window, slot_errors):
 
 
 def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_errors):
-    from skodacad.ndt import DISCLAIMER, UT_DISCLAIMER
+    from skodacad.ndt import DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
 
     w = rib_window
     panel = w.ndt_panel
@@ -1754,7 +1755,8 @@ def test_probe_tools_only_for_ut_and_bad_placement_message(rib_window, slot_erro
     w.session.set_ndt_method("s1", "PT")
     w._refresh_all()
     assert panel.probe_label.text() == "Sonda je zatím jen pro UT studie."
-    assert panel.warning.text() == DISCLAIMER  # PT: obecné upozornění, ne UT
+    assert not panel.probe_box.isVisibleTo(panel) and panel.pt_box.isVisibleTo(panel)
+    assert panel.warning.text() == PT_DISCLAIMER  # PT: povinné upozornění PT (20-vymezeni-pt)
     panel.studies.setCurrentRow(-1)  # bez výběru podle metody nové studie (UT)
     assert panel.warning.text() == UT_DISCLAIMER
     panel.method_combo.setCurrentIndex(panel.method_combo.findData("RT"))
@@ -1977,3 +1979,84 @@ def test_plan_panel_is_locked_while_ai_works(rib_window):
     w.set_assistant_busy(False)
     panel.refresh()
     assert panel.plan_step.isEnabled() and panel.plan_zones_action.isEnabled()
+
+
+@pytest.fixture
+def pt_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(examples_dir / "ndt" / "sterbina.json", template=True)
+    w.ndt_panel.studies.setCurrentRow(0)  # s1 – PT horní plochy dílu 9
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def test_pt_panel_settings_map_checks_pick_and_export(pt_window, no_dialogs, slot_errors,
+                                                      tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QDialog, QFileDialog
+
+    from skodacad.ndt import PT_DISCLAIMER
+    from skodacad.ndt.pt import COLORS
+
+    w = pt_window
+    panel = w.ndt_panel
+    session = w.session
+    assert panel.pt_box.isVisibleTo(panel) and panel.pt_box.title() == "Přístupnost povrchu pro PT"
+    assert not panel.probe_box.isVisibleTo(panel)  # skupiny sondy UT jsou u PT skryté
+    assert panel.warning.text() == PT_DISCLAIMER
+    assert "zvoleno pro výpočet" in panel.pt_settings_label.text()
+    panel.pt_settings_action.trigger()
+    assert "PtDialog" in no_dialogs and not session.dirty  # zrušený dialog nic nemění
+
+    def accept(self, dialog):
+        dialog.edits["step_mm"].setText("20")
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", accept)
+    panel.pt_settings_action.trigger()
+    assert session.ndt_study("s1")["pt"]["step_mm"] == 20 and session.dirty
+    steps = len(session._undo)
+
+    def unchanged(self, dialog):
+        dialog.accept()
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", unchanged)
+    panel.pt_settings_action.trigger()
+    assert len(session._undo) == steps  # nezměněné OK = žádný krok Zpět
+    assert "Odhad:" in panel.pt_estimate.text() and panel.pt_action.isEnabled()
+    assert w.viewer.highlighted  # oblast studie zvýrazněná …
+    panel.pt_action.trigger()
+    assert session.ndt_pt_map is not None and not slot_errors
+    assert w.viewer.highlighted == []  # … dokud ji nepřekryje mapa PT (barvy by vybledly)
+    shown = w.viewer.coverage_map
+    assert shown is not None and set(shown[2]) == {COLORS["ok"]}
+    assert "Přístupné 100,0 %" in panel.pt_summary.text()
+    panel.pt_check.setCurrentIndex(panel.pt_check.findData("view"))
+    assert w.viewer.coverage_map is not shown  # mapa jedné kontroly se nakreslí znovu
+    assert "Prohlídka" in panel.pt_legend.text()
+    top = face_at(session.result.part, 0, 20, 30)
+    w.viewer.click([top], (0, 20, 30))
+    assert panel.pt_pick.text().startswith("Přístupné")
+    path = tmp_path / "pt.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(path), ""))
+    panel.pt_export_action.trigger()
+    assert path.read_text(encoding="utf-8-sig").splitlines()[1] == PT_DISCLAIMER
+    panel.pt_stop_action.trigger()  # nic neběží – nic se nestane
+    panel.pt_clear_action.trigger()
+    assert session.ndt_pt_map is None and w.viewer.coverage_map is None
+    w.undo_action.trigger()
+    assert "pt" not in session.ndt_study("s1")
+    assert slot_errors == []
+
+
+def test_pt_panel_is_locked_while_ai_works(pt_window):
+    w = pt_window
+    panel = w.ndt_panel
+    w.set_assistant_busy(True)
+    panel.refresh()
+    assert not any(a.isEnabled() for a in panel._pt_actions())
+    w.set_assistant_busy(False)
+    panel.refresh()
+    assert panel.pt_settings_action.isEnabled() and panel.pt_action.isEnabled()

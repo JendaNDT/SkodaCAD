@@ -20,6 +20,15 @@
      "target": {"kind": "faces", "faces": [
                    {"face": {"at": [0, 0, 15], "normal": [0, 0, 1], "type": "plane"}}]},
      "note": "Stěna pod kapsou, přímá sonda zespodu (dráha 15 mm).",
-     "created": "2026-10-16", "part": "763df241f51dc800"}
+     "created": "2026-10-16", "part": "763df241f51dc800"},
+    {"id": "s2", "name": "PT dna a stěn kapsy", "method": "PT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [0, 0, 15], "normal": [0, 0, 1], "type": "plane"}},
+                   {"face": {"at": [0, -15, 27.5], "normal": [0, 1, 0], "type": "plane"}},
+                   {"face": {"at": [0, 15, 27.5], "normal": [0, -1, 0], "type": "plane"}},
+                   {"face": {"at": [-20, 0, 27.5], "normal": [1, 0, 0], "type": "plane"}},
+                   {"face": {"at": [20, 0, 27.5], "normal": [-1, 0, 0], "type": "plane"}}]},
+     "note": "Dno a stěny kapsy: nástroj Ø 10 se nedostane blíž než 5 mm ke stěně.",
+     "created": "2026-10-19", "part": "763df241f51dc800"}
   ]}
 }

@@ -89,6 +89,10 @@ from skodacad.ndt.plan import (
     zone_hit,
     zones_from,
 )
+from skodacad.ndt.pt import PtError, PtMap, PtSettings
+from skodacad.ndt.pt import compute as compute_pt
+from skodacad.ndt.pt import estimate as estimate_pt
+from skodacad.ndt.pt import study_faces as pt_study_faces
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
     StudyError,
@@ -226,6 +230,9 @@ class ModelSession:
         self._plan_view_cache: tuple[Any, Any] | None = None
         self._target_preview_cache: tuple[Any, Any] | None = None
         self._volume_drawing_cache: tuple[Any, Any] | None = None
+        # mapa PT (etapa 11, jen pohled): (klíč platnosti, mapa) a běžící výpočet
+        self._pt_cache: tuple[tuple[Any, ...], PtMap] | None = None
+        self._pt_pending: dict[str, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -240,6 +247,7 @@ class ModelSession:
         self.clear_ndt_placement()
         self._access_cache = None
         self._plan_cache = None
+        self._pt_cache = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -253,6 +261,7 @@ class ModelSession:
         self.clear_ndt_placement()
         self._access_cache = None
         self._plan_cache = None
+        self._pt_cache = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -271,6 +280,7 @@ class ModelSession:
         self._coverage_pending = None
         self._access_pending = None
         self._plan_pending = None
+        self._pt_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -304,6 +314,8 @@ class ModelSession:
             kind, payload = finished.update
             if self._plan_pending is not None and kind == "progress":
                 self._plan_pending["progress"] = payload
+            if self._pt_pending is not None and kind == "progress":
+                self._pt_pending["progress"] = payload
             pending = self._access_pending
             if pending is not None:
                 if kind == "progress":
@@ -313,7 +325,13 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._plan_pending is not None:
+        if self._pt_pending is not None:
+            if finished.pt is not None:
+                self._pt_cache = (self._pt_pending["key"], finished.pt)
+            else:
+                self.failure = finished.error
+            self._pt_pending = None
+        elif self._plan_pending is not None:
             self._plan_finished(finished)
         elif self._access_pending is not None:
             if finished.access is not None:
@@ -351,6 +369,7 @@ class ModelSession:
         self._job = None
         self._coverage_pending = None
         self._plan_pending = None
+        self._pt_pending = None
         pending, self._access_pending = self._access_pending, None
         if pending is not None:
             if pending["preparation"] is not None:
@@ -998,8 +1017,13 @@ class ModelSession:
     def set_ndt_method(self, study_id: str, method: str) -> BuildResult:
         if method not in NDT_METHODS:
             raise DocumentError(f"Metoda musí být jedna z {', '.join(NDT_METHODS)}.")
-        return self._edit_study(study_id, lambda study: study.update(method=method),
-                                setup=True)
+
+        def update(study: dict[str, Any]) -> None:
+            study.update(method=method)
+            if method != "PT":
+                study.pop("pt", None)  # nastavení PT má jen PT studie
+
+        return self._edit_study(study_id, update, setup=True)
 
     def set_ndt_target(self, study_id: str, shapes: list[Any], point: Any = None) -> BuildResult:
         """Kontrolovaná oblast studie z ploch vybraných ve 3D."""
@@ -1590,6 +1614,147 @@ class ModelSession:
         result = self.ndt_coverage
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu geometrického pokrytí UT.")
+        try:
+            return result.write_csv(path)
+        except OSError as exc:
+            raise DocumentError(f"CSV nejde uložit: {exc}") from None
+
+    # --- NDT PT – přístupnost povrchu (etapa 11, jen pohled) -----------------------------
+
+    def ndt_pt_settings(self, study_id: str) -> PtSettings:
+        """Nastavení mapy PT studie (výchozí, když ve studii žádné není)."""
+        try:
+            return PtSettings.from_dict(self.ndt_study(study_id).get("pt"))
+        except PtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def set_ndt_pt_settings(self, study_id: str, settings: PtSettings | dict[str, Any]
+                            ) -> BuildResult | None:
+        """Uloží nastavení PT do studie (jeden krok Zpět); stejné nastavení = žádná změna."""
+        record = self.ndt_study(study_id)
+        if record.get("method") != "PT":
+            raise DocumentError("Nastavení PT má jen PT (kapilární) studie.")
+        try:
+            settings = (settings if isinstance(settings, PtSettings)
+                        else PtSettings.from_dict(settings))
+        except PtError as exc:
+            raise DocumentError(str(exc)) from None
+        if "pt" in record and PtSettings.from_dict(record["pt"]) == settings:
+            return None
+        data = settings.to_dict()
+        return self._edit_study(study_id, lambda study: study.update(pt=data))
+
+    def _pt_inputs(self, study_id: str) -> tuple[Any, list[Any], PtSettings]:
+        self._require_computed("mapa PT")
+        record = self.ndt_study(study_id)
+        if record.get("method") != "PT":
+            raise DocumentError("Mapa PT jde spočítat jen pro PT (kapilární) studii.")
+        if self.result is None or self.result.part is None:
+            raise DocumentError("Model nemá těleso – mapa PT nemá na čem počítat.")
+        state = next((r.state for r in self.ndt_studies if r.id == study_id), "broken")
+        if state == "stale":
+            raise DocumentError("Studie je zastaralá (díl se změnil) – nejdřív ji potvrď.")
+        if state != "ok":
+            raise DocumentError("Mapa PT potřebuje platnou PT studii s vybranými plochami.")
+        try:
+            faces = pt_study_faces(self._ndt_geometry(), record)
+            settings = PtSettings.from_dict(record.get("pt"))
+        except PtError as exc:
+            raise DocumentError(str(exc)) from None
+        return self.result.part, faces, settings
+
+    def _pt_key(self, study_id: str) -> tuple[Any, ...]:
+        return (self.result, study_id, repr(self.ndt_study(study_id)))
+
+    @property
+    def ndt_pt_map(self) -> PtMap | None:
+        """Mapa PT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if self.computing or self._pt_cache is None:
+            return None
+        key, result = self._pt_cache
+        try:
+            current = self._pt_key(key[1])
+        except DocumentError:
+            self._pt_cache = None
+            return None
+        if key[0] is not current[0] or key[1:] != current[1:]:
+            self._pt_cache = None
+            return None
+        return result
+
+    def ndt_pt_study(self) -> str | None:
+        """Studie, ke které patří platná mapa PT."""
+        return self._pt_cache[0][1] if self.ndt_pt_map is not None else None
+
+    def clear_ndt_pt(self) -> None:
+        self._pt_cache = None
+
+    def ndt_pt_estimate(self, study_id: str) -> tuple[int, float, float]:
+        """Odhad před spuštěním: (počet vzorků, krok sítě [mm], doba [s])."""
+        part, faces, settings = self._pt_inputs(study_id)
+        try:
+            return estimate_pt(part, faces, settings)
+        except PtError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def compute_ndt_pt(self, study_id: str,
+                       progress: Callable[[int, int], None] | None = None) -> PtMap:
+        """Spočítá mapu PT bez změny modelu (CLI, testy, pomocný proces)."""
+        part, faces, settings = self._pt_inputs(study_id)
+        key = self._pt_key(study_id)
+        self.clear_ndt_pt()
+        try:
+            result = compute_pt(part, faces, settings, progress=progress)
+        except PtError as exc:
+            raise DocumentError(str(exc)) from None
+        except Exception as exc:  # noqa: BLE001 – chyby jádra nesmí shodit okno
+            raise DocumentError(f"Mapu PT nejde spočítat: {exc}") from None
+        self._pt_cache = (key, result)
+        return result
+
+    @property
+    def pt_pending(self) -> bool:
+        """Počítá se zrovna mapa PT v pomocném procesu?"""
+        return self._pt_pending is not None
+
+    @property
+    def ndt_pt_progress(self) -> tuple[int, int] | None:
+        """Průběh výpočtu mapy PT (hotovo, celkem)."""
+        return self._pt_pending.get("progress") if self._pt_pending is not None else None
+
+    def start_ndt_pt(self, study_id: str) -> PtMap | None:
+        """Okno: mapa PT v pomocném procesu (jde zastavit); bez pomocného procesu hned."""
+        self._pt_inputs(study_id)
+        if self._runner is None:
+            return self.compute_ndt_pt(study_id)
+        key = self._pt_key(study_id)
+        self.clear_ndt_pt()
+        self.failure = ""
+        self._job = self._runner.submit_pt(self._require().to_dict(), study_id)
+        self._pt_pending = {"key": key, "progress": None}
+        return None
+
+    def ndt_pt_mesh(self, check: str | None = None) -> tuple[list, list, list]:
+        """Barevná síť mapy PT pro okno (celkem nebo jedna kontrola), v řezu oříznutá."""
+        result = self.ndt_pt_map
+        if result is None:
+            return [], [], []
+        nodes, triangles, colors = result.mesh(check)
+        plane = self.section_plane
+        return clip_mesh(nodes, triangles, colors, plane) if plane else (nodes, triangles, colors)
+
+    def ndt_pt_describe(self, point: Any) -> list[str]:
+        """Stav a důvody vzorku mapy PT nejblíž bodu (klik do mapy); bez mapy prázdné."""
+        result = self.ndt_pt_map
+        if result is None or point is None:
+            return []
+        index = result.nearest(tuple(float(v) for v in point))
+        return [] if index is None else result.describe(index)
+
+    def export_ndt_pt(self, path: str | Path) -> Path:
+        result = self.ndt_pt_map
+        if result is None:
+            raise DocumentError("Nejdřív spočítej mapu PT.")
         try:
             return result.write_csv(path)
         except OSError as exc:

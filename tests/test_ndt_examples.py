@@ -25,6 +25,8 @@ VOLUMES = {  # objem podle vzorce (mm³)
     # pásnice + stojina + 2 koutové svary (trojúhelník 7 × 7 / 2), délka 100
     "koutovy_svar": 200 * 100 * 10 + 10 * 100 * 80 + 2 * 7 * 7 / 2 * 100,
     "pristup": 200 * 100 * 15 + 2 * 10 * 100 * 50,
+    # PT (etapa 11): blok − štěrbina 40 × 1 × 20 − slepý otvor Ø 6 × 20
+    "sterbina": 100 * 60 * 30 - 40 * 1 * 20 - math.pi * 3**2 * 20,
 }
 
 
@@ -41,7 +43,7 @@ def path_length(part, start, direction):
     return depth
 
 
-def test_all_eight_reference_parts_are_there():
+def test_all_reference_parts_are_there():
     assert sorted(path.stem for path in NDT.glob("*.json")) == sorted(VOLUMES)
 
 

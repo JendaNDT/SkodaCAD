@@ -54,7 +54,7 @@ from skodacad.ndt.devices import (
     place,
     reuse_placements,
 )
-from skodacad.ndt.geometry import OVERLAP_TOL, GeometryError, PartGeometry, Point
+from skodacad.ndt.geometry import OVERLAP_TOL, GeometryError, PartGeometry, Point, overlap
 from skodacad.ndt.ut import BeamError, trace_beam
 from skodacad.ndt.volume_coverage import VolumeCoverageMap, compute_volume
 
@@ -149,18 +149,7 @@ def _number(value: Any, text: str, low: float, high: float) -> float:
     return float(value)
 
 
-def _overlap(a: Any, b: Any) -> float | None:
-    """Objem průniku dvou těles; None = průnik nejde spočítat (bere se jako kolize)."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
-
-    common = BRepAlgoAPI_Common(a, b)
-    if not common.IsDone():  # OCCT 8: chyby hlásí jen IsDone
-        return None
-    props = GProp_GProps()
-    BRepGProp.VolumeProperties_s(common.Shape(), props)
-    return abs(props.Mass())
+_overlap = overlap  # průnik těles sdílený s jádrem (i PT)
 
 
 # --- zakázané zóny ----------------------------------------------------------------------------

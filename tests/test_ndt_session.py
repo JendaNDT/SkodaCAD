@@ -123,9 +123,10 @@ def state(session, study_id="s1"):
 def test_every_reference_part_has_a_valid_sample_study(path):
     session = ModelSession()
     session.open(path)
-    [result] = session.ndt_studies
-    assert result.state == "ok", result.messages
-    assert result.faces >= 1
+    assert session.ndt_studies  # kapsa má i PT studii, díl 9 tři PT studie
+    for result in session.ndt_studies:
+        assert result.state == "ok", result.messages
+        assert result.faces >= 1
 
 
 def test_parameter_change_makes_study_stale_and_undo_makes_it_valid():
@@ -172,7 +173,7 @@ def test_new_study_from_selected_faces_and_target_change():
     floor = face_at(part, 0, 0, 15)
     wall = face_at(part, 20, 0, 30)
     sid = session.add_ndt_study("PT", [floor.wrapped, wall.wrapped], (0, 0, 15), "PT kapsy")
-    assert sid == "s2"
+    assert sid == "s3"  # ukázka kapsy má studie s1 (UT) a s2 (PT)
     study = session.ndt_study(sid)
     assert study["method"] == "PT" and study["name"] == "PT kapsy"
     assert len(study["target"]["faces"]) == 2
@@ -306,7 +307,7 @@ def test_probe_is_stored_in_study_with_undo(tmp_path):
     assert "verified" not in session.ndt_study("s1")  # sonda je zadání studie
     assert session.ndt_probe("s1") == Probe.straight(12)
     path = session.save(tmp_path / "zebro.json")
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 18
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 19
     session.undo()
     assert "device" not in session.ndt_study("s1")
     with pytest.raises(DocumentError, match="Průměr sondy musí být číslo"):

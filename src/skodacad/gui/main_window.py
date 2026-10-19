@@ -525,6 +525,9 @@ class MainWindow(QMainWindow):
         mode = self.ndt_panel.access_map_mode()
         if found is None and access is not None and mode == "target":
             found = access.union  # návrh poloh: co pokryje kombinace (mapa pokrytí má přednost)
+        pt_view = self.ndt_panel.pt_view() if found is None else None
+        if pt_view is not None:  # mapa PT (etapa 11): klíč = mapa, kontrola a řez
+            found = ("pt", id(pt_view[0]), pt_view[1], self.session.section_plane)
         points = (access, mode) if access is not None and mode == "contact" else None
         if points != self._shown_points:
             self._shown_points = points
@@ -533,12 +536,15 @@ class MainWindow(QMainWindow):
             else:
                 shown, colors, _states = self.session.ndt_access_points()
                 self.viewer.show_points(shown, colors)
-        if found is self._shown_coverage:
+        if found is self._shown_coverage or (isinstance(found, tuple)
+                                             and found == self._shown_coverage):
             return
         if found is None:
             self.viewer.hide_coverage_map()
             if self.session.map_visible:
                 self._refresh_thickness_map()
+        elif isinstance(found, tuple):
+            self.viewer.show_coverage_map(*self.session.ndt_pt_mesh(pt_view[1]))
         elif isinstance(found, VolumeCoverageMap):  # objem uvnitř dílu: navrch, řez šedě
             section = self.session.section
             self.viewer.show_coverage_map(*self.session.coverage_mesh(found),
@@ -732,6 +738,10 @@ class MainWindow(QMainWindow):
         ndt_menu.addSeparator()
         for item in (self.ndt_panel.plan_action, self.ndt_panel.plan_check_action,
                      self.ndt_panel.plan_zones_action, self.ndt_panel.plan_export_action):
+            ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        for item in (self.ndt_panel.pt_settings_action, self.ndt_panel.pt_action,
+                     self.ndt_panel.pt_export_action):
             ndt_menu.addAction(item)
 
         view_menu = bar.addMenu("&Zobrazení")
@@ -1094,6 +1104,7 @@ class MainWindow(QMainWindow):
             if self.session.computing:  # průběžná zpráva návrhu poloh – výpočet běží dál
                 self.ndt_panel._show_access()
                 self.ndt_panel._show_plan()
+                self.ndt_panel._show_pt()
                 self.ndt_panel.refresh_actions()
                 self._refresh_progress()
                 return
@@ -1126,19 +1137,23 @@ class MainWindow(QMainWindow):
             self.ndt_panel._show_access()  # průběh návrhu poloh v panelu
         if self.session.plan_pending:
             self.ndt_panel._show_plan()  # průběh plánu dráhy v panelu
+        if self.session.pt_pending:
+            self.ndt_panel._show_pt()  # průběh mapy PT v panelu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
         access = self.session.access_pending
         plan = self.session.plan_pending
+        pt = self.session.pt_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage or access or plan:  # zastavený výpočet NDT – model se neměnil
+            if coverage or access or plan or pt:  # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
                 self.statusBar().showMessage(
                     "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
                     else "Výpočet plánu dráhy zastaven – uložený plán zůstal beze změny."
-                    if plan else "Výpočet mapy pokrytí zastaven.", 10000)
+                    if plan else "Výpočet mapy PT zastaven." if pt
+                    else "Výpočet mapy pokrytí zastaven.", 10000)
                 return
             if self.session.map_visible and self.session.thickness_map is None:
                 self.session.map_visible = False  # nedopočítaná mapa se vypne
@@ -1150,8 +1165,9 @@ class MainWindow(QMainWindow):
         """Ve 3D zvýraznit, co používá prvek vybraný ve stromu (hrany zaoblení, skicu …),
         nebo kontrolovanou oblast studie vybrané v panelu NDT."""
         study_id = self.ndt_panel.current_id()
-        if study_id is not None and self.session.ndt_placement_request is not None:
-            shapes = []  # přiložená sonda je teď hlavní – oblast přes celý díl by ji přebila
+        if study_id is not None and (self.session.ndt_placement_request is not None
+                                     or self.session.ndt_pt_map is not None):
+            shapes = []  # sonda nebo mapa PT je teď hlavní – zvýraznění oblasti by je přebarvilo
         elif study_id is not None:
             shapes = self.session.ndt_highlight(study_id)
         elif self._selected_id:
@@ -1311,6 +1327,7 @@ class MainWindow(QMainWindow):
         self._picked = list(shapes)
         self._refresh_selection_actions()
         self.ndt_panel.refresh_actions()
+        self.ndt_panel.show_pt_pick()
         self._refresh_measure_list()
         self.section_face_action.setEnabled(
             self.session.display_part is not None

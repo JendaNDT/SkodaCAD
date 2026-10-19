@@ -101,7 +101,7 @@ def _worker_main(conn: Any) -> None:
             message = conn.recv()
         except (EOFError, OSError):
             return  # okno skončilo
-        if message[0] not in ("rebuild", "coverage", "access", "plan"):
+        if message[0] not in ("rebuild", "coverage", "access", "plan", "pt"):
             return
         kind, job, data, *options = message
         try:
@@ -135,6 +135,17 @@ def _worker_main(conn: Any) -> None:
                 reply = ("plan", job, session._run_plan(study_id, passes, settings, progress)
                          if mode == "build" else session.check_ndt_plan(
                              study_id, settings, coverage=coverage, progress=progress))
+            elif kind == "pt":
+                from skodacad.session import ModelSession
+
+                session = ModelSession()
+                session.document = Document.from_dict(data)
+                session.rebuild()
+
+                def counted(done: int, total: int, job: int = job) -> None:
+                    conn.send(("progress", job, (done, total)))
+
+                reply = ("pt", job, session.compute_ndt_pt(options[0], progress=counted))
             elif kind == "coverage":
                 from skodacad.session import ModelSession
 
@@ -181,6 +192,7 @@ class Finished:
     coverage: Any = None
     access: Any = None  # hotový návrh poloh (etapa 09)
     plan: Any = None  # sestavený nebo ověřený plán dráhy (etapa 10)
+    pt: Any = None  # mapa geometrické přístupnosti PT (etapa 11)
     update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
 
@@ -228,6 +240,10 @@ class BackgroundRebuilder:
         průběžně (``Finished.update``)."""
         return self._submit(("plan", document, study_id, mode, passes, options, coverage))
 
+    def submit_pt(self, document: dict[str, Any], study_id: str) -> int:
+        """Mapa PT studie; průběh (hotovo, celkem) chodí průběžně (``Finished.update``)."""
+        return self._submit(("pt", document, study_id))
+
     def _submit(self, message: tuple) -> int:
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
@@ -270,6 +286,8 @@ class BackgroundRebuilder:
                     return Finished(job, access=payload)
                 if kind == "plan":
                     return Finished(job, plan=payload)
+                if kind == "pt":
+                    return Finished(job, pt=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass
