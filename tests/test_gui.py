@@ -1455,7 +1455,7 @@ def ndt_texts(w):
 
 def test_ndt_panel_shows_sample_study_and_highlights_its_target(ndt_window, slot_errors):
     w = ndt_window
-    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná", "✓ MT horní plochy (MT) – platná"]
     assert w.ndt_panel.findChildren(QtWidgets.QLabel)[0] is w.ndt_panel.warning  # nahoře
     assert "nenahrazují kvalifikovaný NDT postup" in w.ndt_panel.warning.text()  # UT studie
     w.ndt_panel.studies.setCurrentRow(0)
@@ -1476,11 +1476,12 @@ def test_ndt_panel_stale_confirm_and_verify(ndt_window, slot_errors, monkeypatch
     w = ndt_window
     w.ndt_panel.studies.setCurrentRow(0)
     edit(w, "t", "30")
-    assert ndt_texts(w) == ["⚠ UT desky shora (UT) – zastaralá"]
+    assert ndt_texts(w)[0] == "⚠ UT desky shora (UT) – zastaralá"
     assert "posunula o 10.00 mm" in w.ndt_panel.details.text()
     assert not w.ndt_panel.verify_action.isEnabled()
     w.ndt_panel.confirm_action.trigger()
-    assert ndt_texts(w) == ["✓ UT desky shora (UT) – platná"]
+    assert ndt_texts(w)[0] == "✓ UT desky shora (UT) – platná"
+    assert ndt_texts(w)[1] == "⚠ MT horní plochy (MT) – zastaralá"  # potvrzuje se po jedné
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("J. N.", True))
     w.ndt_panel.verify_action.trigger()
     assert "Ověřil(a) J. N." in w.ndt_panel.details.text()
@@ -1500,15 +1501,15 @@ def test_ndt_panel_new_study_from_click_and_edits(ndt_window, slot_errors, monke
     w.viewer.click([face_at(part, 0, 0, 0)], (0, 0, 0))  # spodní plocha
     w.ndt_panel.method_combo.setCurrentIndex(w.ndt_panel.method_combo.findData("MT"))
     w.ndt_panel.new_action.trigger()
-    assert ndt_texts(w)[1] == "✓ MT studie 2 (MT) – platná"
-    assert w.ndt_panel.current_id() == "s2"
+    assert ndt_texts(w)[2] == "✓ MT studie 3 (MT) – platná"  # deska má UT a MT studii
+    assert w.ndt_panel.current_id() == "s3"
     w.ndt_panel.rename_action.trigger()  # dialog zrušen (no_dialogs) – nic se nezmění
-    assert ndt_texts(w)[1].startswith("✓ MT studie 2")
+    assert ndt_texts(w)[2].startswith("✓ MT studie 3")
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("MT zespodu", True))
     w.ndt_panel.rename_action.trigger()
     monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("PT – kapilární", True))
     w.ndt_panel.method_action.trigger()
-    assert ndt_texts(w)[1] == "✓ MT zespodu (PT) – platná"
+    assert ndt_texts(w)[2] == "✓ MT zespodu (PT) – platná"
     monkeypatch.setattr(QInputDialog, "getMultiLineText",
                         lambda *a, **k: ("Celá spodní plocha.", True))
     w.ndt_panel.note_action.trigger()
@@ -1519,18 +1520,18 @@ def test_ndt_panel_new_study_from_click_and_edits(ndt_window, slot_errors, monke
     w.ndt_panel.target_action.trigger()
     assert "kontrolovaná oblast: 2 plochy" in w.ndt_panel.details.text()
     w.ndt_panel.duplicate_action.trigger()
-    assert ndt_texts(w)[2] == "✓ MT zespodu (kopie) (PT) – platná"
+    assert ndt_texts(w)[3] == "✓ MT zespodu (kopie) (PT) – platná"
     w.ndt_panel.delete_action.trigger()
-    assert len(ndt_texts(w)) == 2
-    action(w, "Zpět").trigger()
     assert len(ndt_texts(w)) == 3
+    action(w, "Zpět").trigger()
+    assert len(ndt_texts(w)) == 4
     assert slot_errors == []
 
 
 def test_ndt_new_study_without_selection_is_incomplete(ndt_window, slot_errors):
     w = ndt_window
     action(w, "Nová NDT studie z výběru").trigger()
-    assert ndt_texts(w)[1] == "⚠ UT studie 2 (UT) – neúplná"
+    assert ndt_texts(w)[2] == "⚠ UT studie 3 (UT) – neúplná"
     assert "Chybí kontrolovaná oblast" in w.ndt_panel.details.text()
     w.viewer.click([edge_at(w.session.result.part, 0, -50, 20)])
     assert not w.ndt_panel.target_action.isEnabled()  # hrana není plocha

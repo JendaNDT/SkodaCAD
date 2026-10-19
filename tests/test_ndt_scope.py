@@ -7,11 +7,22 @@ import pytest
 
 from conftest import EXAMPLES
 from skodacad.cli import main
-from skodacad.ndt import PT_ACCESS, PT_DISCLAIMER, PT_MAP, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
+from skodacad.ndt import (
+    MT_ACCESS,
+    MT_DISCLAIMER,
+    MT_MAP,
+    PT_ACCESS,
+    PT_DISCLAIMER,
+    PT_MAP,
+    UT_ACCESS,
+    UT_COVERAGE,
+    UT_DISCLAIMER,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SCOPE = ROOT / "docs" / "ndt" / "04-zavazne-vymezeni-ut.md"
 PT_SCOPE = ROOT / "docs" / "ndt" / "20-vymezeni-pt.md"
+MT_SCOPE = ROOT / "docs" / "ndt" / "22-vymezeni-mt.md"
 NDT = EXAMPLES / "ndt"
 
 
@@ -28,18 +39,25 @@ def test_pt_disclaimer_is_word_for_word_from_binding_document():
     assert PT_DISCLAIMER == quoted_disclaimer(PT_SCOPE)
 
 
+def test_mt_disclaimer_is_word_for_word_from_binding_document():
+    assert MT_DISCLAIMER == quoted_disclaimer(MT_SCOPE)
+
+
 def test_recommended_names_from_binding_document():
     text = SCOPE.read_text(encoding="utf-8")
     assert f"„{UT_ACCESS}“" in text and f"„{UT_COVERAGE}“" in text
     pt = PT_SCOPE.read_text(encoding="utf-8")
     assert f"„{PT_ACCESS}“" in pt and f"„{PT_MAP}“" in pt
+    mt = MT_SCOPE.read_text(encoding="utf-8")
+    assert f"„{MT_ACCESS}“" in mt and f"„{MT_MAP}“" in mt
 
 
 @pytest.mark.parametrize("phrase", ["mapa prozvučitelnosti", "pravděpodobnost detekce",
-                                    "a-scan", "b-scan", "mapa citlivosti", "mapa smáčivosti"])
+                                    "a-scan", "b-scan", "mapa citlivosti", "mapa smáčivosti",
+                                    "mapa magnetického pole", "mapa intenzity pole"])
 def test_no_misleading_ut_wording_in_program(phrase):
     """Program nesmí výsledek vydávat za prozvučitelnost, citlivost ani detekci (texty okna,
-    CLI, AI; u PT podle docs/ndt/20-vymezeni-pt.md)."""
+    CLI, AI; u PT a MT podle docs/ndt/20-vymezeni-pt.md a 22-vymezeni-mt.md)."""
     sources = [*sorted((ROOT / "src").rglob("*.py")), ROOT / "README.md"]
     found = [path.relative_to(ROOT).as_posix() for path in sources
              if phrase in path.read_text(encoding="utf-8").lower()]

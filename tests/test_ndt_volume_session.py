@@ -111,7 +111,8 @@ def test_duplicate_target_is_independent_and_drops_verification(tmp_path):
     loaded = ModelSession()
     loaded.open(path)
     assert loaded.document == session.document
-    assert [s.volume_mm3 for s in loaded.ndt_studies] == pytest.approx([2000, 2000])
+    volumes = [s.volume_mm3 for s in loaded.ndt_studies if s.target_kind == "volume"]
+    assert volumes == pytest.approx([2000, 2000])
 
 
 def test_changed_part_requires_confirmation_and_does_not_move_target():
@@ -150,7 +151,7 @@ def test_imported_empty_volume_is_broken_not_incomplete_or_zero_coverage():
     outside = target()
     outside["frame"]["origin"] = [0, 0, 50]
     document.ndt["studies"][0]["target"] = outside
-    [result] = rebuild(document).ndt
+    result = rebuild(document).ndt[0]
     assert result.state == "broken" and result.target_kind == "volume"
     assert result.volume_mm3 == 0
     assert "žádný společný objem" in result.messages[0]

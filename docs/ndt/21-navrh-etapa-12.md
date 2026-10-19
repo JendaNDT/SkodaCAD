@@ -506,6 +506,59 @@ Schválením se **neschvaluje**:
 - nová knihovna Pythonu,
 - sloučení do `main`.
 
+## 19. Provedení a upřesnění
+
+- **12A.1 (hotovo):** závazné vymezení [`22-vymezeni-mt.md`](22-vymezeni-mt.md),
+  `ndt.MT_DISCLAIMER`, `MT_ACCESS`, `MT_MAP` (test `test_ndt_scope.py` hlídá doslovné znění
+  a zakázaná označení „mapa magnetického pole“, „mapa intenzity pole“). Jádro `ndt/mt.py`:
+  - `MtSettings` (kontrola hodnot česky, `pt_settings` pro nanesení a prohlídku),
+  - `material_status` (ocel a litina ano, nerez a neuvedený jen s potvrzením, ostatní ne),
+  - `Yoker` (místa pólů, stěna, dosednutí pólu stejným výpočtem jako přímá sonda, úhel nohou,
+    přesná kolize nohou a těla) a `place_yoke` (jho s tvary a obrysem účinné oblasti pro okno),
+  - `compute` / `estimate` / `check_points`, `MtMap` (souhrn, CSV, síť pro přepínač celkem /
+    pole 0°, 45°, 90°, 135° / nanesení / prohlídka, `nearest`, `describe`), `study_faces`,
+    `self_check` (self-test aplikace).
+
+  Nanesení a prohlídka jsou kontroly PT (`pt.Sampler.access`, výsledky PT beze změny).
+  Přiložení sondy dostalo volbu bez výpočtu vůle (`devices.place(measure_clearance=False)`),
+  pól jha ji nepotřebuje. MT studie jsou v ukázkách deska (s2), trubka (s2), kapsa (s3)
+  a koutový svar (s2); ruční výsledky jsou v `05-referencni-dily.md` jako NEOVĚŘENO.
+- **Upřesnění proti návrhu:**
+  - **Noha jha:** botka pólu (15 mm) přiléhá ke své ploše, zbytek nohy vede ve směru osy jha
+    (půlí úhel mezi normálami pod póly). Kdyby obě nohy stály kolmo ke svým plochám, u rohu
+    90° by se překřížily. Úhel mezi nohami se počítá stejně (úhel mezi normálami).
+  - **Účinná oblast jen na ploše natočené do 60°** (návrh: do 90°). Jinak jho postavené na
+    boční ploše desky „pokrylo“ i horní plochu kolem hrany: deska, pole 0°, vyšlo 70,3 % místo
+    65 %. Koutový svar (45°) zůstává pokrytý z obou plechů.
+  - **Místo mimo rovinu středu jha nejvýš 45° pod ní nebo nad ní.** Jinak jho stojící na horní
+    ploše vedle kapsy „pokrylo“ dno kapsy 25 mm pod sebou. Převýšení svaru a koutový svar
+    tím neprojdou o nic hůř.
+  - **Dohledání hranic:** mezi platným a neplatným uzlem mřížky se půlí na 0,5 mm a z nalezeného
+    bodu se zkusí i kolmý směr (rohy oblasti platných středů). Dohledání se vynechá, když by
+    žádné místo nezískalo nový směr.
+  - **Mřížka středů může pokrytí jen podhodnotit**, každá započtená poloha jha je skutečně
+    ověřená. U šikmých směrů zůstává zubatý okraj do poloviny kroku středů: deska, pole 45°,
+    krok 10 mm → 56,4 %, krok 5 mm → 57,6 %, ručně 59,5 %. Pruh platných poloh užší než krok
+    středů se může minout: deska, pole 90° s krokem 20 mm → 0 %, s krokem 25 mm (uzel na ose
+    desky) → 30 %. Krok středů proto jde v nastavení zadat.
+  - **Šikmé směry dávají druhý směr pole:** u koutového svaru dlouhého 100 mm vychází celkem
+    zelená i mimo střed. Jho šikmo na stojině dá pole 73,5° nebo 106,5°, i když pole přesně
+    podél svaru jde jen uprostřed. Rozdíl ukáže mapa pro směr 90°. U tupého svaru zůstane
+    u konce (y = 45) oranžový jen úzký pás nepokrytých orientací −3,5° až 3,5° (příčné vady).
+    Návrh tu odhadoval oranžovou šířeji.
+- **Změřeno 19. 10. 2026** (cloud, síť 5 mm, krok středů 10 mm, jen zkoumaný směr):
+  - deska, pole 0° → **65,23 %** (ručně 65 %), pole 90° → **29,69 %** (ručně 30 %);
+  - body přesně podle oddílu 9: (0; 45) −7,5° až 7,5°, (95; 0) 82,5° až 97,5°;
+  - trubka: podél osy jde v x = 114, ne v x = 116 (ručně 115), po obvodu 100 mm nohy 104°,
+    75 mm nohy 77°;
+  - koutový svar: póly přesně (−58,38; 0; 10) a (−5; 0; 63,38);
+  - kapsa: dno nepokryté, důvod stěna.
+
+  Rychlost:
+  - platné přiložení jha 25–80 ms,
+  - celá mapa desky (8 směrů, automatický krok) asi 1,5 min,
+  - 5 bodů desky se všemi směry asi 28 s.
+
 ## Zdroje (ověřeno vyhledáním 19. 10. 2026; plné texty norem jsou placené)
 
 - ISO 17638:2016 *Non-destructive testing of welds – Magnetic particle testing*:

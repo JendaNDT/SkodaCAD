@@ -27,6 +27,12 @@
                    {"face": {"at": [8.5, 0, 13.5], "normal": [0.7071, 0, 0.7071], "type": "plane"}},
                    {"face": {"at": [-8.5, 0, 13.5], "normal": [-0.7071, 0, 0.7071], "type": "plane"}}]},
      "note": "Povrch obou koutových svarů.",
-     "created": "2026-10-16", "part": "6b1f544564e63cd7"}
+     "created": "2026-10-16", "part": "6b1f544564e63cd7"},
+    {"id": "s2", "name": "MT koutových svarů", "method": "MT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [8.5, 0, 13.5], "normal": [0.7071, 0, 0.7071], "type": "plane"}},
+                   {"face": {"at": [-8.5, 0, 13.5], "normal": [-0.7071, 0, 0.7071], "type": "plane"}}]},
+     "note": "Napříč svarem jho přes roh (pól na stojině a na základní desce), podél svaru jen uprostřed.",
+     "created": "2026-10-19", "part": "6b1f544564e63cd7"}
   ]}
 }

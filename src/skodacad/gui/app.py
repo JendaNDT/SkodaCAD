@@ -254,14 +254,16 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
 
 def _self_test_ndt_geometry(folder: Path, lines: list[str]) -> bool:
     """NDT geometrické jádro bez okna (kontrolu dělá jádro – okno nemodeluje)."""
-    from skodacad.ndt import pt
+    from skodacad.ndt import mt, pt
     from skodacad.ndt.geometry import self_check
 
     ok, text = self_check(folder)
     lines.append(("✓ " if ok else "✕ ") + text)
     pt_ok, pt_text = pt.self_check(folder)
     lines.append(("✓ " if pt_ok else "✕ ") + pt_text)
-    return ok and pt_ok
+    mt_ok, mt_text = mt.self_check(folder)
+    lines.append(("✓ " if mt_ok else "✕ ") + mt_text)
+    return ok and pt_ok and mt_ok
 
 
 def _self_test_ndt(window, lines: _Report) -> bool:

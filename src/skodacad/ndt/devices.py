@@ -277,12 +277,15 @@ class Placement:
 
 
 def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
-          angle: float | None = None, face: Any = None) -> Placement:
+          angle: float | None = None, face: Any = None, measure_clearance: bool = True
+          ) -> Placement:
     """Přiloží sondu do bodu plochy (přichytí se k nejbližšímu povrchu, nebo k ``face``).
 
     Směr paprsku je ``beam`` (sklopí se do tečné roviny), nebo ``angle`` ve stupních: 0° =
     průmět osy +X do plochy (u plochy kolmé na X osa +Y), kladně proti směru hodin při
-    pohledu na plochu zvenku. U přímé sondy směr jen natočí otisk.
+    pohledu na plochu zvenku. U přímé sondy směr jen natočí otisk. ``measure_clearance=False``
+    vynechá vůli k překážkám nad rovinou přiložení (nejdražší část; pól jha MT ji nepotřebuje,
+    rezerva musí být 0).
     """
     from build123d import Location, Plane, Vector
 
@@ -292,7 +295,8 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
         # Úhel a odrazy přiložení nemění (tělo i otisk na nich nezávisí): sdílí se poloha.
         key = (probe.kind, probe.diameter, probe.length, probe.width, probe.height,
                probe.front, probe.max_gap, probe.reserve,
-               tuple(float(v) for v in point), float(angle), hash(face.wrapped))
+               tuple(float(v) for v in point), float(angle), hash(face.wrapped),
+               measure_clearance)
         known = memo.get(key)
         if known is not None and known[0].IsSame(face.wrapped):
             return known[1] if known[1].probe == probe else replace(known[1], probe=probe)
@@ -321,7 +325,10 @@ def place(geo: PartGeometry, probe: Probe, point: Any, beam: Any = None,
     total = contact + missing
     overhang = missing / total if total else 1.0
     gap = max(gaps) if gaps else None
-    clearance = _clearance_above(geo, body, surface.point, surface.normal)
+    if not measure_clearance and probe.reserve > 0:
+        raise DeviceError("Přiložení bez vůle jde jen se sondou bez manipulační rezervy.")
+    clearance = (_clearance_above(geo, body, surface.point, surface.normal)
+                 if measure_clearance else None)
     # Ořez pro vůli začíná 0,001 mm nad rovinou; drobnou kolizi tím nelze vyloučit.
     volume = geo.collision(body).volume
 

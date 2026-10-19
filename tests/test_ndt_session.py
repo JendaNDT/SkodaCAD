@@ -173,7 +173,7 @@ def test_new_study_from_selected_faces_and_target_change():
     floor = face_at(part, 0, 0, 15)
     wall = face_at(part, 20, 0, 30)
     sid = session.add_ndt_study("PT", [floor.wrapped, wall.wrapped], (0, 0, 15), "PT kapsy")
-    assert sid == "s3"  # ukázka kapsy má studie s1 (UT) a s2 (PT)
+    assert sid == "s4"  # ukázka kapsy má studie s1 (UT), s2 (PT) a s3 (MT)
     study = session.ndt_study(sid)
     assert study["method"] == "PT" and study["name"] == "PT kapsy"
     assert len(study["target"]["faces"]) == 2
@@ -197,7 +197,7 @@ def test_new_study_from_selected_faces_and_target_change():
 def test_study_without_selection_is_incomplete_and_cannot_be_verified():
     session = opened()
     sid = session.add_ndt_study("RT")
-    assert session.ndt_study(sid)["name"] == "RT studie 2"
+    assert session.ndt_study(sid)["name"] == "RT studie 3"  # deska má UT a MT studii
     assert state(session, sid).state == "incomplete"
     with pytest.raises(DocumentError, match="neúplná"):
         session.verify_ndt_study(sid, "J. N.")
@@ -228,16 +228,16 @@ def test_verification_lifecycle():
 def test_duplicate_and_remove_with_undo(tmp_path):
     session = opened()
     copy_id = session.duplicate_ndt_study("s1")
-    assert [r.id for r in session.ndt_studies] == ["s1", copy_id]
+    assert [r.id for r in session.ndt_studies] == ["s1", copy_id, "s2"]  # kopie hned za
     assert state(session, copy_id).name == "UT desky shora (kopie)"
-    session.remove_ndt_study("s1")
-    session.remove_ndt_study(copy_id)
+    for sid in ("s1", copy_id, "s2"):
+        session.remove_ndt_study(sid)
     assert session.ndt_studies == [] and session.document.ndt is None
     path = session.save(tmp_path / "bez_studii.json")
     assert "ndt" not in json.loads(path.read_text(encoding="utf-8"))
-    session.undo()
-    session.undo()
-    assert [r.id for r in session.ndt_studies] == ["s1", copy_id]
+    for _ in range(3):
+        session.undo()
+    assert [r.id for r in session.ndt_studies] == ["s1", copy_id, "s2"]
 
 
 def test_study_survives_save_and_reopen(tmp_path):
@@ -248,7 +248,7 @@ def test_study_survives_save_and_reopen(tmp_path):
     reopened = ModelSession()
     reopened.open(path)
     assert [(r.name, r.state) for r in reopened.ndt_studies] == [
-        ("UT desky shora", "ok"), ("UT zespodu", "ok")]
+        ("UT desky shora", "ok"), ("MT horní plochy", "ok"), ("UT zespodu", "ok")]
 
 
 def test_target_picked_on_cut_part_is_stored_for_whole_part():

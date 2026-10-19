@@ -6,7 +6,9 @@ Rozsah UT závazně vymezuje ``docs/ndt/04-zavazne-vymezeni-ut.md`` (má předno
 jen přístupnost sondy a geometrické pokrytí – ne prozvučitelnost materiálu ani detekovatelnost
 vad. ``UT_DISCLAIMER`` je povinné upozornění v přesném znění z tohoto dokumentu. Rozsah PT
 vymezuje ``docs/ndt/20-vymezeni-pt.md`` (jen geometrická přístupnost povrchu – ne smáčivost,
-vzlínání, citlivost ani detekovatelnost vad), povinné upozornění je ``PT_DISCLAIMER``.
+vzlínání, citlivost ani detekovatelnost vad), povinné upozornění je ``PT_DISCLAIMER``. Rozsah MT
+vymezuje ``docs/ndt/22-vymezeni-mt.md`` (jen geometrie zkoušky jhem – ne intenzita ani rozložení
+pole, citlivost ani detekovatelnost vad), povinné upozornění je ``MT_DISCLAIMER``.
 """
 
 DISCLAIMER = ("Předběžné posouzení proveditelnosti NDT. Nenahrazuje kvalifikovaný postup, "
@@ -25,3 +27,13 @@ PT_DISCLAIMER = ("ŠkodaCAD provádí pouze geometrické posouzení přístupnos
                  "ani odborné posouzení.")
 PT_ACCESS = "Přístupnost povrchu pro PT"  # doporučené názvy v okně a protokolech
 PT_MAP = "Mapa geometrické přístupnosti PT"
+MT_DISCLAIMER = ("ŠkodaCAD provádí pouze geometrické posouzení magnetické práškové zkoušky "
+                 "jhem: kam lze přiložit zjednodušený model jha, kterým orientačním směrem by "
+                 "mezi póly vedlo magnetické pole, zda lze místo pokrýt dvěma směry magnetizace "
+                 "a zda je místo přístupné pro nanesení detekčního prostředku a prohlídku. "
+                 "Nevyhodnocuje intenzitu ani skutečné rozložení magnetického pole, vliv "
+                 "materiálu, mezery pod póly a tvaru dílu na pole, citlivost zkoušky ani "
+                 "detekovatelnost vad. Výsledky nenahrazují kvalifikovaný NDT postup ani "
+                 "odborné posouzení.")
+MT_ACCESS = "Přiložení jha a směry magnetizace pro MT"  # doporučené názvy v okně a protokolech
+MT_MAP = "Mapa geometrické proveditelnosti a směrového pokrytí MT"

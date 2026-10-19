@@ -223,8 +223,7 @@ def test_rebuilt_model_keeps_user_ndt_studies_and_report_shows_them(examples_dir
         ([text("Deska je tlustší.")], "end_turn"),
     ])
     ask(assistant, tools, session, "přestav desku na tloušťku 25")
-    [study] = session.ndt_studies
-    assert study.state == "stale"
+    assert [s.state for s in session.ndt_studies] == ["stale", "stale"]  # UT a MT desky
     answer = requests[1]["body"]["messages"][-1]["content"][0]["content"]
     assert answer.startswith("Model nahrazen. NDT studie uživatele zůstaly.")
     assert "(UT): zastaralá – Díl se od nastavení studie změnil" in answer
