@@ -581,6 +581,17 @@ Schválením se **neschvaluje**:
   Zrychlení přiložení: napřed místa a stěna obou pólů, pak rychlá kontrola přesahu
   (4 paprsky), úhel nohou, přesné dosednutí pólu (paměť podle místa – sousední středy
   sdílí místo pólu) a průnik nohou a těla.
+- **12B (hotovo):** v panelu NDT u MT studie skupina *Přiložení jha a směry magnetizace*:
+  - nahoře `MT_DISCLAIMER`, stav materiálu, zvolené hodnoty,
+  - *Nastavení MT…* (`gui/mt_dialog.py`, jeden krok Zpět, nezměněné *OK* nic nemění),
+  - odhad, *Spočítat mapu MT* na pozadí s průběhem, *Zastavit*, *Skrýt mapu*, *Export CSV…*,
+  - přepínač mapy (celkem, pole 0°, 45°, 90°, 135°, nanesení, prohlídka) s legendou,
+  - souhrn, klik do mapy (stav, směry, nepokryté orientace, důvody),
+  - *Ukázat jho*, *Přiložit jho sem* s natočením, *Skrýt jho*.
+
+  Jho se kreslí jako průhledná sonda v barvě stavu s obrysem účinné oblasti. Položky jsou
+  i v nabídce NDT a během práce AI jsou zamčené. Snímky okna jsou z Xvfb v cloudu; ruční
+  zkouška autorem zatím neproběhla.
 - **Automatické mapy referenčních dílů** (19. 10. 2026, cloud, výchozí nastavení včetně
   nanesení a prohlídky, automatický krok sítě i středů):
   - deska (1 056 míst, středy 10 mm): celkem 52,7 % pokryto, pole 0° 65,6 % (ručně 65 %),

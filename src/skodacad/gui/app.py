@@ -289,7 +289,8 @@ def _self_test_ndt(window, lines: _Report) -> bool:
     window.undo_action.trigger()
     QApplication.processEvents()
     states.append([r.state for r in session.ndt_studies])
-    if states != [["ok"], ["stale"], ["ok"]]:
+    count = len(states[0])  # deska má studii UT i MT (etapa 12) – všechny stejně
+    if not count or states != [["ok"] * count, ["stale"] * count, ["ok"] * count]:
         lines.append(f"✕ NDT studie: stavy {' → '.join(map(str, states))} (čekáno platná → "
                      "zastaralá → platná)")
         return False

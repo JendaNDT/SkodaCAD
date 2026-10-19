@@ -8,7 +8,9 @@ se ve 3D nakreslí v barvě výsledku (jen pohled, do modelu se neukládá). U U
 bez výběru metoda nové studie) je nahoře povinné upozornění ``UT_DISCLAIMER``
 (``docs/ndt/04-zavazne-vymezeni-ut.md``), u PT ``PT_DISCLAIMER`` (``20-vymezeni-pt.md``),
 jinak obecné ``DISCLAIMER``. U PT studie je místo skupin sondy skupina *Přístupnost povrchu pro
-PT* (etapa 11): nastavení, mapa ve 3D po kontrolách, souhrn a důvod místa po kliknutí.
+PT* (etapa 11): nastavení, mapa ve 3D po kontrolách, souhrn a důvod místa po kliknutí. U MT
+studie skupina *Přiložení jha a směry magnetizace* (etapa 12, ``MT_DISCLAIMER``): nastavení,
+mapa celkem i po směrech pole, důvod místa, Ukázat jho a Přiložit jho sem.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.mt_dialog import MtDialog
 from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.pt_dialog import PtDialog
 from skodacad.gui.target_dialog import TargetDialog
@@ -47,6 +50,9 @@ from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
 from skodacad.ndt import (
     DISCLAIMER,
+    MT_ACCESS,
+    MT_DISCLAIMER,
+    MT_MAP,
     PT_ACCESS,
     PT_DISCLAIMER,
     PT_MAP,
@@ -72,6 +78,9 @@ from skodacad.ndt.library import (
     save_user_probe,
     user_library_path,
 )
+from skodacad.ndt.mt import STATES as MT_STATES
+from skodacad.ndt.mt import VIEWS as MT_VIEWS
+from skodacad.ndt.mt import MtError, MtMap, material_status
 from skodacad.ndt.plan import (
     EDGE_MM,
     PATTERN_CHOICES,
@@ -106,6 +115,10 @@ METHOD_LABELS = {key: f"{key} – {name}" for key, name in METHODS.items()}
 HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Nová studie. "
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
 PT_PICK_HINT = "Klikni ve 3D do mapy – napíšu, proč je místo omezené nebo nepřístupné."
+MT_PICK_HINT = ("Klikni ve 3D do mapy – napíšu, které směry magnetizace jdou a proč ostatní ne. "
+                "Ukázat jho pak nakreslí jho pro zvolený směr.")
+MT_YOKE_HINT = ("Přiložit jho sem: klikni ve 3D na plochu, zvol natočení (0° = osa +X sklopená do "
+                "plochy) a stiskni tlačítko – jho se vejde (zeleně), nebo ne (červeně, oranžově).")
 
 
 def _swatches(colors: dict, labels: dict) -> str:
@@ -235,6 +248,25 @@ class NdtPanel(QWidget):
         self.pt_stop_action = action("Zastavit", self.stop_pt)
         self.pt_clear_action = action("Skrýt mapu", self.clear_pt)
         self.pt_export_action = action("Export CSV…", self.export_pt)
+        # MT – přiložení jha a směry magnetizace (etapa 12)
+        self.mt_settings_action = action("Nastavení MT…", self.edit_mt_settings)
+        self.mt_settings_action.setToolTip(
+            "Jho (rozteč, póly, nohy, tělo), meze přiložení, materiál, nanesení a prohlídka "
+            "– uloží se do studie.")
+        self.mt_action = action("Spočítat mapu MT", self.start_mt)
+        self.mt_action.setToolTip(
+            "Zkusí přiložit jho v 8 směrech po 22,5° a zjistí, kam se vejde a které směry "
+            "magnetizace místo pokryjí (jen geometrie).")
+        self.mt_stop_action = action("Zastavit", self.stop_mt)
+        self.mt_clear_action = action("Skrýt mapu", self.clear_mt)
+        self.mt_export_action = action("Export CSV…", self.export_mt)
+        self.mt_show_yoke_action = action("Ukázat jho", self.show_yoke)
+        self.mt_show_yoke_action.setToolTip(
+            "Pro místo mapy, na které jsi klikl, nakreslí jho, jehož účinná oblast místo pokryje "
+            "ve zvoleném směru pole – nebo jho, které se nevejde, s důvodem.")
+        self.mt_place_yoke_action = action("Přiložit jho sem", self.place_yoke)
+        self.mt_place_yoke_action.setToolTip(MT_YOKE_HINT)
+        self.mt_hide_yoke_action = action("Skrýt jho", self.hide_yoke)
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -277,6 +309,7 @@ class NdtPanel(QWidget):
             buttons.addStretch()
             layout.addLayout(buttons)
         self._build_pt(layout)
+        self._build_mt(layout)
         probe_box = QGroupBox(UT_ACCESS)
         probe_box.setObjectName("ndt_ut")
         self.probe_box = probe_box
@@ -525,6 +558,79 @@ class NdtPanel(QWidget):
         self.pt_pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         box.addWidget(self.pt_pick)
         layout.addWidget(self.pt_box)
+
+    def _build_mt(self, layout: QVBoxLayout) -> None:
+        """Skupina Přiložení jha a směry magnetizace (etapa 12): nastavení, výpočet, mapa
+        celkem a po směrech, důvody, Ukázat jho a Přiložit jho sem."""
+        window = self.window
+        self.mt_box = QGroupBox(MT_ACCESS)
+        self.mt_box.setObjectName("ndt_mt")
+        box = QVBoxLayout(self.mt_box)
+        self.mt_material = QLabel()
+        self.mt_material.setObjectName("ndt_mt_material")
+        self.mt_material.setWordWrap(True)
+        box.addWidget(self.mt_material)
+        self.mt_settings_label = QLabel()
+        self.mt_settings_label.setObjectName("ndt_mt_settings")
+        self.mt_settings_label.setWordWrap(True)
+        box.addWidget(self.mt_settings_label)
+        for row_items in ((self.mt_settings_action, self.mt_action, self.mt_stop_action),
+                          (self.mt_clear_action, self.mt_export_action)):
+            row = QHBoxLayout()
+            for item in row_items:
+                row.addWidget(window._tool_button(item))
+            row.addStretch()
+            box.addLayout(row)
+        self.mt_estimate = QLabel()
+        self.mt_estimate.setObjectName("ndt_mt_estimate")
+        self.mt_estimate.setWordWrap(True)
+        box.addWidget(self.mt_estimate)
+        self._mt_estimate_cache: tuple[tuple, str] | None = None
+        show_row = QHBoxLayout()
+        show_row.addWidget(QLabel("Ukázat ve 3D:"))
+        self.mt_view = QComboBox()
+        self.mt_view.setObjectName("ndt_mt_view")
+        for key, label in MT_VIEWS.items():
+            self.mt_view.addItem(label.lower(), key or "")
+        self.mt_view.currentIndexChanged.connect(lambda _index: self._mt_view_changed())
+        show_row.addWidget(self.mt_view)
+        show_row.addStretch(1)
+        box.addLayout(show_row)
+        self.mt_legend = QLabel()
+        self.mt_legend.setObjectName("ndt_mt_legend")
+        self.mt_legend.setWordWrap(True)
+        self.mt_legend.setTextFormat(Qt.TextFormat.RichText)
+        box.addWidget(self.mt_legend)
+        self.mt_summary = QLabel()
+        self.mt_summary.setObjectName("ndt_mt_summary")
+        self.mt_summary.setWordWrap(True)
+        self.mt_summary.setTextFormat(Qt.TextFormat.RichText)
+        self.mt_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.mt_summary)
+        self.mt_pick = QLabel(MT_PICK_HINT)
+        self.mt_pick.setObjectName("ndt_mt_pick")
+        self.mt_pick.setWordWrap(True)
+        self.mt_pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.mt_pick)
+        yoke_row = QHBoxLayout()
+        yoke_row.addWidget(QLabel("Natočení jha:"))
+        self.mt_angle = QDoubleSpinBox()
+        self.mt_angle.setObjectName("ndt_mt_angle")
+        self.mt_angle.setRange(0.0, 179.9)
+        self.mt_angle.setSingleStep(22.5)
+        self.mt_angle.setDecimals(1)
+        self.mt_angle.setSuffix(" °")
+        self.mt_angle.setToolTip(ANGLE_HINT.replace("Směr paprsku", "Směr spojnice pólů"))
+        yoke_row.addWidget(self.mt_angle)
+        for item in (self.mt_place_yoke_action, self.mt_show_yoke_action,
+                     self.mt_hide_yoke_action):
+            yoke_row.addWidget(window._tool_button(item))
+        box.addLayout(yoke_row)
+        self.mt_yoke = QLabel(MT_YOKE_HINT)
+        self.mt_yoke.setObjectName("ndt_mt_yoke")
+        self.mt_yoke.setWordWrap(True)
+        box.addWidget(self.mt_yoke)
+        layout.addWidget(self.mt_box)
 
     def _build_access(self, layout: QVBoxLayout) -> None:
         """Skupina Návrh poloh sondy (etapa 09): volby, odhad, průběh, tabulka, kombinace."""
@@ -824,6 +930,7 @@ class NdtPanel(QWidget):
         self._show_access()
         self._show_plan()
         self._show_pt()
+        self._show_mt()
         self.refresh_actions()
         self._start_recheck()
 
@@ -836,6 +943,7 @@ class NdtPanel(QWidget):
         self._plan_index = None
         self._show_plan()
         self._show_pt()
+        self._show_mt()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
 
@@ -847,10 +955,14 @@ class NdtPanel(QWidget):
         method = record.get("method") if record else self.method_combo.currentData()
         if method == "PT":
             text = PT_DISCLAIMER
+        elif method == "MT":
+            text = MT_DISCLAIMER
         elif method == "UT" or session.ndt_coverage is not None:
             text = UT_DISCLAIMER
+        elif session.ndt_pt_map is not None:
+            text = PT_DISCLAIMER
         else:
-            text = PT_DISCLAIMER if session.ndt_pt_map is not None else DISCLAIMER
+            text = MT_DISCLAIMER if session.ndt_mt_map is not None else DISCLAIMER
         self.warning.setText(text)
 
     def _show_details(self) -> None:
@@ -932,7 +1044,20 @@ class NdtPanel(QWidget):
         self.pt_clear_action.setEnabled(has_pt)
         self.pt_export_action.setEnabled(has_pt)
         self.pt_box.setVisible(bool(pt or has_pt or session.pt_pending))
-        self.probe_box.setVisible(not pt)
+        mt = selected and (record or {}).get("method") == "MT"
+        has_mt = session.ndt_mt_map is not None
+        picked = self.window.viewer.picked_point if self.window._picked else None
+        self.mt_settings_action.setEnabled(mt)
+        self.mt_action.setEnabled(bool(mt and has_part and result is not None
+                                       and result.state == "ok" and not session.mt_pending))
+        self.mt_stop_action.setEnabled(session.mt_pending)
+        self.mt_clear_action.setEnabled(has_mt)
+        self.mt_export_action.setEnabled(has_mt)
+        self.mt_show_yoke_action.setEnabled(bool(has_mt and picked is not None))
+        self.mt_place_yoke_action.setEnabled(bool(mt and has_part and picked is not None))
+        self.mt_hide_yoke_action.setEnabled(ready and session.ndt_yoke is not None)
+        self.mt_box.setVisible(bool(mt or has_mt or session.mt_pending))
+        self.probe_box.setVisible(not pt and not mt)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,
@@ -944,7 +1069,8 @@ class NdtPanel(QWidget):
                            self.transfer_action, self.part_material_action,
                            self.access_action, self.access_show_action,
                            self.access_apply_action, self.access_export_action,
-                           *self._plan_actions(), *self._pt_actions()):
+                           *self._plan_actions(), *self._pt_actions(),
+                           *self._mt_actions()):
                 action.setEnabled(False)
             self.scan_slider.setEnabled(False)
             self.ut_material.setEnabled(False)
@@ -1319,6 +1445,174 @@ class NdtPanel(QWidget):
                                              "pristupnost-pt.csv", "CSV (*.csv)")
         if path:
             self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_pt(path))
+
+    # --- MT – přiložení jha a směry magnetizace (etapa 12) -----------------------------
+
+    def _mt_actions(self) -> tuple:
+        return (self.mt_settings_action, self.mt_action, self.mt_stop_action,
+                self.mt_clear_action, self.mt_export_action, self.mt_show_yoke_action,
+                self.mt_place_yoke_action, self.mt_hide_yoke_action)
+
+    def _mt_study(self) -> str | None:
+        """Vybraná MT studie, nebo None."""
+        study_id = self.current_id()
+        record = self._record(study_id)
+        return study_id if record is not None and record.get("method") == "MT" else None
+
+    def mt_map_view(self) -> tuple[MtMap, str | None] | None:
+        """Mapa MT ve 3D: (mapa, pohled – None = celkem, „d0“ … „d6“, „apply“, „inspect“)."""
+        found = self.window.session.ndt_mt_map
+        if found is None:
+            return None
+        return found, (self.mt_view.currentData() or None)
+
+    def _mt_view_changed(self) -> None:
+        self._show_mt_legend()
+        self.window._refresh_coverage()
+
+    def _show_mt_legend(self) -> None:
+        view = self.mt_view.currentData() or None
+        if view is None:
+            self.mt_legend.setText(_swatches(PT_COLORS, MT_STATES))
+        elif view in ("apply", "inspect"):
+            self.mt_legend.setText(f"{escape(MT_VIEWS[view])}: " + _swatches(
+                PT_GRADE_COLORS, {key: PT_GRADES[key] for key in PT_GRADE_COLORS}))
+        else:
+            self.mt_legend.setText(f"{escape(MT_VIEWS[view])}: " + _swatches(PT_COLORS, {
+                "ok": "jho se vejde", "uncertain": "nejisté",
+                "blocked": "jho se v tomto směru nevejde"}))
+
+    def _mt_estimate_text(self, study_id: str) -> str:
+        """Odhad počtu míst, středů jha a doby; pamatuje se pro stejné zadání."""
+        session = self.window.session
+        key = (id(session.result), study_id, repr(self._record(study_id)),
+               session.document.material if session.document is not None else "")
+        if self._mt_estimate_cache is None or self._mt_estimate_cache[0] != key:
+            try:
+                samples, step, centers, center_step, seconds = session.ndt_mt_estimate(study_id)
+                text = (f"Odhad: {samples} míst při kroku {f'{step:g}'.replace('.', ',')} mm, "
+                        f"{centers} středů jha po {f'{center_step:g}'.replace('.', ',')} mm, asi "
+                        f"{seconds:.0f} s (počítá se na pozadí, jde zastavit).")
+            except DocumentError as exc:
+                text = str(exc)
+            self._mt_estimate_cache = (key, text)
+        return self._mt_estimate_cache[1]
+
+    def _show_mt(self) -> None:
+        session = self.window.session
+        study_id = self._mt_study()
+        self._show_mt_legend()
+        if study_id is not None:
+            try:
+                settings = session.ndt_mt_settings(study_id)
+                material = session.document.material if session.document is not None else ""
+                self.mt_material.setText(material_status(material, settings.ferromagnetic)[1])
+                self.mt_settings_label.setText("\n".join(settings.lines()))
+            except DocumentError as exc:
+                self.mt_material.setText("")
+                self.mt_settings_label.setText(str(exc))
+        else:
+            self.mt_material.setText("")
+            self.mt_settings_label.setText("")
+        found = session.ndt_mt_map
+        if session.mt_pending:
+            progress = session.ndt_mt_progress
+            done = f" – {progress[0]} z {progress[1]}" if progress else ""
+            self.mt_estimate.setText(f"Počítám mapu MT… {session.computing_seconds:.0f} s"
+                                     f"{done}. Výpočet zastavíš tlačítkem Zastavit.")
+        elif study_id is not None and found is None and not session.computing:
+            self.mt_estimate.setText(self._mt_estimate_text(study_id))
+        else:
+            self.mt_estimate.setText("")
+        if found is not None:
+            name = (self._record(session.ndt_mt_study()) or {}).get("name", "")
+            lines = [escape(line) for line in found.summary()]
+            lines[0] = f"<b>{escape(MT_MAP)}</b> – {escape(name)}"
+            lines.insert(1, "<b>" + " · ".join(f"{label} {found.percent(state):.1f} %"
+                                               for state, label in MT_STATES.items())
+                         .replace(".", ",") + "</b>")
+            self.mt_summary.setText("<br>".join(lines))
+        else:
+            self.mt_summary.setText("")
+        self.mt_settings_label.setVisible(found is None)  # se spočítanou mapou je v souhrnu
+        self.mt_pick.setVisible(found is not None)
+        self.show_mt_pick()
+        self._show_yoke_text()
+
+    def show_mt_pick(self) -> None:
+        """Stav, směry a důvody místa mapy MT, na které uživatel klikl ve 3D."""
+        session = self.window.session
+        point = self.window.viewer.picked_point if self.window._picked else None
+        lines = session.ndt_mt_describe(point) if point is not None else []
+        self.mt_pick.setText("\n".join(lines) if lines else MT_PICK_HINT)
+
+    def _show_yoke_text(self) -> None:
+        placed = self.window.session.ndt_yoke
+        self.mt_yoke.setText(MT_YOKE_HINT if placed is None else placed.text)
+
+    def edit_mt_settings(self) -> None:
+        study_id = self._mt_study()
+        if study_id is None:
+            return
+        session = self.window.session
+        try:
+            current = session.ndt_mt_settings(study_id)
+        except DocumentError as exc:
+            self.window._error("Nastavení MT nejde načíst", str(exc))
+            return
+        material = session.document.material if session.document is not None else ""
+        dialog = MtDialog(self, current, material_status(material, current.ferromagnetic)[1])
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        try:
+            settings = dialog.settings()
+        except MtError as exc:
+            self.window._error("Nastavení MT nejde uložit", str(exc))
+            return
+        self._apply("Nastavení MT nejde uložit",
+                    lambda: session.set_ndt_mt_settings(study_id, settings))
+
+    def start_mt(self) -> None:
+        study_id = self._mt_study()
+        if study_id is not None:
+            self._apply("Mapu MT nejde spočítat",
+                        lambda: self.window.session.start_ndt_mt(study_id))
+
+    def stop_mt(self) -> None:
+        self.window.stop_rebuild()
+
+    def clear_mt(self) -> None:
+        self.window.session.clear_ndt_mt()
+        self.window._refresh_all()
+
+    def export_mt(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Export mapy MT", "jho-mt.csv",
+                                             "CSV (*.csv)")
+        if path:
+            self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_mt(path))
+
+    def show_yoke(self) -> None:
+        """Ukázat jho pro místo mapy, na které uživatel klikl (směr podle přepínače)."""
+        point = self.window.viewer.picked_point if self.window._picked else None
+        if point is None:
+            return
+        view = self.mt_view.currentData() or None
+        self._apply("Jho nejde ukázat",
+                    lambda: self.window.session.ndt_mt_yoke_at(point, view))
+
+    def place_yoke(self) -> None:
+        """Přiložit jho sem: střed v kliknutém bodě, natočení z pole Natočení jha."""
+        study_id = self._mt_study()
+        point = self.window.viewer.picked_point if self.window._picked else None
+        if study_id is None or point is None:
+            return
+        angle = self.mt_angle.value()
+        self._apply("Jho nejde přiložit",
+                    lambda: self.window.session.place_ndt_yoke(study_id, point, angle))
+
+    def hide_yoke(self) -> None:
+        self.window.session.clear_ndt_yoke()
+        self.window._refresh_all()
 
     # --- návrh poloh sondy (etapa 09) -------------------------------------------------
 

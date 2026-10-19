@@ -285,7 +285,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
-| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV) |
+| `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV) |
+| `gui/mt_dialog.py` | dialog *Nastavení MT…* (jho, rozteče, meze, kroky, nanesení a prohlídka, potvrzení feromagnetického materiálu; čísla jako text s původem hodnoty, kontrola `MtSettings`) |
 | `gui/pt_dialog.py` | dialog *Nastavení PT…* (nástroje, úhly, oko, postup čištění; čísla jako text, u zvolených hodnot „zvoleno pro výpočet“, kontrola `PtSettings`) |
 | `gui/zone_dialog.py` | dialog *Zakázané zóny…* plánu dráhy (tabulka kvádrů jako text, *Z výběru*, kontrola `Zone.from_dict`) |
 | `ndt/volume_drawing.py` | kresba objemového pokrytí: povrch cíle (i v řezu) rozřezaný podél mřížky 07B a obarvený podle kusů, šedá = nerozlišeno v kresbě, plochy podle barvy |
@@ -815,6 +816,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   aby chyba materiálu přišla hned, ne z pomocného procesu.
 - Testy ModelSession a okna volí rychlé nastavení (síť 25 mm, středy 50 mm, bez nanesení
   a prohlídky) – mapa desky asi 15 s. Mapu počítá jen pár testů (Windows limit 20 min).
+- Okno: jho se kreslí stávajícím `viewer.show_probe` (průhledné botky, nohy a tělo v barvě
+  stavu, obrys účinné oblasti jako čára „paprsku“) – žádný nový druh kreslení. Přiložená UT
+  sonda má přednost; `_shown_probe` drží sondu **nebo** jho. Mapa MT jde přes
+  `show_coverage_map`, klíč kresby je n-tice („mt“, mapa, pohled, rovina řezu); UT mapa
+  pokrytí i mapa PT mají přednost. Se spočítanou mapou MT nebo jhem se oblast studie
+  nezvýrazňuje (jako u PT).
+- V panelu je přepínač `mt_view` (QComboBox) – metoda pro okno se proto jmenuje
+  `mt_map_view` (stejné jméno by atribut přepsalo: „QComboBox is not callable“).
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -931,7 +940,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
   to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (schváleno
   19. 10. 2026): [x] 12A.1 vymezení MT a jádro `ndt/mt.py`, [x] 12A.2 formát 20,
-  ModelSession, pomocný proces, CLI, [ ] 12B okno.
+  ModelSession, pomocný proces, CLI, [x] 12B okno (čeká na PR a ruční zkoušku autora).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
