@@ -409,4 +409,20 @@ knihovna Pythonu ani sloučení do `main`.
   a nezměněný záznam studie), `ndt_pt_mesh` (i v řezu), `ndt_pt_describe`, `export_ndt_pt`.
   Pomocný proces: úloha `pt` (`BackgroundRebuilder.submit_pt`, `Finished.pt`). Příkazová řádka
   `skodacad kapilarni` a `build` vypíše u PT studií `PT_DISCLAIMER`. AI pravidla: věta o PT.
+- **11B (hotovo, čeká na PR a ruční zkoušku):** skupina **Přístupnost povrchu pro PT** v panelu
+  NDT (`gui/ndt_panel.py`) u PT studie místo skupin sondy UT: popis nastavení, **Nastavení PT…**
+  (`gui/pt_dialog.py`, čísla jako text, u zvolených hodnot „zvoleno pro výpočet, ne z normy“,
+  nezměněné *OK* = žádný krok Zpět), **Spočítat mapu PT** s odhadem a průběhem (pomocný proces),
+  **Zastavit**, **Skrýt mapu**, **Export CSV…**, přepínač **Ukázat ve 3D: celkem / nástřik /
+  otření nástrojem / prohlídka** s legendou, souhrn a **důvod místa po kliknutí** do mapy.
+  Nahoře povinné upozornění PT. Mapa se kreslí stávajícím způsobem mapy pokrytí (žádný nový
+  druh kreslení, self-test beze změny), akce jsou i v nabídce NDT a během práce AI zamčené.
+- **Ověření okna 11B (19. 10. 2026):** offscreen testy (nastavení, nezměněné *OK* bez kroku
+  Zpět, výpočet, mapa, přepínač kontrol, klik, export, skrytí, Zpět, zámek AI) a snímky pod
+  Xvfb: kapsa (krok 3 mm, 3072 vzorků, 228 s) a koutový svar (krok 2 mm, 3840 vzorků, 145 s).
+  Snímky odhalily vybledlé barvy mapy: přes mapu se kreslilo průsvitné zvýraznění oblasti
+  studie (u UT ho vypíná přiložená sonda). Opraveno – se spočítanou mapou PT se oblast
+  nezvýrazňuje. Koutový svar s krokem 1,5 mm (9984 vzorků, 397 s): **58,28 / 29,52 / 12,21 %**
+  proti ručním 58,16 / 29,29 / 12,55 %. Self-test pod Xvfb: VÝSLEDEK OK (i „PT přístupnost:
+  OK“).
 

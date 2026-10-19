@@ -6,7 +6,9 @@ na úpravu); panel sám nic nepočítá. Klik na studii zvýrazní ve 3D kontrol
 U UT studie jde nastavit sondu (uloží se do studie) a přiložit ji kliknutím na plochu – sonda
 se ve 3D nakreslí v barvě výsledku (jen pohled, do modelu se neukládá). U UT (vybraná studie,
 bez výběru metoda nové studie) je nahoře povinné upozornění ``UT_DISCLAIMER``
-(``docs/ndt/04-zavazne-vymezeni-ut.md``), jinak obecné ``DISCLAIMER``.
+(``docs/ndt/04-zavazne-vymezeni-ut.md``), u PT ``PT_DISCLAIMER`` (``20-vymezeni-pt.md``),
+jinak obecné ``DISCLAIMER``. U PT studie je místo skupin sondy skupina *Přístupnost povrchu pro
+PT* (etapa 11): nastavení, mapa ve 3D po kontrolách, souhrn a důvod místa po kliknutí.
 """
 
 from __future__ import annotations
@@ -39,10 +41,19 @@ from PySide6.QtWidgets import (
 
 from skodacad.document import DocumentError
 from skodacad.gui.probe_dialog import ProbeDialog
+from skodacad.gui.pt_dialog import PtDialog
 from skodacad.gui.target_dialog import TargetDialog
 from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
-from skodacad.ndt import DISCLAIMER, UT_ACCESS, UT_COVERAGE, UT_DISCLAIMER
+from skodacad.ndt import (
+    DISCLAIMER,
+    PT_ACCESS,
+    PT_DISCLAIMER,
+    PT_MAP,
+    UT_ACCESS,
+    UT_COVERAGE,
+    UT_DISCLAIMER,
+)
 from skodacad.ndt.access import (
     ALTERNATIVE_ANGLES,
     CONTACT_COLORS,
@@ -70,6 +81,12 @@ from skodacad.ndt.plan import (
     PlanError,
     PlanEstimate,
 )
+from skodacad.ndt.pt import CHECKS as PT_CHECKS
+from skodacad.ndt.pt import COLORS as PT_COLORS
+from skodacad.ndt.pt import GRADE_COLORS as PT_GRADE_COLORS
+from skodacad.ndt.pt import GRADES as PT_GRADES
+from skodacad.ndt.pt import STATES as PT_STATES
+from skodacad.ndt.pt import PtError, PtMap
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
 from skodacad.ndt.volume_drawing import UNRESOLVED_LABEL
@@ -88,6 +105,16 @@ ANGLE_HINT = ("Směr paprsku ve stupních: 0° = osa +X sklopená do plochy (u p
 METHOD_LABELS = {key: f"{key} – {name}" for key, name in METHODS.items()}
 HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Nová studie. "
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
+PT_PICK_HINT = "Klikni ve 3D do mapy – napíšu, proč je místo omezené nebo nepřístupné."
+
+
+def _swatches(colors: dict, labels: dict) -> str:
+    """Legenda barev mapy (čtverečky v barvě a popis)."""
+    def hex_color(rgb: tuple) -> str:
+        return "#" + "".join(f"{round(255 * v):02x}" for v in rgb)
+
+    return " · ".join(f'<span style="color: {hex_color(colors[key])};">■</span> {escape(label)}'
+                      for key, label in labels.items() if key in colors)
 
 
 class NdtPanel(QWidget):
@@ -196,6 +223,18 @@ class NdtPanel(QWidget):
         self.plan_prev_action.setToolTip("Předchozí poloha plánu")
         self.plan_next_action = action("▶", lambda: self.step_plan(1))
         self.plan_next_action.setToolTip("Další poloha plánu")
+        # PT – přístupnost povrchu (etapa 11)
+        self.pt_settings_action = action("Nastavení PT…", self.edit_pt_settings)
+        self.pt_settings_action.setToolTip(
+            "Nástroje, úhly nástřiku a prohlídky, oko a postup čištění (uloží se do studie, "
+            "jeden krok Zpět)")
+        self.pt_action = action("Spočítat mapu PT", self.start_pt)
+        self.pt_action.setToolTip(
+            "Pro plochy studie zjistí nástřik, otření nástrojem a prohlídku (jen geometrie, "
+            "model se nemění)")
+        self.pt_stop_action = action("Zastavit", self.stop_pt)
+        self.pt_clear_action = action("Skrýt mapu", self.clear_pt)
+        self.pt_export_action = action("Export CSV…", self.export_pt)
 
         layout = QVBoxLayout(self)
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
@@ -237,8 +276,10 @@ class NdtPanel(QWidget):
                 buttons.addWidget(window._tool_button(item))
             buttons.addStretch()
             layout.addLayout(buttons)
+        self._build_pt(layout)
         probe_box = QGroupBox(UT_ACCESS)
         probe_box.setObjectName("ndt_ut")
+        self.probe_box = probe_box
         probe_layout = QVBoxLayout(probe_box)
         self.probe_label = QLabel()
         self.probe_label.setObjectName("ndt_probe")
@@ -433,6 +474,57 @@ class NdtPanel(QWidget):
         layout.addWidget(self.details)
         layout.addStretch()
         self.refresh()
+
+    def _build_pt(self, layout: QVBoxLayout) -> None:
+        """Skupina Přístupnost povrchu pro PT (etapa 11): nastavení, výpočet, mapa, důvody."""
+        window = self.window
+        self.pt_box = QGroupBox(PT_ACCESS)
+        self.pt_box.setObjectName("ndt_pt")
+        box = QVBoxLayout(self.pt_box)
+        self.pt_settings_label = QLabel()
+        self.pt_settings_label.setObjectName("ndt_pt_settings")
+        self.pt_settings_label.setWordWrap(True)
+        box.addWidget(self.pt_settings_label)
+        for row_items in ((self.pt_settings_action, self.pt_action, self.pt_stop_action),
+                          (self.pt_clear_action, self.pt_export_action)):
+            row = QHBoxLayout()
+            for item in row_items:
+                row.addWidget(window._tool_button(item))
+            row.addStretch()
+            box.addLayout(row)
+        self.pt_estimate = QLabel()
+        self.pt_estimate.setObjectName("ndt_pt_estimate")
+        self.pt_estimate.setWordWrap(True)
+        box.addWidget(self.pt_estimate)
+        self._pt_estimate_cache: tuple[tuple, str] | None = None
+        show_row = QHBoxLayout()
+        show_row.addWidget(QLabel("Ukázat ve 3D:"))
+        self.pt_check = QComboBox()
+        self.pt_check.setObjectName("ndt_pt_check")
+        self.pt_check.addItem("celkem", "")
+        for key, label in PT_CHECKS.items():
+            self.pt_check.addItem(label.lower(), key)
+        self.pt_check.currentIndexChanged.connect(lambda _index: self._pt_check_changed())
+        show_row.addWidget(self.pt_check)
+        show_row.addStretch()
+        box.addLayout(show_row)
+        self.pt_legend = QLabel()
+        self.pt_legend.setObjectName("ndt_pt_legend")
+        self.pt_legend.setWordWrap(True)
+        self.pt_legend.setTextFormat(Qt.TextFormat.RichText)
+        box.addWidget(self.pt_legend)
+        self.pt_summary = QLabel()
+        self.pt_summary.setObjectName("ndt_pt_summary")
+        self.pt_summary.setWordWrap(True)
+        self.pt_summary.setTextFormat(Qt.TextFormat.RichText)
+        self.pt_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.pt_summary)
+        self.pt_pick = QLabel(PT_PICK_HINT)
+        self.pt_pick.setObjectName("ndt_pt_pick")
+        self.pt_pick.setWordWrap(True)
+        self.pt_pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.addWidget(self.pt_pick)
+        layout.addWidget(self.pt_box)
 
     def _build_access(self, layout: QVBoxLayout) -> None:
         """Skupina Návrh poloh sondy (etapa 09): volby, odhad, průběh, tabulka, kombinace."""
@@ -731,6 +823,7 @@ class NdtPanel(QWidget):
         self._show_coverage()
         self._show_access()
         self._show_plan()
+        self._show_pt()
         self.refresh_actions()
         self._start_recheck()
 
@@ -742,15 +835,23 @@ class NdtPanel(QWidget):
         self._show_access()
         self._plan_index = None
         self._show_plan()
+        self._show_pt()
         self.refresh_actions()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
 
     def _show_warning(self) -> None:
-        """UT studie (nebo nová UT bez výběru) = povinné upozornění UT, jinak obecné."""
+        """UT studie (nebo nová UT bez výběru) = povinné upozornění UT, PT studie = povinné
+        upozornění PT, jinak obecné."""
+        session = self.window.session
         record = self._record(self.current_id())
         method = record.get("method") if record else self.method_combo.currentData()
-        self.warning.setText(UT_DISCLAIMER if method == "UT"
-                             or self.window.session.ndt_coverage is not None else DISCLAIMER)
+        if method == "PT":
+            text = PT_DISCLAIMER
+        elif method == "UT" or session.ndt_coverage is not None:
+            text = UT_DISCLAIMER
+        else:
+            text = PT_DISCLAIMER if session.ndt_pt_map is not None else DISCLAIMER
+        self.warning.setText(text)
 
     def _show_details(self) -> None:
         result = self.current()
@@ -822,6 +923,16 @@ class NdtPanel(QWidget):
                                      and result.state == "ok")
         self._refresh_plan_actions(bool(ut and has_part and result is not None
                                         and result.state == "ok"))
+        pt = selected and (record or {}).get("method") == "PT"
+        has_pt = session.ndt_pt_map is not None
+        self.pt_settings_action.setEnabled(pt)
+        self.pt_action.setEnabled(bool(pt and has_part and result is not None
+                                       and result.state == "ok" and not session.pt_pending))
+        self.pt_stop_action.setEnabled(session.pt_pending)
+        self.pt_clear_action.setEnabled(has_pt)
+        self.pt_export_action.setEnabled(has_pt)
+        self.pt_box.setVisible(bool(pt or has_pt or session.pt_pending))
+        self.probe_box.setVisible(not pt)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,
@@ -833,7 +944,7 @@ class NdtPanel(QWidget):
                            self.transfer_action, self.part_material_action,
                            self.access_action, self.access_show_action,
                            self.access_apply_action, self.access_export_action,
-                           *self._plan_actions()):
+                           *self._plan_actions(), *self._pt_actions()):
                 action.setEnabled(False)
             self.scan_slider.setEnabled(False)
             self.ut_material.setEnabled(False)
@@ -1081,6 +1192,133 @@ class NdtPanel(QWidget):
                                              "pokryti-ut.csv", "CSV (*.csv)")
         if path:
             self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_coverage(path))
+
+    # --- PT – přístupnost povrchu (etapa 11) -------------------------------------------
+
+    def _pt_actions(self) -> tuple:
+        return (self.pt_settings_action, self.pt_action, self.pt_stop_action,
+                self.pt_clear_action, self.pt_export_action)
+
+    def _pt_study(self) -> str | None:
+        """Vybraná PT studie, nebo None."""
+        study_id = self.current_id()
+        record = self._record(study_id)
+        return study_id if record is not None and record.get("method") == "PT" else None
+
+    def pt_view(self) -> tuple[PtMap, str | None] | None:
+        """Mapa PT ve 3D: (mapa, kontrola – None = celkem), nebo None."""
+        found = self.window.session.ndt_pt_map
+        if found is None:
+            return None
+        return found, (self.pt_check.currentData() or None)
+
+    def _pt_check_changed(self) -> None:
+        self._show_pt_legend()
+        self.window._refresh_coverage()
+
+    def _show_pt_legend(self) -> None:
+        check = self.pt_check.currentData() or None
+        if check is None:
+            self.pt_legend.setText(_swatches(PT_COLORS, PT_STATES))
+        else:
+            self.pt_legend.setText(f"{escape(PT_CHECKS[check])}: " + _swatches(
+                PT_GRADE_COLORS, {key: PT_GRADES[key] for key in PT_GRADE_COLORS}))
+
+    def _pt_estimate_text(self, study_id: str) -> str:
+        """Odhad počtu vzorků a doby (síť ploch); pamatuje se pro stejné zadání."""
+        session = self.window.session
+        key = (id(session.result), study_id, repr(self._record(study_id)))
+        if self._pt_estimate_cache is None or self._pt_estimate_cache[0] != key:
+            try:
+                count, step, seconds = session.ndt_pt_estimate(study_id)
+                text = (f"Odhad: {count} vzorků při kroku {f'{step:g}'.replace('.', ',')} mm, "
+                        f"asi {seconds:.0f} s (počítá se na pozadí, jde zastavit).")
+            except DocumentError as exc:
+                text = str(exc)
+            self._pt_estimate_cache = (key, text)
+        return self._pt_estimate_cache[1]
+
+    def _show_pt(self) -> None:
+        session = self.window.session
+        study_id = self._pt_study()
+        self._show_pt_legend()
+        if study_id is not None:
+            try:
+                self.pt_settings_label.setText(
+                    "\n".join(session.ndt_pt_settings(study_id).lines()))
+            except DocumentError as exc:
+                self.pt_settings_label.setText(str(exc))
+        else:
+            self.pt_settings_label.setText("")
+        found = session.ndt_pt_map
+        if session.pt_pending:
+            progress = session.ndt_pt_progress
+            done = f" – vzorky {progress[0]} z {progress[1]}" if progress else ""
+            self.pt_estimate.setText(f"Počítám mapu PT… {session.computing_seconds:.0f} s"
+                                     f"{done}. Výpočet zastavíš tlačítkem Zastavit.")
+        elif study_id is not None and found is None and not session.computing:
+            self.pt_estimate.setText(self._pt_estimate_text(study_id))
+        else:
+            self.pt_estimate.setText("")
+        if found is not None:
+            name = (self._record(session.ndt_pt_study()) or {}).get("name", "")
+            lines = [escape(line) for line in found.summary()]
+            lines[0] = f"<b>{escape(PT_MAP)}</b> – {escape(name)}"
+            lines.insert(1, "<b>" + " · ".join(f"{label} {found.percent(state):.1f} %"
+                                               for state, label in PT_STATES.items())
+                         .replace(".", ",") + "</b>")
+            self.pt_summary.setText("<br>".join(lines))
+        else:
+            self.pt_summary.setText("")
+        self.pt_pick.setVisible(found is not None)
+        self.show_pt_pick()
+
+    def show_pt_pick(self) -> None:
+        """Stav a důvody místa mapy, na které uživatel klikl ve 3D."""
+        session = self.window.session
+        point = self.window.viewer.picked_point if self.window._picked else None
+        lines = session.ndt_pt_describe(point) if point is not None else []
+        self.pt_pick.setText("\n".join(lines) if lines else PT_PICK_HINT)
+
+    def edit_pt_settings(self) -> None:
+        study_id = self._pt_study()
+        if study_id is None:
+            return
+        session = self.window.session
+        try:
+            current = session.ndt_pt_settings(study_id)
+        except DocumentError as exc:
+            self.window._error("Nastavení PT nejde načíst", str(exc))
+            return
+        dialog = PtDialog(self, current)
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        try:
+            settings = dialog.settings()
+        except PtError as exc:
+            self.window._error("Nastavení PT nejde uložit", str(exc))
+            return
+        self._apply("Nastavení PT nejde uložit",
+                    lambda: session.set_ndt_pt_settings(study_id, settings))
+
+    def start_pt(self) -> None:
+        study_id = self._pt_study()
+        if study_id is not None:
+            self._apply("Mapu PT nejde spočítat",
+                        lambda: self.window.session.start_ndt_pt(study_id))
+
+    def stop_pt(self) -> None:
+        self.window.stop_rebuild()
+
+    def clear_pt(self) -> None:
+        self.window.session.clear_ndt_pt()
+        self.window._refresh_all()
+
+    def export_pt(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Export mapy přístupnosti PT",
+                                             "pristupnost-pt.csv", "CSV (*.csv)")
+        if path:
+            self._apply("CSV nejde uložit", lambda: self.window.session.export_ndt_pt(path))
 
     # --- návrh poloh sondy (etapa 09) -------------------------------------------------
 
