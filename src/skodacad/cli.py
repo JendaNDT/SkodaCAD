@@ -23,7 +23,7 @@ from skodacad.assistant import MODELS as AI_MODELS
 from skodacad.document import Document, DocumentError
 from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
-from skodacad.ndt import DISCLAIMER, MT_DISCLAIMER, PT_DISCLAIMER, UT_DISCLAIMER
+from skodacad.ndt import DISCLAIMER, MT_DISCLAIMER, PT_DISCLAIMER, RT_DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
 from skodacad.rebuild import BuildResult, rebuild
 
@@ -209,6 +209,23 @@ def main(argv: list[str] | None = None) -> int:
                      help="nepočítej prohlídku")
     mag.add_argument("--ulozit", action="store_true", help="ulož nastavení MT do modelu")
     mag.add_argument("--csv", type=Path)
+
+    rad = commands.add_parser("radiografie", help="RT: geometrie projekce (zdroj, detektor, "
+                              "prozařovaná tloušťka, promítnutí oblasti)")
+    rad.add_argument("model", type=Path)
+    rad.add_argument("--studie", required=True, help="RT studie s oblastí a projekcemi")
+    rad.add_argument("--projekce", action="append",
+                     help="počítej jen tuto projekci (jde opakovat); jinak všechny")
+    rad.add_argument("--trida", choices=("A", "B"), help="třída zkoušky (výchozí B)")
+    rad.add_argument("--ohnisko", type=float, help="rozměr ohniska d [mm] (výchozí 3)")
+    rad.add_argument("--vzdalenost", type=float,
+                     help="vzdálenost zdroje od zaměřeného bodu [mm] u počítaných projekcí "
+                          "(volný detektor zůstane na místě)")
+    rad.add_argument("--krok", type=float, help="krok sítě míst [mm]; jinak automaticky")
+    rad.add_argument("--krok-nahledu", type=float, dest="krok_nahledu",
+                     help="krok náhledu prozařované tloušťky na detektoru [mm] (výchozí 2)")
+    rad.add_argument("--ulozit", action="store_true", help="ulož nastavení a projekce do modelu")
+    rad.add_argument("--csv", type=Path)
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -226,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
             return _pt(args)
         if args.command == "magneticka":
             return _mt(args)
+        if args.command == "radiografie":
+            return _rt(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -660,6 +679,55 @@ def _mt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rt(args: argparse.Namespace) -> int:
+    from dataclasses import replace
+
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    study = args.studie
+    settings = session.ndt_rt_settings(study)
+    chosen = args.projekce or [p.name for p in settings.projections]
+    for name in chosen:
+        settings.projection(name)  # neznámá projekce = česká chyba
+    changes: dict[str, object] = {
+        key: value for key, value in (("test_class", args.trida), ("focal_mm", args.ohnisko),
+                                      ("step_mm", args.krok),
+                                      ("image_step_mm", args.krok_nahledu)) if value is not None}
+    if args.vzdalenost is not None:
+
+        def moved(p: Any) -> Any:
+            if p.name not in chosen:
+                return p
+            if p.detector_distance_mm is None:
+                return replace(p, distance_mm=args.vzdalenost)
+            return replace(p, distance_mm=args.vzdalenost, detector_distance_mm=(
+                p.detector_distance_mm - p.distance_mm + args.vzdalenost))
+
+        changes["projections"] = tuple(moved(p) for p in settings.projections)
+    if changes:
+        session.set_ndt_rt_settings(study, replace(settings, **changes))
+    samples, step, projections, seconds = session.ndt_rt_estimate(study, args.projekce)
+    print(f"Odhad: asi {samples} míst při kroku {step:g} mm, {projections} projekcí, asi "
+          f"{seconds:.0f} s.", file=sys.stderr)
+
+    def progress(done: int, total: int) -> None:
+        if done == total:
+            print(f"Výpočet: {done} z {total}", file=sys.stderr, flush=True)
+
+    result = session.compute_ndt_rt(study, progress=progress, projections=args.projekce)
+    print("\n".join(result.summary()))
+    if args.csv:
+        try:
+            print("CSV:", result.write_csv(args.csv))
+        except OSError as exc:
+            raise ValueError(f"CSV nejde uložit: {exc}") from None
+    if args.ulozit:
+        print("Model uložen:", session.save())
+    return 0
+
+
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""
     glued: list[str] = []
@@ -738,6 +806,8 @@ def _build(args: argparse.Namespace) -> int:
             print(f"  ({PT_DISCLAIMER})")
         if any(study.method == "MT" for study in result.ndt):
             print(f"  ({MT_DISCLAIMER})")
+        if any(study.method == "RT" for study in result.ndt):
+            print(f"  ({RT_DISCLAIMER})")
 
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]

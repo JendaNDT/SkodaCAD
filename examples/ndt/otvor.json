@@ -17,6 +17,16 @@
      "target": {"kind": "faces", "faces": [
                    {"face": {"at": [10, 0, 10], "normal": [-1, 0, 0], "type": "cylinder", "radius": 10}}]},
      "note": "Stěna otvoru Ø 20, sonda na horní ploše.",
-     "created": "2026-10-16", "part": "30081f12af1d9d7b"}
+     "created": "2026-10-16", "part": "30081f12af1d9d7b"},
+    {"id": "s2", "name": "RT desky kolmo a pod 30°", "method": "RT",
+     "target": {"kind": "faces", "faces": [
+                   {"face": {"at": [50, 0, 20], "normal": [0, 0, 1], "type": "plane"}}]},
+     "note": "Zdroj 500 mm nad středem otvoru: P1 kolmo s volným detektorem v rovině spodní plochy, P2 sklopený o 30° k +X s detektorem na spodní ploše. Střední paprsek míří do otvoru, proto je jmenovitá tloušťka zadaná ručně (20 mm, pod 30° 20 / cos 30° = 23,09 mm).",
+     "created": "2026-10-19", "part": "30081f12af1d9d7b",
+     "rt": {"class": "B", "projections": [
+       {"name": "P1", "aim": [0, 0, 20], "direction": [0, 0, 1], "distance_mm": 500,
+        "detector": "free", "detector_distance_mm": 520, "reference_mm": 20},
+       {"name": "P2", "aim": [0, 0, 20], "direction": [0.5, 0, 0.8660254037844386],
+        "distance_mm": 500, "detector": "contact", "reference_mm": 23.09}]}}
   ]}
 }

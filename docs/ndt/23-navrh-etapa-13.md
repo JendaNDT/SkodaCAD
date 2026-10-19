@@ -522,6 +522,36 @@ Schválením se **neschvaluje**:
 
   Ruční výsledky jsou v `05-referencni-dily.md` jako NEOVĚŘENO. RT studie v ukázkách přibudou
   v 13A.2 spolu s formátem 21 (bez něj by studie s projekcemi nešla uložit).
+- **13A.2 (hotovo):**
+  - **Formát 21:** položka `rt` jen u RT studie (změna metody ji smaže, jinde je to česká
+    chyba při načtení), verze 1–20 se načtou beze změny.
+  - **`ModelSession`:**
+    - nastavení i každá úprava projekce je jeden krok Zpět (`set_ndt_rt_settings`,
+      `add_ndt_rt_projection`, `set_ndt_rt_projection`, `copy_ndt_rt_projection` posunutá
+      o vektor, `remove_ndt_rt_projection`),
+    - *Zdroj nad vybrané místo* (`ndt_rt_projection_at`): zdroj po normále plochy
+      v kliknutém bodě, f = 500, detektor na ploše; u svaru delší strana detektoru
+      podél svaru (`rt.along_angle`),
+    - mapa, náhled a CSV jsou jen pohled (`compute_ndt_rt` / `start_ndt_rt`, `ndt_rt_map`,
+      `ndt_rt_image`, `export_ndt_rt`); mapa platí pro díl, nezměněnou studii a materiál.
+  - **Pomocný proces** `submit_rt` s průběhem.
+  - **Příkazová řádka** `skodacad radiografie` (`--projekce`, `--trida`, `--ohnisko`,
+    `--vzdalenost` – volný detektor zůstane na místě, `--krok`, `--krok-nahledu`, `--csv`,
+    `--ulozit`); `skodacad build` vypíše u RT studie povinné upozornění RT.
+  - **Pravidlo pro AI** (`assistant.RULES`).
+  - **RT studie v ukázkách:**
+    - deska s otvorem `s2`: P1 kolmo s volným detektorem, P2 pod 30° na spodní ploše,
+      jmenovitá tloušťka 20 a 23,09 mm,
+    - tupý V svar (`cilove_objemy/tupy_svar_objem.json`) `s2`: kolmo, film pod kořenem podél
+      svaru.
+  - **Změřeno (cloud):**
+    - deska s otvorem s výchozím nastavením 1 086 míst, 2 projekce a náhled 10 × 24 cm po
+      2 mm za 5,3 s: 94,9 % se promítne, 5,1 % u okrajů desky mimo detektor (deska je
+      široká jako film),
+    - V svar s výchozím krokem 2,5 mm: 100 % se promítne, f = 500, b = 15, w₀ = 15 mm za
+      asi 22 s. Téměř celou dobu zabere přesný ořez 1 920 buněk objemu (výpočet 07B),
+      paprsky trvají jen zlomek. Odhad proto u objemu buňky jen spočítá z mřížky a čas ořezu
+      přičte (`SECONDS_PER_CELL`); dřív ořez dělal i odhad a čas se zdvojnásobil.
 - **Upřesnění proti návrhu:**
   - **f a b ze strany předmětu u zdroje u místa oblasti nejblíž středu svazku.** Střední
     paprsek namířený do otvoru by dal nesmyslné b (pod 30° vstoupí do materiálu až ve stěně

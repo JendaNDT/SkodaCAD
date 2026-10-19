@@ -470,6 +470,34 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   MT* (na pozadí, jde zastavit), přepínač mapy, klik do mapy (směry a důvody místa),
   *Ukázat jho* (jho, které místo pokryje ve zvoleném směru) a *Přiložit jho sem* (střed
   v kliknutém bodě, zvolené natočení). Návrh: [Etapa 12](docs/ndt/21-navrh-etapa-12.md).
+* **RT – geometrie projekce (etapa 13):** jen geometrie podle
+  [závazného vymezení RT](docs/ndt/24-vymezeni-rt.md). Program nepočítá dávku ani radiační
+  ochranu, expozici, kvalitu obrazu, citlivost ani detekovatelnost vad.
+  * **Zdroj a detektor:** bodový zdroj (ohnisko 3 mm, kužel 40°, tělo Ø 120 × 300 mm;
+    zvolené hodnoty) a plochý detektor 100 × 240 mm (film 10 × 24 cm). Detektor se přiloží na
+    plochu, kudy střední paprsek vystupuje (při nárazu se odsune), nebo volně kolmo ke
+    střednímu paprsku. Kolize těla zdroje a detektoru se kontroluje přesně.
+  * **Výpočet pro každé místo oblasti** (plochy nebo objem svaru) a každou projekci:
+    * leží ve svazku a promítne se na detektor,
+    * **prozařovaná tloušťka** (všechny úseky v materiálu),
+    * **poměr** k tloušťce na středu svazku nejvýš 1,1 (třída B) / 1,2 (A); když střední
+      paprsek míří do otvoru, zadá se jmenovitá tloušťka ručně,
+    * **nejmenší vzdálenost zdroje** f_min = 15 / 7,5 · d · b^(2/3) (ISO 17636-1, vzorec pro
+      film),
+    * zvětšení a geometrická neostrost informativně,
+    * překryv obrazů (protější stěna trubky).
+  * **Výsledek:** promítne se / jen omezeně / nepromítne se / nelze spolehlivě vyhodnotit,
+    s českými důvody. Víc projekcí se sjednotí a počítá se, kolik jich místo promítne.
+    **Náhled prozařované tloušťky** na detektoru není radiografický snímek. CSV nese povinné
+    upozornění RT.
+  * **Uložení:** nastavení a projekce se ukládají do RT studie (formát 21), mapa je jen
+    pohled.
+  * **Ukázky:** RT studie desky s otvorem (kolmo a pod 30°) a tupého V svaru.
+  * **Příkazová řádka:** `skodacad radiografie MODEL --studie s2 [--projekce P1]
+    [--trida A|B] [--ohnisko 3] [--vzdalenost 500] [--krok 5] [--krok-nahledu 2]
+    [--ulozit] [--csv rt.csv]`.
+
+  Okno přijde v kroku 13B. Návrh: [Etapa 13](docs/ndt/23-navrh-etapa-13.md).
 
 ### Tažení a přechod
 
@@ -851,8 +879,9 @@ verze 12 normalizované díly (`standard`) a ocelový profil (`steel`), verze 13
 (`beam_angle`, `bounces`), verze 16 cílové objemy a svary NDT (krok 07A), verze 17 knihovna
 NDT (původ hodnot sondy, materiál pro UT; etapa 08), verze 18 plán dráhy sondy a zakázané
 zóny ve studii (`plan`, `zones`; etapa 10), verze 19 nastavení PT studie (`pt`; etapa 11),
-verze 20 nastavení MT studie (`mt`; etapa 12).
-Starší soubory verze 1–19 se načtou beze změny. Uložení novou aplikací zapisuje verzi 20;
+verze 20 nastavení MT studie (`mt`; etapa 12), verze 21 nastavení a projekce RT studie
+(`rt`; etapa 13).
+Starší soubory verze 1–20 se načtou beze změny. Uložení novou aplikací zapisuje verzi 21;
 starší aplikace takový soubor neumí otevřít. Pouhé otevření původní soubor nepřepisuje.
 
 ### NDT studie (`ndt`)
@@ -926,6 +955,28 @@ starší aplikace takový soubor neumí otevřít. Pouhé otevření původní s
   automaticky) a `ferromagnetic: true` (materiál potvrzený uživatelem – jen u nerezi
   a neuvedeného materiálu, u neferomagnetického nic nezmění). Chybějící hodnota = výchozí;
   `min_spacing_mm` = `spacing_mm` vypne zálohu menší roztečí. Mapa MT se do souboru neukládá.
+* **Nastavení a projekce RT** (verze 21, nepovinné, jen u RT studie, etapa 13): `rt` –
+
+  ```json
+  "rt": {"class": "B", "focal_mm": 3, "cone_deg": 40,
+    "housing_diameter_mm": 120, "housing_length_mm": 300,
+    "detector_width_mm": 100, "detector_length_mm": 240, "detector_thickness_mm": 2,
+    "image_step_mm": 2,
+    "projections": [{"name": "P1", "aim": [0, 0, 14], "direction": [0, 0, 1],
+                     "distance_mm": 500, "detector": "contact", "detector_angle_deg": 90}]}
+  ```
+
+  * `class` – třída zkoušky `A` nebo `B`. Nepovinné `step_mm` = krok sítě míst (bez něj
+    automaticky).
+  * Projekce:
+    * `aim` – zaměřený bod,
+    * `direction` – jednotkový směr od něj ke zdroji,
+    * `distance_mm` – vzdálenost zdroje od zaměřeného bodu,
+    * `detector` – `contact` (na ploše, kudy střední paprsek vystupuje) nebo `free` (volně,
+      pak `detector_distance_mm` = vzdálenost od zdroje),
+    * `detector_angle_deg` – natočení delší strany detektoru (0° = průmět osy +X),
+    * nepovinné `reference_mm` – ručně zadaná jmenovitá prozařovaná tloušťka.
+  * Chybějící hodnota = výchozí. Mapa RT ani náhled se do souboru neukládají.
 
 ### Cílové objemy a svary (07A, verze 16)
 

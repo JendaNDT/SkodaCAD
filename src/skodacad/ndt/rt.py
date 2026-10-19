@@ -50,6 +50,7 @@ MIN_STEP = 0.5  # mm
 _AREA_PER_STEP2 = 0.2  # síť mapy tloušťky: trojúhelník ≈ 0,2 · krok²
 SECONDS_PER_RAY = 0.0004  # odhad (změřeno 19. 10. 2026 v cloudu: 0,24 ms na paprsek)
 SECONDS_PER_PROJECTION = 0.3  # přiložení detektoru a kolize
+SECONDS_PER_CELL = 0.011  # ořez buňky objemu 07B (V svar po 2,5 mm: 1 920 buněk asi 20 s)
 
 STATES = {"ok": "Promítne se – geometrická pravidla platí",
           "limited": "Promítne se jen omezeně",
@@ -138,6 +139,11 @@ def angles_of(normal: Point, direction: Point) -> tuple[float, float]:
     base = _base(n)
     turn = math.degrees(math.atan2(_dot(side, _cross(n, base)), _dot(side, base))) % 360.0
     return tilt, turn
+
+
+def along_angle(normal: Point, along: Point) -> float:
+    """Natočení delší strany detektoru [°, 0–180), aby ležela podél ``along`` (osa svaru)."""
+    return round(angles_of(normal, along)[1] % 180.0, 6) % 180.0 + 0.0
 
 
 # --- nastavení -------------------------------------------------------------------------------
@@ -350,14 +356,20 @@ class RtSettings:
                 else f"kužel svazku {_n(self.cone_deg)}°")
         return [f"Zdroj: ohnisko {_n(self.focal_mm)} mm, {cone}, {housing} ({CHOSEN}).",
                 f"Detektor: plochý {_n(self.detector_width_mm)} × "
-                f"{_n(self.detector_length_mm)} mm, kazeta nebo panel "
-                f"{_n(self.detector_thickness_mm)} mm ({FILM_SOURCE}; tloušťka {CHOSEN}).",
+                f"{_n(self.detector_length_mm)} mm ({FILM_SOURCE}), kazeta nebo panel "
+                f"{_n(self.detector_thickness_mm)} mm ({CHOSEN}).",
                 f"Třída zkoušky {self.test_class}: poměr prozařované tloušťky k tloušťce "
-                f"na středu svazku nejvýš {_n(self.ratio_limit)} ({RATIO_SOURCE}).",
+                f"na středu svazku nejvýš {_n(self.ratio_limit)} – {RATIO_SOURCE}.",
                 f"Nejmenší vzdálenost zdroje f_min = {_n(CLASS_FACTOR[self.test_class])} · d · "
-                f"b^(2/3); když b < {_n(THIN_FACTOR)} · t, dosadí se t ({FMIN_SOURCE}).",
+                f"b^(2/3); když b < {_n(THIN_FACTOR)} · t, dosadí se t – {FMIN_SOURCE}.",
                 "Prozařovaná tloušťka = všechny úseky v materiálu na spojnici ohnisko–detektor; "
                 "paprsek přes hranu nebo tečně je nejistý."]
+
+
+def next_projection_name(settings: RtSettings) -> str:
+    """První volný název projekce „P1“, „P2“ …"""
+    names = {p.name for p in settings.projections}
+    return next(f"P{i}" for i in range(1, len(names) + 2) if f"P{i}" not in names)
 
 
 # --- projekce: zdroj a detektor --------------------------------------------------------------
@@ -920,8 +932,9 @@ class RtMap:
             else:
                 parts.append(f"Tloušťku na středu svazku nejde použít – {REFERENCE_HINT}.")
             view = f"p{i}"
-            parts.append(", ".join(f"{SHORT[state]} {_dec(self.percent(state, view), 2)} %"
-                                   for state in STATES if self.amount(state, view) > 0) + ".")
+            shares = ", ".join(f"{SHORT[state]} {_dec(self.percent(state, view), 2)} %"
+                               for state in STATES if self.amount(state, view) > 0)
+            parts.append(shares[:1].upper() + shares[1:] + ".")
             lines.append(" ".join(parts))
         return lines
 
@@ -1072,17 +1085,34 @@ def _material_text(material: str | None) -> str:
 
 def estimate(part: Any, record: dict[str, Any], settings: RtSettings
              ) -> tuple[int, float, int, float]:
-    """Odhad před spuštěním: (míst oblasti, krok sítě, projekcí, doba v s)."""
+    """Odhad před spuštěním: (míst oblasti, krok sítě, projekcí, doba v s). U objemu jsou
+    místa buňky mřížky před ořezem cílem (nejvýš tolik) – přesný ořez je pomalý a dělá ho
+    až výpočet."""
     geo = PartGeometry(part)
     kind, target = study_target(geo, record)
-    found = _target(geo, kind, target, settings)
+    if kind == "volume":
+        from skodacad.ndt.coverage import CoverageError
+        from skodacad.ndt.volume_coverage import MAX_CELLS, grid_extent, recommended_target_step
+        from skodacad.ndt.welds import TargetError
+
+        try:
+            step = settings.step_mm or recommended_target_step(target)
+            count = math.prod(grid_extent(target, step)[2])
+        except (CoverageError, TargetError) as exc:
+            raise RtError(str(exc)) from None
+        if count > MAX_CELLS:
+            raise RtError(f"Objemová mřížka by měla {count} buněk (nejvýš {MAX_CELLS}) – "
+                          "zvol větší krok sítě.")
+        clipping = count * SECONDS_PER_CELL
+    else:
+        found = _target(geo, kind, target, settings)
+        count, step, clipping = len(found.points), found.step, 0.0
     projections = len(settings.projections)
     cells = (max(1, round(settings.detector_length_mm / settings.image_step_mm))
              * max(1, round(settings.detector_width_mm / settings.image_step_mm)))
-    rays = projections * (len(found.points) * (2 if kind == "volume" else 1)
-                          + min(cells, MAX_IMAGE_CELLS))
-    seconds = rays * SECONDS_PER_RAY + projections * SECONDS_PER_PROJECTION
-    return len(found.points), found.step, projections, seconds
+    rays = projections * (count * (2 if kind == "volume" else 1) + min(cells, MAX_IMAGE_CELLS))
+    seconds = clipping + rays * SECONDS_PER_RAY + projections * SECONDS_PER_PROJECTION
+    return count, step, projections, seconds
 
 
 def compute(part: Any, record: dict[str, Any], settings: RtSettings,

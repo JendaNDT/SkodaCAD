@@ -278,10 +278,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT) a `magneticka` (mapa MT) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT) a `radiografie` (geometrie projekce RT) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
-| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`) a mapa MT (`submit_mt`), průběžné zprávy `Finished.update` |
+| `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`), mapa MT (`submit_mt`) a mapa RT (`submit_rt`), průběžné zprávy `Finished.update` |
 | `schema.py` | popis polí každého prvku a tvaru skici (česky) + výchozí hodnoty nových prvků |
 | `inspection.py` | český popis vybrané plochy/hrany |
 | `measure.py` | měření: rozměry, vzdálenost, rozteč, úhel, tloušťka stěny; uložená měření (odkazy významem, `evaluate`); `RayCaster` (paprsek s pravidlem koncového echa) |
@@ -869,6 +869,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   být totožný (nezměněné *OK* = žádný krok Zpět).
 - Testy: náhled jen na úzkém detektoru (1 × 30 mm, krok 0,2) a mapa s krokem náhledu 20 mm
   – výchozí náhled 10 × 24 cm po 2 mm je 6 000 paprsků (asi 1,5 s na projekci).
+- Objem svaru: skoro celý čas je přesný ořez buněk 07B (`_sample_volume`, asi 11 ms na buňku;
+  V svar po 2,5 mm asi 20 s), paprsky jsou zlomek. `rt.estimate` proto u objemu buňky jen
+  spočítá z mřížky (`grid_extent`) a ořez nedělá – jinak by odhad trval stejně jako výpočet.
+- ModelSession: nastavení a projekce `rt` ve studii (formát 21) – každá úprava jeden krok Zpět,
+  stejné = žádná změna; `rt` smí mít jen RT studie, změna metody ho smaže. Mapa
+  (`compute_ndt_rt` / `start_ndt_rt`, `ndt_rt_map`) platí pro výsledek přepočtu, nezměněný
+  záznam studie, materiál a výběr projekcí (`_rt_key`); zastaralou studii je třeba potvrdit.
+  *Zdroj nad vybrané místo* (`ndt_rt_projection_at`) projekci jen vrátí, uloží ji až
+  `add_ndt_rt_projection`.
+- CLI `--vzdalenost` posune zdroj; volný detektor zůstane na místě
+  (`detector_distance_mm` se posune o stejný rozdíl), jinak by se změnilo i b.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -986,7 +997,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
   sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
   a expozice (schváleno 19. 10. 2026; dokončí milník M4): [x] 13A.1 vymezení RT a jádro
-  `ndt/rt.py`, [ ] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [ ] 13B okno.
+  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [ ] 13B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
