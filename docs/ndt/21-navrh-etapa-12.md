@@ -1,7 +1,8 @@
 # NDT – návrh etapy 12: MT – přiložení jha a směry magnetizace
 
 Stav: **schváleno autorem 19. 10. 2026 („schvaluji etapu 12 včetně doporučení 1–10“);
-implementace po krocích ve vývojové větvi.**
+provedeno a sloučeno v [PR #26](https://github.com/JendaNDT/SkodaCAD/pull/26) (`5cb6ef4`).
+Autor 19. 10. 2026 k vydání z `5cb6ef4` napsal „ok, funguje to“.**
 Výchozí stav: `main`, commit `3297983` ([PR #25](https://github.com/JendaNDT/SkodaCAD/pull/25)).
 Navazuje na [plán, etapa 12](03-implementacni-plan.md), [geometrické jádro (etapa 02)](06-navrh-etapa-02.md),
 [virtuální sondu (etapa 03)](07-navrh-etapa-03.md), [PT (etapa 11)](19-navrh-etapa-11.md),
@@ -581,7 +582,7 @@ Schválením se **neschvaluje**:
   Zrychlení přiložení: napřed místa a stěna obou pólů, pak rychlá kontrola přesahu
   (4 paprsky), úhel nohou, přesné dosednutí pólu (paměť podle místa – sousední středy
   sdílí místo pólu) a průnik nohou a těla.
-- **12B (hotovo):** v panelu NDT u MT studie skupina *Přiložení jha a směry magnetizace*:
+- **12B (hotovo, sloučeno v PR #26, autor po vydání: „ok, funguje to“):** v panelu NDT u MT studie skupina *Přiložení jha a směry magnetizace*:
   - nahoře `MT_DISCLAIMER`, stav materiálu, zvolené hodnoty,
   - *Nastavení MT…* (`gui/mt_dialog.py`, jeden krok Zpět, nezměněné *OK* nic nemění),
   - odhad, *Spočítat mapu MT* na pozadí s průběhem, *Zastavit*, *Skrýt mapu*, *Export CSV…*,
@@ -590,8 +591,11 @@ Schválením se **neschvaluje**:
   - *Ukázat jho*, *Přiložit jho sem* s natočením, *Skrýt jho*.
 
   Jho se kreslí jako průhledná sonda v barvě stavu s obrysem účinné oblasti. Položky jsou
-  i v nabídce NDT a během práce AI jsou zamčené. Snímky okna jsou z Xvfb v cloudu; ruční
-  zkouška autorem zatím neproběhla.
+  i v nabídce NDT a během práce AI jsou zamčené. Snímky okna jsou z Xvfb v cloudu; autor
+  vydání vyzkoušel 19. 10. 2026. Při zkoušce *Ukázat jho* v pohledu pole 90° u kraje desky
+  nic nenakreslilo: místo směr 90° nemá a jho se hledá jen pro směr z přepínače, v pohledu
+  *celkem* se jho s roztečí 75 mm nakreslí. Srozumitelnější hláška pro tento případ je
+  navržená, neprovedená.
 - **Automatické mapy referenčních dílů** (19. 10. 2026, cloud, výchozí nastavení včetně
   nanesení a prohlídky, automatický krok sítě i středů):
   - deska (1 056 míst, středy 10 mm): celkem 52,7 % pokryto, pole 0° 65,6 % (ručně 65 %),

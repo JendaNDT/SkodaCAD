@@ -192,7 +192,8 @@
   nanesení a prohlídka z PT; kontrola feromagnetického materiálu (nerez a neuvedený jen
   s potvrzením). Nastavení `mt` ve studii (**formát 20**), mapa jen pohled. Okno (mapa,
   směry, klik, Ukázat jho, Přiložit jho sem), CSV, CLI `skodacad magneticka`, AI bez
-  nového nástroje.
+  nového nástroje. Sloučeno v PR #26 (`5cb6ef4`); autor 19. 10. 2026 k vydání z `5cb6ef4`
+  napsal „ok, funguje to“.
 
 ## Architektura (`src/skodacad/`)
 
@@ -824,6 +825,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   nezvýrazňuje (jako u PT).
 - V panelu je přepínač `mt_view` (QComboBox) – metoda pro okno se proto jmenuje
   `mt_map_view` (stejné jméno by atribut přepsalo: „QComboBox is not callable“).
+- *Ukázat jho* hledá jho jen pro směr z přepínače (u *celkem* první platný směr místa).
+  V pohledu směru, který místo nemá (deska u kraje, pole 90°), jho nenajde, vypíše jen důvod
+  pro jho se středem v místě a nic nenakreslí – při zkoušce vydání to autora zmátlo.
+  Srozumitelnější hláška (který směr místo nemá, které má, přepni na *celkem*) je navržená,
+  neprovedená.
 
 ## Známé pasti (NDT – závazné vymezení UT)
 
@@ -938,9 +944,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   [x] 10 plán dráhy UT sondy (formát v18, sloučeno v PR #24, autor po vydání: „ok funguje
   to“) – milník M3 hotov,
   [x] 11 PT přístupnost povrchu (formát v19, sloučeno v PR #25, autor po vydání: „ok, funguje
-  to“; otevírá milník M4), [ ] 12 MT přiložení jha a směry magnetizace (schváleno
-  19. 10. 2026): [x] 12A.1 vymezení MT a jádro `ndt/mt.py`, [x] 12A.2 formát 20,
-  ModelSession, pomocný proces, CLI, [x] 12B okno (čeká na PR a ruční zkoušku autora).
+  to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
+  sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
+  a expozice (návrh zatím není; dokončí milník M4).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
