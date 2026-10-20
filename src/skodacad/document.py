@@ -147,7 +147,7 @@ class Document:
                 if target.get("kind") in ("volume", "weld"):
                     study["target"] = normalize_target(target)
 
-        return cls(
+        document = cls(
             name=str(data.get("name", "Bez názvu")),
             description=str(data.get("description", "")),
             units=units,
@@ -158,6 +158,14 @@ class Document:
             thickness_map=copy.deepcopy(thickness_map),
             ndt=copy.deepcopy(ndt),
         )
+        if ndt is not None and "design" in ndt:
+            from skodacad.ndt.design import Design, DesignError
+
+            try:
+                Design.from_dict(ndt["design"]).check(document)
+            except DesignError as exc:
+                raise DocumentError(str(exc)) from None
+        return document
 
     def to_dict(self) -> dict[str, Any]:
         data = {
