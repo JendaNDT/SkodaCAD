@@ -102,11 +102,37 @@ def _worker_main(conn: Any) -> None:
         except (EOFError, OSError):
             return  # okno skončilo
         if message[0] not in ("rebuild", "coverage", "access", "plan", "pt", "mt", "rt",
-                              "audit"):
+                              "audit", "design"):
             return
         kind, job, data, *options = message
         try:
-            if kind == "access":
+            if kind == "design":
+                from skodacad.ndt.design import Design, run
+                from skodacad.ndt.study import part_fingerprint
+                import datetime
+
+                settings, path, operator = options
+                parsed = Design.from_dict(settings)
+                doc = Document.from_dict(data)
+
+                def design_progress(index: int, total: int, label: str, inner: Any,
+                                    job: int = job) -> None:
+                    conn.send(("design_progress", job, (index, total, label, inner)))
+
+                def design_prepared(base: Any, job: int = job) -> None:
+                    conn.send(("design_prepared", job, (base.original, base.steps_text)))
+
+                def design_variant(variant: Any, job: int = job) -> None:
+                    conn.send(("design_variant", job, variant))
+
+                outcome = run(
+                    data, parsed, model=doc.name, path=path, operator=operator,
+                    fingerprint=part_fingerprint(doc),
+                    created=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    progress=design_progress, on_variant=design_variant,
+                    on_prepared=design_prepared)
+                reply = ("design", job, outcome)
+            elif kind == "access":
                 from skodacad.session import ModelSession
 
                 session = ModelSession()
@@ -238,6 +264,7 @@ class Finished:
     mt: Any = None  # mapa geometrické proveditelnosti a směrového pokrytí MT (etapa 12)
     rt: Any = None  # mapa geometrického promítnutí oblasti RT (etapa 13)
     audit: Any = None  # předběžný NDT audit doběhl (etapa 14; studie chodí v ``update``)
+    design: Any = None  # konstrukční návrhy (etapa 15; varianty chodí v ``update``)
     update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
 
@@ -303,6 +330,11 @@ class BackgroundRebuilder:
         chodí průběžně (``Finished.update``)."""
         return self._submit(("audit", document, include, access, operator))
 
+    def submit_design(self, document: dict[str, Any], settings: dict[str, Any],
+                      path: str = "", operator: str = "") -> int:
+        """Konstrukční návrhy, s průběžným předáváním hotových variant."""
+        return self._submit(("design", document, settings, path, operator))
+
     def _submit(self, message: tuple) -> int:
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
@@ -330,7 +362,8 @@ class BackgroundRebuilder:
         try:
             if worker.conn.poll():
                 kind, job, payload = worker.conn.recv()
-                if kind in ("progress", "prepared", "variant", "entry"):
+                if kind in ("progress", "prepared", "variant", "entry", "design_progress",
+                            "design_prepared", "design_variant"):
                     return Finished(job, update=(kind, payload))
                 self._active = None
                 self._idle.append(worker)
@@ -353,6 +386,8 @@ class BackgroundRebuilder:
                     return Finished(job, rt=payload)
                 if kind == "audit":
                     return Finished(job, audit=payload)
+                if kind == "design":
+                    return Finished(job, design=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass
