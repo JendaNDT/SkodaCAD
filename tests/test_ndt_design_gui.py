@@ -53,7 +53,7 @@ def test_panel_flow_preserves_original_until_explicit_approval(design_window, mo
     before = source.read_bytes()
     panel = window.design_panel
     window.show_design()
-    assert panel.warning.text().find("pevnost") >= 0
+    assert "pevnost" in panel.warning.text().lower()
     assert window.design_dock.isVisible() or window.design_dock.widget() is not None
     window.session.set_ndt_design(quick_settings())
     window._refresh_all()
