@@ -1099,12 +1099,15 @@ def _gain(a: tuple[float, float], b: tuple[float, float]) -> float:
 def run(document: dict[str, Any], design: Design, *, model: str = "", path: str = "",
         fingerprint: str = "", created: str = "", operator: str = "",
         progress: Callable[[int, int, str, Any], None] | None = None,
-        on_variant: Callable[[Variant], None] | None = None) -> DesignResult:
+        on_variant: Callable[[Variant], None] | None = None,
+        on_prepared: Callable[[Baseline], None] | None = None) -> DesignResult:
     """Celý návrh synchronně (CLI, testy, pomocný proces). Model se nemění."""
     from skodacad.buildinfo import build_text, libraries_text
 
     started = time.monotonic()
     base = baseline(document, design)
+    if on_prepared is not None:
+        on_prepared(base)
     combos = design.combinations(base.original)
     todo = [{}, *combos]
     variants: list[Variant] = []
