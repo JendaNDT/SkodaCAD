@@ -997,10 +997,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
-- Krok *Testy* má časový limit (Windows 20 min, macOS 25 min – proti zaseknutému dialogu).
+- Krok *Testy* má časový limit (Windows 30 min, macOS 35 min – proti zaseknutému dialogu).
   Etapa 09 původní 10 min na Windows překročila (testy 7:55 → přes 10 min, sestavení
-  selhalo „timed out“). Na Windows běží testy asi 0,8× déle než v cloudu na Linuxu. Nové
-  pomalé testy drž krátké: hrubý krok, málo směrů, jedna kontaktní plocha, sdílené fixtures.
+  selhalo „timed out“). Při etapě 14 trvaly testy na Windows 15:42 (14A.1) a 18:25 (14A.2)
+  při limitu 20 min – rozptyl běžců GitHubu je několik minut, proto 20. 10. 2026 limit
+  30 min (celá úloha 55 min). Na Windows běží testy zhruba stejně dlouho jako v cloudu na
+  Linuxu (cloud 17–18 min). Nové pomalé testy drž krátké: hrubý krok, málo směrů, jedna
+  kontaktní plocha, sdílené fixtures.
 
 ## Známé pasti (macOS)
 
