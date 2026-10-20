@@ -2,7 +2,6 @@
 
 import copy
 import json
-import time
 
 import pytest
 
