@@ -223,6 +223,24 @@
   z okna PDF (Qt) a obrázky 3D. Mapa tloušťky jen s nastavenou mezí. Výsledek je pohled,
   formát zůstává 21. Okno, CLI `skodacad audit`, AI bez nového nástroje s pravidlem.
   Sloučeno v PR #28 (`94a78d7`); ruční zkouška autora po vydání čeká.
+- (20. 10. 2026, schváleno včetně doporučení 1–12) **NDT etapa 15 – konstrukční návrhy bez
+  automatické změny dílu** (`docs/ndt/26-navrh-etapa-15.md`, dokončí milník M5): varianty =
+  1–3 povolené **číselné parametry** (výčet nebo rozsah, všechny kombinace, nejvýš 24, pevné
+  pořadí); **zamčené rozměry = uložená měření** (změna nad 0,01 mm / 0,01° nebo měření, které
+  nejde spočítat → neprojde) a zamčené parametry (hlídá výrazy); podmínky = uložené měření +
+  mez + důvod, limit změny hmotnosti, volitelně mapa tloušťky; bez zámků a podmínek je výsledek
+  „informativní“. Každá varianta na **kopii modelu**, oblast studie znovu ukotvená jen v kopii,
+  nastavení studie beze změny, **kroky sítě zamčené podle původního dílu**; cíle svaru,
+  projekce RT a zóny zůstávají. UT jen s uloženým plánem (sestaví se znovu se stejnými
+  průchody; volba jen ověřit), návrh poloh pro varianty ne. Cílová studie vždy, ostatní
+  volitelně; neprošlé informativně. Pořadí bez skóre (prošlé → % dobrého stavu → nejisté →
+  menší změna parametrů → hmotnosti), vždy i mm² / mm³, upozornění při změně oblasti nad 5 %,
+  původní díl první; ověření pořadí polovičním krokem (původní + 3 nejlepší). Náhled je pohled,
+  *Použít variantu…* jen u prošlé po potvrzení (jeden krok Zpět), *Uložit variantu jako…*
+  nový soubor. Zadání v `ndt.design` (**formát 22**), výsledky pohled; zpráva „Návrh ke
+  konstruktérskému posouzení“ (`DESIGN_NOTE`) HTML/CSV, z okna PDF; panel, `skodacad navrh`,
+  AI s pravidlem bez nástroje; referenční díl 10 `navrh_kapsa.json`. Jako první krok oprava:
+  tvar skici s nulovou plochou = česká chyba (dřív tiše zahodil i ostatní tvary skici).
 
 ## Architektura (`src/skodacad/`)
 
@@ -444,6 +462,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   bodu uprostřed hrany případně prohodí konce.
 - Body promítnutých hran se jmenují `r1.start` … – tečka je proto ve jménech bodů obrysu
   zakázaná.
+
+## Známé pasti (skica s nulovou plochou)
+
+- Mnohoúhelník s body na jedné přímce dá v build123d **neplatnou plošku s plochou 0**. Plocha
+  celé skici je přitom kladná (ostatní tvary) a vysunutí pak tiše zahodilo **i ostatní tvary**
+  (tupý svar – objem, h = 0: 360 000 místo 360 500 mm³, všechny prvky „ok“). `build_sketch`
+  proto kontroluje plochu každého tvaru (`MIN_AREA` 1e-6 mm²) → česká chyba „Tvar N skici
+  (mnohoúhelník) má nulovou plochu“ a `ctx.apply` odmítne přidané těleso s nulovým objemem.
 
 ## Známé pasti (vymodelovaný závit)
 
@@ -1084,8 +1110,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (schváleno
   20. 10. 2026; otevírá milník M5): [x] 14A.1 jádro zprávy `ndt/audit.py`, [x] 14A.2 spuštění
   (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF; sloučeno
-  v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (návrh
-  `docs/ndt/26-navrh-etapa-15.md` čeká na rozhodnutí autora; dokončí milník M5).
+  v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (schváleno
+  20. 10. 2026; dokončí milník M5): [x] 15A.0 oprava skici s nulovou plochou, [ ] 15A.1 jádro
+  `ndt/design.py`, [ ] 15A.2 formát 22, ModelSession, CLI, [ ] 15B okno.
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

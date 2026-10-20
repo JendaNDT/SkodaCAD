@@ -118,8 +118,14 @@ class BuildContext:
                 raise FeatureError(
                     f"{label}: díl už existuje. Použij \"operation\": \"add\" nebo \"cut\"."
                 )
+            if solid.volume <= 1e-9:
+                raise FeatureError(f"{label}: těleso nemá žádný objem – zkontroluj rozměry "
+                                   "skici a vzdálenost.")
             self.part = solid
         elif operation == "add":
+            if solid.volume <= 1e-9:  # neplatný tvar se při sjednocení tiše ztratí
+                raise FeatureError(f"{label}: těleso nemá žádný objem – zkontroluj rozměry "
+                                   "skici a vzdálenost.")
             self.part = solid if self.part is None else self.part + solid
         elif operation == "cut":
             part = self.require_part(label)
@@ -330,6 +336,13 @@ def _loop_face(loop: list[tuple]) -> Sketch:
     return Sketch() + face
 
 
+MIN_AREA = 1e-6  # mm² – menší tvar skici je chyba rozměrů, ne geometrie
+SHAPE_NAMES = {"rectangle": "obdélník", "circle": "kružnice",
+               "circle_pattern": "kružnice na roztečí",
+               "regular_polygon": "pravidelný mnohoúhelník", "slot": "drážka",
+               "polygon": "mnohoúhelník", "profile": "obrys", "steel": "ocelový profil"}
+
+
 @feature("sketch", "Skica")
 def build_sketch(ctx: BuildContext, feature: dict[str, Any]) -> None:
     plane = _resolve_plane(ctx, feature)
@@ -337,11 +350,15 @@ def build_sketch(ctx: BuildContext, feature: dict[str, Any]) -> None:
     if not isinstance(elements, list) or not elements:
         raise FeatureError("Skica potřebuje neprázdný seznam „elements“.")
     sketch: Sketch | None = None
-    for element in elements:
+    for number, element in enumerate(elements, start=1):
         if not isinstance(element, dict):
             raise FeatureError("Každý tvar ve skice musí být objekt.")
         mode = _choice(element, "mode", ("add", "subtract"), "add")
         shape = _element(ctx, element, plane)
+        if shape.area <= MIN_AREA:  # jinak by s ním skica tiše zahodila i ostatní tvary
+            name = SHAPE_NAMES.get(element.get("shape"), "tvar")
+            raise FeatureError(f"Tvar {number} skici ({name}) má nulovou plochu – zkontroluj "
+                               "jeho rozměry (body mnohoúhelníku nesmí ležet na jedné přímce).")
         if mode == "add":
             sketch = shape if sketch is None else sketch + shape
         elif sketch is None:

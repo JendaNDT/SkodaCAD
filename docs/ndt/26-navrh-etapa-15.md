@@ -1,6 +1,7 @@
 # NDT – návrh etapy 15: Konstrukční návrhy bez automatické změny dílu
 
-Stav: **návrh k rozhodnutí autora (20. 10. 2026).** Nic z toho zatím není naprogramované.
+Stav: **schváleno autorem 20. 10. 2026 („schvaluji etapu 15 včetně doporučení 1–12“);
+implementace po krocích ve vývojové větvi.**
 Výchozí stav: `main`, commit `94a78d7` ([PR #28](https://github.com/JendaNDT/SkodaCAD/pull/28)).
 Navazuje na [plán, etapa 15](03-implementacni-plan.md), na starší návrh
 [v0.2, oddíly 9 a 20](02-navrh-v0.2.md), na závazná vymezení
