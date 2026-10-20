@@ -222,6 +222,7 @@
   aplikace (commit z GitHub Actions). Export složky: HTML, CSV míst, podrobná CSV studií;
   z okna PDF (Qt) a obrázky 3D. Mapa tloušťky jen s nastavenou mezí. Výsledek je pohled,
   formát zůstává 21. Okno, CLI `skodacad audit`, AI bez nového nástroje s pravidlem.
+  Sloučeno v PR #28 (`94a78d7`); ruční zkouška autora po vydání čeká.
 
 ## Architektura (`src/skodacad/`)
 
@@ -1082,7 +1083,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (sloučeno
   v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (schváleno
   20. 10. 2026; otevírá milník M5): [x] 14A.1 jádro zprávy `ndt/audit.py`, [x] 14A.2 spuštění
-  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF).
+  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF; sloučeno
+  v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (návrh
+  `docs/ndt/26-navrh-etapa-15.md` čeká na rozhodnutí autora; dokončí milník M5).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
