@@ -802,8 +802,8 @@ def _navrh(args: argparse.Namespace) -> int:
     """Srovnání parametrických variant bez změny modelu; zadání zapisuje jen --ulozit-zadani."""
     import re
 
-    from skodacad.ndt.design import Design, DesignError
     from skodacad.ndt.audit import duration_text
+    from skodacad.ndt.design import Design, DesignError
     from skodacad.session import ModelSession
 
     session = ModelSession()
