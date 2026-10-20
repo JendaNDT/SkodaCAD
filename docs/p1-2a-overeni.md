@@ -16,6 +16,7 @@ přidávat materiál ve vnitřním rohu. Skořepina musí mít zvolenou otevřen
 souhrnu AI. Ve vlastnostech je konečný počet vždy. Více platných solidů je nadále
 úspěch. Přenos používá existující `FeatureStatus.message`; recept a protokol
 workeru nemají nové pole. Při chybě se nehlásí smyšlená úspěšná změna počtu.
+Ve stromu je počet před názvem prvku, aby nezmizel při zkrácení dlouhého názvu.
 
 ## Malé kroky a místní výsledky
 
@@ -23,20 +24,26 @@ workeru nemají nové pole. Při chybě se nehlásí smyšlená úspěšná změ
 |---|---|---|
 | A.1 společná kontrola a `new/add/cut` | `2bd1c86` | Ruff OK; **1 165 testů / 408,34 s**, bez přeskočení |
 | A.2 úpravy hran/stěn a závěrečná pojistka | `8de7fde` | Ruff OK; **1 195 testů / 412,41 s**, bez přeskočení |
-| A.3 zprávy, rozhraní, přenos, kompatibilita | aktuální větev PR | Ruff OK; **1 265 testů / 413,35 s**, bez přeskočení; samostatná sada GUI **85 testů / 61,04 s** |
+| A.3 zprávy, rozhraní, přenos, kompatibilita | `08e1c9e` | Ruff OK; **1 265 testů / 413,35 s**, bez přeskočení; samostatná sada GUI **85 testů / 61,04 s** |
+| A.3 čitelnost dlouhého názvu | aktuální větev PR | Ruff OK; **1 266 testů / 412,98 s**, bez přeskočení; cílených **6 testů / 0,95 s** |
 
 Místní prostředí: macOS 27.0.1 arm64 / Apple M4, Python 3.12.14,
 build123d 0.13.0, OCCT 8.0.1, PySide6 6.11.2; testy Qt offscreen.
 První úplný průchod A.3 odhalil stará očekávání přesného textu stromu GUI.
 Očekávání nyní zahrnují schválené hlášení počtu; původní geometrické podmínky
 nebyly změněny. První běh skončil 9 selháními / 1 256 úspěchy; po opravě
-prošel nový celý průchod uvedený v tabulce. Přírůstek oproti main je 166 případů.
+prošel nový celý průchod uvedený v tabulce. Dodatečný nativní snímek tažení odhalil
+zkrácení zprávy za dlouhým názvem. Přesunutí zprávy před název pokrývá nová regrese
+skutečného zkracování textu v úzkém stromu. Geometrické podmínky zůstaly zachované.
+Konečný průchod proběhl 21. 10. 2026; přírůstek oproti main je 167 případů.
 
 Nativní self-test ze zdrojů skončil **VÝSLEDEK: OK**, včetně kreslení, měření,
 NDT ukázek a skutečného přepočtu na pozadí. Snímek skutečného okna na Macu
 ukazuje oba samostatné válce, zelené 0→2 a konečný počet 2. První pokus na
 zamčeném Macu zachytil pouze plochu; nebyl uznán jako ověření okna. Úspěšný
-snímek vznikl po ručním odemknutí. Toto automatizované ověření ze zdrojů
+snímek vznikl po ručním odemknutí. Nativní snímky po opravě dlouhých názvů dokládají
+viditelné 0→1 a 1→3 u trubek i 0→2 u válců; opakovaný nativní self-test je opět OK.
+Toto automatizované ověření ze zdrojů
 nenahrazuje ruční přijetí konkrétního staženého balíčku autorem.
 
 ## Pokrytí schválené matice
@@ -50,7 +57,7 @@ nenahrazuje ruční přijetí konkrétního staženého balíčku autorem.
 | V8 | Registr všech 11 objemových typů musí projít závěrečnou pojistkou; zachované analytické testy loftu, tažení, rotace, normalizovaných dílů a vymodelovaného závitu. |
 | V9 | Existující pole tří tažení plus zprávy 1→3; nová regrese pozdní chyby pole dvou děr ověřuje původní objem i materiál v místě první nepřijaté kopie. |
 | V10 | Přesná numerická hranice 0 / 0,5 ε / ε / 2 ε odděleně od OCCT; měřítka 0,1/1/10, dvě mikromezery a skutečné mělké řezy podle změřeného účinku jádra. |
-| V11 | `test_body_counts.py`, `test_gui.py`: stejné 0→1, 0→2, 1→2, 2→1, 1→3, 1→1 v jádře, CLI, offline AI a Qt; chybný/přeskočený prvek nemá úspěšnou zprávu. |
+| V11 | `test_body_counts.py`, `test_gui.py`: stejné 0→1, 0→2, 1→2, 2→1, 1→3, 1→1 v jádře, CLI, offline AI a Qt; chybný/přeskočený prvek nemá úspěšnou zprávu. Počet zůstane čitelný i při zkrácení dlouhého názvu v úzkém stromu. |
 | V12 | BinTools/pickle i skutečný `BackgroundRebuilder` se spawnem zachovají geometrii a zprávy; Zpět/Znovu, oprava nových chyb a uložení kopie zachovají zdrojové bajty. |
 | V13 | `test_p12a_compatibility.py`: všech 26 rekurzivních ukázek, výchozí objemy/plné obálky/počty, uložení a otevření kopie; jednoduché historické recepty verzí 1–22. Původní testy novějších sekcí zůstávají. |
 | V14 | Řízeně vadný výstup builderu (i obejití `apply` či nezměněná identita) nesmí projít; samotné skici bez tělesa jsou platné. |
@@ -68,15 +75,15 @@ mediány v sekundách. Bez prahů rychlosti v CI.
 
 | Scénář | Před | Kandidát | Poměr |
 |---|---:|---:|---:|
-| Příruba | 0,014008 | 0,032118 | 2,29× |
-| Krabička | 0,029631 | 0,066769 | 2,25× |
-| Rám | 0,131218 | 0,148474 | 1,13× |
-| Tupý svar – objem | 0,033960 | 0,043854 | 1,29× |
-| Encode/pickle/decode | 0,000936 | 0,000951 | 1,02× |
-| 1 000 kolmých NDT paprsků | 0,071584 | 0,073827 | 1,03× |
+| Příruba | 0,014008 | 0,030684 | 2,19× |
+| Krabička | 0,029631 | 0,065577 | 2,21× |
+| Rám | 0,131218 | 0,149434 | 1,14× |
+| Tupý svar – objem | 0,033960 | 0,044457 | 1,31× |
+| Encode/pickle/decode | 0,000936 | 0,000921 | 0,98× |
+| 1 000 kolmých NDT paprsků | 0,071584 | 0,073568 | 1,03× |
 
 Kontroly všech vstupů, kandidátů a konečných 3D prvků mají skutečnou cenu,
-u krátkých přepočtů přibližně 18–37 ms navíc. První kandidát krabičky měl
+u krátkých přepočtů přibližně 17–36 ms navíc. První kandidát krabičky měl
 0,308 s: profil ukázal opakované hledání přesné obálky. Validátor pro konečnost
 používá konzervativní `bounding_box(optimal=False)` a stále kontroluje vrcholy,
 celý tvar i každý solid. Přesná obálka pro vlastnosti/kompatibilitu se nemění.
@@ -85,8 +92,9 @@ celý tvar i každý solid. Přesná obálka pro vlastnosti/kompatibilitu se nem
 Vstupní SHA a geometrické/NDT podpisy všech scénářů souhlasí. Přenos příruby
 vzrostl **57 108 → 57 204 B** kvůli textům zpráv, se stejnými klíči protokolu.
 Otisk zdrojů konečného měření je
-`57858ce1b5e27bd11a2e5f73c52e090b2f1616de9d9c04d2c1dad45c4ee8988e`.
-Paměťové maximum obou procesů bylo 431 980 544 B; jde o celoživotní maximum
+`5e145ea5616f1a87f28aa6b06ff3f3c60d3c75dd43815f03d7f7ee03c7e40b66`.
+Konečné měření vzniklo po dokončení posledního pytestu, bez souběžného testování.
+Paměťové maximum procesů bylo 431 980 544 → 432 128 000 B; jde o celoživotní maximum
 včetně importů, nikoli spotřebu scénáře/workerů. Tři opakování nejsou statistická
 záruka; měření nezahrnuje start, GUI, spawn ani export. Windows/macOS CI baseline
 není s místním strojem přímo srovnatelná.
@@ -94,7 +102,7 @@ není s místním strojem přímo srovnatelná.
 ## Cílové sestavení a přijetí
 
 Obě kompletní kontroly Windows a macOS jsou povinné na aktuální hlavě implementačního PR.
-Při vytvoření třetího commitu ještě výsledky jeho workflow nejsou známé.
+Při vytvoření posledního commitu ještě výsledky jeho workflow nejsou známé.
 Jejich skutečný konečný stav, odkazy na pytest a self-test stažených balíčků
 jsou součástí předání v popisu implementačního PR. Starší úspěšné běhy A.1/A.2
 nejsou důkazem konečného sestavení. PR automaticky nezveřejňuje nové Releases.

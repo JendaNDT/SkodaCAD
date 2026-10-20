@@ -1336,7 +1336,7 @@ class MainWindow(QMainWindow):
         for key, label, status, message in rows:
             text = f"{_STATUS_ICONS[status]}  {label}"
             if status == "ok" and message:
-                text += f" — {message}"
+                text = f"{_STATUS_ICONS[status]}  {message} — {label}"
             item = QTreeWidgetItem([text])
             item.setData(0, _FEATURE_ID, key)
             item.setForeground(0, _STATUS_COLORS[status])
