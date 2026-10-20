@@ -107,9 +107,10 @@ def _worker_main(conn: Any) -> None:
         kind, job, data, *options = message
         try:
             if kind == "design":
+                import datetime
+
                 from skodacad.ndt.design import Design, run
                 from skodacad.ndt.study import part_fingerprint
-                import datetime
 
                 settings, path, operator = options
                 parsed = Design.from_dict(settings)
