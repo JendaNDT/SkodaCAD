@@ -1,0 +1,276 @@
+{
+  "purpose": "P0 performance evidence; not a model file or acceptance threshold",
+  "created_utc": "2026-10-20T16:54:12.718454+00:00",
+  "commit": "94c6e1d0f78f8944f81fd18db28a7ebbe2d18ec7",
+  "tracked_changes": [
+    ".github/workflows/macos.yml",
+    ".github/workflows/windows.yml",
+    "CLAUDE.md",
+    "README.md",
+    "docs/ndt/README.md"
+  ],
+  "source_sha256": "4e0ac98cdac25a1ba47dec8067b3f0d1846b5f8c48778c55c5cf0a9de8221bba",
+  "benchmark_sha256": "1b940b7958e50434e3da12db602a965ce5ee3a3e85bae60c1971a53d48030f06",
+  "model_format_version": 22,
+  "environment": {
+    "python": "3.12.14",
+    "system": "Darwin",
+    "release": "27.0.0",
+    "machine": "arm64",
+    "processor": "arm",
+    "logical_cpus": 10,
+    "packages": {
+      "Deprecated": "3.0.0",
+      "PySide6": "6.11.2",
+      "PySide6_Addons": "6.11.2",
+      "PySide6_Essentials": "6.11.2",
+      "Pygments": "2.21.0",
+      "annotated-types": "0.8.0",
+      "anthropic": "1.15.0",
+      "anyio": "4.15.1",
+      "anytree": "2.13.0",
+      "asttokens": "3.0.2",
+      "bd_materials": "0.2.4",
+      "build123d": "0.13.0",
+      "cadquery-ocp-novtk": "8.0.1.1.0",
+      "cadquery-ocp-proxy": "8.0.1.1.0",
+      "certifi": "2026.10.19",
+      "charset-normalizer": "3.5.2",
+      "cloudpickle": "3.1.2",
+      "dataclasses-json": "0.6.7",
+      "docstring_parser": "0.18.0",
+      "executing": "2.3.0",
+      "ezdxf": "1.4.5",
+      "fonttools": "4.67.0",
+      "h11": "0.16.0",
+      "httpcore2": "2.15.1",
+      "httpx2": "2.15.1",
+      "idna": "3.20",
+      "iniconfig": "2.3.1",
+      "ipython": "9.17.1",
+      "ipython_pygments_lexers": "1.1.1",
+      "jedi": "0.20.1",
+      "jiter": "0.17.0",
+      "joblib": "1.6.0",
+      "lib3mf": "2.5.0",
+      "marshmallow": "3.26.2",
+      "matplotlib-inline": "0.2.2",
+      "mpmath": "1.3.0",
+      "mypy_extensions": "1.1.0",
+      "narwhals": "2.27.1",
+      "numpy": "2.5.4",
+      "ocp_gordon": "0.3.1",
+      "ocpsvg": "0.7.0",
+      "opentelemetry-api": "1.45.1",
+      "packaging": "26.3",
+      "parso": "0.8.7",
+      "pexpect": "4.9.0",
+      "pillow": "13.0.0",
+      "pip": "25.0.1",
+      "platformdirs": "4.13.5",
+      "pluggy": "1.7.0",
+      "prompt_toolkit": "3.0.53",
+      "psutil": "7.2.2",
+      "ptyprocess": "0.7.0",
+      "pure_eval": "0.2.4",
+      "pydantic": "2.14.1",
+      "pydantic_core": "2.50.1",
+      "pygltflib": "1.16.5",
+      "pyparsing": "3.3.3",
+      "pytest": "9.1.1",
+      "requests": "2.34.2",
+      "ruff": "0.17.1",
+      "scikit-learn": "1.9.1",
+      "scipy": "1.18.1",
+      "shiboken6": "6.11.2",
+      "skodacad": "0.1.0",
+      "slvs": "3.2",
+      "sniffio": "1.3.1",
+      "stack-data": "0.6.3",
+      "svgelements": "1.9.6",
+      "svgpathtools": "1.8.0",
+      "svgwrite": "1.4.3",
+      "sympy": "1.14.0",
+      "threadpoolctl": "3.7.0",
+      "threejs-materials": "1.2.5",
+      "traitlets": "5.16.1",
+      "trianglesolver": "1.2",
+      "truststore": "0.10.5",
+      "typing-inspect": "0.9.0",
+      "typing-inspection": "0.4.4",
+      "typing_extensions": "4.16.0",
+      "urllib3": "2.8.0",
+      "wcwidth": "0.9.3",
+      "webcolors": "24.8.0",
+      "wrapt": "2.5.1"
+    }
+  },
+  "inputs_sha256": {
+    "examples/priruba.json": "f05484e28a6448d73359a4f817c416454f7c6844420d3be863c70bbdc627f1f8",
+    "examples/krabicka.json": "fd1be9130a9ea4636eff028fabec4181a8ee431e66d94a330d84adf941d0437f",
+    "examples/ram.json": "3f78cac88f21d039128639ea3046cdfae1f7f6d60e35adcda105f08d6e29c145",
+    "examples/ndt/cilove_objemy/tupy_svar_objem.json": "dc65298e79f90398c742c1113a9e6b1fea6fb4d7c195dfb2198a8b59ced4316a",
+    "examples/ndt/deska.json": "9e6ce9ad538b195b360973398110c4d15619b2b0cf36ede4b256825bd3bd9a66"
+  },
+  "results": [
+    {
+      "name": "rebuild:priruba.json",
+      "warmups": 1,
+      "samples_s": [
+        0.013523208006517962,
+        0.013863375002983958,
+        0.013457875000312924
+      ],
+      "median_s": 0.013523208006517962,
+      "min_s": 0.013457875000312924,
+      "max_s": 0.013863375002983958,
+      "result": {
+        "volume_mm3": 311092.54733,
+        "area_mm2": 50873.786139,
+        "bounds_mm": [
+          165.0,
+          165.0,
+          18.0
+        ],
+        "solids": 1,
+        "faces": 10,
+        "features": 6,
+        "ndt_states": []
+      }
+    },
+    {
+      "name": "rebuild:krabicka.json",
+      "warmups": 1,
+      "samples_s": [
+        0.027051125012803823,
+        0.02760491700610146,
+        0.02767812501406297
+      ],
+      "median_s": 0.02760491700610146,
+      "min_s": 0.027051125012803823,
+      "max_s": 0.02767812501406297,
+      "result": {
+        "volume_mm3": 21045.402546,
+        "area_mm2": 21590.877462,
+        "bounds_mm": [
+          80.0,
+          50.0,
+          30.0
+        ],
+        "solids": 1,
+        "faces": 36,
+        "features": 6,
+        "ndt_states": []
+      }
+    },
+    {
+      "name": "rebuild:ram.json",
+      "warmups": 1,
+      "samples_s": [
+        0.13345200000912882,
+        0.130941667011939,
+        0.1337605840235483
+      ],
+      "median_s": 0.13345200000912882,
+      "min_s": 0.130941667011939,
+      "max_s": 0.1337605840235483,
+      "result": {
+        "volume_mm3": 555617.690791,
+        "area_mm2": 555617.690792,
+        "bounds_mm": [
+          840.0,
+          540.0,
+          20.0
+        ],
+        "solids": 1,
+        "faces": 52,
+        "features": 1,
+        "ndt_states": []
+      }
+    },
+    {
+      "name": "rebuild:ndt/cilove_objemy/tupy_svar_objem.json",
+      "warmups": 1,
+      "samples_s": [
+        0.03369204100454226,
+        0.03311629200470634,
+        0.03341929201269522
+      ],
+      "median_s": 0.03341929201269522,
+      "min_s": 0.03311629200470634,
+      "max_s": 0.03369204100454226,
+      "result": {
+        "volume_mm3": 363900.0,
+        "area_mm2": 69881.952968,
+        "bounds_mm": [
+          300.0,
+          100.0,
+          15.0
+        ],
+        "solids": 1,
+        "faces": 14,
+        "features": 4,
+        "ndt_states": [
+          [
+            "s1",
+            "ok"
+          ],
+          [
+            "s2",
+            "ok"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "encode-pickle-decode:priruba",
+      "warmups": 1,
+      "samples_s": [
+        0.0009259590005967766,
+        0.0009275829943362623,
+        0.0009152499842457473
+      ],
+      "median_s": 0.0009259590005967766,
+      "min_s": 0.0009152499842457473,
+      "max_s": 0.0009275829943362623,
+      "result": {
+        "payload_bytes": 57108,
+        "volume_mm3": 311092.54733,
+        "area_mm2": 50873.786139,
+        "bounds_mm": [
+          165.0,
+          165.0,
+          18.0
+        ],
+        "solids": 1,
+        "faces": 10,
+        "features": 6,
+        "ndt_states": []
+      }
+    },
+    {
+      "name": "ndt:1000-rays-plate",
+      "warmups": 1,
+      "samples_s": [
+        0.10270449999370612,
+        0.07368004199815914,
+        0.07122091599740088
+      ],
+      "median_s": 0.07368004199815914,
+      "min_s": 0.07122091599740088,
+      "max_s": 0.10270449999370612,
+      "result": {
+        "rays": 1000,
+        "material_length_each_mm": 20,
+        "algorithm": "ndt-geometrie 1"
+      }
+    }
+  ],
+  "process_peak_rss_bytes": 432291840,
+  "limits": [
+    "Warm in-process operations; imports, GUI, spawn and exports excluded.",
+    "RSS is process lifetime high-water mark, not a per-case allocation.",
+    "RSS unavailable on Windows; no estimate substituted.",
+    "Compare timings only on equivalent hardware, dependencies and load."
+  ]
+}

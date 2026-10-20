@@ -1089,6 +1089,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
+**Aktuální pokračování (20. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+Nyní pouze P0: dokumentace, audit, regrese a měření bez změny produkčního chování.
+[Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
+P1/P2 ani nový formát bez dalšího schválení; NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
+
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
 - [x] **Fáze 1** – [x] skicář s vazbami (úsečky, oblouky, kóty; řešič `slvs`),
@@ -1131,7 +1137,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF; sloučeno
   v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (schváleno
   20. 10. 2026; dokončí milník M5): [x] 15A.0 oprava skici s nulovou plochou, [x] 15A.1 jádro
-  `ndt/design.py`, [x] 15A.2 formát 22, ModelSession, CLI, příklad a testy (CI Windows/macOS úspěšná), [x] 15B panel, dialog, náhled, potvrzení a PDF (pracovní větev, testy CI zatím probíhají).
+  `ndt/design.py`, [x] 15A.2 formát 22, ModelSession, CLI, příklad a testy (CI Windows/macOS úspěšná), [x] 15B panel, dialog, náhled, potvrzení a PDF (sloučeno v PR #29; ruční přijetí evidovat odděleně).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

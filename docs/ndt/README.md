@@ -60,7 +60,8 @@ milník M3 (etapy 09–10). Další podle plánu je milník M4 – PT, MT a RT v
 v PR #25; po vydání autor napsal „ok, funguje to“. Etapa 12 – MT ([návrh](21-navrh-etapa-12.md)) je
 schválená 19. 10. 2026 a sloučená v PR #26; po vydání autor napsal „ok, funguje to“. Do milníku
 M4 patří ještě etapa 13 – RT ([návrh](23-navrh-etapa-13.md)), schválená 19. 10. 2026 a sloučená v PR #27; čeká na ruční zkoušku autora po vydání. Další podle plánu je milník M5: etapa 14 – společný předběžný audit ([návrh](25-navrh-etapa-14.md), schválená 20. 10. 2026 a sloučená v PR #28; čeká na ruční zkoušku autora po vydání). Milník M5 dokončí etapa 15 – konstrukční návrhy ([návrh](26-navrh-etapa-15.md), schválená 20. 10. 2026, implementace probíhá).
-Etapa 15B je zpracována v pracovní větvi a v [PR #29](https://github.com/JendaNDT/SkodaCAD/pull/29): panel Konstrukční návrh, 3D náhled, potvrzení a PDF; čeká na finální CI a ruční zkoušku. Do main zatím nesloučeno.
+Etapa 15B (panel Konstrukční návrh, 3D náhled, potvrzení a PDF) je sloučena do main v [PR #29](https://github.com/JendaNDT/SkodaCAD/pull/29), commit `94c6e1d`. Sloučení samo nedokládá ruční ani odbornou validaci.
+Další pořadí určuje [roadmapa P0–P8 a souběžná NDT-17](../roadmapa-vyvoje.md); NDT-17 není podmíněna etapou 16.
 Etapa 16 (virtuální signály) je podle závazného vymezení mimo schválený rozsah.
 
 **Důležité:** geometrická přístupnost a orientační pokrytí nejsou důkazem detekovatelnosti vad, normové způsobilosti ani schválení NDT postupu. Před nasazením pro odborná rozhodnutí je nutná validace.
