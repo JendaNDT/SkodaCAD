@@ -423,6 +423,47 @@ Schválením se **neschvaluje**:
 - nová knihovna Pythonu,
 - sloučení do `main`.
 
+## 16. Provedení a upřesnění
+
+- **15A.0 (hotovo):** tvar skici s nulovou plochou je česká chyba prvku („Tvar 1 skici
+  (mnohoúhelník) má nulovou plochu – zkontroluj jeho rozměry …“) a přidané těleso s nulovým
+  objemem je chyba. Tupý svar – objem s h = 0 dřív tiše ztratil podkořen. Test s objemem podle
+  vzorce (lichoběžníky převýšení a podkořene).
+- **15A.1 (hotovo):** `ndt/design.py`:
+  - zadání `Design` (kontrola, zápis do JSON beze ztráty tvaru výčet / rozsah), varianty jako
+    všechny kombinace bez původního dílu, nejvýš 24,
+  - `baseline` přepočítá původní díl, ověří zadání a **zamkne kroky** podle odhadu původního
+    dílu (PT a RT síť, MT síť a středy jha; UT rozteč z uloženého plánu),
+  - `evaluate` počítá variantu na kopii modelu: přepočet, zámky a podmínky (uložená měření,
+    parametry, hmotnost, mapa tloušťky), studie znovu ukotvená v kopii, výpočet metody
+    (UT: plán sestavený znovu se stejnými průchody, nebo jen ověřený),
+  - `rank_and_verify` – pořadí bez skóre a ověření původního dílu a 3 nejlepších prošlých
+    variant polovičním krokem,
+  - `DesignResult` – závěr, tabulka, souhrn pro CLI, CSV, zpráva HTML.
+- **Ověřeno (testy a pokusy, cloud):**
+  - deska se dvěma žebry (díl 8), zamčená vnější rozteč m + 2s = 50 mm měřením i parametrem
+    `w = m + 2*s`: m = 40, s = 10 **neprojde** (60 mm), m = 34, s = 8 projde,
+  - kapsa, podmínka stěna X ≥ 15 mm: a = 90 projde (15 mm), a = 100 neprojde
+    („10,00 mm (požadováno ≥ 15 mm)“),
+  - původní díl jako varianta 0 dá stejná procenta jako mapa MT v panelu se stejnými kroky,
+  - tupý svar – objem: h = 0 → *nelze vyhodnotit* (nulová plocha skici), h = 1 → *nelze
+    vyhodnotit* (cíl: chybí 1700 mm³),
+  - deska se žebrem, UT s plánem (rozteč 25 mm, 45°, rezerva 5 mm): žebro 10 mm → pokryto
+    12,5 % dna, žebro 50 mm → 5,08 % a limit hmotnosti ±10 % ho odmítne (+52,2 %),
+  - kapsa MT (a = 40 / 96 / 100, b = 30 / 40, podmínka stěna ≥ 12 mm): 5 variant + ověření
+    za 142 s; závěr „Nejlepší prošlá varianta V2 (a: 40 → 96; b = 30): pokryto ve všech
+    orientacích vad 0,00 %, jen část orientací nebo omezeně 25,00 %“, a = 100 neprošlo
+    (stěna 10 mm).
+- **Upřesnění proti návrhu:**
+  - **Zlepšení** se posuzuje jako pořadí: víc dobrého stavu, **při shodě víc „omezeně“**.
+    U MT kapsy je „všechny orientace“ všude 0 % a zlepšení je jen v „jen část orientací“.
+    Stejně porovnává i ověření polovičním krokem.
+  - MT se ověřuje polovičním **krokem středů jha** (síť míst zůstává) – právě mřížka středů
+    pořadí otáčí a poloviční síť by výpočet zdražila 16×.
+  - Odhad doby UT je horní mez odhadu plánu (deska se žebrem: odhad 201 s, skutečně 6 s).
+  - Obecná hláška „díl se od nastavení studie změnil“ se u variant nevypisuje (ve variantě je
+    to samozřejmost); jiné zprávy studie (posunutá plocha) ano.
+
 ## Zdroje
 
 - Zadání etapy: [03-implementacni-plan.md](03-implementacni-plan.md), etapa 15 a milník M5.
