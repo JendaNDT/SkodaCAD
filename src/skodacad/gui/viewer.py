@@ -226,6 +226,7 @@ class OccViewer(QWidget):
         self._coverage_objects: list[Any] = []
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self._target_objects: list[Any] = []  # náhled cílového objemu NDT (svar)
+        self._design_ghost: Any | None = None  # původní díl pod variantou (etapa 15B)
         self._point_objects: list[Any] = []  # barevné body (mapa kontaktních ploch, etapa 09)
         self._plan_objects: list[Any] = []  # plán dráhy sondy a zakázané zóny (etapa 10)
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
@@ -261,6 +262,7 @@ class OccViewer(QWidget):
         self._remove_map()
         self._remove_probe()
         self._remove_target()
+        self._remove_design_ghost()
         self._remove_coverage()
         self._remove_points()
         self._remove_plan()
@@ -291,6 +293,24 @@ class OccViewer(QWidget):
         self.picked_point = None
         self.selection_changed.emit([])
         self._view.Redraw()
+
+    def show_design_ghost(self, original: Any) -> None:
+        """Původní díl jako průhledný překryv nad variantou, bez možnosti výběru."""
+        if not self.ready or original is None:
+            return
+        self._remove_design_ghost()
+        ghost = AIS_Shape(getattr(original, "wrapped", original))
+        ghost.SetColor(_rgb(0.28, 0.51, 0.82))
+        ghost.SetTransparency(0.72)
+        self._context.Display(ghost, False)
+        self._context.Deactivate(ghost)
+        self._design_ghost = ghost
+        self._view.Redraw()
+
+    def _remove_design_ghost(self) -> None:
+        if self.ready and self._design_ghost is not None:
+            self._context.Remove(self._design_ghost, False)
+        self._design_ghost = None
 
     def selected_shapes(self) -> list[Any]:
         """Vybrané plochy a hrany jako tvary OCCT."""
