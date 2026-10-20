@@ -207,7 +207,7 @@
   prozařované tloušťky (není radiografický snímek), víc projekcí ručně se sjednocením;
   ohebný film a automatický plán projekcí později. Nastavení a projekce ve studii
   (**formát 21**), výsledky jen pohled. Okno, CSV, CLI `skodacad radiografie`, AI bez
-  nového nástroje.
+  nového nástroje. Sloučeno v PR #27 (`43187c8`); ruční zkouška autora po vydání čeká.
 
 ## Architektura (`src/skodacad/`)
 
@@ -1016,8 +1016,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
   sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
   a expozice (schváleno 19. 10. 2026; dokončí milník M4): [x] 13A.1 vymezení RT a jádro
-  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (čeká na
-  PR a ruční zkoušku autora).
+  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (sloučeno
+  v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (návrh
+  `docs/ndt/25-navrh-etapa-14.md` čeká na rozhodnutí autora; otevírá milník M5).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
