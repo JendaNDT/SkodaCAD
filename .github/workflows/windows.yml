@@ -57,7 +57,21 @@ jobs:
         timeout-minutes: 30  # zaseknutý dialog v testu nesmí blokovat celé sestavení (testy ~16–19 min)
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        run: python -m pytest -q --durations=20 --junitxml=pytest-results.xml
+
+      - name: Měřicí baseline P0 (bez prahu rychlosti)
+        timeout-minutes: 3
+        run: python tests/benchmark_p0.py --output p0-baseline.json
+
+      - name: Evidence testů a baseline P0
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-checks-windows
+          path: |
+            pytest-results.xml
+            p0-baseline.json
+          retention-days: 14
 
       - name: Zápis sestavení (commit a datum do zprávy auditu)
         shell: bash
@@ -108,6 +122,14 @@ jobs:
             cat "$SKODACAD_HOME/skodacad.log" || echo "Log nevznikl"
           fi
           exit $code
+
+      - name: Zpráva self-testu staženého balíčku
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-self-test-windows
+          path: self-test.txt
+          retention-days: 14
 
       - name: Zabalení do ZIP pro vydání (jen z main)
         if: github.ref == 'refs/heads/main'

@@ -1,7 +1,7 @@
 # NDT – návrh etapy 15: Konstrukční návrhy bez automatické změny dílu
 
 Stav: **schváleno autorem 20. 10. 2026 („schvaluji etapu 15 včetně doporučení 1–12“);
-implementace po krocích ve vývojové větvi; 15A.0, 15A.1 a 15A.2 otestované; 15B implementováno a čeká na finální CI a ruční zkoušku.**
+implementace po krocích ve vývojové větvi; 15A.0, 15A.1 a 15A.2 otestované; 15B sloučeno do main v PR #29 (`94c6e1d`). Ruční a odborné ověření se evidují odděleně; další postup je v [roadmapě P0–P8 a NDT-17](../roadmapa-vyvoje.md).**
 Výchozí stav: `main`, commit `94a78d7` ([PR #28](https://github.com/JendaNDT/SkodaCAD/pull/28)).
 Navazuje na [plán, etapa 15](03-implementacni-plan.md), na starší návrh
 [v0.2, oddíly 9 a 20](02-navrh-v0.2.md), na závazná vymezení

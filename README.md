@@ -22,9 +22,11 @@ Aplikace sestavuje GitHub automaticky po každé změně ve větvi `main`
 
 ## Aplikace pro macOS (Apple Silicon) – zkušební
 
-Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. **Zatím neověřeno na skutečném Macu** –
-sestavuje a testuje ji GitHub na svém Macu, ruční zkouška na MacBooku Air M4 teprve přijde
-(postup a seznam zkoušek v [docs/ndt/08-navrh-macos.md](docs/ndt/08-navrh-macos.md)).
+Pro Mac s čipem M1–M4 a macOS 13 nebo novějším. Autor 20. 10. 2026 potvrdil
+[ruční funkční průchod na Apple M4 / macOS 27.0.1](docs/p0-rucni-overeni-macos-2026-10-20.md)
+u balíčku z PR #30. Širší kontroly Retiny, trackpadu a kompatibility zůstávají otevřené
+([postup a seznam zkoušek](docs/ndt/08-navrh-macos.md)). Odkaz níže vede na vydání z main;
+protokol se vztahuje ke konkrétnímu sestavení z PR.
 
 1. Stáhni **[SkodaCAD-macos.zip](https://github.com/JendaNDT/SkodaCAD/releases/download/nejnovejsi-mac/SkodaCAD-macos.zip)**
    (vydání „nejnovejsi-mac“, označené jako předběžné).
@@ -1094,6 +1096,12 @@ při ruční změně cíle v JSON přestane platit i při stejném dílu.
 
 Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladové výzkumy
 jsou ve složce [docs/](docs/).
+
+Další vývoj řídí [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+Aktuální krok P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni.md).
+P1/P2 a změna formátu vyžadují další schválení; model zůstává ve verzi 22.
+Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
+(výstup musí být nový soubor).
 
 ```bash
 pip install -e ".[dev,gui]"   # jádro, okno a nástroje pro vývoj
