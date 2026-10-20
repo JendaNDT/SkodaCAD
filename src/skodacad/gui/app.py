@@ -250,9 +250,59 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_assistant(window, lines) and ok
     ok = _self_test_ndt(window, lines) and ok
     ok = _self_test_audit(window, lines) and ok
+    ok = _self_test_design(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_design(window, lines: _Report) -> bool:
+    """Zabalená aplikace: etapa 15B, dvě varianty, náhled a PDF bez změny souboru."""
+    from skodacad.gui.audit_panel import write_pdf
+    from skodacad.ndt.design import Design, TITLE
+
+    folder = examples_dir()
+    model = folder / "ndt" / "navrh_kapsa.json" if folder is not None else None
+    if model is None or not model.is_file():
+        lines.append("✕ Konstrukční návrh: chybí referenční díl č. 10")
+        return False
+    lines.stream.write("  … Konstrukční návrh (15B)\n")
+    lines.stream.flush()
+    window.session.dirty = False
+    window.open_model(model, template=True)
+    session, panel = window.session, window.design_panel
+    original = session.document.to_dict()
+    settings = Design.from_dict({
+        "study": "s3", "parameters": [{"name": "a", "values": [40, 90]}],
+        "conditions": [{"measurement": "m1", "min": 15, "reason": "stěna"}],
+        "options": {"verify": False, "rejected": False}})
+    try:
+        outcome = session.compute_ndt_design(settings)
+        panel.refresh()
+        if len(outcome.variants) != 2 or panel.table.rowCount() != 2:
+            lines.append("✕ Konstrukční návrh: očekávány 2 varianty")
+            return False
+        panel.table.selectRow(1)
+        if session.document.to_dict() != original:
+            lines.append("✕ Konstrukční návrh: náhled změnil původní model")
+            return False
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = session.export_ndt_design(temporary)
+            paths.append(write_pdf(outcome.html(), Path(temporary) / "navrh.pdf", title=TITLE))
+            ok = ((Path(temporary) / "navrh.pdf").read_bytes().startswith(b"%PDF")
+                  and {p.name for p in paths} ==
+                  {"navrh.html", "varianty.csv", "navrh.pdf"})
+        panel.hide_preview()
+        lines.append(("✓ " if ok else "✕ ") +
+                     "Konstrukční návrh (15B): 2 varianty, náhled bez změny modelu, "
+                     "HTML/CSV/PDF")
+        return ok
+    except Exception as exc:  # noqa: BLE001 – self-test má chybu vysvětlit
+        lines.append(f"✕ Konstrukční návrh (15B): {type(exc).__name__}: {exc}")
+        return False
+    finally:
+        panel.hide_preview()
+        session.dirty = False
 
 
 def _self_test_ndt_geometry(folder: Path, lines: list[str]) -> bool:
