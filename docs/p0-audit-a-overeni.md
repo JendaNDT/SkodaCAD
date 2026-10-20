@@ -65,6 +65,7 @@ výkon či omezená kompatibilita. „Doloženo kódem“ není totéž co repro
 | R09 / střední | Qt testy nahrazují viewer; CI macOS může používat softwarové OpenGL. | Self-test stažených balíčků kontroluje skutečný viewer. To nenahrazuje Retina/trackpad/GPU na autorově Macu a reálné Windows. | P0.6/P7: ruční seznam níže; zaznamenat OS, commit a výsledek. |
 | R10 / střední | Starší NDT index a závěr CLAUDE popisovaly PR #29 jako nesloučený. | Git main dokládá sloučení; odkazy/stav opraveny v tomto PR. Starší věty o čekajících ručních testech nepovažovat za aktuální důkaz nefunkčnosti. | Udržovat odděleně „implementováno“, „CI ověřeno“, „ručně přijato“, „odborně validováno“. |
 | R11 / střední | Původní test exportů používá glob pro kořen a přímé `ndt/*.json`, nikoli celé rekurzivní pole. | Cílové objemy mají samostatné NDT testy a jsou rekurzivně baleny. Nový P0 test rekurzivně chrání všechny recepty při uložení/načtení. | P3/P4: rozšířit smysluplnou import/export referenční sadu podle rozsahu. |
+| R12 / střední | Oddíl README „Formát modelu“ ještě uvádí zápis v21; `Document.VERSION` a pozdější oddíl konstrukčních návrhů uvádějí v22. `assistant._readme_format` tento oddíl používá v pokynu AI. | P0 odkazy přidává mimo tento oddíl, jeho text se proti main nemění. | Samostatně opravit popis a ověřit dopad na AI; nepovažovat to jen za kosmetiku dokumentace. |
 
 ## 3. Regresní přírůstek P0
 
@@ -131,8 +132,11 @@ ochranný limit úlohy 3 minuty proti zaseknutí, ne požadavek na rychlost mode
 - Nezměněný produkční kód main: Ruff prošel; **1 067 testů prošlo za 399,17 s**,
   bez přeskočení. Lokálně macOS arm64, Python 3.12.14, Qt offscreen, izolovaný
   `SKODACAD_HOME`. Celá původní sada zahrnuje testy GUI i pomocných procesů.
-- Nové regrese: **32 prošlo** (0,19 s). Konečný celý běh a Windows/macOS CI
-  se ověřují před předáním PR; výsledky budou doplněny.
+- Nové regrese: **32 prošlo** (0,19 s). Konečný celý běh: **1 099 testů prošlo
+  za 395,41 s**, bez přeskočení; Ruff a kontrola diffu prošly.
+- Stav a logy Windows/macOS pro konkrétní commit jsou v [kontrolách PR #30](https://github.com/JendaNDT/SkodaCAD/pull/30/checks).
+  Za úspěch se považují obě úlohy každého systému, včetně self-testu staženého balíčku.
+  Souhrn skutečných výsledků je v popisu PR; ruční přijetí to nenahrazuje.
 - [Uložená baseline](baselines/p0-macos-arm64.json): 3 opakování po zahřátí,
   spuštěno po skončení původní sady testů. SHA produkčních zdrojů je v záznamu;
   `tracked_changes` transparentně uvádí rozpracovanou dokumentaci/workflow.
