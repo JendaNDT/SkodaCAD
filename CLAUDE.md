@@ -1092,8 +1092,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 **Aktuální pokračování (20. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
-P1.1 je tím dokončeno; jde o dokumentační změnu v PR #31. Implementace P1.2–P1.5
-vyžaduje samostatně schválený konkrétní rozsah a zatím nezačala.
+P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
+Ke schválení je připraven [konkrétní návrh P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
+body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Jde pouze o návrh;
+implementace P1.2–P1.5 vyžaduje samostatné schválení a zatím nezačala.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
