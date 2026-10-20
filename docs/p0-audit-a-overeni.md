@@ -69,9 +69,10 @@ výkon či omezená kompatibilita. „Doloženo kódem“ není totéž co repro
 
 **Upřesnění R02 při přípravě P1.1 (20. 10. 2026):** test
 `test_sweep_loft.py::test_pattern_repeats_a_sweep` výslovně požaduje 3 solidy.
-Více solidů tedy není samo o sobě vada; schválit je třeba očekávání a jejich viditelnost.
-[Doporučená smlouva P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md) zachovává tuto podporu;
-R02 se tím zatím neuzavírá a produkční chování zůstává stejné.
+Více solidů tedy není samo o sobě vada. Autor 20. 10. 2026 schválil
+[smlouvu P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md), která tuto podporu
+zachovává a požaduje viditelnost počtu těles i jeho změn. Implementace tohoto
+hlášení zatím není provedena; R02 se tím neuzavírá a produkční chování zůstává stejné.
 
 ## 3. Regresní přírůstek P0
 

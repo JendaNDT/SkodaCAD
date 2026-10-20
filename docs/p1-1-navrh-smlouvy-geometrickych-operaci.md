@@ -1,19 +1,22 @@
-# P1.1 — návrh smlouvy geometrických operací
+# P1.1 — schválená smlouva geometrických operací
 
-**Stav: návrh ke schválení, bez implementace.** Datum: 20. 10. 2026.
+**Stav: schváleno autorem 20. 10. 2026, bez implementace.**
+Autor v tomto rozhovoru potvrdil předložená rozhodnutí D1–D7 a matici testů slovy
+„ok, schvaluji“. Schválení se týká smlouvy P1.1; implementace P1.2–P1.5 vyžaduje
+samostatně schválený konkrétní rozsah. Modelový formát zůstává ve verzi 22.
 Vychází z `main` / `e58d6283a69b51c2e19c9fece2de0e7977ce07f6`, po sloučení
 [PR #30](https://github.com/JendaNDT/SkodaCAD/pull/30). Navazuje na
 [roadmapu P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie-čeká-na-schválení-implementace)
 a [rizika P0](p0-audit-a-overeni.md#2-registr-rizik-a-omezení).
 
-## 1. Co má autor schválit
+## 1. Schválená rozhodnutí autora
 
 Cíl: určit, co se smí považovat za úspěšnou geometrickou operaci, jak poznat její
-selhání a co musí zůstat zachováno. Tento dokument obsahuje doporučené volby D1–D7
-a konkrétní matici budoucích testů. V tomto PR se pravidla pouze navrhují;
+selhání a co musí zůstat zachováno. Tento dokument obsahuje schválené volby D1–D7
+a konkrétní matici budoucích testů. Tento PR zaznamenává dohodnutá pravidla;
 aplikace se chová jako dosud.
 
-| Rozhodnutí | Doporučená varianta | Důsledek / alternativa |
+| Rozhodnutí | Schválená varianta | Důsledek / alternativa |
 |---|---|---|
 | **D1 Počet těles** | Zachovat podporu jednoho i více oddělených objemových těles; jejich počet a změnu počtu vždy výslovně uvést ve výsledku. | Existující test pole trubek požaduje 3 tělesa. Plošné pravidlo „vždy právě jedno“ by zrušilo již podporované použití; tuto alternativu nedoporučujeme bez samostatného rozhodnutí o kompatibilitě. |
 | **D2 Platnost a účinek** | Úspěšný 3D výsledek musí obsahovat platné, uzavřené objemové složky, konečná čísla a rozlišitelný objem. Přidání/odebrání bez rozlišitelného účinku je chyba. | Prázdný výsledek ani povrch nejsou hotový díl. Tělesa se nesmějí potichu zahazovat. |
@@ -58,7 +61,7 @@ proběhly jednorázové výpočty. Jde o podklad návrhu, nikoli implementované
 | Vnitřní roh půdorysu L, výška 10, zaoblení R2 | 3 000 → **3 008,584073464 mm³**. | Zaoblení nemusí zmenšit objem. |
 | Stejný vnitřní roh, sražení 2 mm | 3 000 → **3 020 mm³**. | Totéž platí pro sražení. |
 | Skořepina kvádru 50×30×20, t=2, otevřený vršek | **8 472 mm³**, rozměry 50×30×20. | Referenční podporovaný případ. |
-| Stejná skořepina, `open_faces=[]` | **19 136 mm³**, plný kvádr 46×26×16. | Bez dalšího rozlišení nejde o vydlabání původního dílu; D4 navrhuje odmítnutí. |
+| Stejná skořepina, `open_faces=[]` | **19 136 mm³**, plný kvádr 46×26×16. | Bez dalšího rozlišení nejde o vydlabání původního dílu; D4 stanovuje odmítnutí v následné implementaci. |
 | Všech 26 JSON ukázek, včetně podsložek | Všechny se přepočítaly úspěšně; výsledky i existující tělesa před prvky mají 1 solid. | Ukázky neodhalí podporované vícesolidové pole; musí zůstat i samostatný test pole. |
 
 ## 3. Společná smlouva 3D operace
@@ -87,7 +90,7 @@ Platnost objemových nástrojů se ověří také; jeden vadný nástroj se nesm
 Kontrola účinku `add/cut` se vztahuje na celý předaný nástroj, ne na zaručené zasažení
 každé jeho dílčí části. Úplnost všech děr/poloh vyžaduje příslušný referenční test.
 
-**Počet složek:** doporučená D1 dovoluje `N ≥ 1`. `new/add/cut` a opakování nesmějí
+**Počet složek:** schválená D1 dovoluje `N ≥ 1`. `new/add/cut` a opakování nesmějí
 tento počet zatajit; při změně se uvede `N před → N po`, např. „Řez vytvořil 2 oddělená
 tělesa (předtím 1).“ U zaoblení, sražení a skořepiny se požaduje zachování počtu.
 Jeden solid je závazný pouze pro konkrétní referenční případ, který jej očekává.
@@ -219,7 +222,7 @@ nadále zastarávají studie. Vazby a jednoznačnost patří do P1.3, export/NDT
 do P1.4. Dokud není dokončeno P1.4, zůstává otevřený R01; nelze deklarovat hotovou P1
 jen proto, že se začaly kontrolovat booleovské výsledky.
 
-## 8. Doporučené malé implementační kroky po schválení
+## 8. Navazující implementační kroky k samostatnému schválení
 
 | Krok | Rozsah | Výstup a podmínka přijetí |
 |---|---|---|
@@ -229,9 +232,9 @@ jen proto, že se začaly kontrolovat booleovské výsledky.
 | P1.4 | Samostatně schválené pravidlo exportů, náhledů a NDT při chybném/částečném výsledku. | Stejné chování GUI/CLI/AI; uzavření R01 doložené testem. |
 | P1.5 | Celá referenční sada, kompatibilita, oba systémy a ruční přijetí. | Ruff, celý pytest, Windows/macOS sestavení i test stažených balíčků, ruční protokol; vypsané zbývající meze. |
 
-Konkrétní změny kódu a případné rozdělení P1.2A na menší PR se připraví až po
-schválení této smlouvy. Tento návrh nepředepisuje novou architekturu tříd ani
-nový přenášený či uložený datový formát.
+Konkrétní změny kódu a případné rozdělení P1.2A na menší PR se připraví
+v samostatném zadání P1.2A ke schválení. Schválená smlouva nepředepisuje novou
+architekturu tříd ani nový přenášený či uložený datový formát.
 
 ## 9. Kompatibilita a kritéria dokončení P1.1
 
@@ -239,19 +242,20 @@ nový přenášený či uložený datový formát.
   musí zůstat dohledatelné. Načtení receptu a úspěšnost jeho nově přísnějšího přepočtu
   jsou odlišné věci: např. prázdná volba otevřených ploch skořepiny se podle D4 nově odmítne.
 - Zachovat výslovně podporované vícesolidové pole. Přidání bez účinku a skořepina
-  bez otevřených ploch jsou navrhovaná zpřísnění chování; před implementací musí mít
-  schválení, srozumitelnou chybu a test obnovy. Žádná tichá migrace nebo přepis souboru.
-Zpřísnění D2 se týká také neplatných, otevřených nebo podrozlišovacích složek;
-žádná se nesmí jen odstranit, aby zbytek kandidáta prošel.
+  bez otevřených ploch jsou schválená pravidla pro následné zpřísnění chování;
+  implementační krok musí mít vlastní schválený rozsah, srozumitelnou chybu
+  a test obnovy. Žádná tichá migrace nebo přepis souboru.
+  Zpřísnění D2 se týká také neplatných, otevřených nebo podrozlišovacích složek;
+  žádná se nesmí jen odstranit, aby zbytek kandidáta prošel.
 
 - Způsob volby hran/ploch, NDT upozornění, knihovny a jejich verze se tímto nemění.
   P2, STEP import, sestavy, nové souborové formáty, bezpečné ukládání R03 a NDT-16
   nejsou součástí této smlouvy.
-- **P1.1 je dokončeno schválením konkrétních voleb D1–D7 a matice autorem.**
-  Stav tohoto dokumentu zůstává do té doby „návrh“. Schválení nezaručuje provedení
-  nebo úspěch dosud nenapsaných testů a nenahrazuje NDT-17.
+- **P1.1 je dokončeno: autor 20. 10. 2026 schválil konkrétní volby D1–D7 a matici.**
+  Schválení nezaručuje provedení nebo úspěch dosud nenapsaných testů a nenahrazuje
+  NDT-17. P1.2–P1.5 zůstávají bez implementace.
 
-## 10. Zdroje a ověření tohoto návrhu
+## 10. Zdroje a ověření smlouvy
 
 Stav kódu je uvedený commit main. Podstatné zdroje:
 [operace a úpravy](../src/skodacad/features.py),
