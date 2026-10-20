@@ -1,7 +1,7 @@
 # NDT – návrh etapy 15: Konstrukční návrhy bez automatické změny dílu
 
 Stav: **schváleno autorem 20. 10. 2026 („schvaluji etapu 15 včetně doporučení 1–12“);
-implementace po krocích ve vývojové větvi; 15A.0, 15A.1 hotové; 15A.2 připravené k ověření CI; 15B zbývá.**
+implementace po krocích ve vývojové větvi; 15A.0, 15A.1 a 15A.2 otestované; 15B implementováno a čeká na finální CI a ruční zkoušku.**
 Výchozí stav: `main`, commit `94a78d7` ([PR #28](https://github.com/JendaNDT/SkodaCAD/pull/28)).
 Navazuje na [plán, etapa 15](03-implementacni-plan.md), na starší návrh
 [v0.2, oddíly 9 a 20](02-navrh-v0.2.md), na závazná vymezení
@@ -492,3 +492,15 @@ Implementace ve větvi `claude/magical-hawking-h944yz`, zatím **neslučovat**:
 - referenční díl `examples/ndt/navrh_kapsa.json`, regresní testy, návod a pravidlo AI.
 
 Validace: `tests/test_ndt_design_session.py`, `pytest -q` a `ruff check src tests` ve Windows a macOS GitHub Actions. **Výsledek CI ještě není potvrzen.**
+
+### Průběh 15B (20. 10. 2026)
+
+Ve větvi `claude/magical-hawking-h944yz` přidány:
+
+- `gui/design_panel.py`: dialog zadání, omezení, odhad doby, volby, průběh, tabulka a bezpečné potvrzení změny;
+- 3D náhled varianty s průhledným originálem, deaktivace výběru alternativní geometrie pro úpravy původního modelu;
+- export HTML/CSV/PDF s obrázky geometrického porovnání, popis rozsahu a omezení výsledků;
+- offscreen testy GUI a self-test zabalené aplikace na příkladu č. 10;
+- položka NDT → Konstrukční návrh…, zamčení panelu při práci AI a přebírání výsledků výpočtu na pozadí.
+
+**Zatím neslučovat do `main` bez souhlasu autora.** Čeká se na závěrečné CI Windows/macOS a následnou ruční zkoušku.
