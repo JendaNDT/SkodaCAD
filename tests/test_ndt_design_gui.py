@@ -6,13 +6,18 @@ import shutil
 import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
-from PySide6.QtWidgets import QFileDialog, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox  # noqa: E402
 
 from skodacad.gui.design_panel import DesignDialog  # noqa: E402
 from skodacad.gui.main_window import MainWindow  # noqa: E402
 from test_gui import FakeViewer  # noqa: E402
 
 MODEL = "navrh_kapsa.json"
+
+
+@pytest.fixture(scope="module")
+def app():
+    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture
