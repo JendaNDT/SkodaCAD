@@ -222,6 +222,25 @@
   aplikace (commit z GitHub Actions). Export složky: HTML, CSV míst, podrobná CSV studií;
   z okna PDF (Qt) a obrázky 3D. Mapa tloušťky jen s nastavenou mezí. Výsledek je pohled,
   formát zůstává 21. Okno, CLI `skodacad audit`, AI bez nového nástroje s pravidlem.
+  Sloučeno v PR #28 (`94a78d7`); ruční zkouška autora po vydání čeká.
+- (20. 10. 2026, schváleno včetně doporučení 1–12) **NDT etapa 15 – konstrukční návrhy bez
+  automatické změny dílu** (`docs/ndt/26-navrh-etapa-15.md`, dokončí milník M5): varianty =
+  1–3 povolené **číselné parametry** (výčet nebo rozsah, všechny kombinace, nejvýš 24, pevné
+  pořadí); **zamčené rozměry = uložená měření** (změna nad 0,01 mm / 0,01° nebo měření, které
+  nejde spočítat → neprojde) a zamčené parametry (hlídá výrazy); podmínky = uložené měření +
+  mez + důvod, limit změny hmotnosti, volitelně mapa tloušťky; bez zámků a podmínek je výsledek
+  „informativní“. Každá varianta na **kopii modelu**, oblast studie znovu ukotvená jen v kopii,
+  nastavení studie beze změny, **kroky sítě zamčené podle původního dílu**; cíle svaru,
+  projekce RT a zóny zůstávají. UT jen s uloženým plánem (sestaví se znovu se stejnými
+  průchody; volba jen ověřit), návrh poloh pro varianty ne. Cílová studie vždy, ostatní
+  volitelně; neprošlé informativně. Pořadí bez skóre (prošlé → % dobrého stavu → nejisté →
+  menší změna parametrů → hmotnosti), vždy i mm² / mm³, upozornění při změně oblasti nad 5 %,
+  původní díl první; ověření pořadí polovičním krokem (původní + 3 nejlepší). Náhled je pohled,
+  *Použít variantu…* jen u prošlé po potvrzení (jeden krok Zpět), *Uložit variantu jako…*
+  nový soubor. Zadání v `ndt.design` (**formát 22**), výsledky pohled; zpráva „Návrh ke
+  konstruktérskému posouzení“ (`DESIGN_NOTE`) HTML/CSV, z okna PDF; panel, `skodacad navrh`,
+  AI s pravidlem bez nástroje; referenční díl 10 `navrh_kapsa.json`. Jako první krok oprava:
+  tvar skici s nulovou plochou = česká chyba (dřív tiše zahodil i ostatní tvary skici).
 
 ## Architektura (`src/skodacad/`)
 
@@ -311,6 +330,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/mt.py` | MT – přiložení jha a směry magnetizace (etapa 12): `MtSettings`, `material_status` (feromagnetický materiál), `Yoker` (místa pólů kružnicí, stěna, póly jako přímá sonda bez vůle, nohy, přesná kolize nohou a těla), `place_yoke`, `compute` / `estimate` / `check_points` (středy na mřížce ploch v dosahu, 8 směrů, dohledání hranic a rohů), `MtMap` (souhrn, CSV, síť po směrech, `nearest`, `describe`), `study_faces`, `self_check`; nanesení a prohlídka přes `pt.Sampler.access` |
 | `ndt/rt.py` | RT – geometrie projekce (etapa 13): `RtSettings` a `Projection` (zaměřený bod, směr ke zdroji, vzdálenost, detektor na ploše / volně, jmenovitá tloušťka), `tilted` / `angles_of`, `prepare` (zdroj, střední paprsek, přiložení detektoru s odsunutím, kolize těla zdroje a detektoru → `Setup`), `compute` / `estimate` / `check_points` / `image_of`, `RtMap` (souhrn, CSV, síť po projekcích, `nearest`, `describe`), `RtImage` (náhled prozařované tloušťky), `study_target`, `self_check` |
 | `ndt/audit.py` | předběžný NDT audit (etapa 14): `layer_of` (výsledek metody → jednotná místa `Spot`: UT pokrytí plochy/objem, návrh poloh, plán, PT, MT, RT, mapa tloušťky), `find_places` (spojení sousedních míst se stejným stavem do 1,6 × krok → `Place` s důvody a podílem), `AuditEntry` (studie: spočítáno / neprovedeno / nedostupné), `AuditResult` (souhrn, `write_csv`, `html`, `write_folder`, náhledy RT); `AuditItem` (co se spočítá, odhad, důvod proč ne) |
+| `ndt/design.py` | konstrukční návrh pro NDT (etapa 15): `Design` (zadání, `check`, `combinations`), `baseline` (původní díl, zamčené kroky, odhad), `evaluate` (varianta na kopii modelu: přepočet, zámky a podmínky `Check`, studie znovu ukotvená, výpočet metody), `rank_and_verify` (pořadí, ověření polovičním krokem), `run`, `DesignResult` (závěr, `row`, souhrn, CSV, HTML); `DESIGN_NOTE` |
 | `buildinfo.py` | verze, sestavení (commit z GitHub Actions v `_build.py`, při vývoji `git describe`) a knihovny – do zprávy auditu |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
@@ -443,6 +463,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   bodu uprostřed hrany případně prohodí konce.
 - Body promítnutých hran se jmenují `r1.start` … – tečka je proto ve jménech bodů obrysu
   zakázaná.
+
+## Známé pasti (skica s nulovou plochou)
+
+- Mnohoúhelník s body na jedné přímce dá v build123d **neplatnou plošku s plochou 0**. Plocha
+  celé skici je přitom kladná (ostatní tvary) a vysunutí pak tiše zahodilo **i ostatní tvary**
+  (tupý svar – objem, h = 0: 360 000 místo 360 500 mm³, všechny prvky „ok“). `build_sketch`
+  proto kontroluje plochu každého tvaru (`MIN_AREA` 1e-6 mm²) → česká chyba „Tvar N skici
+  (mnohoúhelník) má nulovou plochu“ a `ctx.apply` odmítne přidané těleso s nulovým objemem.
 
 ## Známé pasti (vymodelovaný závit)
 
@@ -960,6 +988,24 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   a před PyInstallerem; soubor je v `.gitignore` a spec ho přidá do `hiddenimports`, jen když
   existuje. Testy proto vidí „vývojová verze“.
 
+## Známé pasti (NDT – konstrukční návrh)
+
+- Varianta se počítá **na kopii** modelu (`design._session` = nová `ModelSession` bez
+  pomocného procesu): studie se v kopii potvrdí (`confirm_ndt_study`), originál zůstává.
+  Do kopie se doplní **zamčené kroky** (`_with_steps` přímo do JSON záznamu studie –
+  `set_ndt_pt_settings` s neúplným slovníkem by ostatní nastavení vrátil na výchozí).
+- Automatický krok PT/MT/RT se řídí velikostí oblasti – bez zamčení by každá varianta měla
+  jinou síť. Kapsa 100 × 40, MT: středy jha po 12 mm 0 %, po 6 mm 53,1 %. Proto ověření
+  polovičním krokem (u MT jen krok středů).
+- Zlepšení = víc dobrého stavu, při shodě víc „omezeně“ (`DesignResult.better`, `_level`).
+  Procenta se počítají z oblasti varianty – když se oblast změní o víc než 5 %, tabulka
+  upozorní (PT kapsa, mělčí kapsa: 53,9 → 43,0 %, ale nepřístupné 556 → 438 mm²).
+- Zámky a podmínky se kontrolují **před** NDT; měření, které nejde spočítat, je neprošlé.
+  Neprošlé varianty se počítají jen informativně (`rejected`), *Použít* u nich nesmí jít.
+- Cíle svaru jsou čísla → nižší převýšení = „cíl vyčnívá“ (*nelze vyhodnotit*), ne chyba
+  návrhu. UT jen s uloženým plánem: ve variantě `_run_plan` se stejnými průchody (bod
+  průchodu = `at` odkazu na plochu) a `PlanOptions.for_plan`.
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -1082,7 +1128,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (sloučeno
   v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (schváleno
   20. 10. 2026; otevírá milník M5): [x] 14A.1 jádro zprávy `ndt/audit.py`, [x] 14A.2 spuštění
-  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF).
+  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF; sloučeno
+  v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (schváleno
+  20. 10. 2026; dokončí milník M5): [x] 15A.0 oprava skici s nulovou plochou, [x] 15A.1 jádro
+  `ndt/design.py`, [x] 15A.2 formát 22, ModelSession, CLI, příklad a testy (CI Windows/macOS úspěšná), [x] 15B panel, dialog, náhled, potvrzení a PDF (pracovní větev, testy CI zatím probíhají).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

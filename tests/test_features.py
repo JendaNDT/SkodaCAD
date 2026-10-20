@@ -51,6 +51,25 @@ def test_sketch_with_subtracted_circle_makes_ring():
     assert part.volume == pytest.approx(math.pi / 4 * (100**2 - 40**2) * 10)
 
 
+
+def test_zero_area_sketch_shape_is_an_error_not_lost_geometry():
+    """Mnohoúhelník s nulovou plochou (body na přímce) dřív tiše zahodil i ostatní tvary skici –
+    převýšení svaru h = 0 smazalo i podkořen (návrh etapy 15, oddíl 4a)."""
+    features = box_features(40, 40, 10) + [
+        {"id": "svar", "type": "sketch", "plane": "XZ", "elements": [
+            {"shape": "polygon", "points": [[-10, 10], [10, 10], [7, 10], [-7, 10]]},
+            {"shape": "polygon", "points": [[-3, 0], [-2, -1], [2, -1], [3, 0]]}]},
+        {"id": "svar_e", "type": "extrude", "sketch": "svar", "distance": 40, "direction": "both"}]
+    result = rebuild(make_doc(features))
+    sketch = next(s for s in result.statuses if s.id == "svar")
+    assert sketch.status == "error"
+    assert "Tvar 1 skici (mnohoúhelník) má nulovou plochu" in sketch.message
+    features[-2]["elements"][0]["points"][2:] = [[7, 12], [-7, 12]]  # převýšení 2 mm
+    part = build_ok(features)
+    cap, root = (20 + 14) / 2 * 2, (6 + 4) / 2 * 1  # lichoběžníky [mm²]
+    assert part.volume == pytest.approx(40 * 40 * 10 + (cap + root) * 40)
+
+
 def test_cut_through_all_from_top_face():
     features = box_features(40, 40, 10) + [
         {"id": "h", "type": "sketch", "plane": "top",

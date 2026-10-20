@@ -48,6 +48,7 @@ from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.audit_panel import MARK as AUDIT_MARK
 from skodacad.gui.audit_panel import AuditPanel
+from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
@@ -162,6 +163,7 @@ class MainWindow(QMainWindow):
         self._build_section_panel()
         self._build_ndt_panel()
         self._build_audit_panel()
+        self._build_design_panel()
         self._build_assistant_panel()
         self._build_menus()
         self.resize(1400, 860)
@@ -173,7 +175,8 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.map_dock, self.section_dock)
         self.tabifyDockWidget(self.section_dock, self.ndt_dock)
         self.tabifyDockWidget(self.ndt_dock, self.audit_dock)
-        self.tabifyDockWidget(self.audit_dock, self.assistant_dock)
+        self.tabifyDockWidget(self.audit_dock, self.design_dock)
+        self.tabifyDockWidget(self.design_dock, self.assistant_dock)
         self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
@@ -507,6 +510,23 @@ class MainWindow(QMainWindow):
         self.audit_panel.refresh_items()
         self.audit_panel.refresh()
 
+    def _build_design_panel(self) -> None:
+        """Konstrukční srovnání NDT variant (etapa 15B)."""
+        self.design_panel = DesignPanel(self)
+        self.design_dock = self._add_dock("Konstrukční návrh", "design_dock",
+                                          self.design_panel,
+                                          Qt.DockWidgetArea.RightDockWidgetArea)
+        self.design_dock.visibilityChanged.connect(
+            lambda visible: visible and self.design_panel.refresh())
+        self.design_action = self._action("Konstrukční návrh…", self.show_design)
+
+    def show_design(self) -> None:
+        self.design_dock.show()
+        self.design_dock.raise_()
+        self.resizeDocks([self.editor_dock, self.design_dock], [220, 620],
+                         Qt.Orientation.Vertical)
+        self.design_panel.refresh()
+
     def _refresh_probe(self) -> None:
         """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
         (u přímé sondy kolmo do materiálu)."""
@@ -662,7 +682,7 @@ class MainWindow(QMainWindow):
         panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
         self.ai_busy = busy
         for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.audit_dock,
-                       self.menuBar(), self.toolbar):
+                       self.design_dock, self.menuBar(), self.toolbar):
             widget.setEnabled(not busy)
         if busy:
             keep = {self.fit_action, self.assistant_action, *self._view_actions}
@@ -814,6 +834,7 @@ class MainWindow(QMainWindow):
             ndt_menu.addAction(item)
         ndt_menu.addSeparator()
         ndt_menu.addAction(self.audit_action)
+        ndt_menu.addAction(self.design_action)
 
         view_menu = bar.addMenu("&Zobrazení")
         view_menu.addAction(self.fit_action)
@@ -1155,6 +1176,7 @@ class MainWindow(QMainWindow):
         self._refresh_probe()
         self.ndt_panel.refresh()
         self.audit_panel.refresh()
+        self.design_panel.refresh()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -1181,6 +1203,7 @@ class MainWindow(QMainWindow):
                 self.ndt_panel.rt_box.refresh()
                 self.ndt_panel.refresh_actions()
                 self.audit_panel.show_progress()  # hotová studie auditu / průběh
+                self.design_panel.refresh()  # hotové varianty a průběh návrhu
                 self._refresh_progress()
                 return
             self._pending_shown = False
@@ -1220,6 +1243,8 @@ class MainWindow(QMainWindow):
             self.ndt_panel.rt_box.refresh()  # průběh projekcí RT v panelu
         if self.session.audit_pending:
             self.audit_panel.show_progress()  # průběh předběžného auditu
+        if self.session.design_pending:
+            self.design_panel.refresh()  # průběh konstrukčního návrhu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
@@ -1229,13 +1254,15 @@ class MainWindow(QMainWindow):
         mt = self.session.mt_pending
         rt = self.session.rt_pending
         audit = self.session.audit_pending
+        design = self.session.design_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage or access or plan or pt or mt or rt or audit:
+            if coverage or access or plan or pt or mt or rt or audit or design:
                 # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
                 self.statusBar().showMessage(
-                    "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
+                    "Konstrukční návrh zastaven – hotové varianty zůstaly." if design
+                    else "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
                     else "Audit zastaven – spočítané studie zůstaly ve zprávě." if audit
                     else "Výpočet plánu dráhy zastaven – uložený plán zůstal beze změny."
                     if plan else "Výpočet mapy PT zastaven." if pt
@@ -1341,6 +1368,7 @@ class MainWindow(QMainWindow):
             has_document and bool(self.session.document.parameters))
         self._refresh_selection_actions()
         self.audit_panel.refresh_actions()
+        self.design_panel.refresh()
         for action in self._assistant_lock:  # AI pracuje – ruční úpravy počkají
             action.setEnabled(False)
 

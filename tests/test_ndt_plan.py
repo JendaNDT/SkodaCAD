@@ -302,7 +302,7 @@ def test_plan_is_stored_with_prints_and_recomputed_identically_after_reopening(r
         session._plan_prints("s1")
     assert session.ndt_plan_state("s1") == ("ok", "Plán platí.")
     path = session.save(tmp_path / "zebro.json")
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 21
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 22
     again = ModelSession()
     again.open(path)
     assert again.ndt_plan("s1") == plan

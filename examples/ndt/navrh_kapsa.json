@@ -1,0 +1,276 @@
+{
+  "format": "skodacad",
+  "version": 22,
+  "name": "NDT 10 – Konstrukční návrh kapsy pro jho",
+  "description": "Referenční příklad etapy 15: varianty šířky kapsy a, podmínka zachovat stěnu X alespoň 15 mm. Jde pouze o geometrické porovnání NDT, nikoli pevnostní posouzení.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "A": 120,
+    "B": 80,
+    "H": 40,
+    "a": 40,
+    "b": 30,
+    "h": 25
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys bloku",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "A",
+          "height": "B"
+        }
+      ]
+    },
+    {
+      "id": "blok",
+      "type": "extrude",
+      "name": "Blok",
+      "sketch": "obrys",
+      "distance": "H"
+    },
+    {
+      "id": "kapsa_obrys",
+      "type": "sketch",
+      "name": "Obrys kapsy",
+      "plane": "top",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": "a",
+          "height": "b"
+        }
+      ]
+    },
+    {
+      "id": "kapsa",
+      "type": "extrude",
+      "name": "Kapsa",
+      "sketch": "kapsa_obrys",
+      "operation": "cut",
+      "distance": "h"
+    }
+  ],
+  "ndt": {
+    "studies": [
+      {
+        "id": "s1",
+        "name": "UT dna kapsy",
+        "method": "UT",
+        "target": {
+          "kind": "faces",
+          "faces": [
+            {
+              "face": {
+                "at": [
+                  0,
+                  0,
+                  15
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "type": "plane"
+              }
+            }
+          ]
+        },
+        "note": "Stěna pod kapsou, přímá sonda zespodu (dráha 15 mm).",
+        "created": "2026-10-16",
+        "part": "763df241f51dc800"
+      },
+      {
+        "id": "s2",
+        "name": "PT dna a stěn kapsy",
+        "method": "PT",
+        "target": {
+          "kind": "faces",
+          "faces": [
+            {
+              "face": {
+                "at": [
+                  0,
+                  0,
+                  15
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "type": "plane"
+              }
+            },
+            {
+              "face": {
+                "at": [
+                  0,
+                  -15,
+                  27.5
+                ],
+                "normal": [
+                  0,
+                  1,
+                  0
+                ],
+                "type": "plane"
+              }
+            },
+            {
+              "face": {
+                "at": [
+                  0,
+                  15,
+                  27.5
+                ],
+                "normal": [
+                  0,
+                  -1,
+                  0
+                ],
+                "type": "plane"
+              }
+            },
+            {
+              "face": {
+                "at": [
+                  -20,
+                  0,
+                  27.5
+                ],
+                "normal": [
+                  1,
+                  0,
+                  0
+                ],
+                "type": "plane"
+              }
+            },
+            {
+              "face": {
+                "at": [
+                  20,
+                  0,
+                  27.5
+                ],
+                "normal": [
+                  -1,
+                  0,
+                  0
+                ],
+                "type": "plane"
+              }
+            }
+          ]
+        },
+        "note": "Dno a stěny kapsy: nástroj Ø 10 se nedostane blíž než 5 mm ke stěně.",
+        "created": "2026-10-19",
+        "part": "763df241f51dc800"
+      },
+      {
+        "id": "s3",
+        "name": "MT dna kapsy",
+        "method": "MT",
+        "target": {
+          "kind": "faces",
+          "faces": [
+            {
+              "face": {
+                "at": [
+                  0,
+                  0,
+                  15
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ],
+                "type": "plane"
+              }
+            }
+          ]
+        },
+        "note": "Kapsa 40 × 30 je pro jho malá – mezi místem a pólem je stěna.",
+        "created": "2026-10-19",
+        "part": "763df241f51dc800",
+        "mt": {
+          "step_mm": 6,
+          "center_step_mm": 12,
+          "apply": false,
+          "inspect": false
+        }
+      }
+    ],
+    "design": {
+      "study": "s3",
+      "parameters": [
+        {
+          "name": "a",
+          "values": [
+            40,
+            60,
+            80,
+            90,
+            100
+          ]
+        }
+      ],
+      "conditions": [
+        {
+          "measurement": "m1",
+          "min": 15,
+          "reason": "minimální stěna zadaná konstruktérem"
+        }
+      ],
+      "options": {
+        "verify": false,
+        "rejected": false
+      }
+    }
+  },
+  "measurements": [
+    {
+      "id": "m1",
+      "name": "Stěna kapsy X",
+      "kind": "parallel",
+      "a": {
+        "face": {
+          "at": [
+            20,
+            0,
+            30
+          ],
+          "normal": [
+            -1,
+            0,
+            0
+          ],
+          "type": "plane"
+        }
+      },
+      "b": {
+        "face": {
+          "at": [
+            60,
+            0,
+            20
+          ],
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "type": "plane"
+        }
+      }
+    }
+  ]
+}

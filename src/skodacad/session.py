@@ -76,6 +76,15 @@ from skodacad.ndt.coverage import (
     check_convergence,
 )
 from skodacad.ndt.coverage import compute as compute_coverage
+from skodacad.ndt.design import (
+    Design,
+    DesignError,
+    DesignResult,
+)
+from skodacad.ndt.design import Variant as DesignVariant
+from skodacad.ndt.design import baseline as design_baseline
+from skodacad.ndt.design import estimate as estimate_design
+from skodacad.ndt.design import run as run_design
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
 from skodacad.ndt.library import (
@@ -296,6 +305,8 @@ class ModelSession:
         # předběžný NDT audit (etapa 14, jen pohled): (klíč platnosti, výsledek) a běžící výpočet
         self._audit_cache: tuple[tuple[Any, ...], AuditResult] | None = None
         self._audit_pending: dict[str, Any] | None = None
+        self._design_cache: tuple[tuple[Any, ...], DesignResult] | None = None
+        self._design_pending: dict[str, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -315,6 +326,8 @@ class ModelSession:
         self._yoke_view = None
         self._rt_cache = None
         self._audit_cache = None
+        self._design_cache = None
+        self._design_pending = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -333,6 +346,8 @@ class ModelSession:
         self._yoke_view = None
         self._rt_cache = None
         self._audit_cache = None
+        self._design_cache = None
+        self._design_pending = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -355,6 +370,8 @@ class ModelSession:
         self._mt_pending = None
         self._rt_pending = None
         self._audit_pending = None
+        self._design_pending = None
+        self._design_cache = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -394,6 +411,13 @@ class ModelSession:
                 self._mt_pending["progress"] = payload
             if self._rt_pending is not None and kind == "progress":
                 self._rt_pending["progress"] = payload
+            if self._design_pending is not None:
+                if kind == "design_progress":
+                    self._design_pending["progress"] = payload
+                elif kind == "design_prepared":
+                    self._design_pending["prepared"] = payload
+                elif kind == "design_variant":
+                    self._design_pending["variants"].append(payload)
             if self._audit_pending is not None:
                 if kind == "progress":
                     self._audit_pending["progress"] = payload
@@ -408,7 +432,9 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._audit_pending is not None:
+        if self._design_pending is not None:
+            self._finish_design(finished.design, finished.error)
+        elif self._audit_pending is not None:
             if finished.audit is None:  # chyba: hotové studie zůstanou, zbylé neprovedeno
                 self.failure = finished.error
             self._finish_audit(complete=finished.audit is not None)
@@ -471,6 +497,9 @@ class ModelSession:
         self._pt_pending = None
         self._mt_pending = None
         self._rt_pending = None
+        if self._design_pending is not None:
+            self._finish_design(None, "Výpočet konstrukčních návrhů byl zastaven.")
+            return True
         if self._audit_pending is not None:  # hotové studie zůstanou, zbylé neprovedeno
             self._finish_audit(complete=False)
             return True
@@ -2832,6 +2861,179 @@ class ModelSession:
             return audit.write_folder(folder, images)
         except OSError as exc:
             raise DocumentError(f"Zprávu nejde uložit: {exc}") from None
+
+    # --- konstrukční návrhy pro NDT (etapa 15) -----------------------------------------------
+
+    def ndt_design_settings(self) -> Design | None:
+        """Zadání z modelu; výsledky se do souboru nikdy nezapisují."""
+        data = (self._require().ndt or {}).get("design")
+        return Design.from_dict(data) if data is not None else None
+
+    def set_ndt_design(self, settings: Design | dict[str, Any] | None) -> BuildResult:
+        """Zadání do ndt.design (jeden krok Zpět), None odstraní zadání."""
+        design = (settings if isinstance(settings, Design) else
+                  Design.from_dict(settings) if settings is not None else None)
+        if design is not None:
+            design.check(self._require())
+
+        def mutate(doc: Document) -> None:
+            if design is None:
+                if doc.ndt is not None:
+                    doc.ndt.pop("design", None)
+            else:
+                if doc.ndt is None:
+                    doc.ndt = {"studies": []}
+                doc.ndt["design"] = design.to_dict()
+
+        return self._change(mutate)
+
+    def _get_ndt_design(self, settings: Design | dict[str, Any] | None) -> Design:
+        design = (self.ndt_design_settings() if settings is None else
+                  settings if isinstance(settings, Design) else Design.from_dict(settings))
+        if design is None:
+            raise DocumentError("Model nemá zadání konstrukčního návrhu. Nejdřív ho nastav.")
+        design.check(self._require())
+        return design
+
+    def _design_key(self) -> tuple[Any, ...]:
+        """Výsledek patří přesnému stavu modelu i zadání."""
+        return (id(self.result), json.dumps(self._require().to_dict(), sort_keys=True))
+
+    def ndt_design_estimate(self, settings: Design | dict[str, Any] | None = None
+                            ) -> tuple[int, float]:
+        self._require_computed("odhad konstrukčního návrhu")
+        design = self._get_ndt_design(settings)
+        try:
+            return estimate_design(design_baseline(self._require().to_dict(), design), design)
+        except DesignError as exc:
+            raise DocumentError(str(exc)) from None
+
+    def compute_ndt_design(self, settings: Design | dict[str, Any] | None = None,
+                           operator: str = "", *,
+                           progress: Callable[[int, int, str, Any], None] | None = None,
+                           on_variant: Callable[[DesignVariant], None] | None = None
+                           ) -> DesignResult:
+        """Synchronní výpočet na kopiích dílu (CLI a testy)."""
+        self._require_computed("konstrukční návrh")
+        design = self._get_ndt_design(settings)
+        key, doc = self._design_key(), self._require()
+        try:
+            outcome = run_design(
+                doc.to_dict(), design, model=doc.name, path=str(self.path or ""),
+                fingerprint=part_fingerprint(doc),
+                created=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                operator=operator, progress=progress, on_variant=on_variant)
+        except DesignError as exc:
+            raise DocumentError(str(exc)) from None
+        self._design_cache = (key, outcome)
+        return outcome
+
+    def start_ndt_design(self, settings: Design | dict[str, Any] | None = None,
+                         operator: str = "") -> DesignResult | None:
+        """Výpočet variant na pozadí, s průběžným předáváním hotových variant."""
+        self._require_computed("konstrukční návrh")
+        design = self._get_ndt_design(settings)
+        if self._runner is None:
+            return self.compute_ndt_design(design, operator)
+        doc = self._require()
+        self._design_cache = None
+        self.failure = ""
+        self._design_pending = {
+            "key": self._design_key(), "settings": design, "progress": None,
+            "prepared": None, "variants": [], "started": time.monotonic(),
+            "operator": operator, "model": doc.name, "path": str(self.path or ""),
+            "fingerprint": part_fingerprint(doc), "material": doc.material,
+            "created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
+        self._job = self._runner.submit_design(doc.to_dict(), design.to_dict(),
+                                                str(self.path or ""), operator)
+        return None
+
+    def _finish_design(self, finished: DesignResult | None, error: str = "") -> None:
+        """Zastavený výpočet uchová varianty, které už stihl dokončit."""
+        pending, self._design_pending = self._design_pending, None
+        if pending is None:
+            return
+        if finished is None and pending["prepared"] is not None and pending["variants"]:
+            original, steps = pending["prepared"]
+            finished = DesignResult(
+                pending["settings"], pending["model"], pending["path"],
+                pending["fingerprint"], pending["material"], pending["created"],
+                build_text(), libraries_text(), original, steps, pending["variants"],
+                complete=False, seconds=time.monotonic() - pending["started"],
+                operator=pending["operator"])
+        if finished is not None:
+            self._design_cache = (pending["key"], finished)
+        if error:
+            self.failure = error
+
+    @property
+    def design_pending(self) -> bool:
+        return self._design_pending is not None
+
+    @property
+    def ndt_design_progress(self) -> str:
+        pending = self._design_pending
+        if pending is None or pending["progress"] is None:
+            return ""
+        index, total, label, inner = pending["progress"]
+        return (f"varianta {index + 1} z {total} – {label}" +
+                (f", {inner[0]} z {inner[1]}" if inner is not None else ""))
+
+    @property
+    def ndt_design(self) -> DesignResult | None:
+        """Srovnání platné pro současnou podobu modelu."""
+        if self._design_cache is None or self.computing:
+            return None
+        key, outcome = self._design_cache
+        if key != self._design_key():
+            self._design_cache = None
+            return None
+        return outcome
+
+    def clear_ndt_design(self) -> None:
+        self._design_cache = None
+
+    def _design_variant(self, index: int) -> DesignVariant:
+        self._require_computed("použití konstrukční varianty")
+        outcome = self.ndt_design
+        if outcome is None:
+            raise DocumentError("Nejdřív spočítej konstrukční návrh pro tento model.")
+        variant = next((v for v in outcome.variants if v.index == index), None)
+        if variant is None or index == 0:
+            raise DocumentError("Vyber vypočtenou variantu (ne původní díl).")
+        if variant.status != "passed" or variant.target is None or \
+                variant.target.status != "done":
+            raise DocumentError("Použít lze jen variantu, která prošla všemi podmínkami "
+                                "a má vypočtenou cílovou studii.")
+        return variant
+
+    def apply_ndt_design_variant(self, index: int) -> BuildResult:
+        """Výslovně zvolená varianta = jeden krok Zpět (potvrzení řeší okno etapy 15B)."""
+        variant = self._design_variant(index)
+        return self._change(lambda doc: doc.parameters.update(variant.values))
+
+    def save_ndt_design_variant(self, index: int, path: str | Path) -> Path:
+        """Nový soubor, nepřepisuje otevřený model ani existující soubory."""
+        variant = self._design_variant(index)
+        target = Path(path).resolve()
+        if target.exists() or (self.path is not None and target == self.path.resolve()):
+            raise DocumentError("Cílový soubor už existuje. Vyber nový název.")
+        try:
+            self._require().with_parameters(variant.values).save(target)
+        except OSError as exc:
+            raise DocumentError(f"Variantní model nelze uložit: {exc}") from None
+        return target
+
+    def export_ndt_design(self, folder: str | Path,
+                          images: dict[str, list[tuple[str, bytes]]] | None = None
+                          ) -> list[Path]:
+        outcome = self.ndt_design
+        if outcome is None:
+            raise DocumentError("Nejdřív spočítej konstrukční návrh.")
+        try:
+            return outcome.write_folder(folder, images)
+        except OSError as exc:
+            raise DocumentError(f"Zprávu návrhu nelze uložit: {exc}") from None
 
     # --- NDT návrh poloh sondy (etapa 09, jen pohled) ------------------------------------
 

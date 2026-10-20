@@ -1102,3 +1102,46 @@ ruff check src tests          # kontrola kódu
 skodacad-gui                  # spustí okno (bez argumentu otevře ukázku příruby)
 skodacad-gui --self-test zprava.txt   # kontrola aplikace bez obsluhy
 ```
+
+
+## Konstrukční návrhy pro NDT (etapa 15B – okno a výpočet)
+
+ŠkodaCAD umí připravit a porovnat **kopie** dílu s různými číselnými parametry a
+geometrickým posouzením UT/PT/MT/RT. Srovnává geometrickou přístupnost a pokrytí, **ne**
+pevnost, technologičnost ani detekovatelnost vad. Původní díl se po výpočtu nikdy sám
+nezmění; použití varianty vyžaduje výslovné rozhodnutí konstruktéra.
+
+**Model verze 22:** do oddílu `ndt` se může uložit `design` s cílovou studií,
+povolenými parametry a hodnotami, zamčenými měřeními a podmínkami. Výsledky
+výpočtu jsou jen pohled (neukládají se). Verze 1–21 se stále načtou.
+
+Referenční model: `examples/ndt/navrh_kapsa.json`, včetně podmínky
+stěny kapsy nejméně 15 mm.
+
+Příklady v příkazové řádce:
+
+```bash
+skodacad navrh examples/ndt/navrh_kapsa.json --slozka out/navrh
+skodacad navrh examples/ndt/navrh_kapsa.json --studie s3 --parametr a=40,60,80,90,100 --podminka "m1>=15:stena" --bez-overeni --slozka out/navrh
+skodacad navrh examples/ndt/navrh_kapsa.json --parametr a=40:100:20 --zamek m1 --ulozit-zadani
+```
+
+`--ulozit-zadani` jako jediná volba výslovně zapisuje **zadání** do původního
+souboru modelu. Bez ní je i samotné spuštění CLI pouze čtecí a výpočetní operace.
+Výstupem `--slozka` jsou `navrh.html` a `varianty.csv`.
+Další volby zobrazí `skodacad navrh --help`.
+
+**Grafické ovládání:** Otevři model s NDT studiemi (např. NDT – referenční díly →
+NDT 10 – Konstrukční návrh kapsy pro jho), potom **NDT → Konstrukční návrh…**.
+Klikni na **Zadat návrh…** (výběr parametrů, mezí, zamčených rozměrů), na **Odhad doby**
+a **Spustit návrh**. Tabulka porovnává varianty; klik na variantu zobrazí ve 3D její
+geometrii s původním dílem průhledně. Výsledek stále nic nemění na otevřeném dílu.
+
+**Použít variantu…** vyžaduje výslovné potvrzení a jeden krok Zpět vrátí původní
+parametry. **Uložit variantu jako…** vytvoří nový soubor a původní nikdy nepřepíše.
+Z panelu jde uložit zprávu HTML/CSV/PDF a obrázky náhledů variant. Srovnání není
+ověřením pevnosti, technologie výroby, normové způsobilosti ani detekovatelnosti vad.
+
+Výpočetní jádro a příkazová řádka jsou hotové ve fázi 15A.2; okno a export PDF jsou
+součástí etapy 15B. Podle schváleného plánu se všechny změny před sloučením ověřují na
+Windows i macOS.

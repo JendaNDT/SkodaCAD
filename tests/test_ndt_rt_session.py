@@ -98,7 +98,7 @@ def test_format_21_saves_rt_and_rejects_it_in_other_studies(tmp_path):
     session = quick(opened())
     path = session.save(tmp_path / "otvor.json")
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["version"] == 21 and data["ndt"]["studies"][1]["rt"]["step_mm"] == 10
+    assert data["version"] == 22 and data["ndt"]["studies"][1]["rt"]["step_mm"] == 10
     assert "rt" not in data["ndt"]["studies"][0]
     assert Document.load(path).to_dict() == data  # načtení a uložení beze změny
     data["ndt"]["studies"][0]["rt"] = {"class": "B"}

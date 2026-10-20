@@ -573,7 +573,13 @@ def _examples(examples_dir: Path | None) -> str:
 
 
 def system_prompt(examples_dir: Path | None = None) -> str:
-    sections = [RULES, "<format_modelu>", _readme_format(), _schema_reference(),
+    design_rule = (
+        "Konstrukční návrhy NDT (ndt.design, formát modelu 22): lze doporučit varianty "
+        "jen jako návrhy ke konstruktérskému posouzení. Nesmíš změnit model ani uložit "
+        "soubor automaticky na základě návrhu. Neposuzuješ pevnost ani detekovatelnost vad; "
+        "vybranou variantu může použít až uživatel po výslovném potvrzení. "
+        "Nenavrhuj automatické přepsání uložených NDT studií.")
+    sections = [RULES, design_rule, "<format_modelu>", _readme_format(), _schema_reference(),
                 "</format_modelu>"]
     examples = _examples(examples_dir)
     if examples:

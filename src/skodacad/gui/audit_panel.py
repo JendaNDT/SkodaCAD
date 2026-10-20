@@ -68,7 +68,7 @@ HINT = ("Audit spočítá zaškrtnuté studie jejich uloženým nastavením a sl
 COLUMNS = ("Místo", "Studie", "Stav", "Rozsah", "Podíl", "Důvody")
 
 
-def write_pdf(html: str, path: str | Path) -> Path:
+def write_pdf(html: str, path: str | Path, title: str = TITLE) -> Path:
     """Zpráva HTML → PDF (A4) přes Qt. Obrázky ``data:`` se předají jako zdroje dokumentu."""
     path = Path(path)
     document = QTextDocument()
@@ -85,7 +85,7 @@ def write_pdf(html: str, path: str | Path) -> Path:
     document.setHtml(html)
     writer = QPdfWriter(str(path))
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-    writer.setTitle(TITLE)
+    writer.setTitle(title)
     document.print_(writer)  # Qt stránkuje sám (okraj 2 cm) a písmo škáluje na papír
     return path
 

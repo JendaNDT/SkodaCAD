@@ -238,6 +238,33 @@ def main(argv: list[str] | None = None) -> int:
     aud.add_argument("--slozka", type=Path,
                      help="ulož zprávu do složky (zprava.html, mista.csv, CSV studií)")
     aud.add_argument("--zpracovatel", default="", help="kdo audit zpracoval (do zprávy)")
+
+    navrh = commands.add_parser("navrh", help="konstrukční návrhy pro geometrickou "
+                                "kontrolovatelnost NDT (bez automatických úprav)")
+    navrh.add_argument("model", type=Path, help="soubor dílu (.json)")
+    navrh.add_argument("--studie", help="cílová studie (jinak uložené ndt.design)")
+    navrh.add_argument("--parametr", action="append", default=[], metavar="a=40,60,80",
+                       help="číselné varianty, např. a=40,60,80 nebo b=30:70:20")
+    navrh.add_argument("--zamek", action="append", default=[], metavar="m1",
+                       help="ID zamčeného uloženého měření; lze opakovat")
+    navrh.add_argument("--zamek-parametru", action="append", default=[], metavar="nazev",
+                       help="parametr, jehož vypočtená hodnota se nesmí změnit")
+    navrh.add_argument("--podminka", action="append", default=[], metavar="m2>=15:duvod",
+                       help="omez uložené měření: m2>=15:pevnost nebo m2<=100:limit")
+    navrh.add_argument("--hmotnost", type=float, help="maximální změna hmotnosti ± %")
+    navrh.add_argument("--ostatni", action="store_true", help="spočti i další studie")
+    navrh.add_argument("--bez-overeni", action="store_true",
+                       help="neověřuj pořadí jemnějším krokem")
+    navrh.add_argument("--bez-neproslych", action="store_true",
+                       help="nepočítej NDT u variant s nesplněnými podmínkami")
+    navrh.add_argument("--ut-jen-overit", action="store_true",
+                       help="u UT jen ověř uložený plán, nepřestavuj jej")
+    navrh.add_argument("--tloustka", action="store_true",
+                       help="hlídej mez uložené mapy tloušťky")
+    navrh.add_argument("--slozka", type=Path, help="ulož navrh.html a varianty.csv")
+    navrh.add_argument("--zpracovatel", default="", help="jméno do zprávy")
+    navrh.add_argument("--ulozit-zadani", action="store_true",
+                       help="výslovně zapiš zadání do původního JSON modelu")
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -259,6 +286,8 @@ def main(argv: list[str] | None = None) -> int:
             return _rt(args)
         if args.command == "audit":
             return _audit(args)
+        if args.command == "navrh":
+            return _navrh(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -767,6 +796,93 @@ def _audit(args: argparse.Namespace) -> int:
             print("Uloženo:", path)
     return 0
 
+
+
+def _navrh(args: argparse.Namespace) -> int:
+    """Srovnání parametrických variant bez změny modelu; zadání zapisuje jen --ulozit-zadani."""
+    import re
+
+    from skodacad.ndt.audit import duration_text
+    from skodacad.ndt.design import Design, DesignError
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    saved = session.ndt_design_settings()
+    data = saved.to_dict() if saved is not None else {"study": args.studie,
+                                                       "parameters": []}
+    if args.studie:
+        data["study"] = args.studie
+    if args.parametr:
+        parameters = []
+        for entry in args.parametr:
+            name, sep, values = entry.partition("=")
+            if not sep or not name or not values:
+                raise DesignError(f"Parametr musí být ve tvaru a=40,60,80: {entry}")
+            try:
+                if ":" in values:
+                    parts = [float(v) for v in values.split(":")]
+                    if len(parts) != 3:
+                        raise ValueError("rozsah má tři čísla")
+                    parameters.append({"name": name, "from": parts[0], "to": parts[1],
+                                       "step": parts[2]})
+                else:
+                    parameters.append({"name": name,
+                                       "values": [float(v) for v in values.split(",")]})
+            except ValueError:
+                raise DesignError(f"Neplatné číselné hodnoty parametru „{name}“: {values}"
+                                  " (desetinná tečka, seznam čárkami).") from None
+        data["parameters"] = parameters
+    if args.zamek or args.zamek_parametru:
+        locked = data.setdefault("locked", {})
+        if args.zamek:
+            locked["measurements"] = args.zamek
+        if args.zamek_parametru:
+            locked["parameters"] = args.zamek_parametru
+    if args.podminka:
+        conditions = []
+        for entry in args.podminka:
+            match = re.fullmatch(r"([A-Za-z0-9_]+)\s*(>=|<=)\s*(-?\d+(?:\.\d+)?)"
+                                 r"(?:\:(.*))?", entry)
+            if match is None:
+                raise DesignError(f"Podmínka má být např. m1>=15:pevnost: {entry}")
+            mid, sign, number, reason = match.groups()
+            conditions.append({"measurement": mid, "min" if sign == ">=" else "max":
+                               float(number), "reason": reason or ""})
+        data["conditions"] = conditions
+    if args.hmotnost is not None:
+        data["mass_change_pct"] = args.hmotnost
+    options = data.setdefault("options", {})
+    if args.ostatni:
+        options["others"] = True
+    if args.bez_overeni:
+        options["verify"] = False
+    if args.bez_neproslych:
+        options["rejected"] = False
+    if args.ut_jen_overit:
+        options["ut"] = "check"
+    if args.tloustka:
+        options["thickness"] = True
+    design = Design.from_dict(data)
+    design.check(session.document)
+    count, seconds = session.ndt_design_estimate(design)
+    print(f"Návrh: {count} variant, hrubý odhad {duration_text(seconds)}.", file=sys.stderr,
+          flush=True)
+    if args.ulozit_zadani:
+        session.set_ndt_design(design)
+        session.save(args.model)
+        print("Zadání návrhu uloženo do modelu.", file=sys.stderr)
+
+    def progress(index: int, total: int, label: str, inner: Any) -> None:
+        if inner is None:
+            print(f"[{index + 1}/{total}] {label}", file=sys.stderr, flush=True)
+
+    outcome = session.compute_ndt_design(design, args.zpracovatel, progress=progress)
+    print("\n".join(outcome.summary()))
+    if args.slozka is not None:
+        for result in session.export_ndt_design(args.slozka):
+            print("Uloženo:", result)
+    return 0
 
 def _glue_negative(argv: list[str]) -> list[str]:
     """„--z -150,0,20“ → „--z=-150,0,20“: argparse by zápornou trojici vzal jako volbu."""

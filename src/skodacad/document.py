@@ -45,10 +45,11 @@ FORMAT = "skodacad"
 # a materiál pro UT ve studii („material“), verze 18 plán dráhy sondy („plan“) a zakázané
 # zóny („zones“) ve studii, verze 19 nastavení PT studie („pt“: nástroje, úhly, postup),
 # verze 20 nastavení MT studie („mt“: jho, rozteče, meze, nanesení a prohlídka),
-# verze 21 nastavení a projekce RT studie („rt“: zdroj, detektor, třída, projekce).
-VERSION = 21
+# verze 21 nastavení a projekce RT studie („rt“: zdroj, detektor, třída, projekce),
+# verze 22 zadání konstrukčního návrhu (ndt.design), výsledky zůstávají jen v paměti.
+VERSION = 22
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21)
+                      20, 21, 22)
 
 
 class DocumentError(ValueError):
@@ -146,7 +147,7 @@ class Document:
                 if target.get("kind") in ("volume", "weld"):
                     study["target"] = normalize_target(target)
 
-        return cls(
+        document = cls(
             name=str(data.get("name", "Bez názvu")),
             description=str(data.get("description", "")),
             units=units,
@@ -157,6 +158,14 @@ class Document:
             thickness_map=copy.deepcopy(thickness_map),
             ndt=copy.deepcopy(ndt),
         )
+        if ndt is not None and "design" in ndt:
+            from skodacad.ndt.design import Design, DesignError
+
+            try:
+                Design.from_dict(ndt["design"]).check(document)
+            except DesignError as exc:
+                raise DocumentError(str(exc)) from None
+        return document
 
     def to_dict(self) -> dict[str, Any]:
         data = {
