@@ -52,9 +52,16 @@ def check(data: Any) -> None:
     """Zkontroluje sekci ``ndt`` modelu; chyba = ``StudyError`` s českou zprávou."""
     if not isinstance(data, dict):
         raise StudyError('„ndt“ musí být objekt {"studies": [...]}.')
-    unknown = sorted(set(data) - {"studies"})
+    unknown = sorted(set(data) - {"studies", "design"})
     if unknown:
-        raise StudyError(f"Neznámá položka „{unknown[0]}“ v „ndt“ (umím jen „studies“).")
+        raise StudyError(f"Neznámá položka „{unknown[0]}“ v „ndt“ (umím „studies“ a „design“).")
+    if "design" in data:
+        from skodacad.ndt.design import Design, DesignError
+
+        try:
+            Design.from_dict(data["design"])
+        except DesignError as exc:
+            raise StudyError(str(exc)) from None
     studies = data.get("studies", [])
     if not isinstance(studies, list):
         raise StudyError("„ndt.studies“ musí být seznam NDT studií.")
