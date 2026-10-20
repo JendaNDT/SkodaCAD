@@ -145,3 +145,20 @@ def check_boolean(operation: str, before: VolumeFacts | None, tool: VolumeFacts,
             )
     elif operation == "cut":
         check_cut_volume(previous, result.volume, empty_cut)
+
+
+def check_modification(before: VolumeFacts, result: VolumeFacts, *, shell: bool = False) -> None:
+    """Úprava hran/stěn musí zachovat počet složek; skořepina také ubírá materiál."""
+    if result.solids != before.solids:
+        raise GeometryValidationError(
+            f"počet těles se změnil z {before.solids} na {result.solids} – "
+            "úprava hran nebo stěn musí zachovat všechny složky; uprav výběr nebo rozměr."
+        )
+    tolerance = volume_tolerance(before.volume, result.volume)
+    if result.volume <= tolerance:
+        raise GeometryValidationError("výsledek nemá rozlišitelný objem – uprav rozměry.")
+    if shell and result.volume >= before.volume - tolerance:
+        raise GeometryValidationError(
+            "skořepina nevytvořila rozlišitelné stěny – vyber otevřenou plochu "
+            "a zkontroluj tloušťku."
+        )

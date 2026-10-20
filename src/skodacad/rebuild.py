@@ -14,7 +14,8 @@ from build123d import Part, Plane, Sketch
 
 from skodacad.document import Document, DocumentError
 from skodacad.expressions import ExpressionError, resolve_parameters
-from skodacad.features import FEATURE_TYPES, BuildContext, FeatureError, describe
+from skodacad.features import FEATURE_TYPES, VOLUME_FEATURES, BuildContext, FeatureError, describe
+from skodacad.geometry_validation import GeometryValidationError, inspect_volume
 from skodacad.measure import SavedResult, evaluate
 from skodacad.ndt.study import StudyResult
 from skodacad.ndt.study import evaluate_all as evaluate_studies
@@ -117,9 +118,9 @@ def _run_feature(ctx: BuildContext, feature: dict[str, Any]) -> str | None:
     ctx.recording = []  # co prvek s dílem udělá – pro pole a zrcadlení
     try:
         feature_type.build(ctx, feature)
-        if ctx.part is not None and ctx.part is not part_before and not ctx.part.is_valid:
-            raise FeatureError("Výsledek není platné těleso (jádro vrátilo poškozenou geometrii).")
-    except (FeatureError, ExpressionError, SelectionError) as exc:
+        if feature["type"] in VOLUME_FEATURES:
+            inspect_volume(ctx.part)
+    except (FeatureError, ExpressionError, SelectionError, GeometryValidationError) as exc:
         ctx.part = part_before
         return str(exc)
     except Exception as exc:  # noqa: BLE001 – neočekávaná chyba jádra nesmí shodit program

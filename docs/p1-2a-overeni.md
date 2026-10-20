@@ -6,9 +6,13 @@ Implementace má vlastní větev; ke sloučení implementačního PR je nutný d
 
 ## Průběh
 
-- A.1: vzniká společný validátor a kontroly `new/add/cut`; doplněné regrese
-  analytických objemů, polohy materiálu, oddělených složek a hranic účinku.
-- A.2: místní kandidáti zaoblení/sražení/skořepiny a závěrečná pojistka zatím čekají.
+- A.1: společný validátor a kontroly `new/add/cut` jsou v commitu `2bd1c86`.
+  Ruff prošel; celý pytest: **1 165 testů / 408,34 s**, bez přeskočení.
+  Regrese dokládají analytické objemy, polohu materiálu, oddělené složky a hranice účinku.
+- A.2: místní kandidáti zaoblení/sražení/skořepiny a závěrečná pojistka jsou zapojené.
+  Cílená sada **176 testů / 10,86 s** prošla; úplná kontrola před druhým commitem probíhá.
+  Pozdní chyba skutečného pole děr vrátí původní geometrii; tato regrese nedokládá
+  úplnou obnovu všech slovníků kontextu (ta zůstává v P1.2B).
 - A.3: společné zprávy, rozhraní, přenos, kompletní kompatibilita a cílové sestavení zatím čekají.
 - Cílené testy se provádějí během jednotlivých kroků. Celý pytest a Ruff jsou povinné před commitem;
   konečné výsledky a časy budou uvedené po skutečném dokončení kontrol.

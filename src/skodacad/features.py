@@ -51,8 +51,10 @@ from build123d import (
 from skodacad.expressions import evaluate
 from skodacad.geometry_validation import (
     GeometryValidationError,
+    VolumeFacts,
     check_boolean,
     check_cut_volume,
+    check_modification,
     inspect_volume,
 )
 from skodacad.holes import KINDS as HOLE_KINDS
@@ -162,6 +164,10 @@ class FeatureType:
 
 
 FEATURE_TYPES: dict[str, FeatureType] = {}
+# Každý 3D typ musí projít závěrečnou kontrolou i tehdy, když nevolá ctx.apply.
+# Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
+VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
+                             "pattern", "mirror", "fillet", "chamfer", "shell"))
 
 
 def feature(name: str, label_cz: str):
@@ -636,49 +642,72 @@ def _coplanar(face: Any, section: Any) -> bool:
 # --- Úpravy hran a stěn ----------------------------------------------------------
 
 
+def _modification_input(ctx: BuildContext, label: str) -> tuple[Part, VolumeFacts]:
+    part = ctx.require_part(label)
+    try:
+        return part, inspect_volume(part)
+    except GeometryValidationError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+
+
+def _accept_modification(ctx: BuildContext, candidate: Part, before: VolumeFacts,
+                         label: str, *, shell: bool = False) -> None:
+    try:
+        check_modification(before, inspect_volume(candidate), shell=shell)
+    except GeometryValidationError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    ctx.part = candidate
+
+
 @feature("fillet", "Zaoblení")
 def build_fillet(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Zaoblení")
+    part, before = _modification_input(ctx, "Zaoblení")
     radius = ctx.positive(feature, "radius", "Poloměr zaoblení")
     edges = select_edges(part, required(feature, "edges"), ctx.num)
     try:
-        ctx.part = fillet(edges, radius)
+        candidate = fillet(edges, radius)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Zaoblení R{radius:g} se nepodařilo na {len(edges)} hranách – poloměr je "
             "nejspíš větší, než dovoluje okolní geometrie."
         ) from None
+    _accept_modification(ctx, candidate, before, "Zaoblení")
 
 
 @feature("chamfer", "Sražení")
 def build_chamfer(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Sražení")
+    part, before = _modification_input(ctx, "Sražení")
     distance = ctx.positive(feature, "distance", "Velikost sražení")
     edges = select_edges(part, required(feature, "edges"), ctx.num)
     try:
-        ctx.part = chamfer(edges, distance)
+        candidate = chamfer(edges, distance)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Sražení {distance:g} mm se nepodařilo na {len(edges)} hranách – je nejspíš "
             "větší, než dovoluje okolní geometrie."
         ) from None
+    _accept_modification(ctx, candidate, before, "Sražení")
 
 
 @feature("shell", "Skořepina")
 def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Skořepina")
+    part, before = _modification_input(ctx, "Skořepina")
     thickness = ctx.positive(feature, "thickness", "Tloušťka stěny")
     open_faces = feature.get("open_faces", [])
     if not isinstance(open_faces, list):
         raise FeatureError("„open_faces“ musí být seznam ploch, např. [\"top\"].")
+    if not open_faces:
+        raise FeatureError("Skořepina potřebuje alespoň jednu otevřenou plochu – "
+                           "vyber plochu, kterou chceš odstranit.")
     openings = [face for name in open_faces for face in select_faces(part, name)]
     try:
-        ctx.part = offset(part, amount=-thickness, openings=openings)
+        candidate = offset(part, amount=-thickness, openings=openings)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Skořepina s tloušťkou {thickness:g} mm se nepodařila – stěna je nejspíš "
             "silnější, než dovolují zaoblení nebo malé detaily dílu."
         ) from None
+    _accept_modification(ctx, candidate, before, "Skořepina", shell=True)
 
 
 # --- Normalizované díly ----------------------------------------------------------------

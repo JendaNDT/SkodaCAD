@@ -1085,6 +1085,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 3. Pole prvku popiš v `schema.py` (`FEATURE_SCHEMAS`) a doplň výchozí hodnoty v `new_feature`
    – podle toho okno postaví formulář (test `test_schema.py` hlídá shodu s jádrem).
 4. Test v `tests/test_features.py` s očekávaným objemem podle vzorce.
+   Objemový typ patří také do `features.VOLUME_FEATURES`; závěrečnou kontrolu
+   `geometry_validation.inspect_volume` nesmí obejít ani přímá úprava dílu.
 5. Doplň tabulku prvků v README.md.
 
 ## Plán
