@@ -232,8 +232,9 @@ jen proto, že se začaly kontrolovat booleovské výsledky.
 | P1.4 | Samostatně schválené pravidlo exportů, náhledů a NDT při chybném/částečném výsledku. | Stejné chování GUI/CLI/AI; uzavření R01 doložené testem. |
 | P1.5 | Celá referenční sada, kompatibilita, oba systémy a ruční přijetí. | Ruff, celý pytest, Windows/macOS sestavení i test stažených balíčků, ruční protokol; vypsané zbývající meze. |
 
-Konkrétní změny kódu a případné rozdělení P1.2A na menší PR se připraví
-v samostatném zadání P1.2A ke schválení. Schválená smlouva nepředepisuje novou
+Konkrétní změny, pořadí, testy a kritéria přijetí jsou rozpracované
+v [návrhu P1.2A ke schválení](p1-2a-navrh-spolecne-kontroly-geometrie.md).
+Implementace tohoto návrhu zatím nezačala. Schválená smlouva nepředepisuje novou
 architekturu tříd ani nový přenášený či uložený datový formát.
 
 ## 9. Kompatibilita a kritéria dokončení P1.1

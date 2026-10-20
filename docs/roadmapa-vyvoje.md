@@ -79,8 +79,13 @@ technické předání po ověření PR; ruční přijetí a schválení další 
 
 **P1.1 dokončeno — schváleno autorem 20. 10. 2026:**
 [smlouva geometrických operací](p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí D1–D7 a matice budoucích testů.
-Zachovává existující podporu více solidů. Dokumentační PR #31 zaznamenává schválení;
+Zachovává existující podporu více solidů. Sloučené dokumentační PR #31 zaznamenává schválení;
 implementace P1.2–P1.5 ani nový formát tím nejsou schválené.
+
+**P1.2A připraveno k posouzení:** [konkrétní návrh společné kontroly geometrie](p1-2a-navrh-spolecne-kontroly-geometrie.md).
+Obsahuje body A1–A7, malé kroky A.1–A.3, regresní sady V1–V14, zprávy GUI/CLI/AI,
+výkonové porovnání a ruční přijetí. Zatím jde výhradně o dokumentaci;
+P1.2B (úplná obnova kontextu) a P1.4 (export/NDT při chybě) zůstávají samostatné.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.
