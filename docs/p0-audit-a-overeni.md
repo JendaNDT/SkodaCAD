@@ -156,7 +156,14 @@ se mohou lišit; změna produkčního výkonu se v tomto PR neočekává.
 
 Ruční a odborné ověření se eviduje samostatně v oddílech níže.
 
-## 6. Ruční přijetí autorem — zatím neprovedeno v rámci P0
+## 6. Ruční postup a evidence autora
+
+**Aktualizace 20. 10. 2026:** autor na Macu Apple M4 / macOS 27.0.1 postupně
+potvrdil funkční průchod: spuštění, editace a historie, uložení, chybné zadání
+a geometrie, 3D a řez, zastarání studie, náhled/použití varianty, poškozený soubor,
+zprávy a nové spuštění. [Protokol](p0-rucni-overeni-macos-2026-10-20.md) uvádí
+testované sestavení, původ evidence a samostatně nepotvrzené podbody. Následující
+seznam zůstává úplným postupem; potvrzení průchodu neuzavírá širší macOS matici ani NDT-17.
 
 Použít balíček z **tohoto PR** v Actions, až úspěšně projdou obě úlohy příslušného OS.
 Odkazy Releases stále ukazují vydání z main. Zapisovat commit, OS, zařízení,
@@ -193,7 +200,7 @@ příloha`. Úspěšný automatický self-test není náhradou tohoto seznamu.
 | Úroveň | Evidence dnes | Co ještě musí dodat validace |
 |---|---|---|
 | Analytické geometrie | `test_ndt_geometry`, `test_ndt_ut`, objemové reference a testy metod | vybrat konkrétní deklarované oblasti použití a udržovat případ/algoritmus/toleranci |
-| Uživatelský pracovní tok | testy session, GUI a self-test balíčku | provedený ruční protokol na zařízení autora |
+| Uživatelský pracovní tok | testy session, GUI, self-test balíčku a [autorem potvrzený průchod na Macu](p0-rucni-overeni-macos-2026-10-20.md) | doplnit výslovně neověřené podbody a ruční Windows matici |
 | Fyzický vzorek a zařízení | tento PR nové měření nepřidává | identifikace vzorku/sondy/jha/projekce, původ hodnot, měření a nejistota |
 | Odborné přijetí | nesmí být odvozeno z počtu testů | jméno a závěr kvalifikovaného pracovníka pro dohodnutý geometrický rozsah |
 

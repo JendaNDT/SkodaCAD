@@ -6,7 +6,8 @@
 
 Stav: návrh 16. 10. 2026 · **rozhodnuto:** nejdřív sladit UT, pak Mac; balíček **ZIP se
 `SkodaCAD.app`**; nastavení a log v **`~/SkodaCAD`** jako ve Windows · **kroky 1–3 hotové**,
-čeká se na ruční test na MacBooku.
+autor 20. 10. 2026 potvrdil [funkční průchod P0 na M4 / macOS 27.0.1](../p0-rucni-overeni-macos-2026-10-20.md).
+Protokol uvádí konkrétní sestavení a omezení; širší seznam níže není celý uzavřen.
 
 ## 0. Výsledek na Macu GitHubu (16. 10. 2026, `macos-15`, Apple Silicon)
 
@@ -78,7 +79,7 @@ self-test v zabaleném .app, včetně zastavení.
 - [ ] stáhnout ZIP, rozbalit, přetáhnout do Aplikací, povolit v Nastavení a spustit
 - [ ] otevřít ukázku (příruba), otočit, přiblížit, posunout (Shift + tažení)
 - [ ] kliknout na plochu – vybere se ta pod kurzorem (Retina)
-- [ ] změnit parametr, přepočet, Zpět
+- [x] změnit parametr, přepočet, Zpět (potvrzeno autorem v průchodu P0, 20. 10. 2026)
 - [ ] měření (tloušťka stěny), export STEP
 - [ ] mapa tloušťky (trubka), řez modelem
 - [ ] NDT: Deska se žebrem → panel NDT → Přiložit sondu sem
