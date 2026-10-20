@@ -39,9 +39,9 @@ from skodacad.gui.audit_panel import write_pdf
 from skodacad.ndt import DISCLAIMER
 from skodacad.ndt.design import (
     BANNER,
-    TITLE,
     BEFORE,
     DESIGN_NOTE,
+    TITLE,
     Design,
     DesignError,
 )
