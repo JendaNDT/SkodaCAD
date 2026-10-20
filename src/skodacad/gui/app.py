@@ -21,7 +21,6 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from skodacad import __version__
 from skodacad.session import ModelSession
 
 log = logging.getLogger("skodacad")
@@ -50,8 +49,9 @@ def setup_logging() -> Path:
     root.setLevel(logging.INFO)
     root.addHandler(handler)
     logging.getLogger("build123d").setLevel(logging.WARNING)  # jinak píše každou operaci
-    log.info("Start ŠkodaCAD %s, Python %s, %s", __version__, sys.version.split()[0],
-             sys.platform)
+    from skodacad.buildinfo import build_text
+
+    log.info("Start %s, Python %s, %s", build_text(), sys.version.split()[0], sys.platform)
     return log_path
 
 
@@ -164,8 +164,10 @@ def _run_self_test(lines: _Report) -> int:
         import OCP
         import PySide6
 
+        from skodacad.buildinfo import build_text
+
         lines += [
-            f"ŠkodaCAD {__version__}",
+            build_text(),  # verze a sestavení (commit z GitHub Actions)
             f"Python {sys.version.split()[0]} ({sys.platform})",
             f"Open CASCADE (OCP) {OCP.__version__}, build123d {build123d.__version__}, "
             f"PySide6 {PySide6.__version__}",

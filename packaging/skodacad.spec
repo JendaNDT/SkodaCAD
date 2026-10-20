@@ -21,6 +21,9 @@ datas.append((str(ROOT / "README.md"), "."))  # popis formátu modelu pro AI asi
 binaries = []
 # AI asistent: knihovna anthropic načítá části API až při použití – přibalit všechny.
 hiddenimports = collect_submodules("anthropic") + collect_submodules("httpx2")
+# Commit a datum sestavení (zapíše GitHub Actions; zpráva NDT auditu, O aplikaci).
+if (ROOT / "src" / "skodacad" / "_build.py").exists():
+    hiddenimports.append("skodacad._build")
 
 # Open CASCADE (OCP) je jeden obří modul + stovky knihoven; build123d a spol. mají data.
 for package in ("OCP", "build123d", "ocpsvg", "ocp_gordon", "lib3mf", "cadquery_ocp_proxy"):

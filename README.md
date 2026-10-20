@@ -509,6 +509,24 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
     * náhled prozařované tloušťky s obrysem oblasti (*Uložit náhled PNG…*), *Export CSV…*.
 
   Návrh: [Etapa 13](docs/ndt/23-navrh-etapa-13.md).
+* **Předběžný NDT audit (etapa 14):** jedním příkazem spočítá všechny studie modelu jejich
+  uloženým nastavením a složí **„Předběžný NDT audit – zpráva o geometrickém posouzení“**.
+  Nic nevybírá, nepíše „vyhovuje“ a model nemění (výsledek je jen pohled, formát 21).
+  * **Co se spočítá:** PT, MT a RT studie svou mapou; UT studie ověřením uloženého plánu
+    dráhy s pokrytím, jinak výsledkem spočítaným v tomto sezení (plán, mapa pokrytí, návrh
+    poloh), jinak „neprovedeno“ – pomalý návrh poloh jen na výslovné přání. Mapa tloušťky
+    stěny, jen když má model nastavenou mez. Zastaralou studii audit sám nepotvrdí
+    („nedostupné“ s důvodem).
+  * **Problémová místa:** sousední místa se stejným stavem (nepokryto, nelze spolehlivě
+    vyhodnotit, omezeně) spojená do jednoho, s plochou nebo objemem, polohou a důvody
+    s podíly.
+  * **Zpráva:** povinná upozornění všech metod (UT, PT, MT, RT), hlavička s otiskem dílu,
+    sestavením programu a knihovnami, přehled studií se stavem, tabulka míst, celý záznam
+    studie (nastavení) a verze algoritmů. Složka: `zprava.html`, `mista.csv` a CSV studií.
+  * **Příkazová řádka:** `skodacad audit MODEL [--studie s2] [--navrh-poloh s1]
+    [--slozka zprava] [--zpracovatel "J. N."]`.
+
+  Návrh: [Etapa 14](docs/ndt/25-navrh-etapa-14.md).
 
 ### Tažení a přechod
 

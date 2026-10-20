@@ -51,6 +51,13 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
 
+      - name: Zápis sestavení (commit a datum do zprávy auditu)
+        shell: bash
+        run: |
+          printf 'COMMIT = "%s"\nDATE = "%s"\n' "${{ github.sha }}" "$(date -u +%Y-%m-%d)" \
+            > src/skodacad/_build.py
+          cat src/skodacad/_build.py
+
       - name: Sestavení SkodaCAD.exe
         run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
 

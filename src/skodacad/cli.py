@@ -1,6 +1,6 @@
 """Příkazová řádka: ``skodacad build model.json``, ``skodacad ai model.json "úprava"`` a
-``skodacad paprsek model.json --z x,y,z --smer dx,dy,dz`` a ``skodacad sonda model.json --bod
-x,y,z``.
+``skodacad paprsek model.json --z x,y,z --smer dx,dy,dz``, ``skodacad sonda model.json --bod
+x,y,z`` a ``skodacad audit model.json`` (předběžný NDT audit všech studií).
 
 ``build`` postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená
 měření, mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty
@@ -226,6 +226,18 @@ def main(argv: list[str] | None = None) -> int:
                      help="krok náhledu prozařované tloušťky na detektoru [mm] (výchozí 2)")
     rad.add_argument("--ulozit", action="store_true", help="ulož nastavení a projekce do modelu")
     rad.add_argument("--csv", type=Path)
+
+    aud = commands.add_parser("audit", help="předběžný NDT audit – zpráva o geometrickém "
+                              "posouzení všech studií modelu (jen pohled, model se nemění)")
+    aud.add_argument("model", type=Path)
+    aud.add_argument("--studie", action="append",
+                     help="jen tato studie (jde opakovat; tl = mapa tloušťky); jinak všechny")
+    aud.add_argument("--navrh-poloh", action="append", dest="navrh_poloh",
+                     help="u této UT studie bez plánu spusť návrh poloh (pomalé – minuty až "
+                          "desítky minut; jde opakovat)")
+    aud.add_argument("--slozka", type=Path,
+                     help="ulož zprávu do složky (zprava.html, mista.csv, CSV studií)")
+    aud.add_argument("--zpracovatel", default="", help="kdo audit zpracoval (do zprávy)")
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -245,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
             return _mt(args)
         if args.command == "radiografie":
             return _rt(args)
+        if args.command == "audit":
+            return _audit(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
@@ -725,6 +739,32 @@ def _rt(args: argparse.Namespace) -> int:
             raise ValueError(f"CSV nejde uložit: {exc}") from None
     if args.ulozit:
         print("Model uložen:", session.save())
+    return 0
+
+
+def _audit(args: argparse.Namespace) -> int:
+    from skodacad.ndt.audit import duration_text, estimate_seconds
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.open(args.model)
+    items = session.ndt_audit_items(args.studie, args.navrh_poloh)
+    print("Co audit spočítá:", file=sys.stderr)
+    for item in items:
+        print(f"  {item.text()}", file=sys.stderr)
+    print(f"Odhad celkem: {duration_text(estimate_seconds(items))}.", file=sys.stderr,
+          flush=True)
+
+    def progress(index: int, total: int, label: str, inner: Any) -> None:
+        if inner is None:
+            print(f"[{index + 1}/{total}] {label}", file=sys.stderr, flush=True)
+
+    result = session.compute_ndt_audit(args.studie, args.navrh_poloh, args.zpracovatel,
+                                       progress=progress)
+    print("\n".join(result.summary()))
+    if args.slozka:
+        for path in session.export_ndt_audit(args.slozka):
+            print("Uloženo:", path)
     return 0
 
 

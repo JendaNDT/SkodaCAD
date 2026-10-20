@@ -346,6 +346,31 @@ Schválením se **neschvaluje**:
     - štěrbina PT: jedno místo 1 600 mm² přes obě stěny se všemi důvody,
     - mapa tloušťky s mezí 21 mm na 20mm desce: horní a spodní plocha jako dvě místa.
   - Ze záznamu studie ve zprávě se výpočet zopakuje se stejnými stavy (test).
+- **14A.2 (hotovo):**
+  - `ModelSession.ndt_audit_items`: u každé studie co se spočítá a jak dlouho, nebo proč ne
+    (neprovedeno / nedostupné s českým důvodem). Neznámá studie a návrh poloh u jiné než UT
+    studie jsou česká chyba.
+  - `compute_ndt_audit` počítá studii po studii stávajícími výpočty metod; chyba jedné
+    studie audit nezastaví (studie je „nedostupné – výpočet skončil chybou …“). Model se
+    nemění, výsledek je pohled, platí pro výsledek přepočtu, záznam studií, materiál
+    a nastavení mapy tloušťky.
+  - `start_ndt_audit` v okně: studie, které se nepočítají (neprovedeno, nedostupné,
+    výsledek UT z tohoto sezení, hotová mapa tloušťky), se zapíšou hned. Ostatní počítá
+    pomocný proces a každou hotovou studii posílá zvlášť (`entry`). *Zastavit* hotové
+    studie ponechá a zbylé zapíše jako „neprovedeno – audit byl zastaven …“; zpráva pak
+    nese „Audit byl zastaven“.
+  - `adopt_ndt_audit_map`: mapa studie z auditu se stane mapou v panelu NDT, aby se
+    nemusela počítat znovu.
+  - `skodacad audit MODEL [--studie …] [--navrh-poloh …] [--slozka …] [--zpracovatel …]`:
+    seznam s odhadem, průběh, souhrn a složka se zprávou.
+  - Sestavení: GitHub Actions před PyInstallerem zapíše commit a datum do
+    `skodacad/_build.py` (v gitu ignorovaný). Údaj je ve zprávě, v self-testu, v logu
+    a v okně *O aplikaci*.
+  - AI má pravidlo: čísla auditu nevymýšlí, nevybírá metodu a netvrdí „vyhovuje“.
+  - **Ověřeno:** deska s otvorem z příkazové řádky s výchozím nastavením za 7,5 s – dvě
+    místa „Nepromítne se“ po 500,9 mm² u dlouhých okrajů (y = ±48,3 mm). V testech: UT mapa
+    pokrytí z tohoto sezení se do auditu převezme, mapa tloušťky jen s mezí, zastaralá
+    studie a RT bez projekce „nedostupné“, audit na pozadí i zastavení.
 - **Upřesnění proti návrhu:**
   - **Podíl důvodů v místě** se počítá pro každý důvod zvlášť. Jedno místo může mít víc
     důvodů najednou (u štěrbiny „nástroj se nevejde“ i „úzká štěrbina“), součet proto může

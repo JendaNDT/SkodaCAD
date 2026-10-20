@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.assistant_panel import AssistantPanel
@@ -1808,7 +1809,8 @@ class MainWindow(QMainWindow):
     def show_about(self) -> None:
         QMessageBox.about(
             self, "O aplikaci ŠkodaCAD",
-            "<b>ŠkodaCAD</b> – osobní parametrický 3D CAD.<br><br>"
+            "<b>ŠkodaCAD</b> – osobní parametrický 3D CAD.<br>"
+            f"{build_text()}<br>{libraries_text()}<br><br>"
             "Geometrické jádro: <b>Open CASCADE Technology</b> (LGPL 2.1 s výjimkou), "
             "přes knihovnu build123d (Apache 2.0).<br>"
             "Grafické rozhraní: Qt / PySide6 (LGPL 3).",

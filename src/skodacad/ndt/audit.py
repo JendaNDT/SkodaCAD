@@ -353,6 +353,61 @@ def find_places(layer: Layer, study_id: str, study_name: str, method: str) -> li
             in enumerate(raw, start=1)]
 
 
+# --- co se spočítá -------------------------------------------------------------------------------
+
+STUDY_PROBLEMS = {  # stav studie → proč audit studii nespočítá
+    "stale": "Studie je zastaralá (díl se změnil) – zkontroluj ji a potvrď v panelu NDT; audit "
+             "ji sám nepotvrzuje.",
+    "incomplete": "Studie je neúplná – vyber kontrolovanou oblast (plochy nebo cílový objem).",
+    "broken": "Studie má neplatnou vazbu na díl (plocha oblasti zmizela) – oprav oblast.",
+}
+SKIPPED_BY_USER = "vynecháno z auditu"
+STOPPED = "audit byl zastaven dřív, než se studie spočítala"
+
+
+@dataclass
+class AuditItem:
+    """Co audit u studie udělá (před spuštěním): výpočet a odhad doby, nebo proč ne."""
+
+    study_id: str
+    name: str
+    method: str
+    status: str = "ready"  # ready / skipped / unavailable
+    action: str = ""  # pt / mt / rt / plan / access / session / thickness
+    source: str = ""  # co se spočítá a odkud (do zprávy)
+    reason: str = ""  # proč ne
+    seconds: float = 0.0  # odhad doby
+    result: Any = None  # hotový výsledek z tohoto sezení (action „session“)
+
+    def ready(self, action: str, source: str, seconds: float) -> None:
+        self.status, self.action, self.source, self.seconds = "ready", action, source, seconds
+
+    def skip(self, reason: str) -> None:
+        self.status, self.reason = "skipped", reason
+
+    def unavailable(self, reason: str) -> None:
+        self.status, self.reason = "unavailable", reason
+
+    def text(self) -> str:
+        """Jeden řádek pro seznam před spuštěním."""
+        head = f"{self.study_id} {self.name} ({METHODS.get(self.method, self.method)})"
+        if self.status != "ready":
+            return f"{head}: {STATUSES[self.status]} – {self.reason}"
+        return f"{head}: {self.source} – {duration_text(self.seconds)}"
+
+
+def estimate_seconds(items: list[AuditItem]) -> float:
+    return sum(item.seconds for item in items if item.status == "ready")
+
+
+def duration_text(seconds: float) -> str:
+    """Odhad doby česky: „hned“, „asi 7 s“, „asi 3 min“ (vždy nahoru)."""
+    if seconds < 1:
+        return "hned"
+    return (f"asi {math.ceil(seconds)} s" if seconds < 90
+            else f"asi {math.ceil(seconds / 60)} min")
+
+
 # --- záznam studie a celý audit -------------------------------------------------------------------
 
 

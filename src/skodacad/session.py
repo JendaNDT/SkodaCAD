@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from build123d import GeomType, Vector
 
+from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
 from skodacad.export import export
 from skodacad.expressions import (
@@ -56,6 +57,16 @@ from skodacad.ndt.access import (
     VariantResult,
 )
 from skodacad.ndt.access import finish as finish_access
+from skodacad.ndt.audit import (
+    SKIPPED_BY_USER,
+    STOPPED,
+    STUDY_PROBLEMS,
+    THICKNESS_ID,
+    AuditEntry,
+    AuditError,
+    AuditItem,
+    AuditResult,
+)
 from skodacad.ndt.coverage import (
     MAX_COMPARISONS,
     MAX_POSITIONS,
@@ -126,6 +137,7 @@ from skodacad.ndt.rt import estimate as estimate_rt
 from skodacad.ndt.rt import prepare as prepare_rt
 from skodacad.ndt.study import METHODS as NDT_METHODS
 from skodacad.ndt.study import (
+    STATE_LABELS,
     StudyError,
     StudyResult,
     new_study,
@@ -148,6 +160,7 @@ from skodacad.ndt.volume_coverage import (
 )
 from skodacad.ndt.volume_drawing import volume_mesh
 from skodacad.ndt.welds import (
+    WELD_TYPES,
     TargetError,
     TargetVolume,
     nominal_volume,
@@ -190,6 +203,7 @@ from skodacad.selectors import (
 )
 from skodacad.solver import SolveError, loops, solve
 from skodacad.thickness_map import MapError, MapSettings, ThicknessMap
+from skodacad.thickness_map import compute as compute_thickness
 
 if TYPE_CHECKING:
     from skodacad.worker import BackgroundRebuilder
@@ -279,6 +293,9 @@ class ModelSession:
         self._rt_pending: dict[str, Any] | None = None
         self._rt_drawing_cache: tuple[tuple[Any, ...], Any] | None = None
         self._rt_volume_cache: tuple[tuple[Any, ...], Any] | None = None
+        # předběžný NDT audit (etapa 14, jen pohled): (klíč platnosti, výsledek) a běžící výpočet
+        self._audit_cache: tuple[tuple[Any, ...], AuditResult] | None = None
+        self._audit_pending: dict[str, Any] | None = None
 
     # --- otevření a přepočet ---------------------------------------------------
 
@@ -297,6 +314,7 @@ class ModelSession:
         self._mt_cache = None
         self._yoke_view = None
         self._rt_cache = None
+        self._audit_cache = None
         return self.rebuild()
 
     def new_document(self, name: str = "Nový díl") -> BuildResult:
@@ -314,6 +332,7 @@ class ModelSession:
         self._mt_cache = None
         self._yoke_view = None
         self._rt_cache = None
+        self._audit_cache = None
         return self.rebuild()
 
     def open_template(self, path: str | Path) -> BuildResult:
@@ -335,6 +354,7 @@ class ModelSession:
         self._pt_pending = None
         self._mt_pending = None
         self._rt_pending = None
+        self._audit_pending = None
         if self._runner is None:
             self.result = rebuild(self.document, with_map=self.map_visible)
             self._computed = self.document
@@ -374,6 +394,11 @@ class ModelSession:
                 self._mt_pending["progress"] = payload
             if self._rt_pending is not None and kind == "progress":
                 self._rt_pending["progress"] = payload
+            if self._audit_pending is not None:
+                if kind == "progress":
+                    self._audit_pending["progress"] = payload
+                elif kind == "entry":
+                    self._audit_pending["remote"][payload.study_id] = payload
             pending = self._access_pending
             if pending is not None:
                 if kind == "progress":
@@ -383,7 +408,11 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._rt_pending is not None:
+        if self._audit_pending is not None:
+            if finished.audit is None:  # chyba: hotové studie zůstanou, zbylé neprovedeno
+                self.failure = finished.error
+            self._finish_audit(complete=finished.audit is not None)
+        elif self._rt_pending is not None:
             if finished.rt is not None:
                 self._rt_cache = (self._rt_pending["key"], finished.rt)
             else:
@@ -442,6 +471,9 @@ class ModelSession:
         self._pt_pending = None
         self._mt_pending = None
         self._rt_pending = None
+        if self._audit_pending is not None:  # hotové studie zůstanou, zbylé neprovedeno
+            self._finish_audit(complete=False)
+            return True
         pending, self._access_pending = self._access_pending, None
         if pending is not None:
             if pending["preparation"] is not None:
@@ -2431,6 +2463,343 @@ class ModelSession:
         except OSError as exc:
             raise DocumentError(f"CSV nejde uložit: {exc}") from None
 
+    # --- NDT předběžný audit (etapa 14, jen pohled) ------------------------------------------
+
+    def _audit_key(self) -> tuple[Any, ...]:
+        document = self._require()
+        return (self.result, json.dumps(document.ndt or {}, sort_keys=True),
+                document.material, json.dumps(document.thickness_map, sort_keys=True))
+
+    def ndt_audit_items(self, include: list[str] | None = None,
+                        access: list[str] | None = None) -> list[AuditItem]:
+        """Co audit spočítá u každé studie (a mapy tloušťky s mezí), s odhadem doby a důvodem,
+        proč ne. ``include`` = jen tyto studie (jinak všechny), ``access`` = UT studie, u nichž
+        se má spustit návrh poloh (pomalé). Model se nemění."""
+        self._require_computed("předběžný NDT audit")
+        records = (self._require().ndt or {}).get("studies", [])
+        known = {record["id"]: record.get("method") for record in records}
+        if self._require().thickness_map is not None:
+            known[THICKNESS_ID] = "TL"
+        unknown = [sid for sid in (include or []) if sid not in known]
+        if unknown:
+            raise DocumentError(f"Studie {', '.join(unknown)} v modelu není (jsou: "
+                                f"{', '.join(known) or 'žádné'}).")
+        wrong = [sid for sid in (access or []) if known.get(sid) != "UT"]
+        if wrong:
+            raise DocumentError(f"Návrh poloh jde jen u UT studie – {', '.join(wrong)} není "
+                                "UT studie tohoto modelu.")
+        states = {r.id: r for r in self.ndt_studies}
+        items = []
+        for record in records:
+            sid, method = record["id"], record.get("method", "")
+            name = record.get("name") or sid
+            item = AuditItem(sid, name, method)
+            items.append(item)
+            if include is not None and sid not in include:
+                item.skip(SKIPPED_BY_USER)
+                continue
+            state = states.get(sid)
+            if state is None or state.state != "ok":
+                problem = STUDY_PROBLEMS.get(state.state if state else "broken", "")
+                if state is not None and state.state == "broken" and state.messages:
+                    problem += " " + " ".join(state.messages[:2])
+                item.unavailable(problem)
+                continue
+            try:
+                self._plan_audit_item(item, record, access or [])
+            except DocumentError as exc:
+                item.unavailable(str(exc))
+        map_data = self._require().thickness_map
+        if map_data is not None:
+            item = AuditItem(THICKNESS_ID, "Mapa tloušťky stěny", "TL")
+            items.append(item)
+            if include is not None and THICKNESS_ID not in include:
+                item.skip(SKIPPED_BY_USER)
+            elif self.map_settings.limit is None:
+                item.skip("mapa tloušťky nemá nastavenou mez (minimální tloušťku)")
+            else:
+                item.ready("thickness", "mapa tloušťky stěny s nastavením modelu "
+                           f"(mez {self.map_settings.limit:g} mm)".replace(".", ","), 5.0)
+        return items
+
+    def _plan_audit_item(self, item: AuditItem, record: dict[str, Any],
+                         access: list[str]) -> None:
+        sid, method = item.study_id, item.method
+        if method == "PT":
+            count, step, seconds = self.ndt_pt_estimate(sid)
+            item.ready("pt", f"mapa PT s nastavením studie ({count} míst po {step:g} mm)"
+                       .replace(".", ","), seconds)
+        elif method == "MT":
+            samples, step, centers, _center_step, seconds = self.ndt_mt_estimate(sid)
+            item.ready("mt", f"mapa MT s nastavením studie ({samples} míst po {step:g} mm, "
+                       f"{centers} středů jha)".replace(".", ","), seconds)
+        elif method == "RT":
+            settings = self.ndt_rt_settings(sid)
+            if not settings.projections:
+                item.unavailable("RT studie nemá projekci – přidej ji v panelu NDT (Zdroj nad "
+                                 "vybrané místo).")
+                return
+            samples, step, projections, seconds = self.ndt_rt_estimate(sid)
+            item.ready("rt", f"mapa RT se všemi projekcemi studie ({projections}, asi {samples} "
+                       f"míst po {step:g} mm)".replace(".", ","), seconds)
+        elif method == "UT":
+            plan_state, plan_text = self.ndt_plan_state(sid)
+            if plan_state != "none" and plan_state != "stale":
+                estimate = self.ndt_plan_estimate(sid)
+                item.ready("plan", "ověření uloženého plánu dráhy a jeho pokrytí (jako Ověřit "
+                           "a spočítat)", estimate.seconds[1])
+                return
+            session_result = self._ut_session_result(sid)
+            if session_result is not None:
+                item.ready("session", session_result[0], 0.0)
+                item.result = session_result[1]
+                return
+            if sid in access:
+                estimate = self.ndt_access_estimate(sid)
+                item.ready("access", "návrh poloh sondy s výchozím nastavením (zaškrtnuto "
+                           "uživatelem) – pokrytí kombinace nejvýš 3 variant",
+                           estimate.seconds[1])
+                return
+            why = ("plán dráhy je zastaralý (" + plan_text + ")" if plan_state == "stale"
+                   else "UT studie nemá plán dráhy ani výsledek spočítaný v tomto sezení")
+            item.skip(f"{why}. Založ nebo ověř plán dráhy, spočítej pokrytí z přiložené sondy, "
+                      "nebo zaškrtni návrh poloh (pomalé – minuty až desítky minut).")
+        else:
+            item.unavailable(f"Metoda {method} v auditu není.")
+
+    def _ut_session_result(self, study_id: str) -> tuple[str, Any] | None:
+        """Výsledek UT spočítaný v tomto sezení pro studii (plán, mapa pokrytí, návrh poloh)."""
+        if self.ndt_plan_study() == study_id and self.ndt_plan_result is not None \
+                and self.ndt_plan_result.coverage is not None:
+            return ("ověřený plán dráhy z tohoto sezení", self.ndt_plan_result)
+        request = self.ndt_placement_request
+        coverage = self.ndt_coverage
+        if coverage is not None and request is not None and request[0] == study_id:
+            face = request[1].get("face", request[1]) if isinstance(request[1], dict) else {}
+            point = face.get("at") if isinstance(face, dict) else None
+            where = (" z polohy sondy (" + "; ".join(f"{v:g}" for v in point) + ") mm"
+                     if point else "")
+            return (f"mapa pokrytí spočítaná v tomto sezení{where}, úhel {request[2]:g}°"
+                    .replace(".", ","), coverage)
+        access = self.ndt_access
+        if access is not None and self._access_cache[0][1] == study_id and access.union:
+            return (f"návrh poloh spočítaný v tomto sezení – {access.combination_text()}",
+                    access)
+        return None
+
+    def _audit_entry(self, item: AuditItem,
+                     progress: Callable[[int, int], None] | None = None) -> AuditEntry:
+        """Spočítá jednu položku auditu stávajícím výpočtem metody (nebo ji jen zapíše)."""
+        record = None if item.study_id == THICKNESS_ID else self.ndt_study(item.study_id)
+        state = next((r for r in self.ndt_studies if r.id == item.study_id), None)
+        base = {"study_id": item.study_id, "name": item.name, "method": item.method,
+                "record": record,
+                "study_state": STATE_LABELS.get(state.state, state.state) if state else "",
+                "verified": state.verified if state else "",
+                "target": _target_text(record, state)}
+        if item.status != "ready":
+            return AuditEntry(status=item.status, reason=item.reason, **base)
+        sid = item.study_id
+
+        def staged(stage: str, done: int, total: int) -> None:
+            if progress is not None:
+                progress(done, total)
+
+        started = time.monotonic()
+        try:
+            if item.action == "pt":
+                result = self.compute_ndt_pt(sid, progress=progress)
+            elif item.action == "mt":
+                result = self.compute_ndt_mt(sid, progress=progress)
+            elif item.action == "rt":
+                result = self.compute_ndt_rt(sid, progress=progress)
+            elif item.action == "plan":
+                result = self.check_ndt_plan(sid, coverage=True, progress=staged)
+            elif item.action == "access":
+                result = self.compute_ndt_access(sid, progress=staged)
+            elif item.action == "session":
+                result = item.result
+            elif item.action == "thickness":
+                result = self._thickness_now() or compute_thickness(self.result.part,
+                                                                    self.map_settings)
+            else:
+                raise DocumentError(f"Neznámý výpočet auditu „{item.action}“.")
+        except DocumentError as exc:
+            return AuditEntry(status="unavailable", reason=f"výpočet skončil chybou: {exc}",
+                              seconds=time.monotonic() - started, **base)
+        except Exception as exc:  # noqa: BLE001 – chyba jedné studie nesmí shodit audit
+            return AuditEntry(status="unavailable",
+                              reason=f"výpočet skončil chybou ({type(exc).__name__}: {exc})",
+                              seconds=time.monotonic() - started, **base)
+        entry = AuditEntry(status="done", source=item.source, result=result,
+                           seconds=time.monotonic() - started, **base)
+        try:
+            entry.places  # noqa: B018 – výsledek musí jít shrnout
+        except AuditError as exc:
+            return AuditEntry(status="unavailable", reason=str(exc), seconds=entry.seconds,
+                              **base)
+        return entry
+
+    def _thickness_now(self) -> ThicknessMap | None:
+        """Mapa tloušťky spočítaná s nastavením modelu (jinak ji audit spočítá znovu)."""
+        current = self.thickness_map
+        return current if current is not None and current.settings == self.map_settings \
+            else None
+
+    def _audit_result(self, entries: list[AuditEntry], operator: str, complete: bool,
+                      seconds: float) -> AuditResult:
+        document = self._require()
+        return AuditResult(document.name, str(self.path) if self.path else "",
+                           part_fingerprint(document), document.material,
+                           datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), build_text(),
+                           libraries_text(), entries, operator=operator.strip(),
+                           complete=complete, seconds=seconds)
+
+    def compute_ndt_audit(self, include: list[str] | None = None,
+                          access: list[str] | None = None, operator: str = "", *,
+                          progress: Callable[[int, int, str, Any], None] | None = None,
+                          on_entry: Callable[[AuditEntry], None] | None = None) -> AuditResult:
+        """Předběžný NDT audit synchronně (CLI, testy, pomocný proces). Model se nemění."""
+        items = self.ndt_audit_items(include, access)
+        key = self._audit_key()
+        started = time.monotonic()
+        entries = []
+        for index, item in enumerate(items):
+            label = f"{item.study_id} {item.name}"
+
+            def inner(done: int, total: int, index: int = index, label: str = label) -> None:
+                if progress is not None:
+                    progress(index, len(items), label, (done, total))
+
+            if progress is not None:
+                progress(index, len(items), label, None)
+            entry = self._audit_entry(item, inner)
+            entries.append(entry)
+            if on_entry is not None:
+                on_entry(entry)
+        result = self._audit_result(entries, operator, True, time.monotonic() - started)
+        self._audit_cache = (key, result)
+        return result
+
+    def start_ndt_audit(self, include: list[str] | None = None,
+                        access: list[str] | None = None, operator: str = ""
+                        ) -> AuditResult | None:
+        """Okno: audit v pomocném procesu (hotové studie chodí průběžně, Zastavit je ponechá);
+        bez pomocného procesu hned."""
+        items = self.ndt_audit_items(include, access)
+        if self._runner is None:
+            return self.compute_ndt_audit(include, access, operator)
+        local = {}  # co se nepočítá (neprovedeno, nedostupné, výsledek ze sezení, hotová mapa)
+        remote = []
+        for item in items:
+            if item.status == "ready" and item.action != "session" and not (
+                    item.action == "thickness" and self._thickness_now() is not None):
+                remote.append(item.study_id)
+            else:
+                local[item.study_id] = self._audit_entry(item)
+        self.clear_ndt_audit()
+        self.failure = ""
+        self._audit_pending = {"key": self._audit_key(), "items": items, "local": local,
+                               "remote": {}, "progress": None, "operator": operator,
+                               "started": time.monotonic()}
+        if not remote:
+            self._finish_audit(complete=True)
+            return self.ndt_audit
+        self._job = self._runner.submit_audit(self._require().to_dict(), remote,
+                                              [sid for sid in (access or []) if sid in remote],
+                                              operator)
+        return None
+
+    def _finish_audit(self, complete: bool) -> None:
+        pending, self._audit_pending = self._audit_pending, None
+        if pending is None:
+            return
+        entries = []
+        for item in pending["items"]:
+            entry = pending["local"].get(item.study_id) or pending["remote"].get(item.study_id)
+            if entry is None:
+                item.skip(STOPPED)
+                entry = self._audit_entry(item)
+            entries.append(entry)
+        result = self._audit_result(entries, pending["operator"], complete,
+                                    time.monotonic() - pending["started"])
+        self._audit_cache = (pending["key"], result)
+
+    @property
+    def audit_pending(self) -> bool:
+        """Počítá se zrovna předběžný audit v pomocném procesu?"""
+        return self._audit_pending is not None
+
+    @property
+    def ndt_audit_progress(self) -> str:
+        """Průběh auditu česky („hotovo 1 z 3; počítá se: s2 RT desky (312 z 1086)“), bez
+        auditu prázdné."""
+        pending = self._audit_pending
+        if pending is None or pending["progress"] is None:
+            return ""
+        index, total, label, inner = pending["progress"]
+        done = len(pending["local"]) + len(pending["remote"])
+        text = f"hotovo {done} z {len(pending['items'])}; počítá se: {label}"
+        return text + (f" ({inner[0]} z {inner[1]})" if inner else "")
+
+    @property
+    def ndt_audit(self) -> AuditResult | None:
+        """Hotový (i zastavený) audit, pokud platí pro díl, studie, materiál a mapu tloušťky."""
+        if self._audit_cache is None or self.computing:
+            return None
+        key, result = self._audit_cache
+        try:
+            current = self._audit_key()
+        except DocumentError:
+            self._audit_cache = None
+            return None
+        if key[0] is not current[0] or key[1:] != current[1:]:
+            self._audit_cache = None
+            return None
+        return result
+
+    def clear_ndt_audit(self) -> None:
+        self._audit_cache = None
+
+    def adopt_ndt_audit_map(self, study_id: str) -> bool:
+        """Mapa studie z auditu se stane mapou její metody v panelu NDT (jen pohled), aby ji
+        nebylo třeba počítat znovu. False = audit ji nemá."""
+        audit = self.ndt_audit
+        if audit is None:
+            return False
+        try:
+            entry = audit.entry(study_id)
+        except AuditError:
+            return False
+        result = entry.result
+        if entry.status != "done" or result is None:
+            return False
+        if isinstance(result, PtMap):
+            self._pt_cache = (self._pt_key(study_id), result)
+        elif isinstance(result, MtMap):
+            self._mt_cache = (self._mt_key(study_id), result)
+        elif isinstance(result, RtMap):
+            self._rt_cache = (self._rt_key(study_id), result)
+        elif isinstance(result, PlanResult):
+            self._plan_cache = (self._plan_key(study_id), result)
+        elif isinstance(result, AccessResult):
+            self._access_cache = (self._access_key(study_id), result)
+        else:
+            return result is self.ndt_coverage  # mapa pokrytí ze sezení už je v panelu
+        return True
+
+    def export_ndt_audit(self, folder: str | Path,
+                         images: dict[str, list[tuple[str, bytes]]] | None = None
+                         ) -> list[Path]:
+        """Složka se zprávou auditu (HTML, CSV míst, podrobná CSV studií)."""
+        audit = self.ndt_audit
+        if audit is None:
+            raise DocumentError("Nejdřív spusť předběžný NDT audit.")
+        try:
+            return audit.write_folder(folder, images)
+        except OSError as exc:
+            raise DocumentError(f"Zprávu nejde uložit: {exc}") from None
+
     # --- NDT návrh poloh sondy (etapa 09, jen pohled) ------------------------------------
 
     def _placed_probe(self, study_id: str) -> Probe:
@@ -3602,6 +3971,19 @@ def _uses_name(value: Any, name: str) -> bool:
     if isinstance(value, list):
         return any(_uses_name(item, name) for item in value)
     return name in referenced_names(value)
+
+
+def _target_text(record: dict[str, Any] | None, state: StudyResult | None) -> str:
+    """Kontrolovaná oblast studie pro zprávu auditu (počet ploch, nebo druh a objem cíle)."""
+    if record is None or state is None:
+        return ""
+    if state.target_kind == "faces":
+        n = state.faces
+        return f"{n} {'plocha' if n == 1 else 'plochy' if 2 <= n <= 4 else 'ploch'}"
+    target = record.get("target") or {}
+    kind = (WELD_TYPES.get(target.get("weld_type"), "svar") if target.get("kind") == "weld"
+            else "obecný hranol")
+    return f"{kind}, objem {state.volume_mm3:.6g} mm³".replace(".", ",")
 
 
 def _studies(document: Document, create: bool = False) -> list[dict[str, Any]]:
