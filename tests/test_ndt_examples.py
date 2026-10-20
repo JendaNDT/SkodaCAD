@@ -17,6 +17,7 @@ NDT = EXAMPLES / "ndt"
 VOLUMES = {  # objem podle vzorce (mm³)
     "deska": 200 * 100 * 20,
     "kapsa": 120 * 80 * 40 - 40 * 30 * 25,
+    "navrh_kapsa": 120 * 80 * 40 - 40 * 30 * 25,
     "zebro": 200 * 100 * 20 + 10 * 100 * 60,
     "otvor": 200 * 100 * 20 - math.pi * 10**2 * 20,
     "trubka": math.pi / 4 * (114.3**2 - 102.3**2) * 300,
