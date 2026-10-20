@@ -69,7 +69,7 @@ def test_session_settings_undo_and_separate_variant(tmp_path):
     result = session.compute_ndt_design(options)
     assert result.complete and len(result.variants) == 3
     assert session.document.to_dict() == before
-    assert not session.dirty
+    assert session.dirty  # Zpět ponechává dokument označený jako upravený
     passed = next(v for v in result.variants if v.values.get("a") == 90)
     rejected = next(v for v in result.variants if v.values.get("a") == 100)
     assert passed.status == "passed"
