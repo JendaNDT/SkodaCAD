@@ -39,6 +39,7 @@ from skodacad.gui.audit_panel import write_pdf
 from skodacad.ndt import DISCLAIMER
 from skodacad.ndt.design import (
     BANNER,
+    TITLE,
     BEFORE,
     DESIGN_NOTE,
     Design,
@@ -408,7 +409,7 @@ class DesignPanel(QWidget):
         if self.window.session.computing or self.window.ai_busy:
             return
         dialog = DesignDialog(self.window)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        if self.window._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
             return
         try:
             self.hide_preview()
@@ -481,7 +482,7 @@ class DesignPanel(QWidget):
             result = session.ndt_design
             self.details.setText("; ".join(
                 [result.row(variant)["status"], *variant.reasons, *variant.notes]))
-        except (DocumentError, Exception) as exc:
+        except Exception as exc:  # noqa: BLE001 – chybný náhled nesmí shodit GUI
             # Prohlížeč musí ukázat původní díl, i když náhled selhal.
             self.window._shown_key = None
             self.window._refresh_all()
@@ -580,7 +581,8 @@ class DesignPanel(QWidget):
                     if self.window.viewer.dump(str(image)) and image.exists():
                         images[variant.label] = [("Geometrický náhled", image.read_bytes())]
             files = self.window.session.export_ndt_design(target, images)
-            files.append(write_pdf(result.html(images), Path(target) / "navrh.pdf"))
+            files.append(write_pdf(result.html(images), Path(target) / "navrh.pdf",
+                                   title=TITLE))
             self.window.statusBar().showMessage(
                 f"Zpráva návrhu uložena: {len(files)} souborů", 10000)
         except (DocumentError, OSError) as exc:
