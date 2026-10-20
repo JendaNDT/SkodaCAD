@@ -80,11 +80,11 @@ from skodacad.ndt.design import (
     Design,
     DesignError,
     DesignResult,
-    Variant as DesignVariant,
-    baseline as design_baseline,
-    estimate as estimate_design,
-    run as run_design,
 )
+from skodacad.ndt.design import Variant as DesignVariant
+from skodacad.ndt.design import baseline as design_baseline
+from skodacad.ndt.design import estimate as estimate_design
+from skodacad.ndt.design import run as run_design
 from skodacad.ndt.devices import SNAP, DeviceError, Placement, Probe, ScanResult, place, scan_line
 from skodacad.ndt.geometry import GeometryError, PartGeometry
 from skodacad.ndt.library import (
