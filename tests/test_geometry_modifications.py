@@ -162,7 +162,7 @@ def test_wrong_union_volume_is_not_accepted_or_recorded(monkeypatch):
 
 def test_nonfinite_kernel_bounds_are_rejected(monkeypatch):
     part = Box(20, 30, 40)
-    monkeypatch.setattr(part, "bounding_box", lambda: SimpleNamespace(
+    monkeypatch.setattr(part, "bounding_box", lambda **_kwargs: SimpleNamespace(
         min=(math.nan, -15, -20), max=(10, 15, 20)))
     with pytest.raises(GeometryValidationError, match="konečné souřadnice"):
         inspect_volume(part)

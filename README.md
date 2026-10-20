@@ -1102,8 +1102,8 @@ P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni
 Autor 20. 10. 2026 schválil [P1.1 — smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md),
 rozhodnutí D1–D7 a matici budoucích testů (sloučené PR #31). P1.1 je dokončeno bez změny chování aplikace.
 Autor 20. 10. 2026 schválil [P1.2A — společnou kontrolu geometrie](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md)
-včetně bodů A1–A7; plán je sloučený v PR #32. Implementace probíhá;
-[stav a ověření](docs/p1-2a-overeni.md) rozlišují testy a ruční přijetí.
+včetně bodů A1–A7; plán je sloučený v PR #32. Implementace A.1–A.3 je připravena k ověření;
+[výsledky a ruční postup](docs/p1-2a-overeni.md) rozlišují automatické testy a přijetí autora.
 Následná implementace P1.2B–P1.5, P2 a změna formátu vyžadují samostatné schválení;
 model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`

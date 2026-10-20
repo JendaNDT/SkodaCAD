@@ -1334,7 +1334,10 @@ class MainWindow(QMainWindow):
         else:
             rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
         for key, label, status, message in rows:
-            item = QTreeWidgetItem([f"{_STATUS_ICONS[status]}  {label}"])
+            text = f"{_STATUS_ICONS[status]}  {label}"
+            if status == "ok" and message:
+                text += f" — {message}"
+            item = QTreeWidgetItem([text])
             item.setData(0, _FEATURE_ID, key)
             item.setForeground(0, _STATUS_COLORS[status])
             item.setToolTip(0, message or key)
@@ -1435,9 +1438,8 @@ class MainWindow(QMainWindow):
             f"Hmotnost:  {mass}",
             f"Rozměry:  {number(sx)} × {number(sy)} × {number(sz)} mm",
             f"Těžiště:  X {number(cx)}  Y {number(cy)}  Z {number(cz)}",
+            f"Počet těles: {props.solids}",
         ]
-        if props.solids != 1:
-            lines.append(f"Pozor: {props.solids} samostatná tělesa")
         if self._pending_shown:
             lines.insert(0, "⏳ Přepočítává se – hodnoty jsou z minulého stavu:")
         self.props_label.setText("\n".join(lines))

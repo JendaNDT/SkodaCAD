@@ -265,3 +265,21 @@ def test_real_booleans_at_model_scales(scale):
     ctx.apply(block(20 * scale, 30 * scale, 40 * scale, (10 * scale, 0, 0)), "add", "Přidání")
     assert inspect_volume(ctx.part).volume == pytest.approx(36000 * scale**3, rel=1e-9)
     assert ctx.part.is_inside((25 * scale, 15 * scale, 20 * scale))
+
+
+@pytest.mark.parametrize("factor", [0.5, 1, 2])
+def test_real_shallow_cut_is_decided_by_measured_not_nominal_effect(factor):
+    original = block()
+    depth = factor * 0.000024 / 25
+    tool = block(5, 5, depth, (5, 5, 40 - depth))
+    kernel_result = original - tool
+    actual_effect = 24000 - kernel_result.volume
+    epsilon = 1e-9 * max(24000, kernel_result.volume)
+    ctx = BuildContext({}, part=original, recording=[])
+    if actual_effect <= epsilon:
+        with pytest.raises(FeatureError, match="neodebral"):
+            ctx.apply(tool, "cut", "Vysunutí")
+        assert ctx.part is original and ctx.recording == []
+    else:
+        ctx.apply(tool, "cut", "Vysunutí")
+        assert inspect_volume(ctx.part).volume == pytest.approx(kernel_result.volume, abs=1e-9)

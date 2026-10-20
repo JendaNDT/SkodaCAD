@@ -300,7 +300,7 @@ přepracování NDT tolerancí a NDT-16.
 ## 10. Zdroje pro kontrolu návrhu
 
 [Schválená P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md),
-[roadmapa P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie-čeká-na-schválení-implementace),
+[roadmapa P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie),
 [audit P0](p0-audit-a-overeni.md#2-registr-rizik-a-omezení),
 [pravidla projektu](../CLAUDE.md#pravidla).
 

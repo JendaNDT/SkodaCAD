@@ -72,7 +72,10 @@ výkon či omezená kompatibilita. „Doloženo kódem“ není totéž co repro
 Více solidů tedy není samo o sobě vada. Autor 20. 10. 2026 schválil
 [smlouvu P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md), která tuto podporu
 zachovává a požaduje viditelnost počtu těles i jeho změn. Implementace tohoto
-hlášení zatím není provedena; R02 se tím neuzavírá a produkční chování zůstává stejné.
+hlášení tehdy nebyla provedena. Schválené P1.2A ji nyní zavádí do společné zprávy
+úspěšného 3D prvku i vlastností; podporu více solidů zachovává. [Evidence P1.2A](p1-2a-overeni.md)
+uvádí ověření pravidla a viditelnosti počtu těles. R02 se do ručního přijetí autorem
+neprohlašuje za uzavřené; historická reprodukce v tabulce zůstává platným záznamem P0.
 
 ## 3. Regresní přírůstek P0
 

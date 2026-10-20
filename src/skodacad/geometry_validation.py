@@ -35,6 +35,11 @@ def volume_tolerance(before: float, after: float) -> float:
     return 1e-9 * max(1.0, abs(before), abs(after))
 
 
+def body_count_message(before: int, after: int) -> str:
+    """Společná informace k úspěchu celého 3D prvku; nejde o chybový stav."""
+    return f"Počet těles: {before} → {after}."
+
+
 def _only_volume_components(shape: Part) -> None:
     pending = [shape.wrapped]
     while pending:
@@ -95,7 +100,9 @@ def inspect_volume(shape: Part | None) -> VolumeFacts:
                 "objem celku neodpovídá všem jeho složkám – tvar nelze spolehlivě přijmout; "
                 "uprav poslední prvek."
             )
-        box = shape.bounding_box()
+        # Pro konečnost stačí konzervativní obálka; přesné hledání extrémů křivek
+        # by při každé bezpečnostní kontrole zbytečně opakovalo drahou optimalizaci.
+        box = shape.bounding_box(optimal=False)
         bounds = (*box.min, *box.max)
         coordinates = (v for vertex in shape.vertices() for v in (vertex.X, vertex.Y, vertex.Z))
         if (not math.isfinite(volume) or volume <= volume_tolerance(0, volume)

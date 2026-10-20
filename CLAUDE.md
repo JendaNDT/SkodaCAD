@@ -308,6 +308,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
 | `standards.py` | normalizované díly: tabulky (šrouby, matice, podložky, ložiska, kolíky, pera, ocelové profily), tvary v místních souřadnicích, kapsy, průřezy profilů |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
+| `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
@@ -1097,8 +1098,9 @@ P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
 Autor 20. 10. 2026 schválil [konkrétní rozsah P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
 body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Plán je sloučený v PR #32
-(`15b8bf4`); implementace probíhá v samostatné větvi. [Evidence](docs/p1-2a-overeni.md)
-odděluje automatické ověření a ruční přijetí. P1.2B–P1.5 zůstávají bez schválení implementace.
+(`15b8bf4`); implementace A.1–A.3 je připravena v samostatné větvi k ověření a přijetí.
+[Evidence a ruční postup](docs/p1-2a-overeni.md) oddělují místní testy, cílové balíčky
+a dosud neprovedené ruční přijetí autora. P1.2B–P1.5 zůstávají bez schválení implementace.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.

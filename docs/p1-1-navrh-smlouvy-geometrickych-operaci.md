@@ -6,7 +6,7 @@ Autor v tomto rozhovoru potvrdil předložená rozhodnutí D1–D7 a matici test
 samostatně schválený konkrétní rozsah. Modelový formát zůstává ve verzi 22.
 Vychází z `main` / `e58d6283a69b51c2e19c9fece2de0e7977ce07f6`, po sloučení
 [PR #30](https://github.com/JendaNDT/SkodaCAD/pull/30). Navazuje na
-[roadmapu P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie-čeká-na-schválení-implementace)
+[roadmapu P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie)
 a [rizika P0](p0-audit-a-overeni.md#2-registr-rizik-a-omezení).
 
 ## 1. Schválená rozhodnutí autora
