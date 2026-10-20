@@ -278,8 +278,10 @@ class DesignPanel(QWidget):
         self._preview_model = None
         self._preview = None
         self._preview_base = None
+        self._estimate_cache = None
         action = window._action
         self.edit_action = action("Zadat návrh…", self.edit_settings)
+        self.estimate_action = action("Odhad doby", self.estimate_time)
         self.run_action = action("Spustit návrh", self.start)
         self.stop_action = action("Zastavit návrh", self.stop)
         self.apply_action = action("Použít variantu…", self.apply)
@@ -297,7 +299,8 @@ class DesignPanel(QWidget):
         layout.addWidget(self.settings)
         self.estimate = _label("", "design_estimate")
         layout.addWidget(self.estimate)
-        self._actions(layout, self.edit_action, self.run_action, self.stop_action)
+        self._actions(layout, self.edit_action, self.estimate_action)
+        self._actions(layout, self.run_action, self.stop_action)
         self.progress = _label("", "design_progress")
         layout.addWidget(self.progress)
         layout.addWidget(QLabel(BANNER))
@@ -348,6 +351,7 @@ class DesignPanel(QWidget):
         ready = valid and not session.computing and not self.window.ai_busy
         has_settings = ready and session.ndt_design_settings() is not None
         self.edit_action.setEnabled(ready)
+        self.estimate_action.setEnabled(has_settings)
         self.run_action.setEnabled(has_settings)
         self.stop_action.setEnabled(session.design_pending)
         self.export_action.setEnabled(ready and outcome is not None)
@@ -356,8 +360,10 @@ class DesignPanel(QWidget):
         if session.design_pending:
             self.estimate.setText("Počítám konstrukční varianty…")
         elif has_settings:
-            self.estimate.setText("Zadání připravené. Počet variant a odhad doby: po "
-                                  "kliknutí na Spustit návrh.")
+            key = (id(session.result), repr(session.ndt_design_settings()))
+            self.estimate.setText(self._estimate_cache[1] if self._estimate_cache is not None
+                                  and self._estimate_cache[0] == key else
+                                  "Zadání připravené – klikni na Odhad doby.")
         else:
             self.estimate.setText("")
 
@@ -417,6 +423,19 @@ class DesignPanel(QWidget):
             self.window._refresh_all()
         except (DocumentError, DesignError) as exc:
             self.window._error("Zadání návrhu", str(exc))
+
+    def estimate_time(self) -> None:
+        session = self.window.session
+        if session.computing or session.ndt_design_settings() is None:
+            return
+        try:
+            key = (id(session.result), repr(session.ndt_design_settings()))
+            count, seconds = self.window._busy(session.ndt_design_estimate)
+            message = f"{count} variant, odhad přibližně {seconds / 60:.1f} minut."
+            self._estimate_cache = (key, message)
+            self.estimate.setText(message)
+        except (DesignError, DocumentError) as exc:
+            self.window._error("Odhad konstrukčního návrhu", str(exc))
 
     def start(self) -> None:
         session = self.window.session
