@@ -1,6 +1,7 @@
 # NDT – návrh etapy 14: Společný předběžný audit, zpráva a vysvětlení
 
-Stav: **návrh k rozhodnutí autora (20. 10. 2026).**
+Stav: **schváleno autorem 20. 10. 2026 („schvaluji etapu 14 včetně doporučení 1–10“);
+implementace po krocích ve vývojové větvi.**
 Výchozí stav: `main`, commit `43187c8` ([PR #27](https://github.com/JendaNDT/SkodaCAD/pull/27)).
 Navazuje na [plán, etapa 14](03-implementacni-plan.md), na závazná vymezení
 [UT](04-zavazne-vymezeni-ut.md), [PT](20-vymezeni-pt.md), [MT](22-vymezeni-mt.md)
@@ -327,6 +328,30 @@ Schválením se **neschvaluje**:
 - automatický výběr metody nebo postupu,
 - nová knihovna Pythonu,
 - sloučení do `main`.
+
+## 14. Provedení a upřesnění
+
+- **14A.1 (hotovo):**
+  - `ndt/audit.py`: každý výsledek metody (mapa pokrytí UT na plochách i v objemu, návrh poloh,
+    plán dráhy, mapy PT, MT, RT, mapa tloušťky stěny) se převede na jednotná místa. Problémová
+    místa se z nich spojí, zpráva se sepíše jako HTML, CSV míst a podrobná CSV studií
+    (`AuditResult.write_folder`).
+  - `buildinfo.py`: verze, sestavení a knihovny. Při vývoji se bere `git describe`; zápis
+    commitu v GitHub Actions přijde v 14A.2.
+  - Náhledy RT jsou ve zprávě i bez okna (`rt.png_bytes`).
+  - **Ověřeno na referenčních dílech** (rychlé nastavení studií):
+    - deska s otvorem RT: dva pruhy „mimo detektor“ u dlouhých okrajů (střed y = ±49 mm),
+    - kapsa MT: jedno místo 1 200 mm² na dně kapsy, důvod „jho se nevejde v žádném směru“
+      (100 %),
+    - štěrbina PT: jedno místo 1 600 mm² přes obě stěny se všemi důvody,
+    - mapa tloušťky s mezí 21 mm na 20mm desce: horní a spodní plocha jako dvě místa.
+  - Ze záznamu studie ve zprávě se výpočet zopakuje se stejnými stavy (test).
+- **Upřesnění proti návrhu:**
+  - **Podíl důvodů v místě** se počítá pro každý důvod zvlášť. Jedno místo může mít víc
+    důvodů najednou (u štěrbiny „nástroj se nevejde“ i „úzká štěrbina“), součet proto může
+    být přes 100 %.
+  - **Upozornění metod** jsou ve zprávě v pevném pořadí UT, PT, MT, RT. Upozornění metody je
+    ve zprávě i tehdy, když její studie zůstala neprovedená (studie ve zprávě je).
 
 ## Zdroje
 
