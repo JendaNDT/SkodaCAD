@@ -77,6 +77,11 @@ technické předání po ověření PR; ruční přijetí a schválení další 
 
 ## P1 — bezpečná geometrie (čeká na schválení implementace)
 
+**P1.1 dokončeno — schváleno autorem 20. 10. 2026:**
+[smlouva geometrických operací](p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí D1–D7 a matice budoucích testů.
+Zachovává existující podporu více solidů. Dokumentační PR #31 zaznamenává schválení;
+implementace P1.2–P1.5 ani nový formát tím nejsou schválené.
+
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.
    Výstup: matice operace × platný/neplatný/hraniční vstup, schválená autorem.

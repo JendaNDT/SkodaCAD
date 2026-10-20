@@ -67,6 +67,13 @@ výkon či omezená kompatibilita. „Doloženo kódem“ není totéž co repro
 | R11 / střední | Původní test exportů používá glob pro kořen a přímé `ndt/*.json`, nikoli celé rekurzivní pole. | Cílové objemy mají samostatné NDT testy a jsou rekurzivně baleny. Nový P0 test rekurzivně chrání všechny recepty při uložení/načtení. | P3/P4: rozšířit smysluplnou import/export referenční sadu podle rozsahu. |
 | R12 / střední | Oddíl README „Formát modelu“ ještě uvádí zápis v21; `Document.VERSION` a pozdější oddíl konstrukčních návrhů uvádějí v22. `assistant._readme_format` tento oddíl používá v pokynu AI. | P0 odkazy přidává mimo tento oddíl, jeho text se proti main nemění. | Samostatně opravit popis a ověřit dopad na AI; nepovažovat to jen za kosmetiku dokumentace. |
 
+**Upřesnění R02 při přípravě P1.1 (20. 10. 2026):** test
+`test_sweep_loft.py::test_pattern_repeats_a_sweep` výslovně požaduje 3 solidy.
+Více solidů tedy není samo o sobě vada. Autor 20. 10. 2026 schválil
+[smlouvu P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md), která tuto podporu
+zachovává a požaduje viditelnost počtu těles i jeho změn. Implementace tohoto
+hlášení zatím není provedena; R02 se tím neuzavírá a produkční chování zůstává stejné.
+
 ## 3. Regresní přírůstek P0
 
 Soubor `tests/test_p0_regressions.py`, **32 případů**:
