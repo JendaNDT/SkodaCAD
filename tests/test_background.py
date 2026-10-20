@@ -238,3 +238,32 @@ def test_feature_added_while_computing_is_in_tree_and_editor(window):
     assert window.feature_editor.feature_id == "extrude1"
     settle(window)
     assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
+
+
+def test_window_audit_in_background_with_progress_and_stop(window, examples_dir):
+    """Předběžný NDT audit z panelu na pozadí (etapa 14): průběh, místa, Zastavit."""
+    import dataclasses
+
+    from PySide6.QtTest import QTest
+
+    window.open_model(examples_dir / "ndt" / "otvor.json", template=True)
+    settle(window)
+    session, panel = window.session, window.audit_panel
+    session.set_ndt_rt_settings("s2", dataclasses.replace(session.ndt_rt_settings("s2"),
+                                                          step_mm=10, image_step_mm=20))
+    settle(window)
+    window.show_audit()
+    panel.run_action.trigger()
+    assert session.audit_pending and panel.stop_action.isEnabled()
+    end = time.monotonic() + 60
+    while session.audit_pending and not session.ndt_audit_progress \
+            and time.monotonic() < end:
+        QTest.qWait(20)
+    assert session.ndt_audit_progress.startswith("studie ")
+    settle(window)
+    assert not session.audit_pending and panel.places.rowCount() == 2
+    assert panel.progress.text() == "" and panel.export_action.isEnabled()
+    panel.run_action.trigger()
+    panel.stop_action.trigger()
+    assert not session.computing and "Audit byl zastaven" in panel.overview.text()
+    assert panel.places.rowCount() == 0  # RT studie nedoběhla – „neprovedeno“

@@ -577,6 +577,7 @@ def no_dialogs(monkeypatch):
     monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *a, **k: ("", False))
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: ("", ""))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: ("", ""))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: "")
     for name in ("information", "about", "warning", "critical"):
         monkeypatch.setattr(QMessageBox, name, lambda *a, n=name, **k: shown.append(n))
     monkeypatch.setattr(QMessageBox, "question",
@@ -2274,3 +2275,78 @@ def test_rt_panel_is_locked_while_ai_works(rt_window):
     w.set_assistant_busy(False)
     w.ndt_panel.refresh()
     assert box.settings_action.isEnabled() and box.compute_action.isEnabled()
+
+
+def test_audit_panel_list_run_places_click_and_export(rt_window, no_dialogs, slot_errors,
+                                                      tmp_path, monkeypatch):
+    import dataclasses
+
+    from PySide6.QtCore import Qt as QtCore
+    from PySide6.QtWidgets import QFileDialog
+
+    from skodacad.gui.audit_panel import MARK
+    from skodacad.ndt import DISCLAIMER, RT_DISCLAIMER, UT_DISCLAIMER
+    from skodacad.ndt.audit import TITLE
+
+    w = rt_window
+    session = w.session
+    settings = session.ndt_rt_settings("s2")
+    session.set_ndt_rt_settings("s2", dataclasses.replace(settings, step_mm=10,
+                                                          image_step_mm=20))
+    w._refresh_all()
+    action(w, "Předběžný NDT audit…").trigger()
+    panel = w.audit_panel
+    assert panel.warning.text() == DISCLAIMER
+    rows = [panel.studies.item(i) for i in range(panel.studies.count())]
+    assert [r.data(QtCore.ItemDataRole.UserRole) for r in rows] == ["study", "access", "study"]
+    assert rows[0].checkState() == QtCore.CheckState.Unchecked  # UT bez plánu – neprovedeno
+    assert "nemá plán dráhy" in rows[0].text() and "i návrh poloh" in rows[1].text()
+    assert rows[2].checkState() == QtCore.CheckState.Checked and "– asi" in rows[2].text()
+    assert panel.estimate.text().startswith("Spočítá se 1 z 2")
+    assert not panel.export_action.isEnabled() and panel.run_action.isEnabled()
+    steps = len(session._undo)
+    panel.operator.setText("J. N.")
+    panel.run_action.trigger()
+    audit = session.ndt_audit
+    assert audit is not None and audit.operator == "J. N." and len(session._undo) == steps
+    assert UT_DISCLAIMER in panel.warning.text() and RT_DISCLAIMER in panel.warning.text()
+    assert TITLE in panel.overview.text() and "spočítáno" in panel.overview.text()
+    assert panel.places.rowCount() == 2 and panel.places.item(0, 0).text() == "S2-01"
+    assert "mimo detektor" in panel.places.item(0, 5).text()
+    assert w.viewer.points is None
+    panel.places.selectRow(0)
+    place = audit.places()[0]
+    assert w.ndt_panel.current_id() == "s2" and "S2-01" in panel.place_info.text()
+    assert w.viewer.points == ([place.center], [MARK]) and w.viewer.coverage_map is not None
+    assert session.ndt_rt_map is audit.entry("s2").result  # mapa i ve skupině RT
+    panel.hide_action.trigger()
+    assert w.viewer.points is None and panel.place() is None
+    panel.export_action.trigger()  # zrušený výběr složky – nic
+    folder = tmp_path / "zprava"
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(folder))
+    panel.export_action.trigger()
+    assert sorted(p.name for p in folder.iterdir()) == ["mista.csv", "studie-s2-rt.csv",
+                                                       "zprava.html", "zprava.pdf"]
+    page = (folder / "zprava.html").read_text(encoding="utf-8")
+    assert page.count("data:image/png;base64,") == 3  # 2 náhledy RT + mapa z 3D okna
+    assert "Mapa ve 3D – RT desky" in page and "Zpracoval(a): J. N." in page
+    pdf = (folder / "zprava.pdf").read_bytes()
+    assert pdf.startswith(b"%PDF") and b"/Image" in pdf  # náhledy RT i v PDF
+    session.set_parameter("t", "25")
+    w._refresh_all()
+    assert session.ndt_audit is None and panel.places.rowCount() == 0
+    assert panel.warning.text() == DISCLAIMER and not panel.export_action.isEnabled()
+    assert slot_errors == []
+
+
+def test_audit_panel_is_locked_while_ai_works(rt_window):
+    w = rt_window
+    w.show_audit()
+    panel = w.audit_panel
+    assert panel.run_action.isEnabled()
+    w.set_assistant_busy(True)
+    panel.refresh()
+    assert not any(a.isEnabled() for a in panel.actions()) and not w.audit_dock.isEnabled()
+    w.set_assistant_busy(False)
+    panel.refresh()
+    assert panel.run_action.isEnabled() and w.audit_dock.isEnabled()

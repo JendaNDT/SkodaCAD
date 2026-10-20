@@ -27,7 +27,7 @@ env:
 jobs:
   sestaveni:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     defaults:
       run:
         shell: bash
@@ -46,10 +46,17 @@ jobs:
         run: ruff check src tests
 
       - name: Testy
-        timeout-minutes: 20  # zaseknutý dialog v testu nesmí blokovat celé sestavení (testy ~10 min)
+        timeout-minutes: 30  # zaseknutý dialog v testu nesmí blokovat celé sestavení (testy ~16–19 min)
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
+      - name: Zápis sestavení (commit a datum do zprávy auditu)
+        shell: bash
+        run: |
+          printf 'COMMIT = "%s"\nDATE = "%s"\n' "${{ github.sha }}" "$(date -u +%Y-%m-%d)" \
+            > src/skodacad/_build.py
+          cat src/skodacad/_build.py
 
       - name: Sestavení SkodaCAD.exe
         run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build

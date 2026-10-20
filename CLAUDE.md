@@ -207,7 +207,21 @@
   prozařované tloušťky (není radiografický snímek), víc projekcí ručně se sjednocením;
   ohebný film a automatický plán projekcí později. Nastavení a projekce ve studii
   (**formát 21**), výsledky jen pohled. Okno, CSV, CLI `skodacad radiografie`, AI bez
-  nového nástroje.
+  nového nástroje. Sloučeno v PR #27 (`43187c8`); ruční zkouška autora po vydání čeká.
+- (20. 10. 2026, schváleno včetně doporučení 1–10) **NDT etapa 14 – společný předběžný NDT
+  audit** (`docs/ndt/25-navrh-etapa-14.md`, otevírá milník M5): jedno tlačítko spustí
+  **stávající** výpočty všech studií dílu s jejich uloženým nastavením – nic nového nepočítá,
+  model nemění, metodu ani normativní postup nevybírá, nikdy „vyhovuje“. Výstup se jmenuje
+  „Předběžný NDT audit – zpráva o geometrickém posouzení“ (ne protokol o zkoušce), nese
+  obecné upozornění a povinná upozornění všech zahrnutých metod doslova. UT: uložený plán
+  dráhy, jinak výsledek z tohoto sezení, jinak neprovedeno; návrh poloh jen na zaškrtnutí
+  (deska přes 22 min). Stavy spočítáno / neprovedeno / nedostupné s důvodem, „nelze
+  spolehlivě vyhodnotit“ vždy zvlášť; zastaralou studii audit nepotvrzuje. Problémová místa
+  = sousední body se stejným stavem (do 1,6 × krok) s polohou, velikostí a důvody s podílem.
+  Dohledatelnost: záznam studie (JSON), verze algoritmů, kroky, otisk dílu, sestavení
+  aplikace (commit z GitHub Actions). Export složky: HTML, CSV míst, podrobná CSV studií;
+  z okna PDF (Qt) a obrázky 3D. Mapa tloušťky jen s nastavenou mezí. Výsledek je pohled,
+  formát zůstává 21. Okno, CLI `skodacad audit`, AI bez nového nástroje s pravidlem.
 
 ## Architektura (`src/skodacad/`)
 
@@ -278,7 +292,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT) a `radiografie` (geometrie projekce RT) |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT), `radiografie` (geometrie projekce RT) a `audit` (předběžný NDT audit) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`), mapa MT (`submit_mt`) a mapa RT (`submit_rt`), průběžné zprávy `Finished.update` |
@@ -296,12 +310,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `ndt/pt.py` | PT – geometrická přístupnost povrchu (etapa 11): `PtSettings` (nástroje, úhly, oko, postup čištění), `Sampler` (nástřik, otření nástrojem – kulička + dřík s přesným průnikem –, prohlídka s okem, mezera, otevřenost), `compute` / `estimate`, `PtMap` (souhrn, CSV, síť po kontrolách, `nearest`, `describe`), `study_faces`, `self_check` |
 | `ndt/mt.py` | MT – přiložení jha a směry magnetizace (etapa 12): `MtSettings`, `material_status` (feromagnetický materiál), `Yoker` (místa pólů kružnicí, stěna, póly jako přímá sonda bez vůle, nohy, přesná kolize nohou a těla), `place_yoke`, `compute` / `estimate` / `check_points` (středy na mřížce ploch v dosahu, 8 směrů, dohledání hranic a rohů), `MtMap` (souhrn, CSV, síť po směrech, `nearest`, `describe`), `study_faces`, `self_check`; nanesení a prohlídka přes `pt.Sampler.access` |
 | `ndt/rt.py` | RT – geometrie projekce (etapa 13): `RtSettings` a `Projection` (zaměřený bod, směr ke zdroji, vzdálenost, detektor na ploše / volně, jmenovitá tloušťka), `tilted` / `angles_of`, `prepare` (zdroj, střední paprsek, přiložení detektoru s odsunutím, kolize těla zdroje a detektoru → `Setup`), `compute` / `estimate` / `check_points` / `image_of`, `RtMap` (souhrn, CSV, síť po projekcích, `nearest`, `describe`), `RtImage` (náhled prozařované tloušťky), `study_target`, `self_check` |
+| `ndt/audit.py` | předběžný NDT audit (etapa 14): `layer_of` (výsledek metody → jednotná místa `Spot`: UT pokrytí plochy/objem, návrh poloh, plán, PT, MT, RT, mapa tloušťky), `find_places` (spojení sousedních míst se stejným stavem do 1,6 × krok → `Place` s důvody a podílem), `AuditEntry` (studie: spočítáno / neprovedeno / nedostupné), `AuditResult` (souhrn, `write_csv`, `html`, `write_folder`, náhledy RT); `AuditItem` (co se spočítá, odhad, důvod proč ne) |
+| `buildinfo.py` | verze, sestavení (commit z GitHub Actions v `_build.py`, při vývoji `git describe`) a knihovny – do zprávy auditu |
 | `ndt/ut.py` | geometrický model UT paprsku: `refract` (Snellův zákon s výslovnými rychlostmi, kritický úhel), `trace_beam` (`BeamPath`, `BeamLeg`, zrcadlové odrazy na plochách, půlkrok, celý krok, jistota, předpoklady) |
 | `gui/app.py` | spuštění okna, log `~/SkodaCAD/skodacad.log`, `--self-test`, `--screenshot` |
 | `gui/main_window.py` | hlavní okno: díl, parametry, strom prvků, vlastnosti, menu, panely Měření, Mapa tloušťky a Řez |
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV); u RT studie skupina *Geometrie projekce RT* (etapa 13, `gui/rt_box.py`) |
+| `gui/audit_panel.py` | panel *NDT audit* (etapa 14): seznam studií se zaškrtávátky a odhadem (`AuditItem`), volba návrhu poloh u UT, spuštění na pozadí a zastavení, přehled, tabulka míst, klik = studie v panelu NDT + mapa ve 3D (`focus`, kulička `MARK`), export složky + PDF (`write_pdf`, QTextDocument + QPdfWriter) + obrázky map z 3D (`capture_images`) |
 | `gui/rt_box.py` | skupina *Geometrie projekce RT* v panelu NDT (etapa 13): nastavení, seznam projekcí (Zdroj nad vybrané místo, Upravit, Kopírovat posunutou, Smazat), výpočet na pozadí, přepínač mapy celkem / projekce, klik do mapy, náhled prozařované tloušťky (QImage z `rt.preview_rgb`, PNG), CSV; `drawing()` = zdroj a detektor vybrané projekce pro prohlížeč |
 | `gui/rt_dialog.py` | dialogy *Nastavení RT…* a *Upravit projekci…* (čísla jako text bez zaokrouhlení, sklon a natočení vůči kolmici k ploše nebo nejbližší ose – nezměněné úhly = původní směr) |
 | `gui/mt_dialog.py` | dialog *Nastavení MT…* (jho, rozteče, meze, kroky, nanesení a prohlídka, potvrzení feromagnetického materiálu; čísla jako text s původem hodnoty, kontrola `MtSettings`) |
@@ -900,6 +917,49 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   ploše leží (do 0,01 mm, `ON_SURFACE_MM`); jinak nejbližší osa souřadnic. Zaměřený bod
   uprostřed otvoru má nejbližší plochou stěnu otvoru → sklon by vyšel 120°.
 
+## Známé pasti (NDT – předběžný audit)
+
+- Problémová místa se spojují **jen podle stavu a vzdálenosti** (1,6 × krok sítě), ne podle
+  důvodu – u štěrbiny (PT) mají body různé první důvody a místo by se rozpadlo. Důvody místa
+  se vypíšou s podílem plochy; jeden bod může mít víc důvodů, součet podílů může přes 100 %.
+- Místa bez polohy (vnitřní bod buňky objemu nenalezen) tvoří jedno místo „poloha neurčena“
+  na stav, nikdy se nepřilepí k jinému.
+- Zpráva nese obecné upozornění a upozornění každé metody, která je ve zprávě (i u neprovedené
+  studie), v pevném pořadí UT, PT, MT, RT. Slova „vyhovuje“, „protokol o zkoušce“
+  a „zkušební protokol“ ve zprávě být nesmí (test) – RT souhrn smí „vyhoví třídě B“ (pravidlo
+  geometrie ISO 17636-1, ne shoda).
+- Náhledy RT dělá jádro (`rt.png_bytes`), takže jsou i ve zprávě z příkazové řádky. Obrázky
+  map ve 3D dodá jen okno (`html(images=…)`).
+- Čísla ve zprávě přes `audit._dec` – bez „-0,0“ u bodů na ose.
+- ModelSession: `ndt_audit_items` rozhodne u každé studie výpočet (`AuditItem.action`: pt, mt,
+  rt, plan, access, session, thickness) nebo důvod. UT: uložený plán (kromě zastaralého) →
+  `check_ndt_plan(coverage=True)`; jinak výsledek z tohoto sezení (`_ut_session_result`:
+  ověřený plán, mapa pokrytí se žádostí o přiložení téže studie, návrh poloh se sjednocením);
+  návrh poloh jen se zaškrtnutím (`access`). Zastaralá / neúplná / neplatná studie =
+  `STUDY_PROBLEMS`, audit ji nikdy nepotvrdí.
+- Audit je pohled (`_audit_cache`, klíč: výsledek přepočtu, JSON sekce `ndt`, materiál,
+  nastavení mapy tloušťky). Synchronní výpočet metod plní i jejich vlastní mezipaměti (mapa
+  RT je pak hned v panelu); po výpočtu na pozadí ji převezme `adopt_ndt_audit_map`.
+- Na pozadí (`start_ndt_audit`, úloha „audit“) se počítají jen studie s výpočtem; ostatní
+  (a výsledek ze sezení, hotová mapa tloušťky) se zapíšou v okně hned. Pomocný proces posílá
+  každou hotovou studii zprávou `entry` (`AuditEntry` s mapou, i s místy) – *Zastavit* je
+  ponechá, zbytek dostane `STOPPED`. Konečná odpověď je jen počet studií (mapy už odešly).
+- Chyba výpočtu jedné studie (i neočekávaná výjimka) audit nezastaví: studie je „nedostupné“
+  s textem chyby.
+- Okno: místo z auditu má ve 3D **přednost před všemi mapami** (`MainWindow._refresh_coverage`,
+  klíč („audit“, mapa, řez); síť `ModelSession.ndt_audit_mesh` pro každý druh výsledku) a kresba
+  projekce RT se přitom skryje (deska detektoru by mapu zakryla) – panel proto po změně volá
+  `_refresh_probe`. Střed místa = kulička `show_points` (žádný nový druh kreslení).
+- Mapy metod mají v session **jednu mezipaměť na metodu** (PT, MT, RT) – mapy všech studií
+  z auditu proto převezme až výběr studie v panelu NDT (`NdtPanel._row_changed` →
+  `adopt_ndt_audit_map`); platnou mapu téže studie nepřepíše.
+- PDF: `QTextDocument.print_` stránkuje sám (okraj 2 cm). Vlastní `setPageSize` dokumentu
+  v pixelech zapisovače (1200 dpi) zmenšil text na nečitelný. Obrázky `data:` se předávají
+  jako zdroje dokumentu (`addResource`). Obrázky map pořídí `viewer.dump` po `fit_all`.
+- Sestavení: GitHub Actions zapíše `src/skodacad/_build.py` (COMMIT, DATE) až **po testech**
+  a před PyInstallerem; soubor je v `.gitignore` a spec ho přidá do `hiddenimports`, jen když
+  existuje. Testy proto vidí „vývojová verze“.
+
 ## Známé pasti (NDT – závazné vymezení UT)
 
 - Každý nový UT výstup (skupina v okně, výpis `skodacad`, export protokolu) musí nést
@@ -937,10 +997,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
-- Krok *Testy* má časový limit (Windows 20 min, macOS 25 min – proti zaseknutému dialogu).
+- Krok *Testy* má časový limit (Windows 30 min, macOS 35 min – proti zaseknutému dialogu).
   Etapa 09 původní 10 min na Windows překročila (testy 7:55 → přes 10 min, sestavení
-  selhalo „timed out“). Na Windows běží testy asi 0,8× déle než v cloudu na Linuxu. Nové
-  pomalé testy drž krátké: hrubý krok, málo směrů, jedna kontaktní plocha, sdílené fixtures.
+  selhalo „timed out“). Při etapě 14 trvaly testy na Windows 15:42 (14A.1) a 18:25 (14A.2)
+  při limitu 20 min – rozptyl běžců GitHubu je několik minut, proto 20. 10. 2026 limit
+  30 min (celá úloha 55 min). Na Windows běží testy zhruba stejně dlouho jako v cloudu na
+  Linuxu (cloud 17–18 min). Nové pomalé testy drž krátké: hrubý krok, málo směrů, jedna
+  kontaktní plocha, sdílené fixtures.
 
 ## Známé pasti (macOS)
 
@@ -1016,8 +1079,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   to“; otevírá milník M4), [x] 12 MT přiložení jha a směry magnetizace (formát v20,
   sloučeno v PR #26, autor po vydání: „ok, funguje to“), [ ] 13 RT geometrie projekce
   a expozice (schváleno 19. 10. 2026; dokončí milník M4): [x] 13A.1 vymezení RT a jádro
-  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (čeká na
-  PR a ruční zkoušku autora).
+  `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (sloučeno
+  v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (schváleno
+  20. 10. 2026; otevírá milník M5): [x] 14A.1 jádro zprávy `ndt/audit.py`, [x] 14A.2 spuštění
+  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

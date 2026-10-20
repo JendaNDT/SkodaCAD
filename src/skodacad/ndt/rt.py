@@ -901,7 +901,7 @@ def preview_rgb(image: RtImage, marks: list[tuple[tuple[float, float], str]] = (
                 color = tuple(round(c * (1 - TINT) + t * TINT)
                               for c, t in zip(color, tint, strict=True))
             fill(column * scale, row * scale, scale, scale, color)
-    edge = max(1, scale // 3)  # obrys oblasti (hranice mezi stavy nebo s okolím)
+    edge = max(1, min(3, scale // 3))  # obrys oblasti (hranice mezi stavy nebo s okolím)
     for row in range(image.rows):
         for column in range(image.columns):
             state = region[row][column]
@@ -925,17 +925,22 @@ def preview_rgb(image: RtImage, marks: list[tuple[tuple[float, float], str]] = (
     return width, height, bytes(pixels)
 
 
-def write_png(path: str | Path, width: int, height: int, rgb: bytes) -> Path:
-    """Obrázek RGB do souboru PNG (jen standardní knihovna)."""
+def png_bytes(width: int, height: int, rgb: bytes) -> bytes:
+    """Obrázek RGB jako soubor PNG v paměti (jen standardní knihovna)."""
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (struct.pack(">I", len(data)) + kind + data
                 + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
 
     rows = b"".join(b"\x00" + rgb[y * width * 3:(y + 1) * width * 3] for y in range(height))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+
+
+def write_png(path: str | Path, width: int, height: int, rgb: bytes) -> Path:
+    """Obrázek RGB do souboru PNG (jen standardní knihovna)."""
     path = Path(path)
-    path.write_bytes(b"\x89PNG\r\n\x1a\n"
-                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-                     + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+    path.write_bytes(png_bytes(width, height, rgb))
     return path
 
 
