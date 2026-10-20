@@ -1131,7 +1131,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF; sloučeno
   v PR #28, čeká na ruční zkoušku autora), [ ] 15 konstrukční návrhy (schváleno
   20. 10. 2026; dokončí milník M5): [x] 15A.0 oprava skici s nulovou plochou, [x] 15A.1 jádro
-  `ndt/design.py`, [x] 15A.2 formát 22, ModelSession, CLI, příklad a testy (pracovní větev, čeká na potvrzení CI), [ ] 15B okno.
+  `ndt/design.py`, [x] 15A.2 formát 22, ModelSession, CLI, příklad a testy (CI Windows/macOS úspěšná), [x] 15B panel, dialog, náhled, potvrzení a PDF (pracovní větev, testy CI zatím probíhají).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).
