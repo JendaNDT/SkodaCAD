@@ -1098,7 +1098,9 @@ Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladov
 jsou ve složce [docs/](docs/).
 
 Další vývoj řídí [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
-Aktuální krok P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni.md).
+P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni.md) a je sloučené v PR #30.
+K posouzení je připraven [návrh P1.1 — smlouva geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md);
+pravidla i následná implementace čekají na schválení autora.
 P1/P2 a změna formátu vyžadují další schválení; model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
