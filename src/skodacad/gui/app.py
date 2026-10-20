@@ -259,7 +259,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
 def _self_test_design(window, lines: _Report) -> bool:
     """Zabalená aplikace: etapa 15B, dvě varianty, náhled a PDF bez změny souboru."""
     from skodacad.gui.audit_panel import write_pdf
-    from skodacad.ndt.design import Design, TITLE
+    from skodacad.ndt.design import TITLE, Design
 
     folder = examples_dir()
     model = folder / "ndt" / "navrh_kapsa.json" if folder is not None else None
