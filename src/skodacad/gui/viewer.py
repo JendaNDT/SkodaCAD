@@ -304,6 +304,10 @@ class OccViewer(QWidget):
         ghost.SetTransparency(0.72)
         self._context.Display(ghost, False)
         self._context.Deactivate(ghost)
+        # Náhled ukazuje jinou geometrii než otevřený model: její plochy se NESMÍ
+        # vybírat pro modelovací příkazy (jinak by se mohly použít na originál).
+        if self._ais is not None:
+            self._context.Deactivate(self._ais)
         self._design_ghost = ghost
         self._view.Redraw()
 
