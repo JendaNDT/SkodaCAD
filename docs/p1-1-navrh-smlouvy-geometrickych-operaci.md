@@ -233,8 +233,9 @@ jen proto, že se začaly kontrolovat booleovské výsledky.
 | P1.5 | Celá referenční sada, kompatibilita, oba systémy a ruční přijetí. | Ruff, celý pytest, Windows/macOS sestavení i test stažených balíčků, ruční protokol; vypsané zbývající meze. |
 
 Konkrétní změny, pořadí, testy a kritéria přijetí jsou rozpracované
-v [návrhu P1.2A ke schválení](p1-2a-navrh-spolecne-kontroly-geometrie.md).
-Implementace tohoto návrhu zatím nezačala. Schválená smlouva nepředepisuje novou
+ve [schváleném rozsahu P1.2A](p1-2a-navrh-spolecne-kontroly-geometrie.md).
+Autor schválil A1–A7 dne 20. 10. 2026; implementace probíhá samostatně.
+Schválená smlouva nepředepisuje novou
 architekturu tříd ani nový přenášený či uložený datový formát.
 
 ## 9. Kompatibilita a kritéria dokončení P1.1

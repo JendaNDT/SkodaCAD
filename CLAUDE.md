@@ -1093,13 +1093,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
-Ke schválení je připraven [konkrétní návrh P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
-body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Jde pouze o návrh;
-implementace P1.2–P1.5 vyžaduje samostatné schválení a zatím nezačala.
+Autor 20. 10. 2026 schválil [konkrétní rozsah P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
+body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Plán je sloučený v PR #32
+(`15b8bf4`); implementace probíhá v samostatné větvi. [Evidence](docs/p1-2a-overeni.md)
+odděluje automatické ověření a ruční přijetí. P1.2B–P1.5 zůstávají bez schválení implementace.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-Implementaci P1/P2 ani nový formát nezahajovat bez dalšího schválení; NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+Provést schválené P1.2A; další implementaci P1/P2 ani nový formát nezahajovat bez dalšího schválení.
+NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,

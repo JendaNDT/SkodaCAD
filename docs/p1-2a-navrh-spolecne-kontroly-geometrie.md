@@ -1,18 +1,18 @@
 # P1.2A — konkrétní návrh společné kontroly geometrie
 
-**Stav: návrh ke schválení, bez implementace.** Datum: 20. 10. 2026.
+**Stav: A1–A7 schváleno autorem 20. 10. 2026; implementace probíhá.**
 Podklad: `main / 6e38d0681ac495c08189cd6f129cafe7166a2c7a`, po sloučení
 [PR #31](https://github.com/JendaNDT/SkodaCAD/pull/31).
 Závazná pravidla jsou ve [schválené smlouvě P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md);
 tento návrh je nemění. Rozpracovává její první implementační krok.
 
-## 1. Co má autor schválit
+## 1. Schválený rozsah
 
 Cíl: geometrický výsledek se přijme až po společné kontrole. Neplatný či prázdný
 výsledek se nesmí stát přijatým dílem. Platný díl může mít více objemových těles;
 uživatel uvidí jejich skutečný počet a jeho změnu.
 
-| Bod | Doporučený konkrétní rozsah |
+| Bod | Schválený konkrétní rozsah |
 |---|---|
 | **A1 Společná kontrola** | Malý interní modul `geometry_validation.py`: kontrola objemových tvarů, čísel, uzavřenosti, počtu složek a objemových podmínek P1.1. Bez nové závislosti, veřejného rozhraní nebo ukládaných polí. |
 | **A2 Zapojení do geometrie** | Kandidát před zápisem v `BuildContext.apply` i v zaoblení, sražení a skořepině; závěrečná pojistka všech 3D prvků v `_run_feature`. Pravidla zahrnou i nástroje děr, závitů, pole, zrcadlení, loftu a normalizovaných dílů. |
@@ -22,10 +22,11 @@ uživatel uvidí jejich skutečný počet a jeho změnu.
 | **A6 Malé kroky** | Jedna implementační větev/PR se třemi postupnými kroky A.1–A.3. Po každém Ruff a celý pytest před commitem. Schválení A1–A7 dovolí tyto kroky bez opakovaného schvalování téhož rozsahu. |
 | **A7 Přijetí a hranice** | Windows i macOS: testy, baseline, sestavení a self-test staženého balíčku; cílená ruční zkouška. Úplná obnova kontextu P1.2B, reference P1.3, export/NDT P1.4, P2 a nový formát zůstávají mimo. Sloučení implementačního PR vyžaduje souhlas autora. |
 
-**Tento dokumentační PR nic z A1–A7 neimplementuje.** Teprve výslovné schválení
-tohoto návrhu autorizuje implementaci P1.2A v popsaném rozsahu. Schválení P1.1 už
-určilo pravidla; zde se schvaluje jejich konkrétní technické provedení a ověření.
-Dokumentační PR se také neslučuje bez souhlasu autora.
+Autor po předložení návrhu potvrdil A1–A7 slovy „ok, schvaluji“.
+Dokumentační [PR #32](https://github.com/JendaNDT/SkodaCAD/pull/32) je sloučený
+(`15b8bf4`). Tím je povolena implementace A.1–A.3 v jednom samostatném PR.
+[Průběh a skutečná evidence](p1-2a-overeni.md) rozlišují hotové kontroly od dosud
+neprovedeného přijetí. Sloučení implementačního PR dál vyžaduje souhlas autora.
 
 ## 2. Ověřený výchozí stav a místa změn
 
@@ -177,7 +178,7 @@ Text se může jazykově doladit, ale musí sdělit skutečnou příčinu a mož
 
 ## 6. Konkrétní regresní sada po schválení
 
-**Následující testy nejsou v tomto dokumentačním PR implementované.**
+**Matice přijetí.** Skutečný stav sad a výsledky jsou v [evidenci P1.2A](p1-2a-overeni.md).
 ID G/N/A/C/F/H/S/L/M/T odkazují na přesná zadání a vzorce v P1.1.
 U odmítnutí kontrolovat chybu, přeskočený následný prvek a původní díl
 (objem, obálku, počet i referenční materiál v místě); u samostatného `apply`
@@ -245,8 +246,8 @@ opětovné použití již přečtených vlastností nesmí přežít změnu tvar
 V implementačním PR musí být zelené obě úlohy stávajících workflow
 „Windows aplikace“ i „macOS aplikace“ na aktuální hlavě: Ruff, úplný pytest,
 baseline, sestavení, kontrola staženého balíčku a self-test s výsledkem OK.
-Dokumentační PR s tímto návrhem sestavení podle filtrů cest nespouští;
-jeho úspěšné místní testy nejsou ověřením budoucí implementace.
+Původní dokumentační PR #32 sestavení podle filtrů cest nespustil;
+jeho místní testy nebyly ověřením následné implementace.
 
 Změnu vzhledu ukázat snímkem skutečného okna, vedle offscreen testů Qt.
 Na macOS použít běžící nativní okno; při ověření v Linuxu postup Xvfb dle CLAUDE.
