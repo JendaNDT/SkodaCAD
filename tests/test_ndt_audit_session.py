@@ -64,6 +64,11 @@ def test_audit_is_a_view_and_adopts_the_map(plate, tmp_path):
     assert any(step[3] is not None for step in progress)  # průběh uvnitř studie
     assert plate.adopt_ndt_audit_map("s2") and plate.ndt_rt_map is entry.result
     assert not plate.adopt_ndt_audit_map("s1")  # neprovedená studie mapu nemá
+    nodes, triangles, colors, volume = plate.ndt_audit_mesh("s2")
+    assert len(nodes) == len(colors) and triangles and not volume
+    assert plate.ndt_audit_mesh("s1") == ([], [], [], False)
+    newer = plate.compute_ndt_rt("s2")  # mapa téže studie spočítaná po auditu zůstane
+    assert plate.adopt_ndt_audit_map("s2") and plate.ndt_rt_map is newer
     names = sorted(p.name for p in plate.export_ndt_audit(tmp_path / "audit"))
     assert names == ["mista.csv", "studie-s2-rt.csv", "zprava.html"]
     assert TITLE in (tmp_path / "audit" / "zprava.html").read_text(encoding="utf-8")

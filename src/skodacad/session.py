@@ -2732,15 +2732,14 @@ class ModelSession:
 
     @property
     def ndt_audit_progress(self) -> str:
-        """Průběh auditu česky („hotovo 1 z 3; počítá se: s2 RT desky (312 z 1086)“), bez
-        auditu prázdné."""
+        """Průběh auditu česky („studie 2 z 3 – s2 RT desky, 312 z 1086“), bez auditu
+        prázdné."""
         pending = self._audit_pending
         if pending is None or pending["progress"] is None:
             return ""
         index, total, label, inner = pending["progress"]
-        done = len(pending["local"]) + len(pending["remote"])
-        text = f"hotovo {done} z {len(pending['items'])}; počítá se: {label}"
-        return text + (f" ({inner[0]} z {inner[1]})" if inner else "")
+        text = f"studie {index + 1} z {total} – {label}"
+        return text + (f", {inner[0]} z {inner[1]}" if inner else "")
 
     @property
     def ndt_audit(self) -> AuditResult | None:
@@ -2763,7 +2762,8 @@ class ModelSession:
 
     def adopt_ndt_audit_map(self, study_id: str) -> bool:
         """Mapa studie z auditu se stane mapou její metody v panelu NDT (jen pohled), aby ji
-        nebylo třeba počítat znovu. False = audit ji nemá."""
+        nebylo třeba počítat znovu. False = audit ji nemá. Platnou mapu téže studie (třeba
+        spočítanou po auditu) nechá být."""
         audit = self.ndt_audit
         if audit is None:
             return False
@@ -2775,18 +2775,51 @@ class ModelSession:
         if entry.status != "done" or result is None:
             return False
         if isinstance(result, PtMap):
-            self._pt_cache = (self._pt_key(study_id), result)
+            if self.ndt_pt_study() != study_id:
+                self._pt_cache = (self._pt_key(study_id), result)
         elif isinstance(result, MtMap):
-            self._mt_cache = (self._mt_key(study_id), result)
+            if self.ndt_mt_study() != study_id:
+                self._mt_cache = (self._mt_key(study_id), result)
         elif isinstance(result, RtMap):
-            self._rt_cache = (self._rt_key(study_id), result)
+            if self.ndt_rt_study() != study_id:
+                self._rt_cache = (self._rt_key(study_id), result)
         elif isinstance(result, PlanResult):
-            self._plan_cache = (self._plan_key(study_id), result)
+            if self.ndt_plan_study() != study_id:
+                self._plan_cache = (self._plan_key(study_id), result)
         elif isinstance(result, AccessResult):
-            self._access_cache = (self._access_key(study_id), result)
+            if self.ndt_access is None or self._access_cache[0][1] != study_id:
+                self._access_cache = (self._access_key(study_id), result)
         else:
             return result is self.ndt_coverage  # mapa pokrytí ze sezení už je v panelu
         return True
+
+    def ndt_audit_mesh(self, study_id: str) -> tuple[list, list, list, bool]:
+        """Barevná síť mapy studie z auditu pro okno (v řezu oříznutá) a zda jde o objem
+        svaru (kreslí se navrch). Studie bez výsledku = prázdná síť."""
+        audit = self.ndt_audit
+        try:
+            entry = audit.entry(study_id) if audit is not None else None
+        except AuditError:
+            entry = None
+        result = entry.result if entry is not None and entry.status == "done" else None
+        if isinstance(result, AccessResult):
+            result = result.union
+        elif isinstance(result, PlanResult):
+            result = result.coverage.coverage if result.coverage is not None else None
+        if result is None:
+            return [], [], [], False
+        if isinstance(result, (CoverageMap, VolumeCoverageMap)):
+            return (*self.coverage_mesh(result), isinstance(result, VolumeCoverageMap))
+        if isinstance(result, RtMap) and result.kind == "volume":
+            return (*self._rt_volume_drawing(result, None), True)
+        if isinstance(result, ThicknessMap):
+            nodes, triangles, colors = result.nodes, result.triangles, result.node_colors()
+        else:  # PT, MT a RT na plochách
+            nodes, triangles, colors = result.mesh(None)
+        plane = self.section_plane
+        if plane:
+            nodes, triangles, colors = clip_mesh(nodes, triangles, colors, plane)
+        return nodes, triangles, colors, False
 
     def export_ndt_audit(self, folder: str | Path,
                          images: dict[str, list[tuple[str, bytes]]] | None = None

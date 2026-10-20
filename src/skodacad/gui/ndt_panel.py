@@ -942,6 +942,9 @@ class NdtPanel(QWidget):
         self._start_recheck()
 
     def _row_changed(self) -> None:
+        study_id = self.current_id()
+        if study_id is not None:  # mapa studie z předběžného auditu i v její skupině
+            self.window.session.adopt_ndt_audit_map(study_id)
         self._show_warning()
         self._show_details()
         self._show_probe()

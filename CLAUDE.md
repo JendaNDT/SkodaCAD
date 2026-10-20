@@ -318,6 +318,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/feature_editor.py` | panel „Úprava prvku“ – formuláře sestavené ze `schema.py` |
 | `gui/sketcher.py` | skicář – 2D editor obrysu (kreslení, vazby, kóty, stav určenosti) |
 | `gui/ndt_panel.py` | panel NDT: seznam studií se stavem, nová z výběru, úpravy, potvrzení, ověření, zvýraznění oblasti; skupina *Návrh poloh sondy* (etapa 09: volby, odhad, průběh, tabulka, kombinace, Ukázat/Použít, mapa ve 3D); skupina *Plán dráhy sondy* (etapa 10: sestavení, stav, tabulka úseků s přínosem, úpravy, zóny, přehrávání); u PT studie místo skupin sondy skupina *Přístupnost povrchu pro PT* (etapa 11: nastavení, odhad, výpočet, přepínač kontrol, souhrn, důvod místa po kliknutí, CSV); u MT studie skupina *Přiložení jha a směry magnetizace* (etapa 12: materiál, nastavení, odhad, výpočet, přepínač celkem / pole 0°–135° / nanesení / prohlídka, souhrn, důvod místa, Ukázat jho, Přiložit jho sem s natočením, CSV); u RT studie skupina *Geometrie projekce RT* (etapa 13, `gui/rt_box.py`) |
+| `gui/audit_panel.py` | panel *NDT audit* (etapa 14): seznam studií se zaškrtávátky a odhadem (`AuditItem`), volba návrhu poloh u UT, spuštění na pozadí a zastavení, přehled, tabulka míst, klik = studie v panelu NDT + mapa ve 3D (`focus`, kulička `MARK`), export složky + PDF (`write_pdf`, QTextDocument + QPdfWriter) + obrázky map z 3D (`capture_images`) |
 | `gui/rt_box.py` | skupina *Geometrie projekce RT* v panelu NDT (etapa 13): nastavení, seznam projekcí (Zdroj nad vybrané místo, Upravit, Kopírovat posunutou, Smazat), výpočet na pozadí, přepínač mapy celkem / projekce, klik do mapy, náhled prozařované tloušťky (QImage z `rt.preview_rgb`, PNG), CSV; `drawing()` = zdroj a detektor vybrané projekce pro prohlížeč |
 | `gui/rt_dialog.py` | dialogy *Nastavení RT…* a *Upravit projekci…* (čísla jako text bez zaokrouhlení, sklon a natočení vůči kolmici k ploše nebo nejbližší ose – nezměněné úhly = původní směr) |
 | `gui/mt_dialog.py` | dialog *Nastavení MT…* (jho, rozteče, meze, kroky, nanesení a prohlídka, potvrzení feromagnetického materiálu; čísla jako text s původem hodnoty, kontrola `MtSettings`) |
@@ -945,6 +946,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   ponechá, zbytek dostane `STOPPED`. Konečná odpověď je jen počet studií (mapy už odešly).
 - Chyba výpočtu jedné studie (i neočekávaná výjimka) audit nezastaví: studie je „nedostupné“
   s textem chyby.
+- Okno: místo z auditu má ve 3D **přednost před všemi mapami** (`MainWindow._refresh_coverage`,
+  klíč („audit“, mapa, řez); síť `ModelSession.ndt_audit_mesh` pro každý druh výsledku) a kresba
+  projekce RT se přitom skryje (deska detektoru by mapu zakryla) – panel proto po změně volá
+  `_refresh_probe`. Střed místa = kulička `show_points` (žádný nový druh kreslení).
+- Mapy metod mají v session **jednu mezipaměť na metodu** (PT, MT, RT) – mapy všech studií
+  z auditu proto převezme až výběr studie v panelu NDT (`NdtPanel._row_changed` →
+  `adopt_ndt_audit_map`); platnou mapu téže studie nepřepíše.
+- PDF: `QTextDocument.print_` stránkuje sám (okraj 2 cm). Vlastní `setPageSize` dokumentu
+  v pixelech zapisovače (1200 dpi) zmenšil text na nečitelný. Obrázky `data:` se předávají
+  jako zdroje dokumentu (`addResource`). Obrázky map pořídí `viewer.dump` po `fit_all`.
 - Sestavení: GitHub Actions zapíše `src/skodacad/_build.py` (COMMIT, DATE) až **po testech**
   a před PyInstallerem; soubor je v `.gitignore` a spec ho přidá do `hiddenimports`, jen když
   existuje. Testy proto vidí „vývojová verze“.
@@ -1068,7 +1079,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ndt/rt.py`, [x] 13A.2 formát 21, ModelSession, pomocný proces, CLI, [x] 13B okno (sloučeno
   v PR #27, čeká na ruční zkoušku autora), [ ] 14 společný předběžný audit (schváleno
   20. 10. 2026; otevírá milník M5): [x] 14A.1 jádro zprávy `ndt/audit.py`, [x] 14A.2 spuštění
-  (ModelSession, pomocný proces, CLI, sestavení), [ ] 14B okno.
+  (ModelSession, pomocný proces, CLI, sestavení), [x] 14B okno (panel *NDT audit*, PDF).
 - [ ] **macOS Apple Silicon** (`docs/ndt/05-podpora-macos.md`) – [x] audit knihoven, prohlížeč přes
   `Cocoa_Window`, `SkodaCAD.app` v ZIP, workflow „macOS aplikace“ (self-test na Macu GitHubu OK,
   softwarové OpenGL), [ ] ruční test na MacBooku Air M4 (Retina, trackpad, GPU).

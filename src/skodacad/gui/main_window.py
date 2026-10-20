@@ -46,6 +46,8 @@ from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.assistant_panel import AssistantPanel
+from skodacad.gui.audit_panel import MARK as AUDIT_MARK
+from skodacad.gui.audit_panel import AuditPanel
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
@@ -159,6 +161,7 @@ class MainWindow(QMainWindow):
         self._build_map_panel()
         self._build_section_panel()
         self._build_ndt_panel()
+        self._build_audit_panel()
         self._build_assistant_panel()
         self._build_menus()
         self.resize(1400, 860)
@@ -169,7 +172,8 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.measure_dock, self.map_dock)
         self.tabifyDockWidget(self.map_dock, self.section_dock)
         self.tabifyDockWidget(self.section_dock, self.ndt_dock)
-        self.tabifyDockWidget(self.ndt_dock, self.assistant_dock)
+        self.tabifyDockWidget(self.ndt_dock, self.audit_dock)
+        self.tabifyDockWidget(self.audit_dock, self.assistant_dock)
         self.measure_dock.raise_()
         self._had_part = False
         self._build_progress()
@@ -484,6 +488,25 @@ class MainWindow(QMainWindow):
                                        Qt.DockWidgetArea.RightDockWidgetArea)
         self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
 
+    def _build_audit_panel(self) -> None:
+        """Panel Předběžný NDT audit (etapa 14): všechny studie najednou, místa, zpráva."""
+        self.audit_panel = AuditPanel(self)
+        self.audit_dock = self._add_dock("NDT audit", "audit_dock", self.audit_panel,
+                                         Qt.DockWidgetArea.RightDockWidgetArea)
+        self.audit_dock.visibilityChanged.connect(  # záložka panelu přepnutá myší
+            lambda visible: visible and self.audit_panel.refresh())
+        self.audit_action = self._action("Předběžný NDT audit…", self.show_audit)
+        self.audit_action.setToolTip("Spočítá všechny NDT studie jejich nastavením a složí "
+                                     "zprávu o geometrickém posouzení (model se nemění)")
+
+    def show_audit(self) -> None:
+        self.audit_dock.show()
+        self.audit_dock.raise_()
+        self.resizeDocks([self.editor_dock, self.audit_dock], [220, 620],
+                         Qt.Orientation.Vertical)
+        self.audit_panel.refresh_items()
+        self.audit_panel.refresh()
+
     def _refresh_probe(self) -> None:
         """Přiložená NDT sonda ve 3D: tělo v barvě výsledku a směr paprsku z výstupního bodu
         (u přímé sondy kolmo do materiálu)."""
@@ -492,7 +515,9 @@ class MainWindow(QMainWindow):
         placement = self.session.ndt_placement
         shown = placement if placement is not None else self.session.ndt_yoke
         rt = None
-        if shown is None:  # zdroj a detektor vybrané RT projekce (etapa 13) – také jako sonda
+        # zdroj a detektor vybrané RT projekce (etapa 13) – také jako sonda; místo z auditu
+        # ukazuje mapu, tu by deska detektoru zakryla
+        if shown is None and self.audit_panel.focus() is None:
             rt = shown = self.ndt_panel.rt_box.drawing()
         if shown is self._shown_probe:
             return
@@ -529,7 +554,11 @@ class MainWindow(QMainWindow):
             self.viewer.show_plan(*drawing)
 
     def _refresh_coverage(self) -> None:
-        found = self.session.ndt_coverage
+        focus = self.audit_panel.focus()  # místo z předběžného auditu má přednost (etapa 14)
+        found = None if focus is None else ("audit", id(focus[0].result),
+                                            self.session.section_plane)
+        if found is None:
+            found = self.session.ndt_coverage
         if found is None:  # pokrytí plánu dráhy (při přehrávání narůstá)
             found = self.ndt_panel.plan_view()
         access = self.session.ndt_access
@@ -546,10 +575,15 @@ class MainWindow(QMainWindow):
         if rt_view is not None:  # mapa RT (etapa 13): klíč = mapa, pohled a řez
             found = ("rt", id(rt_view[0]), rt_view[1], self.session.section_plane)
         points = (access, mode) if access is not None and mode == "contact" else None
+        place = focus[1] if focus is not None else None
+        if place is not None and place.center is not None:  # kulička ve středu místa auditu
+            points = ("audit", place.id, place.center)
         if points != self._shown_points:
             self._shown_points = points
             if points is None:
                 self.viewer.hide_points()
+            elif points[0] == "audit":
+                self.viewer.show_points([points[2]], [AUDIT_MARK])
             else:
                 shown, colors, _states = self.session.ndt_access_points()
                 self.viewer.show_points(shown, colors)
@@ -560,6 +594,12 @@ class MainWindow(QMainWindow):
             self.viewer.hide_coverage_map()
             if self.session.map_visible:
                 self._refresh_thickness_map()
+        elif isinstance(found, tuple) and found[0] == "audit":
+            nodes, triangles, colors, volume = self.session.ndt_audit_mesh(focus[0].study_id)
+            section = self.session.section  # objem svaru uvnitř dílu: navrch, řez šedě
+            self.viewer.show_coverage_map(
+                nodes, triangles, colors,
+                fill=section.faces if volume and section is not None else None, topmost=volume)
         elif isinstance(found, tuple) and found[0] == "mt":
             self.viewer.show_coverage_map(*self.session.ndt_mt_mesh(mt_view[1]))
         elif isinstance(found, tuple) and found[0] == "rt":
@@ -621,8 +661,8 @@ class MainWindow(QMainWindow):
         """Během práce AI se model ručně neupravuje (úpravy by se křížily) – zamknou se
         panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
         self.ai_busy = busy
-        for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.menuBar(),
-                       self.toolbar):
+        for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.audit_dock,
+                       self.menuBar(), self.toolbar):
             widget.setEnabled(not busy)
         if busy:
             keep = {self.fit_action, self.assistant_action, *self._view_actions}
@@ -772,6 +812,8 @@ class MainWindow(QMainWindow):
         for item in (self.ndt_panel.mt_settings_action, self.ndt_panel.mt_action,
                      self.ndt_panel.mt_place_yoke_action, self.ndt_panel.mt_export_action):
             ndt_menu.addAction(item)
+        ndt_menu.addSeparator()
+        ndt_menu.addAction(self.audit_action)
 
         view_menu = bar.addMenu("&Zobrazení")
         view_menu.addAction(self.fit_action)
@@ -1112,6 +1154,7 @@ class MainWindow(QMainWindow):
         self._refresh_section_panel()
         self._refresh_probe()
         self.ndt_panel.refresh()
+        self.audit_panel.refresh()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -1137,6 +1180,7 @@ class MainWindow(QMainWindow):
                 self.ndt_panel._show_mt()
                 self.ndt_panel.rt_box.refresh()
                 self.ndt_panel.refresh_actions()
+                self.audit_panel.show_progress()  # hotová studie auditu / průběh
                 self._refresh_progress()
                 return
             self._pending_shown = False
@@ -1174,6 +1218,8 @@ class MainWindow(QMainWindow):
             self.ndt_panel._show_mt()  # průběh mapy MT v panelu
         if self.session.rt_pending:
             self.ndt_panel.rt_box.refresh()  # průběh projekcí RT v panelu
+        if self.session.audit_pending:
+            self.audit_panel.show_progress()  # průběh předběžného auditu
 
     def stop_rebuild(self) -> None:
         coverage = self.session.coverage_pending
@@ -1182,13 +1228,15 @@ class MainWindow(QMainWindow):
         pt = self.session.pt_pending
         mt = self.session.mt_pending
         rt = self.session.rt_pending
+        audit = self.session.audit_pending
         if self.session.cancel():
             self._pending_shown = False
-            if coverage or access or plan or pt or mt or rt:
+            if coverage or access or plan or pt or mt or rt or audit:
                 # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
                 self.statusBar().showMessage(
                     "Návrh poloh zastaven – hotové varianty zůstaly v tabulce." if access
+                    else "Audit zastaven – spočítané studie zůstaly ve zprávě." if audit
                     else "Výpočet plánu dráhy zastaven – uložený plán zůstal beze změny."
                     if plan else "Výpočet mapy PT zastaven." if pt
                     else "Výpočet mapy MT zastaven." if mt
@@ -1292,6 +1340,7 @@ class MainWindow(QMainWindow):
         self.delete_parameter_action.setEnabled(
             has_document and bool(self.session.document.parameters))
         self._refresh_selection_actions()
+        self.audit_panel.refresh_actions()
         for action in self._assistant_lock:  # AI pracuje – ruční úpravy počkají
             action.setEnabled(False)
 

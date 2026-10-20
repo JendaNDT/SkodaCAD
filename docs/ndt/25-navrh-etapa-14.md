@@ -371,6 +371,21 @@ Schválením se **neschvaluje**:
     místa „Nepromítne se“ po 500,9 mm² u dlouhých okrajů (y = ±48,3 mm). V testech: UT mapa
     pokrytí z tohoto sezení se do auditu převezme, mapa tloušťky jen s mezí, zastaralá
     studie a RT bez projekce „nedostupné“, audit na pozadí i zastavení.
+- **14B (hotovo):**
+  - Panel *NDT audit* (`gui/audit_panel.py`, *NDT → Předběžný NDT audit…*): povinná upozornění
+    (před auditem obecné, po něm všech metod ve zprávě), seznam studií se zaškrtávátky
+    a odhadem, „i návrh poloh“ u UT bez plánu, *Zpracoval(a)*, *Spustit audit* / *Zastavit*,
+    průběh „studie 2 z 3 – …, 312 z 1086“, přehled, tabulka míst.
+  - Klik na místo vybere studii v panelu NDT, převezme její mapu a ukáže ji ve 3D s modrou
+    kuličkou ve středu místa. Mapa místa má přednost před ostatními mapami a kresba projekce
+    RT se přitom skryje.
+  - *Exportovat zprávu…*: složka se `zprava.html`, `zprava.pdf` (Qt, A4, stránkuje se samo),
+    `mista.csv`, CSV studií; obrázek mapy každé spočítané studie se pořídí z 3D okna.
+  - Self-test aplikace spustí v okně audit desky s otvorem a uloží zprávu včetně PDF
+    a obrázku mapy z 3D (ověří Qt PDF a kreslení v balíčku Windows i macOS).
+  - **Ověřeno:** testy okna (seznam, spuštění, místa, klik, export HTML/PDF, zámek AI),
+    snímky pod Xvfb – kapsa (UT neprovedeno, PT 2 místa, MT dno kapsy 1 200 mm²; s rychlým
+    nastavením 31 s) a deska s otvorem (RT dva pruhy u okrajů, 3 s).
 - **Upřesnění proti návrhu:**
   - **Podíl důvodů v místě** se počítá pro každý důvod zvlášť. Jedno místo může mít víc
     důvodů najednou (u štěrbiny „nástroj se nevejde“ i „úzká štěrbina“), součet proto může

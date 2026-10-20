@@ -249,6 +249,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_sketcher(window, lines) and ok
     ok = _self_test_assistant(window, lines) and ok
     ok = _self_test_ndt(window, lines) and ok
+    ok = _self_test_audit(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
@@ -268,6 +269,48 @@ def _self_test_ndt_geometry(folder: Path, lines: list[str]) -> bool:
     rt_ok, rt_text = rt.self_check(folder)
     lines.append(("✓ " if rt_ok else "✕ ") + rt_text)
     return ok and pt_ok and mt_ok and rt_ok
+
+
+def _self_test_audit(window, lines: _Report) -> bool:
+    """Předběžný NDT audit v okně (etapa 14): deska s otvorem, RT studie s hrubou sítí –
+    dvě místa u okrajů, klik na místo, složka se zprávou HTML a PDF (Qt PDF v balíčku)."""
+    import dataclasses
+    import tempfile
+
+    lines.stream.write("  … NDT audit\n")
+    lines.stream.flush()
+    folder = examples_dir()
+    model = folder / "ndt" / "otvor.json" if folder is not None else None
+    if model is None or not model.exists():
+        lines.append("✕ NDT audit: chybí referenční díl ndt/otvor.json")
+        return False
+    window.session.dirty = False
+    window.open_model(model, template=True)
+    session, panel = window.session, window.audit_panel
+    session.set_ndt_rt_settings("s2", dataclasses.replace(session.ndt_rt_settings("s2"),
+                                                          step_mm=10, image_step_mm=20))
+    window.show_audit()
+    panel.run_action.trigger()
+    audit = session.ndt_audit
+    places = audit.places() if audit is not None else []
+    if len(places) != 2 or panel.places.rowCount() != 2:
+        lines.append(f"✕ NDT audit: čekána 2 místa RT, je {len(places)}")
+        return False
+    panel.places.selectRow(0)
+    QApplication.processEvents()
+    with tempfile.TemporaryDirectory() as temporary:
+        paths = panel._export(temporary)
+        pdf = (Path(temporary) / "zprava.pdf").read_bytes()
+        page = (Path(temporary) / "zprava.html").read_text(encoding="utf-8")
+        images = page.count('alt="Mapa ve 3D –')  # obrázek z 3D okna (bez OpenGL žádný)
+    names = sorted(p.name for p in paths)
+    if "zprava.html" not in names or not pdf.startswith(b"%PDF") or b"/Image" not in pdf:
+        lines.append(f"✕ NDT audit: zpráva {names}, PDF {pdf[:8]!r}")
+        return False
+    session.dirty = False
+    lines.append(f"✓ NDT audit (14): 2 místa RT u okrajů, zpráva {', '.join(names)} "
+                 f"(PDF {len(pdf)} B), obrázky map z 3D: {images}")
+    return True
 
 
 def _self_test_ndt(window, lines: _Report) -> bool:

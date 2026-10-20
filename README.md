@@ -525,6 +525,15 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
     studie (nastavení) a verze algoritmů. Složka: `zprava.html`, `mista.csv` a CSV studií.
   * **Příkazová řádka:** `skodacad audit MODEL [--studie s2] [--navrh-poloh s1]
     [--slozka zprava] [--zpracovatel "J. N."]`.
+  * **V okně:** *NDT → Předběžný NDT audit…* otevře panel *NDT audit*:
+    * seznam studií se zaškrtávátky, co se spočítá a jak dlouho (nebo proč ne), u UT bez
+      plánu „i návrh poloh“ s odhadem; *Zpracoval(a)*,
+    * *Spustit audit* (na pozadí) / *Zastavit* – spočítané studie zůstanou,
+    * přehled studií a tabulka problémových míst; klik na místo vybere studii v panelu NDT
+      a ukáže její mapu ve 3D s modrou kuličkou ve středu místa,
+    * mapy z auditu jsou i v panelu NDT – po výběru studie se nemusí počítat znovu,
+    * *Exportovat zprávu…* – složka se `zprava.html`, `zprava.pdf`, `mista.csv`, CSV studií
+      a obrázky map z 3D okna.
 
   Návrh: [Etapa 14](docs/ndt/25-navrh-etapa-14.md).
 
