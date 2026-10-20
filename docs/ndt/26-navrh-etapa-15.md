@@ -1,7 +1,7 @@
 # NDT – návrh etapy 15: Konstrukční návrhy bez automatické změny dílu
 
 Stav: **schváleno autorem 20. 10. 2026 („schvaluji etapu 15 včetně doporučení 1–12“);
-implementace po krocích ve vývojové větvi.**
+implementace po krocích ve vývojové větvi; 15A.0, 15A.1 hotové; 15A.2 připravené k ověření CI; 15B zbývá.**
 Výchozí stav: `main`, commit `94a78d7` ([PR #28](https://github.com/JendaNDT/SkodaCAD/pull/28)).
 Navazuje na [plán, etapa 15](03-implementacni-plan.md), na starší návrh
 [v0.2, oddíly 9 a 20](02-navrh-v0.2.md), na závazná vymezení
@@ -480,3 +480,15 @@ Schválením se **neschvaluje**:
 - CLAUDE.md, Známé pasti (NDT – MT jho): mřížka středů jha pokrytí jen podhodnotí.
 - Pokusy z 20. 10. 2026 v cloudu (oddíl 4): kapsa MT a × b, kapsa PT hloubka h, krok středů
   12 / 6 mm – stávající výpočty `compute_ndt_mt` / `compute_ndt_pt` na kopiích modelu.
+
+### Průběh 15A.2 (20. 10. 2026)
+
+Implementace ve větvi `claude/magical-hawking-h944yz`, zatím **neslučovat**:
+
+- JSON formát 22 s `ndt.design`, validace odkazů, zpětná kompatibilita 1–21;
+- `ModelSession`: uložit zadání s možností Zpět, odhad, výpočty variant v pomocném procesu, průběh, zastavení se zachováním dokončených variant, výběr/uložení prošlé varianty;
+- `BackgroundRebuilder`: zpráva `design` a průběžné předávání variant;
+- `skodacad navrh`: číselné varianty, zámky, podmínky, export HTML a CSV;
+- referenční díl `examples/ndt/navrh_kapsa.json`, regresní testy, návod a pravidlo AI.
+
+Validace: `tests/test_ndt_design_session.py`, `pytest -q` a `ruff check src tests` ve Windows a macOS GitHub Actions. **Výsledek CI ještě není potvrzen.**
