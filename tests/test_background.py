@@ -267,3 +267,49 @@ def test_window_audit_in_background_with_progress_and_stop(window, examples_dir)
     panel.stop_action.trigger()
     assert not session.computing and "Audit byl zastaven" in panel.overview.text()
     assert panel.places.rowCount() == 0  # RT studie nedoběhla – „neprovedeno“
+
+
+@pytest.mark.parametrize("kind", ["pattern", "mirror"])
+def test_late_transaction_failure_repair_and_history_in_background_window(window, tmp_path,
+                                                                       monkeypatch, kind):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QFileDialog
+
+    from test_gui import set_text
+    from transaction_cases import late_failure_document
+
+    source = tmp_path / "source.json"
+    destination = tmp_path / "copy.json"
+    late_failure_document(kind).save(source)
+    original = source.read_bytes()
+    window.open_model(source, template=True)
+    settle(window)
+    assert window.session.result.first_error.id == "bad"
+    assert window.session.result.statuses[-1].status == "skipped"
+    assert window.session.properties.volume_mm3 == pytest.approx(80000 - 40 * math.pi)
+    assert set(window.session.result.sketches) == {"s", "s0", "s1"}
+    assert "Počet těles: 1" in window.props_label.text()
+    item = next(window.tree.topLevelItem(i) for i in range(window.tree.topLevelItemCount())
+                if window.tree.topLevelItem(i).data(0, Qt.UserRole) == "bad")
+    window.tree.setCurrentItem(item)
+    key, value = ("spacing", "-20") if kind == "pattern" else ("offset", "0")
+    set_text(window.feature_editor.form.widget(key), value)
+    settle(window)
+    assert window.session.result.ok and all(t.startswith("✓") for t in tree_texts(window))
+    assert window.session.properties.volume_mm3 == pytest.approx(80000 - 80 * math.pi)
+    window.undo_action.trigger()
+    settle(window)
+    assert window.session.result.first_error.id == "bad"
+    assert window.session.properties.volume_mm3 == pytest.approx(80000 - 40 * math.pi)
+    window.redo_action.trigger()
+    settle(window)
+    assert window.session.result.ok
+    assert window.session.properties.volume_mm3 == pytest.approx(80000 - 80 * math.pi)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(destination), ""))
+    window.save_as_action.trigger()
+    assert destination.is_file()
+    window.open_model(destination)
+    settle(window)
+    assert window.session.result.ok and window.session.properties.solids == 1
+    assert window.session.properties.volume_mm3 == pytest.approx(80000 - 80 * math.pi)
+    assert source.read_bytes() == original

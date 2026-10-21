@@ -1102,10 +1102,11 @@ body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Plán je slou
 [Protokol z 21. 10. 2026](docs/p1-2a-rucni-overeni-macos-2026-10-21.md) dokládá sedm
 vedených zkoušek na Macu a samostatný souhlas se sloučením; [evidence](docs/p1-2a-overeni.md)
 rozlišuje automatické a ruční ověření. Autor 21. 10. 2026 schválil
-[konkrétního návrhu P1.2B](docs/p1-2b-navrh-transakce-kontextu.md), B1–B7, kroky
+[konkrétní návrh P1.2B](docs/p1-2b-navrh-transakce-kontextu.md), B1–B7, kroky
 B.1–B.3 a T01–T14, slovy „ok, schvaluji“. Plán je sloučený v PR #34 (`cbf19b1`).
 Provést B.1–B.3 v samostatném implementačním PR; [evidence](docs/p1-2b-overeni.md)
-rozlišuje ověření a zbývající přijetí. Sloučení implementace vyžaduje další souhlas autora.
+rozlišuje ověření a zbývající přijetí. [Ruční postup](docs/p1-2b-rucni-zkouska.md)
+nenahrazuje skutečné potvrzení autora; sloučení implementace vyžaduje další souhlas autora.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.

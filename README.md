@@ -1109,7 +1109,8 @@ dokládá sedm vedených zkoušek na Macu a samostatný souhlas se sloučením.
 [Konkrétní návrh P1.2B — transakce celého kontextu prvku](docs/p1-2b-navrh-transakce-kontextu.md)
 schválil autor 21. 10. 2026: B1–B7, kroky B.1–B.3 a matice T01–T14.
 Plán je sloučený v PR #34 (`cbf19b1`); [implementace a ověření](docs/p1-2b-overeni.md)
-probíhají v samostatné větvi. P1.3–P1.5, P2 a změna formátu vyžadují samostatné schválení;
+mají samostatnou větev. [Ruční zkouška](docs/p1-2b-rucni-zkouska.md) a souhlas
+se sloučením implementace zůstávají samostatné. P1.3–P1.5, P2 a změna formátu vyžadují samostatné schválení;
 model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
