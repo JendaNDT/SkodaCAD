@@ -1092,19 +1092,22 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Aktuální pokračování (20. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+**Aktuální pokračování (21. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
 Autor 20. 10. 2026 schválil [konkrétní rozsah P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
 body A1–A7, kroky A.1–A.3, testy V1–V14 a ruční přijetí. Plán je sloučený v PR #32
-(`15b8bf4`); implementace A.1–A.3 je připravena v samostatné větvi k ověření a přijetí.
-[Evidence a ruční postup](docs/p1-2a-overeni.md) oddělují místní testy, cílové balíčky
-a dosud neprovedené ruční přijetí autora. P1.2B–P1.5 zůstávají bez schválení implementace.
+(`15b8bf4`); implementace A.1–A.3 je sloučená v PR #33 (`edf9b8e`).
+[Protokol z 21. 10. 2026](docs/p1-2a-rucni-overeni-macos-2026-10-21.md) dokládá sedm
+vedených zkoušek na Macu a samostatný souhlas se sloučením; [evidence](docs/p1-2a-overeni.md)
+rozlišuje automatické a ruční ověření. Autor požádal o přípravu
+[konkrétního návrhu P1.2B](docs/p1-2b-navrh-transakce-kontextu.md), B1–B7, kroky
+B.1–B.3 a T01–T14. Je to návrh ke schválení; implementace P1.2B–P1.5 není schválená.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-Provést schválené P1.2A; další implementaci P1/P2 ani nový formát nezahajovat bez dalšího schválení.
+Předložit návrh P1.2B ke schválení; další implementaci P1/P2 ani nový formát nezahajovat bez dalšího schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
