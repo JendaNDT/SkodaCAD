@@ -1,13 +1,13 @@
 # P1.2B — návrh přijetí celého výpočetního kontextu prvku
 
-**Stav: návrh ke schválení, implementace není povolená.** Datum: 21. 10. 2026.
+**Stav: B1–B7 schválené autorem 21. 10. 2026; implementace B.1–B.3 probíhá.**
 Podklad: `main / edf9b8ec74b7bdbfa98101796564f22624d45532`, sloučené
 [P1.2A / PR #33](https://github.com/JendaNDT/SkodaCAD/pull/33).
 Navazuje na [D5 smlouvy P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md),
 [hranici P1.2A](p1-2a-navrh-spolecne-kontroly-geometrie.md#4-zapojení-bez-částečného-přijetí-kandidáta)
 a R05 v [auditu P0](p0-audit-a-overeni.md#2-registr-rizik-a-omezení).
 
-## 1. Co autor schvaluje
+## 1. Schválený rozsah
 
 Cíl: při chybě jednoho prvku nezůstane ve výpočtu ani část jeho tělesa, ani
 nepřijatá skica či záznam operace. Teprve úspěšný celý prvek předá všechny své
@@ -19,7 +19,7 @@ P1.2B automaticky nevrací uživatelskou editaci ani poslední celý úspěšný
 Obnovuje přijatý výpočetní stav před prvkem v právě počítané verzi receptu.
 Zpět/Znovu zůstane samostatným ovládáním historie.
 
-| Bod | Doporučený rozsah k výslovnému schválení |
+| Bod | Schválený rozsah |
 |---|---|
 | **B1 Hranice prvku** | Jedna transakce kolem celého `_run_feature`, pro všechny současné typy včetně skici. Zahrne všechny podoperace díry se závitem, pole a zrcadlení i závěrečnou objemovou kontrolu P1.2A. |
 | **B2 Oddělený kandidát** | Pracovní `BuildContext` s vlastními kontejnery parametrů, skic a operací; samostatná kopie každého seznamu operací a nové `recording`. Původní kontext se mění až po úspěchu. |
@@ -29,8 +29,11 @@ Zpět/Znovu zůstane samostatným ovládáním historie.
 | **B6 Důkazy** | Splnit T01–T14 níže: skutečné analytické případy, řízené chyby, aliasy seznamů, skici, přenos, historie, kompatibilita a srovnání výkonu. Současné regrese se zachovají. |
 | **B7 Předání** | Jedna implementační větev se třemi malými kroky B.1–B.3, po každém Ruff a celý pytest před commitem. Potom oba kompletní workflow a ruční přijetí konkrétního balíčku. Sloučení vyžaduje další souhlas autora. |
 
-Schválení B1–B7 povolí jen níže uvedenou implementaci P1.2B. Nynější pokyn
-„ok, připrav to“ je žádost o návrh, není schválení implementace ani sloučení.
+Autor po předložení B1–B7 a žádosti o souhlas se sloučením návrhového PR odpověděl
+**„ok, schvaluji“**. [PR #34](https://github.com/JendaNDT/SkodaCAD/pull/34) je sloučené
+(`cbf19b1`). Tím jsou povolené kroky B.1–B.3 v samostatném implementačním PR.
+[Evidence P1.2B](p1-2b-overeni.md) rozlišuje výsledky jednotlivých kroků a zbývající
+přijetí. Sloučení implementace vyžaduje další samostatný souhlas autora.
 
 ## 2. Skutečný výchozí stav
 
@@ -220,7 +223,7 @@ P2 přímé modelování, nový průnik, formát 23, STEP import a odborná NDT-
 NDT-16 se neprovádí. P1.2B nemění rozhodnutí o více tělesech, tolerance,
 objemové podmínky ani upozornění NDT.
 
-## 9. Rozsah tohoto návrhového PR
+## 9. Rozsah původního návrhového PR #34
 
 Pouze dokumentace návrhu, doložení přijetí/sloučení P1.2A a odkazy.
 Žádné změny `src/`, testů, ukázkových receptů, závislostí nebo workflow.

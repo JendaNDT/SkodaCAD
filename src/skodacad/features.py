@@ -8,6 +8,7 @@ ukládá do ``ctx``. Chyby hlásí výjimkou ``FeatureError`` s českou zprávou
 
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -85,6 +86,25 @@ class FeatureError(ValueError):
 Operation = tuple[Part, str]
 
 
+def _same_input(before: Any, after: Any) -> bool:
+    """Přesná neměnnost vstupu, včetně typů a pořadí; 1 není True.
+
+    Nezměněný NaN v nepoužitém metadatu zůstane stejným objektem. Kontrola
+    konečnosti geometrických hodnot nadále patří do num a inspect_volume.
+    """
+    if type(before) is not type(after):
+        return False
+    if before is after:
+        return True
+    if isinstance(before, dict):
+        return tuple(before) == tuple(after) and all(
+            _same_input(value, after[key]) for key, value in before.items())
+    if isinstance(before, (list, tuple)):
+        return len(before) == len(after) and all(
+            _same_input(a, b) for a, b in zip(before, after, strict=True))
+    return before == after
+
+
 @dataclass
 class BuildContext:
     """Stav během přepočtu modelu."""
@@ -96,6 +116,37 @@ class BuildContext:
     # podle toho opakují prvky – stejné těleso přidají/odeberou na jiném místě.
     operations: dict[str, list[Operation]] = field(default_factory=dict)
     recording: list[Operation] | None = None  # operace právě počítaného prvku
+
+    def _fork_for_feature(self, feature: dict[str, Any]) -> tuple[BuildContext, dict[str, Any]]:
+        """Vlastní kontejnery prvku; přijaté nativní tvary jsou jen pro čtení.
+
+        Změna tvaru/roviny na místě vyžaduje vlastní kopii. Nekopírujeme celý
+        graf OCCT ani historii; kopie každého seznamu chrání i jeho staré aliasy.
+        """
+        candidate = BuildContext(
+            params=self.params.copy(), part=self.part, sketches=self.sketches.copy(),
+            operations={key: list(ops) for key, ops in self.operations.items()}, recording=[])
+        return candidate, copy.deepcopy(feature)
+
+    def _accept_feature(self, candidate: BuildContext, original: dict[str, Any],
+                        computed: dict[str, Any]) -> None:
+        """Přijme celý prvek až po jeho závěrečné geometrické kontrole."""
+        if not _same_input(self.params, candidate.params):
+            raise FeatureError("Vnitřní chyba prvku: změnil vstupní parametry. "
+                               "Použij Zpět a zkus přepočet.")
+        if not _same_input(original, computed):
+            raise FeatureError("Vnitřní chyba prvku: změnil své zadání. "
+                               "Použij Zpět a zkus přepočet.")
+        if candidate.recording is None:
+            raise FeatureError("Vnitřní chyba prvku: chybí záznam operací. "
+                               "Použij Zpět a zkus přepočet.")
+        operations = candidate.operations.copy()
+        operations[original["id"]] = list(candidate.recording)
+        # Vše, co může selhat, proběhlo před zápisem do přijatého kontextu.
+        self.part = candidate.part
+        self.sketches = candidate.sketches
+        self.operations = operations
+        # params a původní recording rodiče zůstávají nedotčené.
 
     def num(self, value: Any) -> float:
         number = evaluate(value, self.params)
