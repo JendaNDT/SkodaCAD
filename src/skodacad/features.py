@@ -8,6 +8,7 @@ ukládá do ``ctx``. Chyby hlásí výjimkou ``FeatureError`` s českou zprávou
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -48,6 +49,14 @@ from build123d import (
 )
 
 from skodacad.expressions import evaluate
+from skodacad.geometry_validation import (
+    GeometryValidationError,
+    VolumeFacts,
+    check_boolean,
+    check_cut_volume,
+    check_modification,
+    inspect_volume,
+)
 from skodacad.holes import KINDS as HOLE_KINDS
 from skodacad.holes import HoleError, HoleShape, hole_shape, point_height
 from skodacad.holes import summary as hole_summary
@@ -89,7 +98,11 @@ class BuildContext:
     recording: list[Operation] | None = None  # operace právě počítaného prvku
 
     def num(self, value: Any) -> float:
-        return evaluate(value, self.params)
+        number = evaluate(value, self.params)
+        if not math.isfinite(number):
+            raise FeatureError("Geometrická hodnota musí být konečné reálné číslo – "
+                               "zkontroluj parametr nebo výraz.")
+        return number
 
     def positive(self, feature: dict[str, Any], key: str, label: str) -> float:
         value = self.num(required(feature, key))
@@ -109,36 +122,36 @@ class BuildContext:
         return self.sketches[sketch_id]
 
     def apply(self, solid: Part, operation: str, label: str,
-              empty_cut: str = "zkontroluj rovinu skici, směr („direction“) a hloubku") -> None:
+              empty_cut: str = "zkontroluj rovinu skici, směr („direction“) a hloubku", *,
+              empty_add: str = "změň polohu nebo rozměry přídavku") -> None:
         """Přidá nebo odebere těleso ``solid`` z dílu podle ``operation``.
 
         ``empty_cut`` je rada pro uživatele, když řez nic neodebere."""
-        if operation == "new":
-            if self.part is not None:
-                raise FeatureError(
-                    f"{label}: díl už existuje. Použij \"operation\": \"add\" nebo \"cut\"."
-                )
-            if solid.volume <= 1e-9:
-                raise FeatureError(f"{label}: těleso nemá žádný objem – zkontroluj rozměry "
-                                   "skici a vzdálenost.")
-            self.part = solid
-        elif operation == "add":
-            if solid.volume <= 1e-9:  # neplatný tvar se při sjednocení tiše ztratí
-                raise FeatureError(f"{label}: těleso nemá žádný objem – zkontroluj rozměry "
-                                   "skici a vzdálenost.")
-            self.part = solid if self.part is None else self.part + solid
-        elif operation == "cut":
-            part = self.require_part(label)
-            result = part - solid
-            if abs(part.volume - result.volume) < 1e-9 * max(1.0, part.volume):
-                raise FeatureError(f"{label}: řez neodebral žádný materiál – {empty_cut}.")
-            if result.volume < 1e-9 * max(1.0, part.volume):
-                raise FeatureError(
-                    f"{label}: řez by odebral celý díl – zmenši skicu nebo hloubku řezu."
-                )
-            self.part = result
-        else:
+        if operation not in ("new", "add", "cut"):
             raise FeatureError(f"Neznámá operace „{operation}“, povolené: new, add, cut.")
+        if operation == "new" and self.part is not None:
+            raise FeatureError(
+                f"{label}: díl už existuje. Použij \"operation\": \"add\" nebo \"cut\"."
+            )
+        if operation == "cut":
+            self.require_part(label)
+        try:
+            before = inspect_volume(self.part) if self.part is not None else None
+            tool = inspect_volume(solid)
+            if operation == "cut":
+                candidate = self.part - solid
+                check_cut_volume(before.volume, candidate.volume, empty_cut)
+            else:
+                candidate = solid if self.part is None else self.part + solid
+            result = tool if candidate is solid else inspect_volume(candidate)
+            check_boolean(operation, before, tool, result,
+                          empty_cut=empty_cut, empty_add=empty_add)
+        except GeometryValidationError as exc:
+            raise FeatureError(f"{label}: {exc}") from None
+        except Exception as exc:  # noqa: BLE001 – jádro nesmí přijmout částečný výsledek
+            raise FeatureError(f"{label}: geometrickou operaci se nepodařilo spočítat – "
+                               "uprav polohu nebo rozměry prvku.") from exc
+        self.part = candidate
         if self.recording is not None:
             self.recording.append((solid, "cut" if operation == "cut" else "add"))
 
@@ -151,6 +164,10 @@ class FeatureType:
 
 
 FEATURE_TYPES: dict[str, FeatureType] = {}
+# Každý 3D typ musí projít závěrečnou kontrolou i tehdy, když nevolá ctx.apply.
+# Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
+VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
+                             "pattern", "mirror", "fillet", "chamfer", "shell"))
 
 
 def feature(name: str, label_cz: str):
@@ -625,49 +642,72 @@ def _coplanar(face: Any, section: Any) -> bool:
 # --- Úpravy hran a stěn ----------------------------------------------------------
 
 
+def _modification_input(ctx: BuildContext, label: str) -> tuple[Part, VolumeFacts]:
+    part = ctx.require_part(label)
+    try:
+        return part, inspect_volume(part)
+    except GeometryValidationError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+
+
+def _accept_modification(ctx: BuildContext, candidate: Part, before: VolumeFacts,
+                         label: str, *, shell: bool = False) -> None:
+    try:
+        check_modification(before, inspect_volume(candidate), shell=shell)
+    except GeometryValidationError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    ctx.part = candidate
+
+
 @feature("fillet", "Zaoblení")
 def build_fillet(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Zaoblení")
+    part, before = _modification_input(ctx, "Zaoblení")
     radius = ctx.positive(feature, "radius", "Poloměr zaoblení")
     edges = select_edges(part, required(feature, "edges"), ctx.num)
     try:
-        ctx.part = fillet(edges, radius)
+        candidate = fillet(edges, radius)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Zaoblení R{radius:g} se nepodařilo na {len(edges)} hranách – poloměr je "
             "nejspíš větší, než dovoluje okolní geometrie."
         ) from None
+    _accept_modification(ctx, candidate, before, "Zaoblení")
 
 
 @feature("chamfer", "Sražení")
 def build_chamfer(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Sražení")
+    part, before = _modification_input(ctx, "Sražení")
     distance = ctx.positive(feature, "distance", "Velikost sražení")
     edges = select_edges(part, required(feature, "edges"), ctx.num)
     try:
-        ctx.part = chamfer(edges, distance)
+        candidate = chamfer(edges, distance)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Sražení {distance:g} mm se nepodařilo na {len(edges)} hranách – je nejspíš "
             "větší, než dovoluje okolní geometrie."
         ) from None
+    _accept_modification(ctx, candidate, before, "Sražení")
 
 
 @feature("shell", "Skořepina")
 def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
-    part = ctx.require_part("Skořepina")
+    part, before = _modification_input(ctx, "Skořepina")
     thickness = ctx.positive(feature, "thickness", "Tloušťka stěny")
     open_faces = feature.get("open_faces", [])
     if not isinstance(open_faces, list):
         raise FeatureError("„open_faces“ musí být seznam ploch, např. [\"top\"].")
+    if not open_faces:
+        raise FeatureError("Skořepina potřebuje alespoň jednu otevřenou plochu – "
+                           "vyber plochu, kterou chceš odstranit.")
     openings = [face for name in open_faces for face in select_faces(part, name)]
     try:
-        ctx.part = offset(part, amount=-thickness, openings=openings)
+        candidate = offset(part, amount=-thickness, openings=openings)
     except Exception:  # noqa: BLE001
         raise FeatureError(
             f"Skořepina s tloušťkou {thickness:g} mm se nepodařila – stěna je nejspíš "
             "silnější, než dovolují zaoblení nebo malé detaily dílu."
         ) from None
+    _accept_modification(ctx, candidate, before, "Skořepina", shell=True)
 
 
 # --- Normalizované díly ----------------------------------------------------------------
@@ -900,10 +940,9 @@ def build_mirror(ctx: BuildContext, feature: dict[str, Any]) -> None:
         _repeat(ctx, operations, [lambda s: s.mirror(plane)], "Zrcadlení",
                 "zrcadlený prvek leží mimo díl nebo na stejném místě, zkontroluj rovinu")
         return
-    ctx.apply(part.mirror(plane), "add", "Zrcadlení")  # celý díl: druhá polovina dílu
-    if abs(ctx.part.volume - part.volume) < 1e-6 * max(1.0, part.volume):
-        raise FeatureError("Zrcadlení celého dílu nic nepřidalo – díl je podle této roviny už "
-                           "souměrný. Zvol jinou rovinu nebo ji posuň.")
+    ctx.apply(part.mirror(plane), "add", "Zrcadlení",  # celý díl: druhá polovina dílu
+              empty_add="díl je podle této roviny už souměrný v mezích tolerance; "
+                        "zvol jinou rovinu nebo ji posuň")
 
 
 def short_label(feature: dict[str, Any]) -> str:

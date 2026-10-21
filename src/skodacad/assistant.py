@@ -435,6 +435,8 @@ def build_report(session: Any) -> str:
             line += f" – CHYBA: {status.message}"
         elif status.status == "skipped":
             line += " – přeskočeno (kvůli chybě výš)"
+        elif status.message:
+            line += f" – {status.message}"
         lines.append(line)
     if params:
         lines.append("Parametry (vyčíslené): " + ", ".join(f"{k} = {v:g}"

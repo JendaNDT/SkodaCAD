@@ -1101,9 +1101,10 @@ Další vývoj řídí [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyv
 P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni.md) a je sloučené v PR #30.
 Autor 20. 10. 2026 schválil [P1.1 — smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md),
 rozhodnutí D1–D7 a matici budoucích testů (sloučené PR #31). P1.1 je dokončeno bez změny chování aplikace.
-Ke schválení je připraven [konkrétní návrh P1.2A — společná kontrola geometrie](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md),
-včetně změn, regresí a podmínek přijetí; implementace zatím nezačala.
-Následná implementace P1.2–P1.5, P2 a změna formátu vyžadují samostatné schválení;
+Autor 20. 10. 2026 schválil [P1.2A — společnou kontrolu geometrie](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md)
+včetně bodů A1–A7; plán je sloučený v PR #32. Implementace A.1–A.3 je připravena k ověření;
+[výsledky a ruční postup](docs/p1-2a-overeni.md) rozlišují automatické testy a přijetí autora.
+Následná implementace P1.2B–P1.5, P2 a změna formátu vyžadují samostatné schválení;
 model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).

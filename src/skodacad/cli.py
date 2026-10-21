@@ -938,7 +938,7 @@ def _build(args: argparse.Namespace) -> int:
     print("Strom prvků:")
     for status in result.statuses:
         line = f"  {_ICONS[status.status]} {status.label}"
-        if status.status == "error":
+        if status.status in ("ok", "error") and status.message:
             line += f" – {status.message}"
         print(line)
 
@@ -995,8 +995,7 @@ def _print_properties(result: BuildResult, material: str) -> None:
         print(f"  Hmotnost:  {props.mass_kg:.3f} kg ({material}, {props.density_g_cm3} g/cm³)")
     print(f"  Rozměry:   {sx:.2f} × {sy:.2f} × {sz:.2f} mm")
     print(f"  Těžiště:   X {cx:.2f}  Y {cy:.2f}  Z {cz:.2f} mm")
-    if props.solids != 1:
-        print(f"  Pozor: díl se skládá z {props.solids} samostatných těles.")
+    print(f"  Počet těles: {props.solids}")
 
 
 if __name__ == "__main__":

@@ -75,17 +75,18 @@ zpřesňuje historická závislost „00–16“ v původním NDT plánu.
 GUI či významu výsledků patří do zvlášť schváleného kroku. P0 je dokončené jako
 technické předání po ověření PR; ruční přijetí a schválení další etapy zůstávají samostatné.
 
-## P1 — bezpečná geometrie (čeká na schválení implementace)
+## P1 — bezpečná geometrie
 
 **P1.1 dokončeno — schváleno autorem 20. 10. 2026:**
 [smlouva geometrických operací](p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí D1–D7 a matice budoucích testů.
 Zachovává existující podporu více solidů. Sloučené dokumentační PR #31 zaznamenává schválení;
 implementace P1.2–P1.5 ani nový formát tím nejsou schválené.
 
-**P1.2A připraveno k posouzení:** [konkrétní návrh společné kontroly geometrie](p1-2a-navrh-spolecne-kontroly-geometrie.md).
-Obsahuje body A1–A7, malé kroky A.1–A.3, regresní sady V1–V14, zprávy GUI/CLI/AI,
-výkonové porovnání a ruční přijetí. Zatím jde výhradně o dokumentaci;
-P1.2B (úplná obnova kontextu) a P1.4 (export/NDT při chybě) zůstávají samostatné.
+**P1.2A schváleno autorem 20. 10. 2026:** [konkrétní rozsah společné kontroly geometrie](p1-2a-navrh-spolecne-kontroly-geometrie.md).
+Body A1–A7 a kroky A.1–A.3 jsou autorizované; plán je sloučený v PR #32 (`15b8bf4`).
+Implementace A.1–A.3 je připravena samostatně k ověření; [evidence P1.2A](p1-2a-overeni.md)
+rozlišuje skutečné výsledky a zbývající přijetí. P1.2B (úplná obnova kontextu) a P1.4 (export/NDT při chybě)
+zůstávají samostatné a jejich implementace není schválená.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.

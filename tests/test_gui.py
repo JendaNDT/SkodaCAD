@@ -9,8 +9,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
-from PySide6.QtCore import QPoint, Signal  # noqa: E402
+from PySide6.QtCore import QPoint, Qt, Signal  # noqa: E402
 
+from body_count_cases import COUNT_CASE_NAMES, body_count_case  # noqa: E402
 from conftest import edge_at, face_at  # noqa: E402
 from skodacad.gui.main_window import HELP_HINT, MainWindow  # noqa: E402
 from skodacad.inspection import number  # noqa: E402
@@ -164,6 +165,44 @@ def test_open_shows_parameters_tree_and_properties(window):
     assert window.windowTitle() == "Plochá příruba (priruba.json) – ŠkodaCAD"
     part, fit = window.viewer.parts[-1]
     assert part is not None and fit
+
+
+@pytest.mark.parametrize("name", COUNT_CASE_NAMES)
+def test_successful_body_counts_are_visible_in_tree_and_properties(window, tmp_path, name):
+    document, volume, count, transitions = body_count_case(name)
+    path = tmp_path / (name + ".json")
+    document.save(path)
+    assert window.open_model(path)
+    assert window.session.result.ok and window.error_label.isHidden()
+    assert f"Počet těles: {count}" in window.props_label.text()
+    assert window.session.properties.volume_mm3 == pytest.approx(volume, rel=1e-9)
+    for index, status in enumerate(window.session.result.statuses):
+        item = window.tree.topLevelItem(index)
+        assert item.text(0).startswith("✓")
+        if status.id in transitions:
+            before, after = transitions[status.id]
+            message = f"Počet těles: {before} → {after}."
+            assert item.text(0).startswith(f"✓  {message} — ")
+            assert message in item.toolTip(0)
+        else:
+            assert "Počet těles:" not in item.text(0)
+
+
+def test_long_feature_name_keeps_body_count_visible_in_a_narrow_tree(window, tmp_path):
+    document, _volume, _count, _transitions = body_count_case("two_regions")
+    long_name = "Velmi dlouhý název vysunutí dvou samostatných kružnic " * 4
+    document.features[-1]["name"] = long_name
+    path = tmp_path / "long-name.json"
+    document.save(path)
+    window.tree.setFixedWidth(300)
+    assert window.open_model(path)
+    QtWidgets.QApplication.processEvents()
+    item = window.tree.topLevelItem(1)
+    rendered = window.tree.fontMetrics().elidedText(
+        item.text(0), Qt.TextElideMode.ElideRight, window.tree.viewport().width() - 40)
+    assert "Počet těles: 0 → 2." in rendered
+    assert long_name not in rendered  # název se nevejde, počet zůstane čitelný
+    assert "Počet těles: 0 → 2." in item.toolTip(0)
 
 
 def test_coverage_panel_compute_hide_export_and_invalidation(ndt_window, tmp_path, monkeypatch,
@@ -711,8 +750,10 @@ def test_new_part_from_scratch(empty_window):
     assert w.tree.topLevelItemCount() == 0
     assert "Vyber prvek" in w.feature_editor.title.text()
     build_box(w)
-    assert tree_texts(w) == ["✓  Skica „Skica 1“", "✓  Vysunutí „Vysunutí 1“"]
-    assert selected_text(w) == "✓  Vysunutí „Vysunutí 1“"  # nový prvek je hned vybraný
+    assert tree_texts(w) == ["✓  Skica „Skica 1“",
+                             "✓  Počet těles: 0 → 1. — Vysunutí „Vysunutí 1“"]
+    # Nový prvek je hned vybraný; jeho nové hlášení nesmí zmizet.
+    assert selected_text(w) == "✓  Počet těles: 0 → 1. — Vysunutí „Vysunutí 1“"
     assert "Vysunutí" in w.feature_editor.title.text()
     assert "Objem:  12 000 mm³" in w.props_label.text()
     assert w.viewer.parts[-1][0] is not None
@@ -864,7 +905,7 @@ def test_fillet_from_clicked_edge(empty_window):
     w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
     assert fillet.isEnabled()
     fillet.trigger()
-    assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Zaoblení „Zaoblení 1“"
     assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
@@ -950,7 +991,7 @@ def test_hole_from_clicked_face_and_size_change(empty_window):
     build_box(w)
     w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
     action(w, "Díra na vybrané ploše").trigger()
-    assert selected_text(w) == "✓  Díra „Díra 1“ – M6 závit"
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Díra „Díra 1“ – M6 závit"
     size = form_field(w, "size")
     assert size.currentData() == "M6"
     size.setCurrentIndex(size.findData("M3"))  # menší závit → menší vrták Ø2,5
@@ -974,7 +1015,7 @@ def test_modeled_thread_checkbox(empty_window):
     form_field(w, "modeled_thread").setChecked(True)
     hole = w.session.feature("hole1")
     assert hole["modeled_thread"] is True
-    assert selected_text(w).endswith("M12 závit (vymodelovaný)")
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Díra „Díra 1“ – M12 závit (vymodelovaný)"
     assert w.session.result.ok
     assert w.session.properties.volume_mm3 < before  # drážka závitu ubrala materiál
 
@@ -988,7 +1029,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     positions.editingFinished.emit()
     one = 40 * 30 * 10 - w.session.properties.volume_mm3
     action(w, "Pole").trigger()  # vybraná je díra → pole ji rovnou opakuje
-    assert selected_text(w) == "✓  Pole „Pole 1“ – v řadě, 3 ks"
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Pole „Pole 1“ – v řadě, 3 ks"
     form = w.feature_editor.form
     assert form.widget("features").findChild(QtWidgets.QCheckBox, "feature_hole1").isChecked()
     assert form.is_shown("spacing") and not form.is_shown("axis")
@@ -998,7 +1039,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     kind.setCurrentIndex(kind.findData("circular"))  # 3× dokola kolem osy Z
     assert form.is_shown("axis") and form.is_shown("center") and not form.is_shown("spacing")
     assert w.session.feature("pattern1")["kind"] == "circular"
-    assert selected_text(w) == "✓  Pole „Pole 1“ – dokola, 3 ks"
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Pole „Pole 1“ – dokola, 3 ks"
     set_text(form_field(w, "center").findChild(QtWidgets.QLineEdit, "point_z"), "4")
     assert w.session.feature("pattern1")["center"] == [0, 0, 4]
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
@@ -1010,7 +1051,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     assert "features" not in w.session.feature("mirror1")
     plane = form_field(w, "plane")
     plane.setCurrentIndex(plane.findData("right"))
-    assert selected_text(w) == "✓  Zrcadlení „Zrcadlení 1“ – celý díl"
+    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Zrcadlení „Zrcadlení 1“ – celý díl"
     assert w.session.properties.volume_mm3 == pytest.approx(2 * (40 * 30 * 10 - 3 * one))
 
 
@@ -1046,7 +1087,8 @@ def test_sweep_form_path_and_profile(empty_window):
     assert feature["path"] == [[0, 0, 0], [100, 0, 0], [100, 100, 0]]
     assert "bend_radius" not in feature and feature["diameter"] == 30  # skryté zůstane
     assert w.session.properties.volume_mm3 == pytest.approx((40 * 20 - 36 * 16) * 200)
-    assert selected_text(w) == "✓  Tažení „Tažení 1“ – jekl 40 × 20 × 2, trasa z 3 bodů"
+    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Tažení „Tažení 1“"
+                                 " – jekl 40 × 20 × 2, trasa z 3 bodů")
     path.setPlainText("0; 0\n1; 1")  # bod bez z
     path.editingFinished.emit()
     assert "x; y; z" in w.statusBar().currentMessage()
@@ -1079,8 +1121,8 @@ def test_standard_part_form_switches_sizes_by_kind(empty_window):
     d, big, width = BEARING["608"]
     assert w.session.properties.volume_mm3 == pytest.approx(
         math.pi / 4 * (big**2 - d**2) * width)
-    assert selected_text(w) == ("✓  Normalizovaný díl „Normalizovaný díl 1“ – ložisko 608 "
-                                "(8 × 22 × 7)")
+    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Normalizovaný díl „Normalizovaný díl 1“"
+                                " – ložisko 608 (8 × 22 × 7)")
 
 
 def test_nut_pocket_from_form(empty_window):
@@ -1103,7 +1145,8 @@ def test_nut_pocket_from_form(empty_window):
     s, m = NUT["M6"]
     assert w.session.properties.volume_mm3 == pytest.approx(
         40 * 30 * 10 - math.sqrt(3) / 2 * (s + 0.4)**2 * (m + 0.2))
-    assert selected_text(w) == "✓  Normalizovaný díl „Normalizovaný díl 1“ – ISO 4032 M6 (kapsa)"
+    assert selected_text(w) == ("✓  Počet těles: 1 → 1. — Normalizovaný díl „Normalizovaný díl 1“"
+                                 " – ISO 4032 M6 (kapsa)")
 
 
 def test_loft_form_picks_sketches_in_order(empty_window):
@@ -1118,7 +1161,8 @@ def test_loft_form_picks_sketches_in_order(empty_window):
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 30)
     set_text(form_field(w, "wall"), "2")
     assert w.session.properties.volume_mm3 == pytest.approx((40 * 30 - 36 * 26) * 30, rel=1e-6)
-    assert selected_text(w) == "✓  Přechod „Přechod 1“ – mezi 2 skicami, dutý 2 mm"
+    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Přechod „Přechod 1“"
+                                 " – mezi 2 skicami, dutý 2 mm")
     first.setChecked(False)
     assert "zaškrtni aspoň 2 skici" in w.statusBar().currentMessage()
     assert w.session.feature("loft1")["sketches"] == ["sketch1", "sketch2"]

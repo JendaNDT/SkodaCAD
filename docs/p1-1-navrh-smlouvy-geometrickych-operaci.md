@@ -6,7 +6,7 @@ Autor v tomto rozhovoru potvrdil předložená rozhodnutí D1–D7 a matici test
 samostatně schválený konkrétní rozsah. Modelový formát zůstává ve verzi 22.
 Vychází z `main` / `e58d6283a69b51c2e19c9fece2de0e7977ce07f6`, po sloučení
 [PR #30](https://github.com/JendaNDT/SkodaCAD/pull/30). Navazuje na
-[roadmapu P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie-čeká-na-schválení-implementace)
+[roadmapu P1](roadmapa-vyvoje.md#p1--bezpečná-geometrie)
 a [rizika P0](p0-audit-a-overeni.md#2-registr-rizik-a-omezení).
 
 ## 1. Schválená rozhodnutí autora
@@ -233,8 +233,9 @@ jen proto, že se začaly kontrolovat booleovské výsledky.
 | P1.5 | Celá referenční sada, kompatibilita, oba systémy a ruční přijetí. | Ruff, celý pytest, Windows/macOS sestavení i test stažených balíčků, ruční protokol; vypsané zbývající meze. |
 
 Konkrétní změny, pořadí, testy a kritéria přijetí jsou rozpracované
-v [návrhu P1.2A ke schválení](p1-2a-navrh-spolecne-kontroly-geometrie.md).
-Implementace tohoto návrhu zatím nezačala. Schválená smlouva nepředepisuje novou
+ve [schváleném rozsahu P1.2A](p1-2a-navrh-spolecne-kontroly-geometrie.md).
+Autor schválil A1–A7 dne 20. 10. 2026; implementace probíhá samostatně.
+Schválená smlouva nepředepisuje novou
 architekturu tříd ani nový přenášený či uložený datový formát.
 
 ## 9. Kompatibilita a kritéria dokončení P1.1
