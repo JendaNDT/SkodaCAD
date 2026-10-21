@@ -1102,8 +1102,12 @@ P0 obsahuje [audit, rizika, baseline a ruční zkoušky](docs/p0-audit-a-overeni
 Autor 20. 10. 2026 schválil [P1.1 — smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md),
 rozhodnutí D1–D7 a matici budoucích testů (sloučené PR #31). P1.1 je dokončeno bez změny chování aplikace.
 Autor 20. 10. 2026 schválil [P1.2A — společnou kontrolu geometrie](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md)
-včetně bodů A1–A7; plán je sloučený v PR #32. Implementace A.1–A.3 je připravena k ověření;
-[výsledky a ruční postup](docs/p1-2a-overeni.md) rozlišují automatické testy a přijetí autora.
+včetně bodů A1–A7; plán je sloučený v PR #32. Implementace A.1–A.3 je sloučená v
+[PR #33](https://github.com/JendaNDT/SkodaCAD/pull/33) jako `edf9b8e`;
+[protokol autora z 21. 10. 2026](docs/p1-2a-rucni-overeni-macos-2026-10-21.md)
+dokládá sedm vedených zkoušek na Macu a samostatný souhlas se sloučením.
+[Konkrétní návrh P1.2B — transakce celého kontextu prvku](docs/p1-2b-navrh-transakce-kontextu.md)
+je připravený ke schválení: B1–B7, kroky B.1–B.3 a matice T01–T14.
 Následná implementace P1.2B–P1.5, P2 a změna formátu vyžadují samostatné schválení;
 model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`

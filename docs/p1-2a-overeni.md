@@ -1,5 +1,12 @@
 # P1.2A — implementace a ověření
 
+**Aktualizace 21. 10. 2026:** implementace je sloučená v [PR #33](https://github.com/JendaNDT/SkodaCAD/pull/33)
+(`edf9b8e`). [Závěrečný protokol autora](p1-2a-rucni-overeni-macos-2026-10-21.md)
+dokládá sedm vedených zkoušek na Macu i samostatné schválení sloučení. Obě cílové
+kontroly testované hlavy prošly; podrobné výsledky jsou v popisu PR #33.
+Následující původní evidence zachycuje stav při přípravě implementačního commitu;
+její tehdejší čekající ruční přijetí nahrazuje uvedený protokol.
+
 Autor 20. 10. 2026 schválil [rozsah A1–A7](p1-2a-navrh-spolecne-kontroly-geometrie.md)
 slovy „ok, schvaluji“. Dokumentační PR #32 je sloučený jako `15b8bf4`.
 Implementace má vlastní větev `codex/p1-2a-geometry-validation`.

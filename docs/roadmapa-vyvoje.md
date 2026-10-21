@@ -19,8 +19,10 @@ plánu: zachycuje výslovně potvrzený rámec a rozpracovává jej do ověřite
 aktuálního repozitáře. Konkrétní návrhy níže nejsou dokladem dalšího schválení rozhraní,
 závislostí nebo datového formátu.
 
-**Nyní je povoleno provést P0 bez změny produkčního chování.** P1 ani P2 nezahajovat
-bez dalšího schválení. P3–P8 jsou plán, nikoli součást tohoto PR. Nový formát modelu,
+**Původní povolený rozsah byl P0 bez změny produkčního chování.** Pozdější konkrétní
+schválení a dokončení P1.1/P1.2A jsou zaznamenaná v oddílu P1 níže.
+Další implementaci P1 ani P2 nezahajovat bez dalšího schválení. P3–P8 zůstávají plán.
+Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
 `main` ani automatické slučování bez souhlasu autora.
 
@@ -84,9 +86,15 @@ implementace P1.2–P1.5 ani nový formát tím nejsou schválené.
 
 **P1.2A schváleno autorem 20. 10. 2026:** [konkrétní rozsah společné kontroly geometrie](p1-2a-navrh-spolecne-kontroly-geometrie.md).
 Body A1–A7 a kroky A.1–A.3 jsou autorizované; plán je sloučený v PR #32 (`15b8bf4`).
-Implementace A.1–A.3 je připravena samostatně k ověření; [evidence P1.2A](p1-2a-overeni.md)
-rozlišuje skutečné výsledky a zbývající přijetí. P1.2B (úplná obnova kontextu) a P1.4 (export/NDT při chybě)
-zůstávají samostatné a jejich implementace není schválená.
+Implementace A.1–A.3 je sloučená v [PR #33](https://github.com/JendaNDT/SkodaCAD/pull/33)
+(`edf9b8e`); [protokol z 21. 10. 2026](p1-2a-rucni-overeni-macos-2026-10-21.md)
+dokládá sedm vedených zkoušek autora na Macu i samostatný souhlas se sloučením.
+[Evidence P1.2A](p1-2a-overeni.md) rozlišuje automatické a ruční výsledky.
+
+**P1.2B — návrh ke schválení (21. 10. 2026):**
+[transakce celého kontextu prvku](p1-2b-navrh-transakce-kontextu.md), rozhodnutí B1–B7,
+kroky B.1–B.3, matice T01–T14. Příprava návrhu je autorizovaná; implementace
+P1.2B ani P1.4 (export/NDT při chybě) není tímto schválená.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.

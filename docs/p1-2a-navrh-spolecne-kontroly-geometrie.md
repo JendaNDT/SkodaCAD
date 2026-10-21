@@ -1,6 +1,9 @@
 # P1.2A — konkrétní návrh společné kontroly geometrie
 
-**Stav: A1–A7 schváleno autorem 20. 10. 2026; implementace probíhá.**
+**Stav: A1–A7 schváleno autorem 20. 10. 2026; implementace sloučená v PR #33 (`edf9b8e`).**
+[Protokol z 21. 10. 2026](p1-2a-rucni-overeni-macos-2026-10-21.md) dokládá vedené
+ruční přijetí a souhlas se sloučením. Technický popis níže zůstává původním návrhem
+vůči tehdejšímu výchozímu stavu, nikoli novým rozsahem P1.2B.
 Podklad: `main / 6e38d0681ac495c08189cd6f129cafe7166a2c7a`, po sloučení
 [PR #31](https://github.com/JendaNDT/SkodaCAD/pull/31).
 Závazná pravidla jsou ve [schválené smlouvě P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md);
