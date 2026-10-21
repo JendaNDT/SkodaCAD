@@ -34,7 +34,7 @@ Regrese doplní audit hodnotovým ověřením polohy, materiálu, skic a nástro
 | Krok | Stav |
 |---|---|
 | B.1 | Oddělení kontejnerů a neměnnosti vstupů; 13 cílených zkoušek / 0,08 s. Ruff OK, celý pytest **1 279 prošlo / 415,02 s**, bez přeskočení. Hranice `_run_feature` se v tomto kroku zatím nepřepojuje. |
-| B.2 | Čeká na dokončení B.1. |
+| B.2 | Hranice `_run_feature` přijímá celý kandidát až po validaci. Cílených 79 zkoušek / 0,66 s; Ruff OK, celý pytest **1 300 prošlo / 414,59 s**, bez přeskočení. Pozdní chyby pole, zrcadlení i závitu zachovají kontext včetně starých aliasů. |
 | B.3 | Čeká na dokončení B.2. |
 
 Před změnou produkčního kódu vznikla nová baseline stávajícího měřiče P0

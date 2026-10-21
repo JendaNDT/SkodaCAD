@@ -121,19 +121,14 @@ def _run_feature(ctx: BuildContext, feature: dict[str, Any]) -> str | None:
         known = ", ".join(FEATURE_TYPES)
         return f"Neznámý typ prvku „{feature['type']}“, umím: {known}."
 
-    part_before = ctx.part
-    ctx.recording = []  # co prvek s dílem udělá – pro pole a zrcadlení
     try:
-        feature_type.build(ctx, feature)
+        candidate, working_feature = ctx._fork_for_feature(feature)
+        feature_type.build(candidate, working_feature)
         if feature["type"] in VOLUME_FEATURES:
-            inspect_volume(ctx.part)
+            inspect_volume(candidate.part)
+        ctx._accept_feature(candidate, feature, working_feature)
     except (FeatureError, ExpressionError, SelectionError, GeometryValidationError) as exc:
-        ctx.part = part_before
         return str(exc)
     except Exception as exc:  # noqa: BLE001 – neočekávaná chyba jádra nesmí shodit program
-        ctx.part = part_before
         return f"Neočekávaná chyba jádra ({type(exc).__name__}: {exc})."
-    finally:
-        recorded, ctx.recording = ctx.recording, None
-    ctx.operations[feature["id"]] = recorded
     return None
