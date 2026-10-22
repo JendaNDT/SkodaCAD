@@ -1108,13 +1108,16 @@ B.1–B.3 jsou dokončené a sloučené v [PR #35](https://github.com/JendaNDT/S
 jako `3a8deff`; [evidence](docs/p1-2b-overeni.md) a
 [protokol autora z 22. 10. 2026](docs/p1-2b-rucni-overeni-macos-2026-10-22.md)
 rozlišují automatické ověření, 17 vedených kontrol na Macu a samostatný pokyn „ok, sluč to“.
-[Konkrétní návrh P1.3](docs/p1-3-navrh-bezpecnych-referenci.md) je **ke schválení**:
-C1–C8, kroky C.1–C.3 a S01–S20; obsahuje záměrná zpřísnění i meze geometrických
-odkazů bez trvalé identity. Implementaci nezahajovat, dokud autor návrh výslovně neschválí.
+[Konkrétní návrh P1.3](docs/p1-3-navrh-bezpecnych-referenci.md) autor 22. 10. 2026
+schválil slovy **„ok, schvaluji vše“**: C1–C8, C.1–C.3, S01–S20 a sloučení
+návrhového PR #36 (`c46d0e2`). Provést C.1–C.3 v samostatném implementačním PR;
+[evidence](docs/p1-3-overeni.md) rozlišuje ověření a zbývající přijetí.
+Schválené meze zahrnují zbytkové riziko historické identity. Sloučení implementace
+vyžaduje další samostatný pokyn autora.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-P1.3–P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
+P1.4/P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 

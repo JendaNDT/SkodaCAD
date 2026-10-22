@@ -100,11 +100,13 @@ je sloučené (`cbf19b1`). Implementace je dokončená a sloučená v
 dokládají oba celé cílové workflow, 17 vedených kontrol autora na Macu a samostatný
 pokyn ke sloučení. R05 je vyřešené pro schválená pole, vlastnictví a podporované cesty B1–B7.
 
-**P1.3 — návrh ke schválení, 22. 10. 2026:**
+**P1.3 — schváleno autorem 22. 10. 2026:**
 [bezpečné vyhodnocování geometrických odkazů](p1-3-navrh-bezpecnych-referenci.md),
 C1–C8, kroky C.1–C.3 a S01–S20. Rozlišuje skupinu od jednoho odkazu, odmítá
 rovnocenné kandidáty a oslabování filtrů. Zachovává formát 22 a přiznává zbytkové
-riziko historické identity. Implementace P1.3 ani P1.4/P1.5 nejsou tímto schválené.
+riziko historické identity. Autor odpověděl „ok, schvaluji vše“ na C1–C8, C.1–C.3,
+S01–S20 a sloučení návrhového PR #36 (`c46d0e2`). [Implementace a ověření](p1-3-overeni.md)
+mají samostatný PR; jeho sloučení vyžaduje další pokyn. P1.4/P1.5 nejsou tímto schválené.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.

@@ -9,8 +9,9 @@ kružnicí o poloměru D/2“. Takový popis platí i po změně parametrů.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from typing import Any
+import math
+from collections.abc import Callable, Iterable
+from typing import Any, TypeVar
 
 from build123d import Axis, Edge, Face, GeomType, Part, Plane, Vector
 
@@ -40,6 +41,8 @@ _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
 _EDGE_TYPES = {"line": GeomType.LINE, "circle": GeomType.CIRCLE}
 _EDGE_KEYS = {"face", "between", "type", "parallel", "radius", "near"}
 _TOLERANCE = 1e-6
+_DISTANCE_TIE = 1e-4  # mm; nerozlišitelnost kandidátů, nikoli mez posunu odkazu
+_Shape = TypeVar("_Shape", Edge, Face)
 
 
 class SelectionError(ValueError):
@@ -47,20 +50,48 @@ class SelectionError(ValueError):
 
 
 def _check_face_name(name: Any) -> str:
-    if name not in FACE_DIRECTIONS:
+    if not isinstance(name, str) or name not in FACE_DIRECTIONS:
         allowed = ", ".join(FACE_DIRECTIONS)
         raise SelectionError(f"Neznámá plocha „{name}“, povolené jsou: {allowed}.")
     return name
 
 
+def unique_shapes(shapes: Iterable[_Shape]) -> list[_Shape]:
+    """Jen opakovaný výskyt téhož tvaru; shodná geometrie jiné identity se neslučuje."""
+    result: list[_Shape] = []
+    for shape in shapes:
+        if not any(shape.is_same(known) for known in result):
+            result.append(shape)
+    return result
+
+
+def _number(value: Any, evaluate: Callable[[Any], float], label: str) -> float:
+    try:
+        number = evaluate(value)
+        if isinstance(value, bool) or isinstance(number, bool):
+            raise ValueError
+        number = float(number)
+        if not math.isfinite(number):
+            raise ValueError
+    except (TypeError, ValueError, OverflowError):
+        raise SelectionError(f"„{label}“ musí být konečné číslo nebo platný výraz.") from None
+    return number
+
+
+def _point(value: Any, evaluate: Callable[[Any], float], label: str) -> Vector:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise SelectionError(f"„{label}“ musí být bod [x, y, z].")
+    return Vector(*(_number(v, evaluate, label) for v in value))
+
+
 def select_faces(part: Part, name: str) -> list[Face]:
     """Všechny rovinné plochy s vnější normálou ve směru ``name``, které leží nejdál."""
     direction = Vector(*FACE_DIRECTIONS[_check_face_name(name)][0])
-    candidates = [
+    candidates = unique_shapes(
         face
         for face in part.faces()
         if face.geom_type == GeomType.PLANE and face.normal_at().dot(direction) > 1 - _TOLERANCE
-    ]
+    )
     if not candidates:
         raise SelectionError(f"Díl nemá žádnou rovinnou {FACE_NAMES_CZ[name]} plochu.")
     extreme = max(face.center().dot(direction) for face in candidates)
@@ -70,7 +101,7 @@ def select_faces(part: Part, name: str) -> list[Face]:
 def face_plane(part: Part, name: str) -> Plane:
     """Rovina skici na pojmenované ploše dílu; souřadnice skici jsou globální."""
     normal, x_dir = FACE_DIRECTIONS[_check_face_name(name)]
-    level = select_faces(part, name)[0].center().dot(Vector(*normal))
+    level = max(face.center().dot(Vector(*normal)) for face in select_faces(part, name))
     origin = Vector(*normal) * level
     return Plane(origin=origin, x_dir=x_dir, z_dir=normal)
 
@@ -89,7 +120,7 @@ def face_plane_at(part: Part, spec: Any) -> Plane:
     jinak vodorovně po ploše (u vodorovné plochy podél osy X dílu).
     """
     face, on_face = find_face(part, spec)
-    at = Vector(*spec["at"])
+    at = _point(spec["at"], float, "at")
     normal = face.normal_at(on_face)
     if face.geom_type == GeomType.PLANE:  # šikmá plocha: počátek = bod promítnutý na ni
         origin = at - normal * (at - on_face).dot(normal)
@@ -110,27 +141,46 @@ def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
     ``spec`` je ``{"at": [x, y, z], "normal": [nx, ny, nz]}``, nepovinně i ``"type"``
     (``plane``, ``cylinder`` …) a ``"radius"``. Hledá se plocha nejbližší bodu ``at``;
     na hraně mezi plochami rozhodne směr. S ``type`` se hledá jen mezi plochami toho druhu
-    (a s ``radius`` přednostně mezi stejně velkými) – díra se tak najde, i když se posune.
+    a se zadaným ``radius`` jen mezi stejně velkými. Rovnocenné kandidáty odmítne;
+    jde o geometrický předpis v aktuálním dílu, nikoli trvalou identitu plochy.
     """
-    try:
-        at = Vector(*(float(v) for v in spec["at"]))
-        hint = Vector(*(float(v) for v in spec.get("normal", (0, 0, 0))))
-    except (KeyError, TypeError, ValueError, AttributeError):
+    if not isinstance(spec, dict) or "at" not in spec:
         raise SelectionError("Plocha musí mít „at“: [x, y, z] (a „normal“).") from None
+    unknown = set(spec) - {"at", "normal", "type", "radius"}
+    if unknown:
+        raise SelectionError("Neznámý klíč v odkazu na plochu: "
+                             + ", ".join(sorted(map(str, unknown))) + ".")
+    at = _point(spec["at"], float, "at")
+    hint = Vector(0, 0, 0)
+    if "normal" in spec:
+        raw = _point(spec["normal"], float, "normal")
+        length = math.hypot(*raw)
+        if not math.isfinite(length) or length == 0:
+            raise SelectionError("„normal“ musí být konečný nenulový směr [nx, ny, nz].")
+        hint = Vector(*(v / length for v in raw))
+    kind = None
+    if "type" in spec:
+        name = spec["type"]
+        if not isinstance(name, str) or name not in FACE_TYPES:
+            raise SelectionError(f"Neznámý typ plochy „{name}“, povolené: "
+                                 + ", ".join(FACE_TYPES) + ".")
+        kind = FACE_TYPES[name]
+    radius = None
+    if "radius" in spec:
+        radius = _number(spec["radius"], float, "radius")
+        if radius <= 0 or kind not in _ROUND_TYPES:
+            raise SelectionError("„radius“ musí být kladný poloměr plochy cylinder nebo sphere.")
     from build123d import Vertex
 
-    faces = list(part.faces())
-    kind = FACE_TYPES.get(spec.get("type"))
+    faces = unique_shapes(part.faces())
     if kind is not None:
         faces = [face for face in faces if face.geom_type == kind]
-        if "radius" in spec and kind in _ROUND_TYPES:
-            radius = float(spec["radius"])
-            same = [face for face in faces if abs(face.radius - radius) < 1e-6 * max(1, radius)]
-            faces = same or faces  # parametr průměr změnil – vezme se nejbližší stejného druhu
+        if radius is not None:
+            faces = [face for face in faces
+                     if abs(face.radius - radius) < _TOLERANCE * max(1, radius)]
         if kind == GeomType.PLANE and hint.length > 0:  # rovina se pozná hlavně podle směru
-            same = [face for face in faces
-                    if face.normal_at().dot(hint.normalized()) > 1 - 1e-6]
-            faces = same or faces  # posunutá plocha (deska je tlustší) se najde i daleko
+            faces = [face for face in faces
+                     if face.normal_at().dot(hint) > 1 - _TOLERANCE]
     found = []
     for face in faces:
         distance, on_face, _ = face.distance_to_with_closest_points(Vertex(at))
@@ -139,8 +189,16 @@ def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
         raise SelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není – vyber ji znovu "
                              "ve 3D.")
     nearest = min(distance for distance, _, _ in found)
-    close = [(face, on_face) for distance, face, on_face in found if distance <= nearest + 1e-4]
-    face, on_face = max(close, key=lambda item: item[0].normal_at(item[1]).dot(hint))
+    close = [(face, on_face) for distance, face, on_face in found
+             if distance <= nearest + _DISTANCE_TIE]
+    scored = [(face.normal_at(point).dot(hint), face, point) for face, point in close]
+    best = max(score for score, _, _ in scored)
+    winners = [(face, point) for score, face, point in scored if score >= best - _TOLERANCE]
+    if len(winners) != 1:
+        raise SelectionError(f"Plocha u bodu [{_short(at)}] není jednoznačná: popisu odpovídá "
+                             f"{len(winners)} stejně vhodných ploch. Vyber ji znovu ve 3D "
+                             "kousek dál od hrany.")
+    face, on_face = winners[0]
     normal = face.normal_at(on_face)
     loose = kind in _ROUND_TYPES or kind == GeomType.CONE  # díra pozná se podle druhu a velikosti
     if hint.length > 0 and not loose and normal.dot(hint.normalized()) < 0.5:
@@ -200,15 +258,23 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
     * ``near``: bod ``[x, y, z]`` – z hran, které zbydou, jen ta nejbližší k bodu
       (rozliší třeba jednu ze čtyř stejných děr)
     """
+    edges: list[Edge] = []
+    for item in _edge_specs(spec, evaluate):
+        _add_unique(edges, _select_edges(part, item))
+    return edges
+
+
+def _edge_specs(spec: Any, evaluate: Callable[[Any], float]) -> list[dict[str, Any]]:
+    """Nejdřív ověřit a vyčíslit celý předpis; geometrie nesmí maskovat vadný vstup."""
     if isinstance(spec, list):
         if not spec:
             raise SelectionError("Seznam výběrů hran je prázdný.")
-        edges: list[Edge] = []
+        result = []
         for item in spec:
             if isinstance(item, list):
                 raise SelectionError("Seznam výběrů hran nesmí obsahovat další seznam.")
-            _add_unique(edges, select_edges(part, item, evaluate))
-        return edges
+            result.extend(_edge_specs(item, evaluate))
+        return result
     if spec == "all":
         spec = {}
     if not isinstance(spec, dict):
@@ -216,35 +282,52 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
     unknown = set(spec) - _EDGE_KEYS
     if unknown:
         raise SelectionError(
-            f"Neznámý klíč ve výběru hran: {', '.join(sorted(unknown))} "
+            f"Neznámý klíč ve výběru hran: {', '.join(sorted(map(str, unknown)))} "
             f"(povolené: {', '.join(sorted(_EDGE_KEYS))})."
         )
 
+    spec = dict(spec)
     if "face" in spec:
-        edges = face_edges(part, spec["face"])
-    else:
-        edges = list(part.edges())
-
+        _check_face_name(spec["face"])
     if "between" in spec:
         names = spec["between"]
         if not isinstance(names, list) or len(names) != 2:
             raise SelectionError('„between“ musí být dvě plochy, např. ["front", "right"].')
+        for name in names:
+            _check_face_name(name)
+    if "type" in spec:
+        name = spec["type"]
+        if not isinstance(name, str) or name not in _EDGE_TYPES:
+            raise SelectionError(f"Typ hrany „{name}“ neznám, povolené: line, circle.")
+    if "parallel" in spec:
+        name = spec["parallel"]
+        if not isinstance(name, str) or name not in _AXES:
+            raise SelectionError(f"Osa „{name}“ neexistuje, povolené: X, Y, Z.")
+    if "radius" in spec:
+        spec["radius"] = _number(spec["radius"], evaluate, "radius")
+        if spec["radius"] <= 0:
+            raise SelectionError("„radius“ musí být kladný poloměr hrany.")
+    if "near" in spec:
+        spec["near"] = list(_point(spec["near"], evaluate, "near"))
+    return [spec]
+
+
+def _select_edges(part: Part, spec: dict[str, Any]) -> list[Edge]:
+    edges = face_edges(part, spec["face"]) if "face" in spec else unique_shapes(part.edges())
+    if "between" in spec:
+        names = spec["between"]
         first, second = (face_edges(part, name) for name in names)
         edges = [edge for edge in edges
                  if any(edge.is_same(e) for e in first) and any(edge.is_same(e) for e in second)]
 
     if "type" in spec:
-        if spec["type"] not in _EDGE_TYPES:
-            raise SelectionError(f"Typ hrany „{spec['type']}“ neznám, povolené: line, circle.")
         edges = [edge for edge in edges if edge.geom_type == _EDGE_TYPES[spec["type"]]]
 
     if "parallel" in spec:
-        if spec["parallel"] not in _AXES:
-            raise SelectionError(f"Osa „{spec['parallel']}“ neexistuje, povolené: X, Y, Z.")
         edges = [edge for edge in edges if edge_axis(edge) == spec["parallel"]]
 
     if "radius" in spec:
-        radius = evaluate(spec["radius"])
+        radius = spec["radius"]
         edges = [
             edge
             for edge in edges
@@ -253,11 +336,13 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
         ]
 
     if "near" in spec and edges:
-        point = spec["near"]
-        if not isinstance(point, list) or len(point) != 3:
-            raise SelectionError("„near“ musí být bod [x, y, z].")
-        target = Vector(*(evaluate(value) for value in point))
-        edges = [min(edges, key=lambda edge: edge.distance_to(target))]
+        target = Vector(*spec["near"])
+        distances = [(edge.distance_to(target), edge) for edge in edges]
+        nearest = min(distance for distance, _ in distances)
+        edges = [edge for distance, edge in distances if distance <= nearest + _DISTANCE_TIE]
+        if len(edges) != 1:
+            raise SelectionError("Výběr hrany není jednoznačný: stejně blízko jsou "
+                                 f"{len(edges)} hrany. Upřesni výběr nebo ji vyber znovu ve 3D.")
 
     if not edges:
         described = json.dumps(spec, ensure_ascii=False) if spec else '"all"'
