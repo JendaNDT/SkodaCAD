@@ -1,6 +1,10 @@
 # P1.2B — návrh přijetí celého výpočetního kontextu prvku
 
-**Stav: B1–B7 schválené autorem 21. 10. 2026; implementace B.1–B.3 probíhá.**
+**Stav: B1–B7 schválené autorem 21. 10. 2026; B.1–B.3 dokončené a sloučené.**
+[PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35) je po samostatném pokynu
+autora „ok, sluč to“ sloučené jako `3a8deff`;
+[protokol z 22. 10. 2026](p1-2b-rucni-overeni-macos-2026-10-22.md) dokládá ruční přijetí.
+Následující specifikace a podklad popisují původní schválený návrh.
 Podklad: `main / edf9b8ec74b7bdbfa98101796564f22624d45532`, sloučené
 [P1.2A / PR #33](https://github.com/JendaNDT/SkodaCAD/pull/33).
 Navazuje na [D5 smlouvy P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md),
@@ -32,8 +36,8 @@ Zpět/Znovu zůstane samostatným ovládáním historie.
 Autor po předložení B1–B7 a žádosti o souhlas se sloučením návrhového PR odpověděl
 **„ok, schvaluji“**. [PR #34](https://github.com/JendaNDT/SkodaCAD/pull/34) je sloučené
 (`cbf19b1`). Tím jsou povolené kroky B.1–B.3 v samostatném implementačním PR.
-[Evidence P1.2B](p1-2b-overeni.md) rozlišuje výsledky jednotlivých kroků a zbývající
-přijetí. Sloučení implementace vyžaduje další samostatný souhlas autora.
+[Evidence P1.2B](p1-2b-overeni.md) rozlišuje výsledky jednotlivých kroků;
+výše uvedený protokol dokládá následné přijetí a samostatný pokyn ke sloučení implementace.
 
 ## 2. Skutečný výchozí stav
 

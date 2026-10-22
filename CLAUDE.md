@@ -1092,7 +1092,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Aktuální pokračování (21. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+**Aktuální pokračování (22. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
@@ -1104,9 +1104,13 @@ vedených zkoušek na Macu a samostatný souhlas se sloučením; [evidence](docs
 rozlišuje automatické a ruční ověření. Autor 21. 10. 2026 schválil
 [konkrétní návrh P1.2B](docs/p1-2b-navrh-transakce-kontextu.md), B1–B7, kroky
 B.1–B.3 a T01–T14, slovy „ok, schvaluji“. Plán je sloučený v PR #34 (`cbf19b1`).
-Provést B.1–B.3 v samostatném implementačním PR; [evidence](docs/p1-2b-overeni.md)
-rozlišuje ověření a zbývající přijetí. [Ruční postup](docs/p1-2b-rucni-zkouska.md)
-nenahrazuje skutečné potvrzení autora; sloučení implementace vyžaduje další souhlas autora.
+B.1–B.3 jsou dokončené a sloučené v [PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35)
+jako `3a8deff`; [evidence](docs/p1-2b-overeni.md) a
+[protokol autora z 22. 10. 2026](docs/p1-2b-rucni-overeni-macos-2026-10-22.md)
+rozlišují automatické ověření, 17 vedených kontrol na Macu a samostatný pokyn „ok, sluč to“.
+[Konkrétní návrh P1.3](docs/p1-3-navrh-bezpecnych-referenci.md) je **ke schválení**:
+C1–C8, kroky C.1–C.3 a S01–S20; obsahuje záměrná zpřísnění i meze geometrických
+odkazů bez trvalé identity. Implementaci nezahajovat, dokud autor návrh výslovně neschválí.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.

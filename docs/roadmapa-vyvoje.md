@@ -20,7 +20,7 @@ aktuálního repozitáře. Konkrétní návrhy níže nejsou dokladem dalšího 
 závislostí nebo datového formátu.
 
 **Původní povolený rozsah byl P0 bez změny produkčního chování.** Pozdější konkrétní
-schválení a dokončení P1.1/P1.2A jsou zaznamenaná v oddílu P1 níže.
+schválení a dokončení P1.1/P1.2A/P1.2B jsou zaznamenaná v oddílu P1 níže.
 Další implementaci P1 ani P2 nezahajovat bez dalšího schválení. P3–P8 zůstávají plán.
 Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
@@ -94,9 +94,17 @@ dokládá sedm vedených zkoušek autora na Macu i samostatný souhlas se slouč
 **P1.2B — schváleno autorem 21. 10. 2026:**
 [transakce celého kontextu prvku](p1-2b-navrh-transakce-kontextu.md), rozhodnutí B1–B7,
 kroky B.1–B.3, matice T01–T14. Autor odpověděl „ok, schvaluji“ a návrhové PR #34
-je sloučené (`cbf19b1`). Implementace probíhá v samostatné větvi;
-[evidence](p1-2b-overeni.md) uvádí skutečné výsledky a zbývající přijetí.
-Sloučení implementace vyžaduje nový souhlas autora. P1.3/P1.4/P1.5 nejsou tímto schválené.
+je sloučené (`cbf19b1`). Implementace je dokončená a sloučená v
+[PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35) jako `3a8deff`.
+[Evidence](p1-2b-overeni.md) a [protokol z 22. 10. 2026](p1-2b-rucni-overeni-macos-2026-10-22.md)
+dokládají oba celé cílové workflow, 17 vedených kontrol autora na Macu a samostatný
+pokyn ke sloučení. R05 je vyřešené pro schválená pole, vlastnictví a podporované cesty B1–B7.
+
+**P1.3 — návrh ke schválení, 22. 10. 2026:**
+[bezpečné vyhodnocování geometrických odkazů](p1-3-navrh-bezpecnych-referenci.md),
+C1–C8, kroky C.1–C.3 a S01–S20. Rozlišuje skupinu od jednoho odkazu, odmítá
+rovnocenné kandidáty a oslabování filtrů. Zachovává formát 22 a přiznává zbytkové
+riziko historické identity. Implementace P1.3 ani P1.4/P1.5 nejsou tímto schválené.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.

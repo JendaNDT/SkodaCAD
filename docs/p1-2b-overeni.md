@@ -2,8 +2,12 @@
 
 Autor 21. 10. 2026 výslovně schválil [B1–B7, kroky B.1–B.3 a T01–T14](p1-2b-navrh-transakce-kontextu.md)
 slovy „ok, schvaluji“, včetně sloučení návrhového PR #34 (`cbf19b1`).
-Implementace má vlastní větev `codex/p1-2b-feature-transactions` a samostatné PR.
-**Sloučení implementace vyžaduje další souhlas autora.**
+Implementace vznikla ve větvi `codex/p1-2b-feature-transactions` a samostatném
+[PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35). Autor následně potvrdil
+17 vedených kontrol a samostatně povolil sloučení slovy „ok, sluč to“.
+**Sloučeno 22. 10. 2026 jako `3a8deff`.**
+[Protokol přijetí](p1-2b-rucni-overeni-macos-2026-10-22.md) doplňuje skutečné konečné
+Windows/macOS kontroly a rozsah ručního ověření; níže zůstává evidence implementačních kroků.
 
 ## Výchozí stav a vlastnictví
 
@@ -108,17 +112,19 @@ a aktuální stav obou CI běhů jsou zaznamenané v implementačním PR a pří
 
 [Vedená ruční zkouška](p1-2b-rucni-zkouska.md) používá šest připravených modelů:
 pozdní chybu pole, zrcadlení, přírubu, tři trubky, chybu zaoblení a přerušení závitu.
-Jejich objemy/počty i CLI a offline souhrny jsou zkontrolované; skutečné ruční
-přijetí autora zůstává otevřené. Průchod na Macu nenahrazuje ruční Windows test.
+Jejich objemy/počty i CLI a offline souhrny jsou zkontrolované;
+[následný protokol autora](p1-2b-rucni-overeni-macos-2026-10-22.md) dokládá
+dokončené ruční přijetí na Macu. To nenahrazuje ruční Windows test.
 
-## Zbývající přijetí
+## Dokončené přijetí
 
-Konečná hlava implementačního PR musí mít Ruff a celý pytest, úplné Windows
-i macOS workflow včetně self-testu staženého balíčku a protokol vedené ruční
-zkoušky podle schváleného návrhu. Rozpracovaný krok ani starší zelené sestavení
-se nepovažují za dokončené P1.2B.
+Konečná hlava `c30dd09` má Ruff a celý pytest, úplné Windows i macOS workflow
+včetně self-testu staženého balíčku a protokol vedené ruční zkoušky podle
+schváleného návrhu. [Protokol](p1-2b-rucni-overeni-macos-2026-10-22.md) obsahuje
+přesné identity, počty a meze; strom sloučení je shodný s otestovanou hlavou.
 
 Formát zůstává 22; protokol workeru a odborné NDT vymezení se nemění.
 R01/export a NDT při chybě, R03/ukládání, R04/reference, R12/popisek formátu pro AI
-a odborná NDT-17 zůstávají samostatné. R05 se neuzavírá před celým ověřením
-popsané transakční smlouvy. P1.3/P1.4/P2 ani NDT-16 se neimplementují.
+a odborná NDT-17 zůstávají samostatné. R05 je vyřešené pro popsaná pole,
+vlastnictví a podporované cesty B1–B7; nejde o záruku zotavení z libovolné nativní
+havárie nebo chyby budoucího builderu. P1.3/P1.4/P2 ani NDT-16 se tímto neimplementují.
