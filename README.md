@@ -1107,8 +1107,10 @@ včetně bodů A1–A7; plán je sloučený v PR #32. Implementace A.1–A.3 je 
 [protokol autora z 21. 10. 2026](docs/p1-2a-rucni-overeni-macos-2026-10-21.md)
 dokládá sedm vedených zkoušek na Macu a samostatný souhlas se sloučením.
 [Konkrétní návrh P1.2B — transakce celého kontextu prvku](docs/p1-2b-navrh-transakce-kontextu.md)
-je připravený ke schválení: B1–B7, kroky B.1–B.3 a matice T01–T14.
-Následná implementace P1.2B–P1.5, P2 a změna formátu vyžadují samostatné schválení;
+schválil autor 21. 10. 2026: B1–B7, kroky B.1–B.3 a matice T01–T14.
+Plán je sloučený v PR #34 (`cbf19b1`); [implementace a ověření](docs/p1-2b-overeni.md)
+mají samostatnou větev. [Ruční zkouška](docs/p1-2b-rucni-zkouska.md) a souhlas
+se sloučením implementace zůstávají samostatné. P1.3–P1.5, P2 a změna formátu vyžadují samostatné schválení;
 model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).

@@ -91,10 +91,12 @@ Implementace A.1–A.3 je sloučená v [PR #33](https://github.com/JendaNDT/Skod
 dokládá sedm vedených zkoušek autora na Macu i samostatný souhlas se sloučením.
 [Evidence P1.2A](p1-2a-overeni.md) rozlišuje automatické a ruční výsledky.
 
-**P1.2B — návrh ke schválení (21. 10. 2026):**
+**P1.2B — schváleno autorem 21. 10. 2026:**
 [transakce celého kontextu prvku](p1-2b-navrh-transakce-kontextu.md), rozhodnutí B1–B7,
-kroky B.1–B.3, matice T01–T14. Příprava návrhu je autorizovaná; implementace
-P1.2B ani P1.4 (export/NDT při chybě) není tímto schválená.
+kroky B.1–B.3, matice T01–T14. Autor odpověděl „ok, schvaluji“ a návrhové PR #34
+je sloučené (`cbf19b1`). Implementace probíhá v samostatné větvi;
+[evidence](p1-2b-overeni.md) uvádí skutečné výsledky a zbývající přijetí.
+Sloučení implementace vyžaduje nový souhlas autora. P1.3/P1.4/P1.5 nejsou tímto schválené.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.
