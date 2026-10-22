@@ -379,7 +379,10 @@ def reference_for(part: Part, item: Face | Edge, point: Any = None) -> dict[str,
 
     if isinstance(item, Face):
         reference = face_reference(item, point)
-        found = resolve(part, reference)
+        try:
+            found = resolve(part, reference)
+        except SelectionError as exc:
+            raise MeasureError(str(exc)) from None
         if not isinstance(found, Face) or not found.is_same(item):
             raise MeasureError("Tuhle plochu nejde pro uložené měření jednoznačně určit – klikni "
                                "na ni kousek dál od hrany.")

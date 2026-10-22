@@ -1018,30 +1018,22 @@ class ModelSession:
         """Plochy a hrany rozříznutého dílu (řez zapnutý) → tytéž na celém dílu."""
         if self.section_settings is None or self.result is None or self.result.part is None:
             return shapes
-        from build123d import Vertex
-
-        from skodacad.measure import inner_point
+        from skodacad.picking import map_faces
 
         part = self.result.part
         faces, edges = split_shapes(shapes)
         mapped: list[Any] = []
-        for face in faces:
-            point = inner_point(face)
-            normal = face.normal_at(point)
-            here = Vertex(point)
-            same = [f for f in part.faces() if f.geom_type == face.geom_type]
-            best = min(same, key=lambda f: f.distance_to(here), default=None)
-            if (best is None or best.distance_to(here) > 1e-6
-                    or best.normal_at(point).dot(normal) < 1 - 1e-6):
-                raise DocumentError("Vybraná plocha vznikla jen řezem – na díl ji použít ani "
-                                    "uložit nejde. Vyber jinou plochu, nebo řez vypni.")
-            mapped.append(best.wrapped)
+        try:
+            mapped += [face.wrapped for face in map_faces(faces, part)]
+        except SelectionError as exc:
+            raise DocumentError("Vybraná plocha vznikla jen řezem, nebo nemá jednoznačný "
+                                f"protějšek v původním dílu. {exc}") from None
         if edges:
             try:
                 mapped += [edge.wrapped for edge in map_edges(edges, part)]
-            except SelectionError:
-                raise DocumentError("Vybraná hrana vznikla jen řezem – na díl ji použít ani "
-                                    "uložit nejde. Vyber jinou hranu, nebo řez vypni.") from None
+            except SelectionError as exc:
+                raise DocumentError("Vybraná hrana vznikla jen řezem, nebo nemá jednoznačný "
+                                    f"protějšek v původním dílu. {exc}") from None
         return mapped
 
     # --- mapa tloušťky stěny ----------------------------------------------------------
@@ -3934,6 +3926,10 @@ class ModelSession:
         faces, edges = split_shapes(shapes)
         kind = feature["type"]
         try:
+            if not new and faces and kind in ("sketch", "hole", "shell"):
+                from skodacad.picking import map_faces
+
+                faces = map_faces(faces, part)
             if kind in ("fillet", "chamfer"):
                 if not edges:
                     raise DocumentError("Vyber ve 3D aspoň jednu hranu (Ctrl+klik přidá další).")

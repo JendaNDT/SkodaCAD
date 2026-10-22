@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from skodacad.selectors import SelectionError, select_edges
+from skodacad.selectors import MissingSelectionError, SelectionError, select_edges
 from skodacad.solver import REFERENCE_POINTS as POINTS  # noqa: F401 – body podle tvaru
 
 
@@ -133,7 +133,11 @@ def reference_for(part: Any, edge: Any, plane: Any, place: Placement | None = No
     projected = project_edge(edge, plane, place)
     if projected is None:
         raise ProjectionError("Tuhle hranu do skici promítnout nejde.")
-    return {"edge": edge_selector(part, [edge]), **projected.as_reference()}
+    try:
+        selector = edge_selector(part, [edge])
+    except SelectionError as exc:
+        raise ProjectionError(str(exc)) from None
+    return {"edge": selector, **projected.as_reference()}
 
 
 def refresh(element: dict[str, Any], part: Any, plane: Any, place: Placement | None,
@@ -152,8 +156,11 @@ def refresh(element: dict[str, Any], part: Any, plane: Any, place: Placement | N
             raise ProjectionError(f"Promítnutá hrana „{name}“ nemá popis hrany („edge“).")
         try:
             edges = select_edges(part, reference["edge"], evaluate)
-        except SelectionError:
+        except MissingSelectionError:
             edges = []
+        except SelectionError as exc:
+            raise ProjectionError(f"Promítnutá hrana „{name}“: {exc} Ve skicáři ji smaž "
+                                  "a promítni znovu.") from None
         if len(edges) != 1:
             problem = ("už na dílu není" if not edges
                        else f"už není jednoznačná (popisu odpovídá {len(edges)} hran)")

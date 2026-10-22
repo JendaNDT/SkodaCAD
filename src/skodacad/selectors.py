@@ -46,7 +46,15 @@ _Shape = TypeVar("_Shape", Edge, Face)
 
 
 class SelectionError(ValueError):
-    """Výběr nic nenašel nebo je chybně zapsaný (zpráva je česky)."""
+    """Výběr je vadný, chybí nebo není jednoznačný (zpráva je česky)."""
+
+
+class MissingSelectionError(SelectionError):
+    """Platný předpis nemá žádný geometrický protějšek."""
+
+
+class AmbiguousSelectionError(SelectionError):
+    """Předpis pro jedno místo má více nerozlišitelných protějšků."""
 
 
 def _check_face_name(name: Any) -> str:
@@ -93,7 +101,7 @@ def select_faces(part: Part, name: str) -> list[Face]:
         if face.geom_type == GeomType.PLANE and face.normal_at().dot(direction) > 1 - _TOLERANCE
     )
     if not candidates:
-        raise SelectionError(f"Díl nemá žádnou rovinnou {FACE_NAMES_CZ[name]} plochu.")
+        raise MissingSelectionError(f"Díl nemá žádnou rovinnou {FACE_NAMES_CZ[name]} plochu.")
     extreme = max(face.center().dot(direction) for face in candidates)
     return [face for face in candidates if abs(face.center().dot(direction) - extreme) < 1e-4]
 
@@ -186,8 +194,8 @@ def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
         distance, on_face, _ = face.distance_to_with_closest_points(Vertex(at))
         found.append((distance, face, on_face))
     if not found:
-        raise SelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není – vyber ji znovu "
-                             "ve 3D.")
+        raise MissingSelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není – vyber ji "
+                                    "znovu ve 3D.")
     nearest = min(distance for distance, _, _ in found)
     close = [(face, on_face) for distance, face, on_face in found
              if distance <= nearest + _DISTANCE_TIE]
@@ -195,15 +203,15 @@ def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
     best = max(score for score, _, _ in scored)
     winners = [(face, point) for score, face, point in scored if score >= best - _TOLERANCE]
     if len(winners) != 1:
-        raise SelectionError(f"Plocha u bodu [{_short(at)}] není jednoznačná: popisu odpovídá "
-                             f"{len(winners)} stejně vhodných ploch. Vyber ji znovu ve 3D "
-                             "kousek dál od hrany.")
+        raise AmbiguousSelectionError(
+            f"Plocha u bodu [{_short(at)}] není jednoznačná: popisu odpovídá "
+            f"{len(winners)} stejně vhodných ploch. Vyber ji znovu ve 3D kousek dál od hrany.")
     face, on_face = winners[0]
     normal = face.normal_at(on_face)
     loose = kind in _ROUND_TYPES or kind == GeomType.CONE  # díra pozná se podle druhu a velikosti
     if hint.length > 0 and not loose and normal.dot(hint.normalized()) < 0.5:
-        raise SelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není (nejbližší plocha "
-                             "míří jinam) – vyber ji znovu ve 3D.")
+        raise MissingSelectionError(f"Plocha u bodu [{_short(at)}] už na dílu není (nejbližší "
+                                    "plocha míří jinam) – vyber ji znovu ve 3D.")
     return face, on_face
 
 
@@ -341,12 +349,13 @@ def _select_edges(part: Part, spec: dict[str, Any]) -> list[Edge]:
         nearest = min(distance for distance, _ in distances)
         edges = [edge for distance, edge in distances if distance <= nearest + _DISTANCE_TIE]
         if len(edges) != 1:
-            raise SelectionError("Výběr hrany není jednoznačný: stejně blízko jsou "
-                                 f"{len(edges)} hrany. Upřesni výběr nebo ji vyber znovu ve 3D.")
+            raise AmbiguousSelectionError("Výběr hrany není jednoznačný: stejně blízko jsou "
+                                          f"{len(edges)} hrany. Upřesni výběr nebo ji vyber "
+                                          "znovu ve 3D.")
 
     if not edges:
         described = json.dumps(spec, ensure_ascii=False) if spec else '"all"'
-        raise SelectionError(f"Výběr hran {described} nenašel žádnou hranu.")
+        raise MissingSelectionError(f"Výběr hran {described} nenašel žádnou hranu.")
     return edges
 
 

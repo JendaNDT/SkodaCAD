@@ -18,7 +18,7 @@ Pásma nerozlišitelnosti nejsou meze dovoleného přemístění ani výrobní p
 | Krok | Stav |
 |---|---|
 | C.1 | Jediný výsledek nesmí rozhodnout pořadí, filtry jsou závazné, vstupy se ověřují před geometrií. 74 nových případů / 0,07 s a 147 dosavadních cílených případů / 6,26 s. Ruff OK; celý pytest **1 385 prošlo / 420,71 s**, bez chyb a přeskočení. Všech 1 311 původních případů zachováno; S01–S08/S13. |
-| C.2 | Čeká: zpětné ověření nového výběru, přenos hran/ploch, měření/projekce/NDT a opravy. |
+| C.2 | Zpětné ověření nového výběru, celý úsek/oblouk a celý fragment plochy, doménové chyby měření/projekce/NDT. 36 nových případů; 61 cílených / 1,34 s. Ruff OK; celý pytest **1 421 prošlo / 419,21 s**, bez chyb a přeskočení. S09–S15; původní testy zachované. |
 | C.3 | Čeká: přenos, historie, kompatibilita, výkon a konečné cílové/ruční ověření. |
 
 `select_edges` ponechává záměrné skupiny; jen `near` vyžaduje jediného nejbližšího
@@ -33,6 +33,31 @@ meze vzdálenosti i směrového skóre, chybné vstupy skryté za prázdným fil
 rozdělenou horní plochu a původní materiál/objem po chybě prvku. Řiditelné testy
 mezí doplňují skutečnou geometrii. Původní `<` u poloměru plochy a `<=` u hrany
 zůstávají ověřené odděleně; nejde o skryté sjednocení tolerancí.
+
+C.2 ověřuje konečný výběrový předpis i po fallbacku; při potřebě zpřesní stávající
+`near` ze 3 na 9 desetinných míst, nebo výběr odmítne. Nová reference musí patřit
+k aktuálnímu dílu; bodová reference se znovu vyhodnotí i proti skutečné kliknuté ploše.
+Přenos úsečky vyžaduje oba konce na cílovém úseku; kružnice/oblouk shodu středu,
+roviny a poloměru a obsažení celého souvislého úhlového intervalu. Testy zahrnují
+překročení 0° i opačnou orientaci osy nosné kružnice. Obecná křivka bez nativní
+totožnosti se výslovně odmítne.
+
+Přenos plochy ověřuje nosič, orientaci a celý fragment pomocí nepoškozujícího
+rozdílu OCCT (`SetNonDestructive(True)`, dokončení, neprázdný platný výsledek bez
+zbývajících ploch). „Neprázdný“ zde znamená nenulový nativní objekt; prázdný
+compound je správný důkaz nulového zbytku. Nepřidává se fuzzy tolerance ani
+hluboká kopie celého dílu. Skutečné řezy kvádru/válce/koule/kužele/toru kontrolují
+také původní objemy, povrchy, obálky a orientace. Kužel používá záměrně přesnou
+shodu velikosti polovičního úhlu; neprokázaný obecný nosič nebo chyba jádra se
+odmítne. Shoda jednoho bodu nikdy nenahradí důkaz celého fragmentu.
+
+Rozlišení chybějícího a nejednoznačného předpisu zachovává základní `SelectionError`;
+do worker protokolu nevstupují nové typy výjimek. Projekce zachová konkrétní příčinu
+a nepoužije uložené staré body. Vadné nové měření/oblast dostanou svou doménovou chybu.
+NDT algoritmy se nemění: audit `faces_of` a jeho spotřebitelů potvrzuje odmítnutí
+problémů v PT/MT/RT i UT pokrytí/návrhu poloh/plánu. Regrese ověřují, že nový
+výběr po změně receptu stále vyžaduje samostatné potvrzení zastaralé studie,
+že odmítnuté potvrzení nepřepíše dokument/historii a že zanikne staré odborné ověření.
 
 ## Zbývající přijetí a meze
 

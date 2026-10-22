@@ -11,6 +11,7 @@ Popis hran se vždy ověří: musí vybrat přesně ty hrany, na které se klika
 from __future__ import annotations
 
 import itertools
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,12 +26,15 @@ from skodacad.selectors import (
     face_edges,
     face_plane,
     face_plane_at,
+    find_face,
     select_edges,
     select_faces,
+    unique_shapes,
 )
 
 _TOLERANCE = 1e-6
 _ON_EDGE = 1e-5  # mm – bod leží na hraně
+_ON_FACE = 1e-6  # mm – zachovaná mez přenosu plochy z řezu
 _EDGE_TYPE_NAMES = {GeomType.LINE: "line", GeomType.CIRCLE: "circle"}
 
 
@@ -77,8 +81,10 @@ def edge_selector(part: Part, edges: list[Edge]) -> Any:
     targets = _part_edges(part, edges)
     if not targets:
         raise SelectionError("Nejsou vybrané žádné hrany – klikni na hranu ve 3D.")
-    all_edges = list(part.edges())
+    all_edges = unique_shapes(part.edges())
     if len(targets) == len(all_edges):
+        if not _same_edges(_matches(part, "all"), targets):
+            raise SelectionError("Vybrané hrany nelze jednoznačně popsat – vyber je znovu.")
         return "all"
 
     named = _named_face_edges(part)
@@ -111,27 +117,46 @@ def edge_selector(part: Part, edges: list[Edge]) -> Any:
 
     result: Any = chosen[0] if len(chosen) == 1 else chosen
     found = _matches(part, result)
-    if len(found) != len(targets) or not all(edge in targets for edge in found):
-        result = [_exact_spec(edge, named) for edge in targets]
+    if not _same_edges(found, targets):
+        result = [_exact_spec(edge, named, decimals=9) for edge in targets]
+        if not _same_edges(_matches(part, result), targets):
+            raise SelectionError("Vybrané hrany nelze jednoznačně popsat – upřesni výběr "
+                                 "nebo vyber jinou hranu ve 3D.")
     return result
+
+
+def _same_edges(found: list[Edge], targets: list[Edge]) -> bool:
+    return len(found) == len(targets) and all(
+        any(edge.is_same(target) for target in targets) for edge in found)
 
 
 def map_edges(edges: list[Edge], target: Part) -> list[Edge]:
     """Najde hrany ``edges`` (z jiného stavu dílu) v dílu ``target``.
 
-    Hrana může být v ``target`` delší (pozdější zaoblení ji zkrátilo) – stačí,
-    aby její střed ležel na hraně stejného druhu.
+    Původní hrana smí být delší, ale musí obsahovat celý vybraný úsek/oblouk.
+    Pro jinou křivku je bez totožnosti bezpečným výsledkem odmítnutí.
     """
     mapped: list[Edge] = []
-    for edge in edges:
-        middle = edge.position_at(0.5)
-        match = next((other for other in target.edges() if _same_curve(edge, other)
-                      and other.distance_to(middle) < _ON_EDGE), None)
-        if match is None:
+    own = unique_shapes(target.edges())
+    for edge in unique_shapes(edges):
+        same = [other for other in own if edge.is_same(other)]
+        if not same and edge.geom_type not in (GeomType.LINE, GeomType.CIRCLE):
+            raise SelectionError("Vybraná obecná křivka nemá prokázaný protějšek – samotný "
+                                 "stejný druh křivky nestačí. Vyber jinou hranu nebo řez vypni.")
+        try:
+            matches = same or [other for other in own if _contains_edge(other, edge)]
+        except Exception:  # noqa: BLE001 – bez důkazu nelze výběr bezpečně přenést
+            raise SelectionError("Vybranou hranu nelze v tomto stavu dílu bezpečně ověřit. "
+                                 "Vyber jinou hranu nebo řez vypni.") from None
+        if not matches:
             raise SelectionError(
                 "Vybraná hrana v místě tohoto prvku ještě neexistuje (vznikla až později "
                 "ve stromu). Vyber jinou hranu, nebo přidej nový prvek z výběru."
             )
+        if len(matches) != 1:
+            raise SelectionError("Vybraná hrana má v tomto stavu dílu více protějšků "
+                                 "a není jednoznačná – vyber jinou hranu nebo řez vypni.")
+        match = matches[0]
         if match not in mapped:
             mapped.append(match)
     return mapped
@@ -139,10 +164,10 @@ def map_edges(edges: list[Edge], target: Part) -> list[Edge]:
 
 def _part_edges(part: Part, edges: list[Edge]) -> list[Edge]:
     """Hrany dílu odpovídající kliknutým (kontrola, že k dílu opravdu patří)."""
-    own = list(part.edges())
+    own = unique_shapes(part.edges())
     result: list[Edge] = []
     for edge in edges:
-        match = next((other for other in own if other == edge), None)
+        match = next((other for other in own if other.is_same(edge)), None)
         if match is None:
             raise SelectionError("Vybraná hrana nepatří k aktuálnímu dílu – vyber ji znovu.")
         if match not in result:
@@ -204,7 +229,7 @@ def _candidates(edge: Edge, named: dict[str, list[Edge]]) -> list[dict[str, Any]
     return specs
 
 
-def _exact_spec(edge: Edge, named: dict[str, list[Edge]]) -> dict[str, Any]:
+def _exact_spec(edge: Edge, named: dict[str, list[Edge]], decimals: int = 3) -> dict[str, Any]:
     """Popis jedné hrany: co o ní víme + nejbližší k jejímu středu."""
     spec: dict[str, Any] = {}
     faces = [name for name, edges in named.items() if edge in edges]
@@ -216,18 +241,139 @@ def _exact_spec(edge: Edge, named: dict[str, list[Edge]]) -> dict[str, Any]:
     elif edge.geom_type == GeomType.CIRCLE:
         spec["radius"] = _radius(edge)
     middle = edge.position_at(0.5)
-    spec["near"] = [_number(middle.X, 3), _number(middle.Y, 3), _number(middle.Z, 3)]
+    spec["near"] = [_number(v, decimals) for v in middle]
     return spec
 
 
-def _same_curve(edge: Edge, other: Edge) -> bool:
-    if edge.geom_type != other.geom_type:
+def _contains_edge(target: Edge, source: Edge) -> bool:
+    if source.geom_type != target.geom_type:
         return False
-    if edge.geom_type == GeomType.LINE:
-        return abs(abs(edge.tangent_at(0).dot(other.tangent_at(0))) - 1) < _TOLERANCE
-    if edge.geom_type == GeomType.CIRCLE:
-        return abs(edge.radius - other.radius) < _ON_EDGE
-    return True
+    if source.geom_type == GeomType.LINE:
+        return (abs(abs(source.tangent_at(0).dot(target.tangent_at(0))) - 1) < _TOLERANCE
+                and all(target.distance_to(point) < _ON_EDGE
+                        for point in (source.start_point(), source.end_point())))
+    if source.geom_type != GeomType.CIRCLE:
+        return False
+    if ((source.arc_center - target.arc_center).length >= _ON_EDGE
+            or abs(source.radius - target.radius) >= _ON_EDGE
+            or abs(abs(source.normal().dot(target.normal())) - 1) >= _TOLERANCE):
+        return False
+    if target.is_closed:
+        return True
+    if source.is_closed:
+        return False
+    # Souvislý úhlový interval celého oblouku, nikoli několik vzorkovaných bodů.
+    radial = (target.start_point() - target.arc_center).normalized()
+    tangent = target.tangent_at(0)
+    start = source.start_point() - target.arc_center
+    angle = math.atan2(start.dot(tangent), start.dot(radial)) % math.tau
+    forward = -radial * math.sin(angle) + tangent * math.cos(angle)
+    sign = 1 if source.tangent_at(0).dot(forward) > 0 else -1
+    end = angle + sign * source.length / source.radius
+    low, high = sorted((angle, end))
+    tolerance = _ON_EDGE / target.radius
+    extent = target.length / target.radius
+    return any(low + turn * math.tau >= -tolerance
+               and high + turn * math.tau <= extent + tolerance for turn in (-1, 0, 1))
+
+
+def map_faces(faces: list[Face], target: Part) -> list[Face]:
+    """Celý vybraný fragment → jediná původní plocha, při nejistotě odmítnout."""
+    own = unique_shapes(target.faces())
+    mapped: list[Face] = []
+    for face in unique_shapes(faces):
+        same = [other for other in own if face.is_same(other)]
+        try:
+            matches = same or [other for other in own if _contains_face(other, face)]
+        except Exception:  # noqa: BLE001 – neověřený průnik nesmí určit protějšek
+            raise SelectionError("Vybranou plochu nelze bezpečně přenést na původní díl. "
+                                 "Vyber jinou plochu nebo řez vypni.") from None
+        if len(matches) != 1:
+            problem = ("nemá žádný doložený protějšek" if not matches
+                       else f"má {len(matches)} protějšky a není jednoznačná")
+            raise SelectionError(f"Vybraná plocha {problem} v původním dílu. "
+                                 "Vyber jinou plochu nebo řez vypni.")
+        if not any(matches[0].is_same(known) for known in mapped):
+            mapped.append(matches[0])
+    return mapped
+
+
+def _contains_face(target: Face, source: Face) -> bool:
+    from build123d import Vertex
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.collections import List_TopoDS_Shape
+    from OCP.TopAbs import TopAbs_FACE
+    from OCP.TopExp import TopExp_Explorer
+
+    from skodacad.measure import inner_point
+
+    if not _same_surface(target, source):
+        return False
+    point = inner_point(source)
+    distance, on_target, _ = target.distance_to_with_closest_points(Vertex(point))
+    if (distance > _ON_FACE
+            or target.normal_at(on_target).dot(source.normal_at(point)) < 1 - _TOLERANCE):
+        return False
+    # Rozdíl musí být prázdný i ve zbytku plochy. Žádné zvětšování tolerance ani
+    # změna vstupních TShape: tato operace slouží pouze jako důkaz obsažení.
+    operation = BRepAlgoAPI_Cut()
+    operation.SetNonDestructive(True)
+    arguments, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
+    arguments.Append(source.wrapped)
+    tools.Append(target.wrapped)
+    operation.SetArguments(arguments)
+    operation.SetTools(tools)
+    operation.Build()
+    if not operation.IsDone():
+        raise ValueError("Obsažení plochy se nepodařilo ověřit.")
+    remainder = operation.Shape()
+    if remainder.IsNull() or not BRepCheck_Analyzer(remainder).IsValid():
+        raise ValueError("Rozdíl ploch není ověřený platný tvar.")
+    return not TopExp_Explorer(remainder, TopAbs_FACE).More()
+
+
+def _xyz(value: Any) -> Vector:
+    return Vector(value.X(), value.Y(), value.Z())
+
+
+def _same_axis(left: Any, right: Any) -> bool:
+    direction = _xyz(left.Direction())
+    offset = _xyz(left.Location()) - _xyz(right.Location())
+    return (abs(direction.dot(_xyz(right.Direction()))) >= 1 - _TOLERANCE
+            and offset.cross(direction).length <= _ON_FACE)
+
+
+def _same_surface(target: Face, source: Face) -> bool:
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    kind = source.geom_type
+    if kind != target.geom_type:
+        return False
+    left, right = BRepAdaptor_Surface(source.wrapped), BRepAdaptor_Surface(target.wrapped)
+    if kind == GeomType.PLANE:
+        a, b = left.Plane(), right.Plane()
+        return (abs(_xyz(a.Axis().Direction()).dot(_xyz(b.Axis().Direction()))) >= 1 - _TOLERANCE
+                and a.Contains(b.Location(), _ON_FACE))
+    if kind == GeomType.CYLINDER:
+        a, b = left.Cylinder(), right.Cylinder()
+        return abs(a.Radius() - b.Radius()) <= _ON_FACE and _same_axis(a.Axis(), b.Axis())
+    if kind == GeomType.SPHERE:
+        a, b = left.Sphere(), right.Sphere()
+        return (abs(a.Radius() - b.Radius()) <= _ON_FACE
+                and (_xyz(a.Location()) - _xyz(b.Location())).length <= _ON_FACE)
+    if kind == GeomType.CONE:
+        a, b = left.Cone(), right.Cone()
+        return (abs(a.SemiAngle()) == abs(b.SemiAngle())  # při nejistotě konzervativně odmítnout
+                and (_xyz(a.Apex()) - _xyz(b.Apex())).length <= _ON_FACE
+                and _same_axis(a.Axis(), b.Axis()))
+    if kind == GeomType.TORUS:
+        a, b = left.Torus(), right.Torus()
+        return (abs(a.MajorRadius() - b.MajorRadius()) <= _ON_FACE
+                and abs(a.MinorRadius() - b.MinorRadius()) <= _ON_FACE
+                and (_xyz(a.Location()) - _xyz(b.Location())).length <= _ON_FACE
+                and _same_axis(a.Axis(), b.Axis()))
+    return False  # shoda obecného typu ani jediného bodu neprokazuje stejný nosič
 
 
 # --- plochy ----------------------------------------------------------------------------
@@ -257,6 +403,8 @@ def face_reference(part: Part, face: Face, point: Any = None) -> FaceReference:
     ``{"at": místo kliknutí, "normal": směr plochy v něm}`` – skica leží na ní, u
     zakřivené na rovině, která se jí v místě kliknutí dotýká (počátek skici = místo kliknutí).
     """
+    if not any(face.is_same(known) for known in part.faces()):
+        raise SelectionError("Kliknutá plocha nepatří k aktuálnímu dílu – vyber ji znovu.")
     try:
         name = face_direction(face)
     except SelectionError:
@@ -277,6 +425,10 @@ def _face_reference_at(part: Part, face: Face, point: Any) -> FaceReference:
     _, on_face, _ = face.distance_to_with_closest_points(Vertex(where))
     normal = face.normal_at(on_face)
     spec = {"at": [_number(v, 4) for v in on_face], "normal": [_number(v, 4) for v in normal]}
+    found, _ = find_face(part, spec)
+    if not found.is_same(face):
+        raise SelectionError("Kliknutá plocha nepatří k aktuálnímu dílu nebo ji nelze "
+                             "jednoznačně popsat – vyber ji znovu.")
     plane = face_plane_at(part, spec)  # ověřit: najde se plocha znovu?
     if (plane.origin - on_face).length > 1e-3:
         raise SelectionError("Tuhle plochu nejde pro skicu jednoznačně určit – klikni kousek "
