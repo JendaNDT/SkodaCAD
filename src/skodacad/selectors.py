@@ -13,7 +13,7 @@ import math
 from collections.abc import Callable, Iterable
 from typing import Any, TypeVar
 
-from build123d import Axis, Edge, Face, GeomType, Part, Plane, Vector
+from build123d import Axis, Edge, Face, GeomType, Part, Plane, Shape, Vector
 
 # Směr vnější normály a osa X skici pro každou pojmenovanou plochu.
 # Osa X skici je volená tak, aby souřadnice skici odpovídaly pohledu na plochu zvenku.
@@ -73,6 +73,13 @@ def unique_shapes(shapes: Iterable[_Shape]) -> list[_Shape]:
     return result
 
 
+def _entities(owner: Any, shapes: Iterable[_Shape]) -> list[_Shape]:
+    # Zamčené build123d Shape.faces/edges už vracejí jedinečné nativní entity.
+    # Cizí výčet/adaptér a sjednocení více výběrů dál ověřujeme přes is_same.
+    # Žádná nová cache ani trvalý index; neopakovat kvadratický průchod nativním seznamem.
+    return list(shapes) if isinstance(owner, Shape) else unique_shapes(shapes)
+
+
 def _number(value: Any, evaluate: Callable[[Any], float], label: str) -> float:
     try:
         number = evaluate(value)
@@ -95,11 +102,11 @@ def _point(value: Any, evaluate: Callable[[Any], float], label: str) -> Vector:
 def select_faces(part: Part, name: str) -> list[Face]:
     """Všechny rovinné plochy s vnější normálou ve směru ``name``, které leží nejdál."""
     direction = Vector(*FACE_DIRECTIONS[_check_face_name(name)][0])
-    candidates = unique_shapes(
+    candidates = [
         face
-        for face in part.faces()
+        for face in _entities(part, part.faces())
         if face.geom_type == GeomType.PLANE and face.normal_at().dot(direction) > 1 - _TOLERANCE
-    )
+    ]
     if not candidates:
         raise MissingSelectionError(f"Díl nemá žádnou rovinnou {FACE_NAMES_CZ[name]} plochu.")
     extreme = max(face.center().dot(direction) for face in candidates)
@@ -180,7 +187,7 @@ def find_face(part: Part, spec: Any) -> tuple[Face, Vector]:
             raise SelectionError("„radius“ musí být kladný poloměr plochy cylinder nebo sphere.")
     from build123d import Vertex
 
-    faces = unique_shapes(part.faces())
+    faces = _entities(part, part.faces())
     if kind is not None:
         faces = [face for face in faces if face.geom_type == kind]
         if radius is not None:
@@ -266,8 +273,11 @@ def select_edges(part: Part, spec: Any, evaluate: Callable[[Any], float]) -> lis
     * ``near``: bod ``[x, y, z]`` – z hran, které zbydou, jen ta nejbližší k bodu
       (rozliší třeba jednu ze čtyř stejných děr)
     """
+    specs = _edge_specs(spec, evaluate)
+    if len(specs) == 1:
+        return _select_edges(part, specs[0])  # již jedinečný výsledek; žádné sjednocení
     edges: list[Edge] = []
-    for item in _edge_specs(spec, evaluate):
+    for item in specs:
         _add_unique(edges, _select_edges(part, item))
     return edges
 
@@ -321,7 +331,7 @@ def _edge_specs(spec: Any, evaluate: Callable[[Any], float]) -> list[dict[str, A
 
 
 def _select_edges(part: Part, spec: dict[str, Any]) -> list[Edge]:
-    edges = face_edges(part, spec["face"]) if "face" in spec else unique_shapes(part.edges())
+    edges = face_edges(part, spec["face"]) if "face" in spec else _entities(part, part.edges())
     if "between" in spec:
         names = spec["between"]
         first, second = (face_edges(part, name) for name in names)

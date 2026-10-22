@@ -19,7 +19,7 @@ Pásma nerozlišitelnosti nejsou meze dovoleného přemístění ani výrobní p
 |---|---|
 | C.1 | Jediný výsledek nesmí rozhodnout pořadí, filtry jsou závazné, vstupy se ověřují před geometrií. 74 nových případů / 0,07 s a 147 dosavadních cílených případů / 6,26 s. Ruff OK; celý pytest **1 385 prošlo / 420,71 s**, bez chyb a přeskočení. Všech 1 311 původních případů zachováno; S01–S08/S13. |
 | C.2 | Zpětné ověření nového výběru, celý úsek/oblouk a celý fragment plochy, doménové chyby měření/projekce/NDT. 36 nových případů; 61 cílených / 1,34 s. Ruff OK; celý pytest **1 421 prošlo / 419,21 s**, bez chyb a přeskočení. S09–S15; původní testy zachované. |
-| C.3 | Čeká: přenos, historie, kompatibilita, výkon a konečné cílové/ruční ověření. |
+| C.3 | 27 dalších případů pro přenos, skutečný spawn/Qt, historii, kopie, posunuté/otočené nosiče a meze identity; celkem 137 nových. Ruff OK; celý pytest **1 448 prošlo / 417,98 s**, bez chyb a přeskočení. Všech 68 původních testovacích souborů byte shodných. Měření a nativní kontrola níže; cílové CI a ruční přijetí jsou samostatné zbývající brány. |
 
 `select_edges` ponechává záměrné skupiny; jen `near` vyžaduje jediného nejbližšího
 kandidáta. Celý předpis včetně seznamu se ověří a vyčíslí před přístupem ke geometrii.
@@ -42,6 +42,13 @@ roviny a poloměru a obsažení celého souvislého úhlového intervalu. Testy 
 překročení 0° i opačnou orientaci osy nosné kružnice. Obecná křivka bez nativní
 totožnosti se výslovně odmítne.
 
+Závěrečná regrese C.3 navíc odhalila, že téměř rovnoběžná kružnice mohla přes
+shodu směrového skóre ležet mimo stávající vzdálenostní mez. Přenos nyní vyžaduje
+horní mez odchylky **celé** nosné kružnice (posun středu + rozdíl R + odchylka
+otočení) pod původními `1e-5 mm`. Žádné vzorkování ani nová tolerance. Samostatný
+případ kontroluje součet odchylky středu a poloměru; dvě odchylky nesmějí každá
+spotřebovat celé pásmo. Opačné orientace os a oblouky přes 0° zůstaly platné.
+
 Přenos plochy ověřuje nosič, orientaci a celý fragment pomocí nepoškozujícího
 rozdílu OCCT (`SetNonDestructive(True)`, dokončení, neprázdný platný výsledek bez
 zbývajících ploch). „Neprázdný“ zde znamená nenulový nativní objekt; prázdný
@@ -58,6 +65,73 @@ NDT algoritmy se nemění: audit `faces_of` a jeho spotřebitelů potvrzuje odm�
 problémů v PT/MT/RT i UT pokrytí/návrhu poloh/plánu. Regrese ověřují, že nový
 výběr po změně receptu stále vyžaduje samostatné potvrzení zastaralé studie,
 že odmítnuté potvrzení nepřepíše dokument/historii a že zanikne staré odborné ověření.
+
+## Pokrytí matice
+
+| Scénáře | Konkrétní důkaz |
+|---|---|
+| S01 | Dosavadní `test_picking`, `test_tnp` a fyzické změny parametrů: zachované zaoblení správného rohu. |
+| S02–S08, S13 | `test_reference_selectors`: skutečné tvary v obou pořadích, skupiny, normály, číselné meze a struktura vstupů. |
+| S09–S11 | `test_reference_mapping`, `test_reference_limits`: zpětné ověření, celý úsek/oblouk/plochový fragment, primitivní nosiče i po otočení a posunu, odmítnutí umělého řezu a neprokázané obecné křivky. Dosavadní testy výběru z řezu a přenosu do historie zachované. |
+| S12, S14–S15 | `test_reference_consumers` a `test_reference_interfaces`: bez starých bodů/čísel, všechny čtyři NDT metody, odmítnutí dílčí oblasti a potvrzení vadné vazby, nové ukotvení a ztráta odborného ověření. Dosavadní analytická měření zachovaná. |
+| S16–S17 | Skutečný spawn, devítipoložkový BinTools/pickle protokol, CLI, offline souhrn AI bez sítě; chyba/oprava/historie/kopie/nové otevření u čtyř receptů. Qt akce s náhradním viewerem a skutečným workerem. |
+| S18 | Nezměněné `test_p12a_compatibility`: všech 26 rekurzivních ukázek, objemy/obálky/počty těles, audit vlastnictví nativních vstupů všech 12 builderů, round-trip a načtení verzí 1–22. Všechny dosavadní testy zachované. |
+| S19 | P0 baseline, historie 3/30 těles i pozdní chyba a 10 opakovaných odmítnutí, pět pevných dotazů. Žádný výběr největšího tělesa ani nový časový práh. |
+| S20 | `test_reference_limits` výslovně reprodukuje přijetí jiné zbývající díry, geometricky shodné náhrady a zachovaný `top+offset` po odstranění kapsy. Jde o meze, nikoli bezpečné odmítnutí těchto případů. |
+
+## Srovnání výkonu na stejném Macu
+
+Mediány 3 zahřátých opakování, časy v ms; dotazy jsou dávky **100 volání**.
+Všechny fyzické podpisy a otisky vstupů/měřičů/prostředí souhlasí.
+Dva původně nejednoznačné dotazy se záměrně změnily na chybu, ostatní výsledky jsou stejné.
+
+| Scénář | Před | Po |
+|---|---:|---:|
+| Přepočet příruby | 29,697 | 29,479 |
+| Přepočet krabičky | 64,360 | 64,627 |
+| Přepočet rámu | 143,221 | 144,543 |
+| Přepočet objemového svaru | 42,914 | 42,587 |
+| Přenos BinTools/pickle příruby | 0,928 | 0,932 |
+| NDT 1 000 paprsků deskou | 72,581 | 71,648 |
+| Historie 3 těles | 19,546 | 20,120 |
+| Historie 30 těles | 1 495,622 | 1 507,742 |
+| Historie 30 těles s pozdním odmítnutím | 1 575,218 | 1 594,345 |
+| Dotaz na kružnice příruby ×100 | 28,640 | 29,974 |
+| Dotaz na dno krabičky ×100 | 61,263 | 62,211 |
+| Dotaz na svislé hrany rámu ×100 | 215,875 | 220,558 |
+| Nejednoznačné hrany kvádru ×100 | 34,137 | 33,894 |
+| Nejednoznačné plochy dvojice ×100 | 31,187 | 26,805 |
+
+C.3 odstranilo nadbytečný kvadratický průchod `is_same` nad výčtem nativního
+`Shape`, který už zamčené build123d deduplikuje. Cizí adaptéry a sjednocení více
+výběrů ověření zachovávají. Regrese odlišuje opakování téhož nativního kvádru od
+dvou samostatných geometricky shodných kvádrů; druhý případ zůstává nejednoznačný.
+Nevznikla cache, nový index ani oslabení výběrových pravidel.
+
+Otisk zdrojů finálního měření P0 a dotazů:
+`067fc15cd4abe6d34b9978032a55a7ea0221ce003f2d32cf03a6831fa231fa25`.
+Měření vzniklo nad rozpracovaným C.3, proto údaj `commit` ještě označuje rodiče;
+zdrojový otisk určuje skutečně měřený kód. Archiv uchovává `*-before.json`,
+`*-after-final.json` a `baseline-comparison-final.json`. Tři vzorky nejsou statistický
+ani kauzální důkaz zrychlení. Maximum RSS zahrnuje importy/celý proces a nedokazuje
+nepřítomnost úniku paměti; nejde o dlouhodobou zátěžovou zkoušku.
+
+## Nativní okno a zbývající cílové testy
+
+23. 10. 2026 prošlo 15 kontrol skutečného Cocoa/OccViewer okna s pomocným procesem:
+oprava kliknuté hrany přes Qt akci, Zpět/Znovu a kopie, neplatná oblast/měření u
+dvou kvádrů a změněného poloměru, zakázané potvrzení vadné vazby, nové ukotvení
+→ zastaralá → výslovně potvrzená studie a vrácení historie, chyba projekce a
+odmítnutí umělé plochy řezu bez změny dokumentu. `native-references.json` zachycuje
+konkrétní stavy/objemy. Skutečné nativní tvary byly do výběru předány programově;
+nejde o autorův fyzický klik myší ani přijetí staženého balíčku.
+Šest snímků bylo vizuálně prohlédnuto: správná geometrie, česká chyba, stavy NDT
+a řez. Vestavěný nativní self-test skončil `VÝSLEDEK: OK`.
+
+Při uzavření místního kroku C.3 se oba celé Windows/macOS workflow konečné hlavy
+PR včetně self-testu staženého balíčku teprve spouštějí. Jejich konkrétní výsledky,
+SHA sestavení a odkazy patří do popisu implementačního PR a přílohy předání.
+[Ruční přijetí autora](p1-3-rucni-overeni.md) nelze předem prohlásit za hotové.
 
 ## Zbývající přijetí a meze
 

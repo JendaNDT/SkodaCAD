@@ -258,6 +258,15 @@ def _contains_edge(target: Edge, source: Edge) -> bool:
             or abs(source.radius - target.radius) >= _ON_EDGE
             or abs(abs(source.normal().dot(target.normal())) - 1) >= _TOLERANCE):
         return False
+    # Skoro rovnoběžné osy samy nestačí: u velké kružnice může být odchylka
+    # v mm výrazná. Horní mez pro celý nosič (posun + rozdíl R + otočení)
+    # musí zůstat pod stávající _ON_EDGE; bez vzorkování nebo nové tolerance.
+    alignment = min(1.0, abs(source.normal().dot(target.normal())))
+    turn = source.normal().cross(target.normal()).length + 1 - alignment
+    carrier_error = ((source.arc_center - target.arc_center).length
+                     + abs(source.radius - target.radius) + source.radius * turn)
+    if carrier_error >= _ON_EDGE:
+        return False
     if target.is_closed:
         return True
     if source.is_closed:

@@ -1115,7 +1115,9 @@ dokládá 17 vedených kontrol na Macu a samostatný pokyn ke sloučení.
 [Návrh P1.3 — bezpečné geometrické odkazy](docs/p1-3-navrh-bezpecnych-referenci.md)
 schválil autor 22. 10. 2026 slovy „ok, schvaluji vše“: C1–C8, C.1–C.3 a S01–S20.
 Návrhové PR #36 je sloučené (`c46d0e2`); [implementace a ověření](docs/p1-3-overeni.md)
-mají samostatnou větev a další souhlas se sloučením. P1.4/P1.5, P2 a změna formátu vyžadují
+mají samostatnou větev a další souhlas se sloučením. Připravený je
+[postup ručního přijetí nové verze](docs/p1-3-rucni-overeni.md).
+P1.4/P1.5, P2 a změna formátu vyžadují
 samostatné schválení. Model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
