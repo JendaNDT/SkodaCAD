@@ -1109,9 +1109,13 @@ dokládá sedm vedených zkoušek na Macu a samostatný souhlas se sloučením.
 [Konkrétní návrh P1.2B — transakce celého kontextu prvku](docs/p1-2b-navrh-transakce-kontextu.md)
 schválil autor 21. 10. 2026: B1–B7, kroky B.1–B.3 a matice T01–T14.
 Plán je sloučený v PR #34 (`cbf19b1`); [implementace a ověření](docs/p1-2b-overeni.md)
-mají samostatnou větev. [Ruční zkouška](docs/p1-2b-rucni-zkouska.md) a souhlas
-se sloučením implementace zůstávají samostatné. P1.3–P1.5, P2 a změna formátu vyžadují samostatné schválení;
-model zůstává ve verzi 22.
+jsou dokončené a sloučené v [PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35)
+jako `3a8deff`. [Protokol autora z 22. 10. 2026](docs/p1-2b-rucni-overeni-macos-2026-10-22.md)
+dokládá 17 vedených kontrol na Macu a samostatný pokyn ke sloučení.
+[Návrh P1.3 — bezpečné geometrické odkazy](docs/p1-3-navrh-bezpecnych-referenci.md)
+je připravený ke schválení: rozhodnutí C1–C8, kroky C.1–C.3 a matice S01–S20.
+Implementace P1.3 není zahájená; další P1.4/P1.5, P2 a změna formátu vyžadují
+samostatné schválení. Model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
 
