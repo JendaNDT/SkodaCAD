@@ -349,6 +349,10 @@ class FieldsForm(QWidget):
             new = copy.deepcopy(self._data)
             new.update({key: copy.deepcopy(result[key])
                         for key in ("points", "segments", "constraints")})
+            if "references" in result:
+                new["references"] = copy.deepcopy(result["references"])
+            else:
+                new.pop("references", None)
             kept[0] = copy.deepcopy(result["segments"])
             label.setText(_profile_summary(new))
             if new != self._data:

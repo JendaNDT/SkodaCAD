@@ -5,6 +5,11 @@ slovy „ok, schvaluji vše“, včetně sloučení návrhového PR #36 (`c46d0e
 Implementace má samostatnou větev `codex/p1-3-safe-references` a vlastní PR.
 **Sloučení implementace vyžaduje další samostatný pokyn autora.**
 
+23. 10. 2026 autor požádal o převzetí zbývajících zkoušek agentem. [Nový protokol](p1-3-agent-overeni-macos-2026-10-23.md)
+odděluje jeho skutečná potvrzení, omezení přímého ovládání a doplňkové automatické
+ověření. To odhalilo a opravuje vynechaný přenos `references` při návratu ze
+skicáře; původní úspěšné CI nejsou ověřením této nové opravy.
+
 ## Výchozí stav a měření
 
 Základ: `c46d0e2581a025d607053570801d83675a3aae4b`, produkční kód shodný s P1.2B.
@@ -20,6 +25,7 @@ Pásma nerozlišitelnosti nejsou meze dovoleného přemístění ani výrobní p
 | C.1 | Jediný výsledek nesmí rozhodnout pořadí, filtry jsou závazné, vstupy se ověřují před geometrií. 74 nových případů / 0,07 s a 147 dosavadních cílených případů / 6,26 s. Ruff OK; celý pytest **1 385 prošlo / 420,71 s**, bez chyb a přeskočení. Všech 1 311 původních případů zachováno; S01–S08/S13. |
 | C.2 | Zpětné ověření nového výběru, celý úsek/oblouk a celý fragment plochy, doménové chyby měření/projekce/NDT. 36 nových případů; 61 cílených / 1,34 s. Ruff OK; celý pytest **1 421 prošlo / 419,21 s**, bez chyb a přeskočení. S09–S15; původní testy zachované. |
 | C.3 | 27 dalších případů pro přenos, skutečný spawn/Qt, historii, kopie, posunuté/otočené nosiče a meze identity; celkem 137 nových. Ruff OK; celý pytest **1 448 prošlo / 417,98 s**, bez chyb a přeskočení. Všech 68 původních testovacích souborů byte shodných. Měření a nativní kontrola níže; cílové CI a ruční přijetí jsou samostatné zbývající brány. |
+| Doplnění C.3, 23. 10. | Oprava vynechaného přenosu existujícího pole `references` při návratu ze skicáře. Tři nové regrese nahrazení/smazání/přidání projekce, všechny selžou se starým přenosem a projdou s opravou. Ruff OK; celý pytest **1 451 prošlo / 429,85 s**, bez chyb a přeskočení; 68 původních souborů zachovaných, celkem 140 nových případů. Šest doplňkových zdrojových Qt scénářů / 7,96 s, 36 stavů. Nové celé CI a meze přímého ovládání balíčku se evidují odděleně. |
 
 `select_edges` ponechává záměrné skupiny; jen `near` vyžaduje jediného nejbližšího
 kandidáta. Celý předpis včetně seznamu se ověří a vyčíslí před přístupem ke geometrii.

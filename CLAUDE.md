@@ -1114,6 +1114,10 @@ návrhového PR #36 (`c46d0e2`). Provést C.1–C.3 v samostatném implementačn
 [evidence](docs/p1-3-overeni.md) rozlišuje ověření a zbývající přijetí.
 Použít [připravený ruční postup](docs/p1-3-rucni-overeni.md) pro konkrétní nový balíček;
 dosavadní přijetí P1.2B se na něj nepřenáší.
+[Protokol z 23. 10. 2026](docs/p1-3-agent-overeni-macos-2026-10-23.md) rozlišuje
+autorova potvrzení příruby, převzetí dalších zkoušek agentem a nalezenou opravu
+přenosu promítnutých hran ze skicáře. Automatizovaný průchod není úplné ruční
+přijetí nového balíčku; po opravě jsou nutné nové celé místní testy i obě CI.
 Schválené meze zahrnují zbytkové riziko historické identity. Sloučení implementace
 vyžaduje další samostatný pokyn autora.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.

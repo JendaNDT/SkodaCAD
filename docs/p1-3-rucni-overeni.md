@@ -1,6 +1,8 @@
 # P1.3 — postup ručního přijetí
 
-**Stav: připraveno, autor zatím nepotvrdil žádný z následujících bodů.**
+**Aktuální záznam přijetí:** [protokol z 23. 10. 2026](p1-3-agent-overeni-macos-2026-10-23.md)
+rozlišuje přírubu potvrzenou autorem a zbývající kontroly, které na jeho pokyn
+přebral agent. Níže je připravený postup, nikoli tvrzení o jeho úplném provedení.
 Schválení návrhu z 22. 10. 2026 ani přijetí P1.2B nenahrazuje tuto zkoušku.
 Použít nové sestavení z implementačního PR P1.3; před zkouškou zaznamenat jeho
 commit, platformu a odkaz na artefakt. Verzi otevřít přes Nápověda → O aplikaci.
