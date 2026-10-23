@@ -1092,7 +1092,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Aktuální pokračování (22. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+**Aktuální pokračování (23. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
@@ -1108,13 +1108,22 @@ B.1–B.3 jsou dokončené a sloučené v [PR #35](https://github.com/JendaNDT/S
 jako `3a8deff`; [evidence](docs/p1-2b-overeni.md) a
 [protokol autora z 22. 10. 2026](docs/p1-2b-rucni-overeni-macos-2026-10-22.md)
 rozlišují automatické ověření, 17 vedených kontrol na Macu a samostatný pokyn „ok, sluč to“.
-[Konkrétní návrh P1.3](docs/p1-3-navrh-bezpecnych-referenci.md) je **ke schválení**:
-C1–C8, kroky C.1–C.3 a S01–S20; obsahuje záměrná zpřísnění i meze geometrických
-odkazů bez trvalé identity. Implementaci nezahajovat, dokud autor návrh výslovně neschválí.
+[Konkrétní návrh P1.3](docs/p1-3-navrh-bezpecnych-referenci.md) autor 22. 10. 2026
+schválil slovy **„ok, schvaluji vše“**: C1–C8, C.1–C.3, S01–S20 a sloučení
+návrhového PR #36 (`c46d0e2`). Provést C.1–C.3 v samostatném implementačním PR;
+[evidence](docs/p1-3-overeni.md) rozlišuje ověření a zbývající přijetí.
+Použít [připravený ruční postup](docs/p1-3-rucni-overeni.md) pro konkrétní nový balíček;
+dosavadní přijetí P1.2B se na něj nepřenáší.
+[Protokol z 23. 10. 2026](docs/p1-3-agent-overeni-macos-2026-10-23.md) rozlišuje
+autorova potvrzení příruby, převzetí dalších zkoušek agentem a nalezenou opravu
+přenosu promítnutých hran ze skicáře. Automatizovaný průchod není úplné ruční
+přijetí nového balíčku; po opravě jsou nutné nové celé místní testy i obě CI.
+Schválené meze zahrnují zbytkové riziko historické identity. Sloučení implementace
+vyžaduje další samostatný pokyn autora.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-P1.3–P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
+P1.4/P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 

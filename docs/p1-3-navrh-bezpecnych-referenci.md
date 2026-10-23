@@ -1,6 +1,10 @@
 # P1.3 — návrh bezpečného vyhodnocování geometrických odkazů
 
-**Stav: návrh ke schválení, 22. 10. 2026. Implementace není schválená ani zahájená.**
+**Stav: C1–C8 schválené autorem 22. 10. 2026; implementace C.1–C.3 probíhá.**
+Autor odpověděl **„ok, schvaluji vše“** na návrh včetně sloučení návrhového PR #36.
+[PR #36](https://github.com/JendaNDT/SkodaCAD/pull/36) je sloučené jako `c46d0e2`.
+[Evidence implementace](p1-3-overeni.md) rozlišuje kroky a zbývající přijetí;
+sloučení implementace vyžaduje další samostatný pokyn.
 Podklad: `main / 3a8deffca360da6ba412cd808837bff8f3ad1d10`, po sloučení
 [P1.2B / PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35).
 Navazuje na [roadmapu](roadmapa-vyvoje.md#p1--bezpečná-geometrie),
@@ -27,9 +31,9 @@ ohlásí nejednoznačný výběr; nezaoblí náhodně jednu z nich.
 | **C7 Kompatibilita a meze** | Formát zůstává 22, bez nových uložených polí, identifikátorů ploch, závislostí a změny IPC. Záměrné změny výsledku starých předpisů jsou vyjmenované v oddílu 6. Nejde o úplné vyřešení topologické identity. |
 | **C8 Předání** | Tři kroky C.1–C.3, matice S01–S20, po každém Ruff a celý pytest před commitem; poté oba celé cílové workflow a ruční přijetí balíčku. Implementační PR se sloučí až na samostatný pokyn autora. |
 
-Požadavek „připravit návrh“ opravňuje k tomuto dokumentačnímu PR. Není souhlasem
-s C1–C8, implementací ani sloučením tohoto návrhu. Schválení musí uvést, zda povoluje
-C1–C8 a kroky C.1–C.3; sloučení návrhového PR se rovněž výslovně potvrdí.
+Původní požadavek „připravit návrh“ opravňoval pouze k dokumentačnímu PR.
+Následné výše zaznamenané schválení povoluje C1–C8, kroky C.1–C.3 a sloučení
+návrhového PR. Sloučení implementačního PR zůstává samostatnou branou.
 
 ## 2. Ověřený výchozí stav
 
@@ -281,7 +285,7 @@ Skryté kandidáty a přesnou hranici tolerancí prokazují automatické zkoušk
 nikoli pouhý pohled. Mac nenahrazuje ruční průchod na Windows; odborná NDT-17
 validace zůstává samostatná. Případnou nedostupnou platformu přiznat.
 
-## 10. Brána dokončení a rozsah tohoto návrhového PR
+## 10. Brána dokončení a rozsah původního návrhového PR #36
 
 P1.3 v popsaném rozsahu je dokončené až po C.1–C.3, S01–S20, obou celých cílových
 workflow, vizuální kontrole skutečného okna a ručním přijetí konkrétního balíčku.
@@ -289,14 +293,13 @@ Evidence musí odlišit chybějící a nejednoznačnou vazbu, záměrnou skupinu
 neřešenou historickou identitu. Přijetí nezavírá zbytkové R04, R01/P1.4, R03,
 R12 ani odbornou NDT-17. Další rozsah identity má vlastní rozhodnutí autora.
 
-Tento návrhový PR obsahuje pouze dokumentaci a odkazy, včetně doplnění doloženého
-dokončení P1.2B. Nemění `src/`, testy, ukázky, závislosti, formát, workflow ani
-README oddíl „Formát modelu“ předávaný AI. Místní Ruff a celý pytest ověří stávající
-kód před dokumentačním commitem; neprohlašují S01–S20 za implementované.
-Dokumentační diff podle současných filtrů nespustí Windows/macOS sestavení;
-nové balíčky jsou až branou budoucí implementace.
+Původní návrhový PR #36 obsahoval pouze dokumentaci a odkazy, včetně doplnění
+doloženého dokončení P1.2B. Neměnil `src/`, testy, ukázky, závislosti, formát,
+workflow ani README oddíl „Formát modelu“ předávaný AI. Místní Ruff a celý pytest
+ověřily výchozí kód před dokumentačním commitem; nešlo o nové testy S01–S20.
+Dokumentační diff nespustil Windows/macOS sestavení; ta patří implementačnímu PR.
 
-**Ke schválení: C1–C8, pravidla a meze oddílu 4, záměrná zpřísnění a omezení
+**Schváleno: C1–C8, pravidla a meze oddílu 4, záměrná zpřísnění a omezení
 oddílu 6, kroky C.1–C.3 a matice S01–S20.** P1.4/P1.5, P2, nová identita/formát,
 STEP import, přepracování NDT algoritmů a NDT-16 tím schválené nejsou.
 Sloučení implementace bude vyžadovat další samostatný pokyn.
