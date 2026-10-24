@@ -25,7 +25,7 @@ from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
 from skodacad.ndt import DISCLAIMER, MT_DISCLAIMER, PT_DISCLAIMER, RT_DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
-from skodacad.rebuild import BuildResult, rebuild
+from skodacad.rebuild import BuildResult, part_problem, rebuild, require_complete_part
 
 _ICONS = {"ok": "✓", "error": "✕", "skipped": "·"}
 
@@ -943,9 +943,11 @@ def _build(args: argparse.Namespace) -> int:
         print(line)
 
     if result.part is None:
-        print("Model zatím nemá žádné těleso.")
+        print(part_problem(result), file=sys.stderr)
         return 1
 
+    if not result.ok:
+        print("Diagnostika posledního dobrého mezistavu (model není dokončený):")
     _print_properties(result, document.material)
     if result.measurements:
         print("Měření:")
@@ -965,6 +967,11 @@ def _build(args: argparse.Namespace) -> int:
         if any(study.method == "RT" for study in result.ndt):
             print(f"  ({RT_DISCLAIMER})")
 
+    try:
+        require_complete_part(result)
+    except DocumentError as exc:
+        print(f"Chyba: {exc}", file=sys.stderr)
+        return 1
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]
     if with_map:

@@ -1119,16 +1119,16 @@ uvádí 1 451 testů, obě celé CI a self-testy stažených balíčků.
 autorova potvrzení příruby, převzetí dalších zkoušek agentem a meze automatizace.
 Úplné ruční přijetí konečného balíčku ani odborná NDT-17 se neprohlašují za hotové.
 Zbytkové riziko historické identity zůstává otevřené.
-**P1.4 — návrh ke schválení, bez implementace:**
-[export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md), E1–E9,
-kroky E.1–E.4, E01–E22. Příprava návrhu neopravňuje změnit produkční chování
-ani sloučit PR. Před implementací vyžádat schválení tohoto konkrétního rozsahu;
-sloučení implementace pak vyžaduje samostatný pokyn. Zachovat formát 22,
-R03/R04/R12 a odbornou validaci nepovažovat za vyřešené.
+**P1.4 — E1–E9 schválené autorem 24. 10. 2026 slovy „ok, schvaluji“:**
+[export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md),
+kroky E.1–E.4, E01–E22. Schválení návrhu v PR #38 opravňuje tyto kroky implementovat;
+[evidence](docs/p1-4-overeni.md) rozlišuje postup a skutečné výsledky.
+Implementace má samostatnou větev a PR, do main ji neslučovat bez dalšího pokynu.
+Zachovat formát 22; R03/R04/R12 a odbornou validaci nepovažovat za vyřešené.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-Implementaci P1.4/P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
+P1.5, P2 ani nový formát nezahajovat bez dalšího schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 

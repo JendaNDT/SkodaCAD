@@ -1,11 +1,13 @@
 # P1.4 — návrh exportu a NDT při chybě modelu
 
-**Stav: návrh ke schválení, 24. 10. 2026. Bez implementace.**
+**Stav: E1–E9 schválené autorem 24. 10. 2026; implementace E.1–E.4 probíhá.**
 Podklad: aktuální `main / f5fbe2cba45d0eab86b1f8fcefa74812c442922c`,
 po sloučení [P1.3 / PR #37](https://github.com/JendaNDT/SkodaCAD/pull/37).
-Požadavek „připravit návrh P1.4“ povoluje přípravu dokumentace. Rozhodnutí
-**E1–E9**, kroky **E.1–E.4** a matice **E01–E22** níže zatím nejsou schválené.
-Sloučení návrhového ani následného implementačního PR se tímto nepovoluje.
+Autor odpověděl **„ok, schvaluji“** na předání [návrhového PR #38](https://github.com/JendaNDT/SkodaCAD/pull/38)
+a výslovný další krok schválit E1–E9 pro zahájení implementace. Tím jsou schválené
+**E1–E9**, kroky **E.1–E.4** a matice **E01–E22**. Implementace má vlastní větev;
+[evidence](p1-4-overeni.md) rozlišuje dokončené kroky a zbývající ověření.
+Sloučení do `main` zůstává samostatnou branou na pokyn autora.
 
 Navazuje na [roadmapu](roadmapa-vyvoje.md#p1--bezpečná-geometrie),
 [smlouvu P1.1](p1-1-navrh-smlouvy-geometrickych-operaci.md),

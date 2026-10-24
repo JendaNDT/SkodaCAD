@@ -111,12 +111,14 @@ pokyn autora. [Evidence sloučení a vydání](p1-3-overeni.md#sloučení-a-vyd�
 dokládá 1 451 testů, oba celé cílové workflow i self-test stažených balíčků;
 meze ručního přijetí a historické identity zůstávají výslovně uvedené.
 
-**P1.4 — konkrétní návrh ke schválení (24. 10. 2026), bez implementace:**
+**P1.4 — E1–E9 schválené autorem 24. 10. 2026, implementace probíhá:**
 [export a NDT při chybě modelu](p1-4-navrh-exportu-a-ndt-pri-chybe.md), rozhodnutí
 E1–E9, kroky E.1–E.4 a matice E01–E22. Ponechat poslední geometrii k opravě,
 exporty a NDT vyžadují celý aktuální úspěšný model. Návrh rozlišuje vadnou studii,
-zastavený audit a chybu samotného modelu. P1.4/P1.5 nejsou tímto schválené;
-sloučení návrhu i implementace vyžaduje souhlas autora.
+zastavený audit a chybu samotného modelu. Autor odpověděl „ok, schvaluji“ na
+návrh a zahájení implementace. [Evidence P1.4](p1-4-overeni.md) rozlišuje postup
+od skutečného ověření. Sloučení do main vyžaduje samostatný pokyn autora;
+P1.5 tím schválené není.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.

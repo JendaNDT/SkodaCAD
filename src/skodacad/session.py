@@ -188,7 +188,7 @@ from skodacad.picking import (
 from skodacad.projection import Projected, ProjectionError, candidates, reference_for
 from skodacad.projection import refresh as refresh_references
 from skodacad.properties import PartProperties, compute
-from skodacad.rebuild import BuildResult, rebuild
+from skodacad.rebuild import BuildResult, part_problem, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.section import (
     Section,
@@ -527,6 +527,25 @@ class ModelSession:
         if self.computing:
             raise DocumentError(f"Model se ještě přepočítává – {what} půjde, až bude hotovo "
                                 "(nebo přepočet zastav).")
+
+    @property
+    def model_problem(self) -> str:
+        """Důvod nedostupnosti hotového dílu; také trvalé označení náhledu v okně."""
+        if self.document is None:
+            return "Není otevřený žádný model."
+        if self.computing:
+            return ("Model se ještě přepočítává. Zobrazená geometrie patří předchozímu "
+                    "stavu – počkej na dokončení nebo přepočet zastav.")
+        if self._computed != self.document:
+            return ("Aktuální model není spočítaný. Náhled patří předchozímu stavu. "
+                    "Přepočítej model znovu nebo vrať změnu pomocí Zpět.")
+        return part_problem(self.result)
+
+    def _require_complete_part(self, what: str) -> Any:
+        self._require_computed(what)
+        if problem := self.model_problem:
+            raise DocumentError(problem)
+        return self.result.part
 
     def _params(self) -> dict[str, float]:
         """Hodnoty parametrů aktuálního modelu (i když se zrovna přepočítává)."""
@@ -982,6 +1001,7 @@ class ModelSession:
 
     def export_section(self, path: str | Path) -> Path:
         """Obrys řezu jako 2D výkres (.dxf pro CAD, .svg jako obrázek)."""
+        self._require_complete_part("export řezu")
         section = self.section
         if section is None:
             raise DocumentError(self.section_error or "Řez není zapnutý.")
@@ -4052,10 +4072,7 @@ class ModelSession:
         return target
 
     def export(self, path: str | Path) -> Path:
-        self._require_computed("export")
-        if self.result is None or self.result.part is None:
-            raise DocumentError("Model zatím nemá žádné těleso, není co exportovat.")
-        return export(self.result.part, path)
+        return export(self._require_complete_part("export"), path)
 
     # --- informace pro zobrazení -------------------------------------------------
 

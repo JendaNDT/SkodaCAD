@@ -1120,11 +1120,12 @@ v [PR #37](https://github.com/JendaNDT/SkodaCAD/pull/37), nyní na `main` jako `
 rozlišuje 1 451 testů, self-testy stažených balíčků a meze ručního ověření.
 [Záznam převzetí zkoušek agentem z 23. 10. 2026](docs/p1-3-agent-overeni-macos-2026-10-23.md)
 zůstává protokolem skutečně provedených kontrol.
-**Ke schválení:** [P1.4 — export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md),
-rozhodnutí E1–E9, kroky E.1–E.4 a matice E01–E22. Návrh doporučuje ponechat
-chybný recept k opravě a blokovat exporty/NDT nad neúplnou nebo starší geometrií.
-Tento dokumentační krok nemění aplikaci; implementace P1.4, P1.5, P2 i změna
-formátu vyžadují samostatné schválení. Model zůstává ve verzi 22.
+[P1.4 — export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md)
+autor 24. 10. 2026 schválil slovy „ok, schvaluji“: E1–E9, kroky E.1–E.4,
+E01–E22. Implementace probíhá samostatně; [evidence](docs/p1-4-overeni.md) uvádí
+hotové kroky a zbývající ověření. Chybný recept zůstane k opravě, exporty/NDT
+vyžadují celý aktuální úspěšný model. Sloučení implementace vyžaduje další pokyn;
+P1.5, P2 a změna formátu další schválení. Model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
 
