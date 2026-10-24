@@ -457,8 +457,7 @@ class AuditPanel(QWidget):
 
     def refresh_actions(self) -> None:
         session = self.window.session
-        ready = session.document is not None and not session.computing \
-            and not self.window.ai_busy
+        ready = not session.model_problem and not self.window.ai_busy
         audit = self.audit()
         self.refresh_action.setEnabled(ready)
         self.run_action.setEnabled(ready and any(

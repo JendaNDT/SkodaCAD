@@ -1,10 +1,12 @@
 # P1.3 — návrh bezpečného vyhodnocování geometrických odkazů
 
-**Stav: C1–C8 schválené autorem 22. 10. 2026; implementace C.1–C.3 probíhá.**
+**Stav: C1–C8 schválené autorem 22. 10. 2026; implementace sloučená 23. 10. 2026.**
 Autor odpověděl **„ok, schvaluji vše“** na návrh včetně sloučení návrhového PR #36.
 [PR #36](https://github.com/JendaNDT/SkodaCAD/pull/36) je sloučené jako `c46d0e2`.
-[Evidence implementace](p1-3-overeni.md) rozlišuje kroky a zbývající přijetí;
-sloučení implementace vyžaduje další samostatný pokyn.
+Implementační [PR #37](https://github.com/JendaNDT/SkodaCAD/pull/37) je na `main`
+jako `f5fbe2c` po samostatném pokynu autora „sluč PR #37 do main“.
+[Evidence](p1-3-overeni.md#sloučení-a-vydání-z-main) rozlišuje konečné testy,
+vydání a meze přijetí. Návrhová pravidla níže zůstávají záznamem schváleného rozsahu.
 Podklad: `main / 3a8deffca360da6ba412cd808837bff8f3ad1d10`, po sloučení
 [P1.2B / PR #35](https://github.com/JendaNDT/SkodaCAD/pull/35).
 Navazuje na [roadmapu](roadmapa-vyvoje.md#p1--bezpečná-geometrie),

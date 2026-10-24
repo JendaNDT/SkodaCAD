@@ -58,6 +58,34 @@ class BuildResult:
         return next((s for s in self.statuses if s.status == "error"), None)
 
 
+def part_problem(result: BuildResult | None) -> str:
+    """Proč výsledek nelze použít jako hotový díl (náhled smí zůstat viditelný).
+
+    Platnost objemové geometrie zajišťují kontroly při přijetí prvku. Zde se
+    nepočítá nová geometrie; poslední dobrý solid není úspěchem celé historie.
+    Aktuálnost vůči otevřenému dokumentu kontroluje navíc ModelSession.
+    """
+    if result is None:
+        return "Model zatím není spočítaný – nejdřív jej přepočítej."
+    if not result.ok:
+        error = result.first_error
+        cause = (f"prvek [{error.id}] {error.label} má chybu – {error.message}"
+                 if error is not None else "některé prvky jsou přeskočené")
+        return (f"Model není dokončený: {cause.rstrip('.')}. Zobrazené těleso je poslední dobrý "
+                "mezistav. Oprav prvek nebo použij Zpět a potom operaci zopakuj.")
+    if result.part is None or not result.part.solids():
+        return "Model zatím nemá žádné těleso – nejdřív vytvoř objemový díl."
+    return ""
+
+
+def require_complete_part(result: BuildResult | None) -> Part:
+    """Vrátí dokončený díl, nebo český důvod odmítnutí před výpočtem/zápisem."""
+    problem = part_problem(result)
+    if problem:
+        raise DocumentError(problem)
+    return result.part
+
+
 def rebuild(document: Document, overrides: dict[str, Any] | None = None,
             with_map: bool = False) -> BuildResult:
     """Postaví díl z dokumentu. ``overrides`` dočasně mění hodnoty parametrů, ``with_map``
@@ -102,8 +130,12 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None,
     result.part = ctx.part
     result.sketches = ctx.sketches
     result.measurements = [evaluate(ctx.part, m) for m in document.measurements]
-    result.ndt = evaluate_studies(ctx.part, document)
-    if with_map:
+    problem = part_problem(result)
+    result.ndt = evaluate_studies(ctx.part, document, model_problem=problem)
+    if with_map and problem:
+        result.map_error = ("Mapa tloušťky potřebuje díl. " + problem
+                            if result.part is None else problem)
+    elif with_map:
         try:
             result.thickness_map = compute_map(ctx.part,
                                                MapSettings.from_dict(document.thickness_map))

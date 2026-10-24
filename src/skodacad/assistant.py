@@ -405,10 +405,13 @@ class ModelTools:
         if not image:
             return ToolOutput("Obrázek dílu teď nejde pořídit (žádný díl nebo okno bez 3D).",
                               is_error=True)
+        note = self.session.model_problem
+        description = (f"Diagnostický náhled – {note}" if note else
+                       f"Díl – {VIEW_NAMES[view]}.")
         return ToolOutput([
             {"type": "image", "source": {"type": "base64", "media_type": "image/png",
                                          "data": base64.standard_b64encode(image).decode()}},
-            {"type": "text", "text": f"Díl – {VIEW_NAMES[view]}."},
+            {"type": "text", "text": description},
         ])
 
 
@@ -420,11 +423,13 @@ def build_report(session: Any) -> str:
     """Souhrn přepočtu pro Claude: stav prvků, objem, hmotnost, rozměry, měření."""
     result = session.result
     if session.failure:
-        return f"Přepočet se nepovedl: {session.failure}"
+        return f"Přepočet se nepovedl: {session.failure}\n{session.model_problem}".strip()
     if result is None:
         return "Model zatím není spočítaný."
     params = result.parameters
     lines = ["Přepočet: " + ("v pořádku" if result.ok else "NĚKTERÉ PRVKY MAJÍ CHYBU"), "Prvky:"]
+    if session.model_problem:
+        lines.insert(1, f"Diagnostický náhled – {session.model_problem}")
     by_id = {feature["id"]: feature for feature in session.document.features}
     for status in result.statuses:
         mark = {"ok": "✓", "error": "✕", "skipped": "–"}.get(status.status, "?")
@@ -456,7 +461,7 @@ def build_report(session: Any) -> str:
         lines.append("Díl zatím nemá žádné těleso.")
     for measurement in result.measurements:
         lines.append(f"Měření „{measurement.name}“: {measurement.text}")
-    for study in result.ndt:
+    for study in session.ndt_studies:
         details = "; ".join(study.messages)
         lines.append(f"NDT studie [{study.id}] „{study.name}“ ({study.method}): {study.label}"
                      + (f" – {details}" if details else ""))

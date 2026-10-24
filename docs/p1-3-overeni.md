@@ -2,8 +2,42 @@
 
 Autor 22. 10. 2026 schválil [C1–C8, C.1–C.3 a S01–S20](p1-3-navrh-bezpecnych-referenci.md)
 slovy „ok, schvaluji vše“, včetně sloučení návrhového PR #36 (`c46d0e2`).
-Implementace má samostatnou větev `codex/p1-3-safe-references` a vlastní PR.
-**Sloučení implementace vyžaduje další samostatný pokyn autora.**
+Implementace z větve `codex/p1-3-safe-references` je sloučená v
+[PR #37](https://github.com/JendaNDT/SkodaCAD/pull/37). Autor dal samostatný pokyn
+„sluč PR #37 do main“; výsledek a meze uvádí následující konečný záznam.
+
+## Sloučení a vydání z main
+
+Aktualizace **24. 10. 2026**: PR #37 bylo sloučené 23. 10. 2026 do `main` jako
+`f5fbe2cba45d0eab86b1f8fcefa74812c442922c`. Jeho strom se shoduje s otestovanou
+hlavou `d35b2985c22b6bfa3c51b2625a511392f3b5aa52`, včetně opravy skicáře.
+Poslední místní sada: Ruff OK, **1 451 prošlo / 429,85 s**, bez chyb a přeskočení.
+
+| Ověření přímo z main | macOS | Windows |
+|---|---|---|
+| Celé workflow včetně vydání | [běh 150](https://github.com/JendaNDT/SkodaCAD/actions/runs/39983327386), úspěch | [běh 191](https://github.com/JendaNDT/SkodaCAD/actions/runs/39983327437), úspěch |
+| pytest podle JUnit | 1 451 / 1 159,089 s | 1 451 / 1 412,618 s |
+| Chyby / selhání / přeskočení | 0 / 0 / 0 | 0 / 0 / 0 |
+| Ruff, baseline, sestavení a self-test staženého artefaktu | OK | OK |
+
+Obě vydání i skutečné tagy při kontrole ukazovaly na `f5fbe2c`; veřejné odkazy
+vracely HTTP 200. Sestavení ve zprávách: `f5fbe2cba45d (2026-10-23)`.
+[Mac](https://github.com/JendaNDT/SkodaCAD/releases/tag/nejnovejsi-mac) zůstává
+předběžný, [Windows](https://github.com/JendaNDT/SkodaCAD/releases/tag/nejnovejsi)
+je výchozí nejnovější vydání. Tagy jsou pohyblivé; identitu určuje výše uvedené SHA.
+
+Při kontrole vydání byly znovu stažené a ověřené malé zprávy testů; celé vydané
+ZIPy se místně znovu nespouštěly. Spuštění staženého artefaktu před zveřejněním
+ověřily příslušné CI úlohy. Úplný ruční průchod konečného balíčku myší na Macu,
+ruční Windows a odborná NDT-17 zůstávají nedoložené. Autor po seznámení s těmito
+mezemi povolil sloučení; nezapisuje se tím dodatečné ruční či odborné ověření.
+R04 zůstává otevřené pro historickou identitu. Další krok je
+[návrh P1.4 ke schválení](p1-4-navrh-exportu-a-ndt-pri-chybe.md).
+
+## Historie předání před sloučením
+
+Následující mezivýsledky zaznamenávají stav při jednotlivých krocích;
+pozdější dokončení CI a sloučení dokládá záznam výše.
 
 23. 10. 2026 autor požádal o převzetí zbývajících zkoušek agentem. [Nový protokol](p1-3-agent-overeni-macos-2026-10-23.md)
 odděluje jeho skutečná potvrzení, omezení přímého ovládání a doplňkové automatické

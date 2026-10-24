@@ -349,7 +349,8 @@ class DesignPanel(QWidget):
         self.progress.setText(session.ndt_design_progress if session.design_pending else
                               outcome.conclusion() if outcome else "")
         ready = valid and not session.computing and not self.window.ai_busy
-        has_settings = ready and session.ndt_design_settings() is not None
+        has_settings = ready and not session.model_problem \
+            and session.ndt_design_settings() is not None
         self.edit_action.setEnabled(ready)
         self.estimate_action.setEnabled(has_settings)
         self.run_action.setEnabled(has_settings)

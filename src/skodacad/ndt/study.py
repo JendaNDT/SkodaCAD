@@ -325,7 +325,7 @@ def _date_cz(text: str) -> str:
     return f"{day.day}. {day.month}. {day.year}"
 
 
-def evaluate_all(part: Part | None, document: Any) -> list[StudyResult]:
+def evaluate_all(part: Part | None, document: Any, model_problem: str = "") -> list[StudyResult]:
     """Stavy všech studií modelu; neočekávaná chyba jádra studii jen označí, nespadne."""
     studies = (document.ndt or {}).get("studies", [])
     if not studies:
@@ -333,6 +333,12 @@ def evaluate_all(part: Part | None, document: Any) -> list[StudyResult]:
     fingerprint = part_fingerprint(document)
     results = []
     for study in studies:
+        if model_problem:
+            results.append(StudyResult(
+                str(study.get("id", "?")), study_name(study), str(study.get("method")),
+                "broken", (model_problem,), verified="Neověřeno.", part=fingerprint,
+                target_kind=(study.get("target") or {}).get("kind", "faces")))
+            continue
         try:
             results.append(evaluate(part, study, fingerprint))
         except Exception as exc:  # noqa: BLE001 – studie nesmí shodit přepočet

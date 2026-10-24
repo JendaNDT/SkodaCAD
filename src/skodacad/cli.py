@@ -25,7 +25,7 @@ from skodacad.export import FORMATS, export
 from skodacad.expressions import ExpressionError, evaluate
 from skodacad.ndt import DISCLAIMER, MT_DISCLAIMER, PT_DISCLAIMER, RT_DISCLAIMER, UT_DISCLAIMER
 from skodacad.properties import compute
-from skodacad.rebuild import BuildResult, rebuild
+from skodacad.rebuild import BuildResult, part_problem, rebuild, require_complete_part
 
 _ICONS = {"ok": "✓", "error": "✕", "skipped": "·"}
 
@@ -299,7 +299,11 @@ def _ray(args: argparse.Namespace) -> int:
 
     origin, direction = _vector(args.origin, "--z"), _vector(args.direction, "--smer")
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     if result.part is None:
         raise ValueError("Model nemá těleso – paprsek nemá čím procházet.")
     try:
@@ -340,7 +344,11 @@ def _probe(args: argparse.Namespace) -> int:
         alpha, c1, c2 = _vector(args.snell, "--snell")
         refraction = refract(alpha, c1, c2, args.vlna)
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     if result.part is None:
         raise ValueError("Model nemá těleso – není kam sondu přiložit.")
     try:
@@ -488,7 +496,11 @@ def _coverage(args: argparse.Namespace) -> int:
     if args.cil and args.cil_plocha:
         raise ValueError("Zadej buď --cil, nebo --cil-plocha, ne obojí.")
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     geo = PartGeometry(result.part)
     probe, device_lines, ut_material = _cli_device(args, document)
     placed = place(geo, probe, _vector(args.plocha, "--plocha"), angle=args.smer)
@@ -529,7 +541,11 @@ def _coverage(args: argparse.Namespace) -> int:
     compute = compute_volume if target is not None else coverage_compute
     covered = compute(geo, placed, **options)
     covered.assumptions.update(model=args.model.name, parameters=dict(result.parameters),
-                               study_id=args.studie,
+                               study_id=(args.studie if not args.cil and not args.cil_plocha
+                                         else None),
+                               device_study_id=args.studie,
+                               target_source=("jednorázové zadání" if args.cil or args.cil_plocha
+                                              else "uložená studie"),
                                part_fingerprint=part_fingerprint(document),
                                evaluated_target=(target["kind"] if target else
                                                  "points" if points else "faces"),
@@ -943,9 +959,11 @@ def _build(args: argparse.Namespace) -> int:
         print(line)
 
     if result.part is None:
-        print("Model zatím nemá žádné těleso.")
+        print(part_problem(result), file=sys.stderr)
         return 1
 
+    if not result.ok:
+        print("Diagnostika posledního dobrého mezistavu (model není dokončený):")
     _print_properties(result, document.material)
     if result.measurements:
         print("Měření:")
@@ -965,6 +983,11 @@ def _build(args: argparse.Namespace) -> int:
         if any(study.method == "RT" for study in result.ndt):
             print(f"  ({RT_DISCLAIMER})")
 
+    try:
+        require_complete_part(result)
+    except DocumentError as exc:
+        print(f"Chyba: {exc}", file=sys.stderr)
+        return 1
     args.out.mkdir(parents=True, exist_ok=True)
     written = [export(result.part, args.out / f"{args.model.stem}.{fmt}") for fmt in formats]
     if with_map:
