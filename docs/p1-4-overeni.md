@@ -10,7 +10,7 @@ Do main se bez dalšího pokynu autora neslučuje.
 | Krok | Stav |
 |---|---|
 | E.1 | Společná kontrola historie/tělesa, aktuálnosti session, exportu dílu a řezu. CLI zachovává označenou diagnostiku mezistavu, ale neexportuje a vrací 1. Nových 20 regresí; cílená sada 102 prošla / 12,03 s, Ruff OK. Celá místní sada **1 471 prošlo / 427,75 s**, 0 chyb, selhání a přeskočení. |
-| E.2 | Čeká: NDT studie, výpočty, výsledky, přímé NDT příkazy CLI, přenos a zprávy. |
+| E.2 | Kontrola úplného modelu před NDT potvrzením/ověřením, odhady a výpočty UT/PT/MT/RT/auditu/variant; nedostupné stavy studií při chybě historie bez výpočtu cílů a mapy tloušťky. Staré mapy, náhledy a zprávy blokované také po pádu workeru. CLI paprsek/sonda/pokrytí vyžadují úspěšný model; otisk odpovídá `--set`, jednorázový cíl se neoznačuje jako platná uložená studie. 60 nových případů včetně skutečných výsledků všech metod, řízené pozdní odpovědi a skutečného spawn. Celá místní sada **1 531 prošlo / 440,61 s**, Ruff OK, 0 chyb, selhání a přeskočení. Přerušený předchozí běh se nezapočítává. |
 | E.3 | Čeká: okno, diagnostický náhled AI a obnova. |
 | E.4 | Čeká: konečná matice, baseline, obě celé CI, balíčky a dostupné nativní zkoušky. |
 

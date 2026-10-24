@@ -130,8 +130,12 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None,
     result.part = ctx.part
     result.sketches = ctx.sketches
     result.measurements = [evaluate(ctx.part, m) for m in document.measurements]
-    result.ndt = evaluate_studies(ctx.part, document)
-    if with_map:
+    problem = part_problem(result)
+    result.ndt = evaluate_studies(ctx.part, document, model_problem=problem)
+    if with_map and problem:
+        result.map_error = ("Mapa tloušťky potřebuje díl. " + problem
+                            if result.part is None else problem)
+    elif with_map:
         try:
             result.thickness_map = compute_map(ctx.part,
                                                MapSettings.from_dict(document.thickness_map))

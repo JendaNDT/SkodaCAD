@@ -158,6 +158,7 @@ from skodacad.ndt.study import (
     target_for,
 )
 from skodacad.ndt.study import duplicate as duplicate_study
+from skodacad.ndt.study import evaluate_all as evaluate_studies
 from skodacad.ndt.ut import BeamError, BeamPath, trace_beam
 from skodacad.ndt.volume_coverage import (
     MAX_CELLS,
@@ -534,10 +535,14 @@ class ModelSession:
         if self.document is None:
             return "Není otevřený žádný model."
         if self.computing:
+            if self._computed == self.document:
+                return "Probíhá výpočet – počkej na dokončení nebo jej zastav."
             return ("Model se ještě přepočítává. Zobrazená geometrie patří předchozímu "
                     "stavu – počkej na dokončení nebo přepočet zastav.")
+        if self.result is None:
+            return part_problem(None)
         if self._computed != self.document:
-            return ("Aktuální model není spočítaný. Náhled patří předchozímu stavu. "
+            return ("Model nemá aktuálně spočítané těleso. Náhled patří předchozímu stavu. "
                     "Přepočítej model znovu nebo vrať změnu pomocí Zpět.")
         return part_problem(self.result)
 
@@ -1067,7 +1072,7 @@ class ModelSession:
 
     @property
     def thickness_map(self) -> ThicknessMap | None:
-        return self.result.thickness_map if self.result is not None else None
+        return self.result.thickness_map if not self.model_problem else None
 
     def show_thickness_map(self, visible: bool) -> BuildResult | None:
         """Zapne/vypne mapu tloušťky. Zapnutá mapa se spočítá (na pozadí) a pak se počítá
@@ -1119,7 +1124,7 @@ class ModelSession:
 
     def export_thickness_map(self, path: str | Path) -> Path:
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) pro Excel."""
-        self._require_computed("export mapy")
+        self._require_complete_part("export mapy")
         found = self.thickness_map
         if found is None:
             raise DocumentError("Mapa tloušťky ještě není spočítaná – zapni ji a počkej na "
@@ -1131,7 +1136,12 @@ class ModelSession:
     @property
     def ndt_studies(self) -> list[StudyResult]:
         """Stavy NDT studií na posledním dílu (spočítá je přepočet)."""
+        if self.document is not None and self._computed != self.document:
+            return evaluate_studies(None, self.document, model_problem=self.model_problem)
         return list(self.result.ndt) if self.result is not None else []
+
+    def _ndt_study_is_ok(self, study_id: str) -> bool:
+        return any(study.id == study_id and study.state == "ok" for study in self.ndt_studies)
 
     def ndt_study(self, study_id: str) -> dict[str, Any]:
         """Záznam studie v modelu (kopie)."""
@@ -1185,10 +1195,12 @@ class ModelSession:
         """Potvrdí studii pro aktuální díl (po kontrole zastaralé studie): nový otisk dílu a
         plochy oblasti ukotvené tam, kde teď jsou. Ověření pro starší díl tím zanikne."""
         document = self._require()
-        self._require_computed("potvrzení studie")
+        self._require_complete_part("potvrzení studie")
         study = _studies(document)[self._study_index(study_id)]
         fingerprint = part_fingerprint(document)
         target = study.get("target")
+        if not target or (target.get("kind", "faces") == "faces" and not target.get("faces")):
+            raise DocumentError("Studie je neúplná – nejdřív vyber kontrolovanou oblast.")
         if target and (target.get("faces") or target.get("kind") in ("volume", "weld")):
             if self.result is None or self.result.part is None or self._computed != document:
                 raise DocumentError("Model nemá spočítané těleso – studii teď nejde potvrdit.")
@@ -1219,7 +1231,7 @@ class ModelSession:
 
     def check_ndt_volume_target(self, target: dict[str, Any]) -> TargetVolume:
         """Cíl ověřený na aktuálním dílu **bez změny modelu** (editor: Zkontrolovat v dílu)."""
-        self._require_computed("kontrola cílového objemu")
+        self._require_complete_part("kontrola cílového objemu")
         if self._computed != self.document:
             raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
         try:
@@ -1240,6 +1252,7 @@ class ModelSession:
     def ndt_frame_from_edge(self, shapes: list[Any]) -> dict[str, Any]:
         """Rovná hrana vybraná ve 3D → počátek (začátek hrany), směr podél a délka [mm].
         Směr se otočí ke kladným souřadnicím, aby nezávisel na orientaci hrany v OCCT."""
+        self._require_complete_part("práce s NDT geometrií")
         if self.result is None or self.result.part is None:
             raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
         faces, edges = split_shapes(self._model_shapes(shapes))
@@ -1260,6 +1273,8 @@ class ModelSession:
     def ndt_target_preview(self, study_id: str | None) -> tuple[Any, Any] | None:
         """Pomocné těleso objemového cíle studie pro náhled ve 3D: (účinný objem v materiálu,
         zadaný tvar – jen když z dílu vyčnívá). Při řezu rozříznuté. None = není co ukázat."""
+        if self.model_problem:
+            return None
         if study_id is None or self.document is None or self.result is None \
                 or self.result.part is None:
             return None
@@ -1287,7 +1302,7 @@ class ModelSession:
 
     def ndt_target_volume(self, study_id: str) -> TargetVolume:
         """Účinné pomocné těleso platné studie (není to výsledek pokrytí ani výrobní díl)."""
-        self._require_computed("ověření cílového objemu")
+        self._require_complete_part("ověření cílového objemu")
         if self._computed != self.document:
             raise DocumentError("Model nemá aktuálně spočítané těleso – nejdřív jej přepočítej.")
         record = self.ndt_study(study_id)
@@ -1305,7 +1320,7 @@ class ModelSession:
         by = by.strip()
         if not by:
             raise DocumentError("Napiš, kdo studii ověřil.")
-        self._require_computed("ověření studie")
+        self._require_complete_part("ověření studie")
         index = self._study_index(study_id)
         state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
         if state != "ok":
@@ -1416,7 +1431,7 @@ class ModelSession:
         po změně dílu se přiloží znovu na stejné místo). ``angle`` = směr paprsku ve stupních.
         Ruční přiložení zruší ukázku varianty návrhu poloh (``keep_preview`` ji při posunu
         zachová)."""
-        self._require_computed("přiložení sondy")
+        self._require_complete_part("přiložení sondy")
         self._study_index(study_id)
         if self.result is None or self.result.part is None:
             raise DocumentError("Model zatím nemá těleso, není kam sondu přiložit.")
@@ -1462,6 +1477,7 @@ class ModelSession:
     def shift_ndt_probe(self, step_mm: float) -> Placement:
         """Posune přiloženou sondu po ploše přiložení o ``step_mm`` (+ dopředu ve směru paprsku,
         − dozadu)."""
+        self._require_complete_part("práce s NDT geometrií")
         placement = self.ndt_placement
         if placement is None or self.ndt_placement_request is None or self.result is None:
             raise DocumentError("Sonda není přiložená.")
@@ -1487,6 +1503,7 @@ class ModelSession:
 
     def scan_ndt_line(self, length: float = 50.0, step: float = 1.0) -> ScanResult:
         """Projede přiloženou sondou přímku z aktuálního místa ve směru paprsku."""
+        self._require_complete_part("práce s NDT geometrií")
         placement = self.ndt_placement
         if placement is None or self.ndt_placement_request is None or self.result is None:
             raise DocumentError("Sonda není přiložená.")
@@ -1503,6 +1520,7 @@ class ModelSession:
 
     def select_ndt_scan_index(self, index: int) -> Placement:
         """Přesune sondu na ``index``-tou polohu posledního projetí čáry."""
+        self._require_complete_part("práce s NDT geometrií")
         scan = self.ndt_line_scan
         if scan is None or self.ndt_placement_request is None or self.result is None:
             raise DocumentError("Čára posuvu není spočítaná.")
@@ -1529,6 +1547,8 @@ class ModelSession:
     @property
     def ndt_line_scan(self) -> ScanResult | None:
         """Poslední projetí čáry přiloženou sondou (jen pohled); zanikne po změně dílu či sondy."""
+        if self.model_problem:
+            return None
         if (self._line_scan is None or self.ndt_placement is None
                 or self.ndt_placement_request is None):
             return None
@@ -1544,6 +1564,8 @@ class ModelSession:
     def ndt_placement(self) -> Placement | None:
         """Přiložená sonda na aktuálním dílu (přepočítá se po změně dílu i sondy); None =
         žádná, nebo nejde přiložit (důvod v ``ndt_placement_error``)."""
+        if self.model_problem:
+            return None
         request = self.ndt_placement_request
         result = self.result
         if request is None or result is None or result.part is None or self.computing:
@@ -1582,7 +1604,7 @@ class ModelSession:
         return self._placement_cache[3]
 
     def _ndt_geometry(self) -> PartGeometry:
-        part = self.result.part
+        part = self._require_complete_part("NDT výpočet")
         if self._geometry_cache is None or self._geometry_cache[0] is not part:
             self._geometry_cache = (part, PartGeometry(part))
         return self._geometry_cache[1]
@@ -1595,6 +1617,8 @@ class ModelSession:
     @property
     def ndt_coverage(self) -> CoverageMap | VolumeCoverageMap | None:
         """Mapa platí pouze pro původní díl, zadání studie a přiložení sondy."""
+        if self.model_problem:
+            return None
         if self.computing or self._coverage_cache is None:
             return None
         key, result = self._coverage_cache
@@ -1612,7 +1636,7 @@ class ModelSession:
         self._coverage_cache = None
 
     def _coverage_inputs(self) -> tuple[PartGeometry, Placement, list[Any] | dict, float]:
-        self._require_computed("výpočet pokrytí")
+        self._require_complete_part("výpočet pokrytí")
         placed = self.ndt_placement
         if placed is None or self.ndt_placement_request is None:
             raise DocumentError("Nejdřív přilož sondu UT studie na pojezdovou plochu.")
@@ -1760,6 +1784,7 @@ class ModelSession:
         return self._volume_drawing_cache[1]
 
     def export_ndt_coverage(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_coverage
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu geometrického pokrytí UT.")
@@ -1794,7 +1819,7 @@ class ModelSession:
         return self._edit_study(study_id, lambda study: study.update(pt=data))
 
     def _pt_inputs(self, study_id: str) -> tuple[Any, list[Any], PtSettings]:
-        self._require_computed("mapa PT")
+        self._require_complete_part("mapa PT")
         record = self.ndt_study(study_id)
         if record.get("method") != "PT":
             raise DocumentError("Mapa PT jde spočítat jen pro PT (kapilární) studii.")
@@ -1818,6 +1843,8 @@ class ModelSession:
     @property
     def ndt_pt_map(self) -> PtMap | None:
         """Mapa PT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if self.model_problem:
+            return None
         if self.computing or self._pt_cache is None:
             return None
         key, result = self._pt_cache
@@ -1901,6 +1928,7 @@ class ModelSession:
         return [] if index is None else result.describe(index)
 
     def export_ndt_pt(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_pt_map
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu PT.")
@@ -1935,7 +1963,7 @@ class ModelSession:
         return self._edit_study(study_id, lambda study: study.update(mt=data))
 
     def _mt_record(self, study_id: str, what: str) -> dict[str, Any]:
-        self._require_computed(what)
+        self._require_complete_part(what)
         record = self.ndt_study(study_id)
         if record.get("method") != "MT":
             raise DocumentError(f"{what.capitalize()} jde jen pro MT (magnetickou práškovou) "
@@ -1975,6 +2003,8 @@ class ModelSession:
     @property
     def ndt_mt_map(self) -> MtMap | None:
         """Mapa MT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if self.model_problem:
+            return None
         if not self._mt_valid(self._mt_cache):
             self._mt_cache = None
             return None
@@ -2055,6 +2085,7 @@ class ModelSession:
         return [] if index is None else result.describe(index)
 
     def export_ndt_mt(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_mt_map
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu MT.")
@@ -2066,6 +2097,8 @@ class ModelSession:
     @property
     def ndt_yoke(self) -> YokePlacement | None:
         """Přiložené jho (jen pohled) – platí pro díl a studii, pro které vzniklo."""
+        if self.model_problem:
+            return None
         if not self._mt_valid(self._yoke_view):
             self._yoke_view = None
             return None
@@ -2241,7 +2274,7 @@ class ModelSession:
             p for p in self.ndt_rt_settings(study_id).projections if p.name != name])
 
     def _rt_record(self, study_id: str, what: str) -> dict[str, Any]:
-        self._require_computed(what)
+        self._require_complete_part(what)
         record = self.ndt_study(study_id)
         if record.get("method") != "RT":
             raise DocumentError(f"{what.capitalize()} jde jen pro RT (radiografickou) studii.")
@@ -2285,6 +2318,8 @@ class ModelSession:
     @property
     def ndt_rt_map(self) -> RtMap | None:
         """Mapa RT platí jen pro díl, ze kterého vznikla, a nezměněnou studii."""
+        if self.model_problem:
+            return None
         if not self._rt_valid(self._rt_cache):
             self._rt_cache = None
             return None
@@ -2384,6 +2419,8 @@ class ModelSession:
         """Projekce pro prohlížeč (jen pohled): (tělo zdroje a deska detektoru, stav v barvách
         sondy, zdroj, zaměřený bod, popis, paprsky ze zdroje do rohů detektoru); None = nejde
         nakreslit (bez dílu, během přepočtu, neznámá projekce)."""
+        if self.model_problem:
+            return None
         if (self.computing or study_id is None or name is None or self.result is None
                 or self.result.part is None):
             return None
@@ -2469,6 +2506,7 @@ class ModelSession:
         return preview_rgb(result.images[index], result.marks(index), scale, radius)
 
     def export_ndt_rt_png(self, name: str, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         image = self.ndt_rt_image(name)
         if image is None:
             raise DocumentError("Náhled projekce není – spočítej mapu RT (projekce musí jít "
@@ -2496,6 +2534,7 @@ class ModelSession:
         return result.images[found[0]] if found else None
 
     def export_ndt_rt(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_rt_map
         if result is None:
             raise DocumentError("Nejdřív spočítej mapu RT.")
@@ -2516,7 +2555,7 @@ class ModelSession:
         """Co audit spočítá u každé studie (a mapy tloušťky s mezí), s odhadem doby a důvodem,
         proč ne. ``include`` = jen tyto studie (jinak všechny), ``access`` = UT studie, u nichž
         se má spustit návrh poloh (pomalé). Model se nemění."""
-        self._require_computed("předběžný NDT audit")
+        self._require_complete_part("předběžný NDT audit")
         records = (self._require().ndt or {}).get("studies", [])
         known = {record["id"]: record.get("method") for record in records}
         if self._require().thickness_map is not None:
@@ -2785,6 +2824,8 @@ class ModelSession:
     @property
     def ndt_audit(self) -> AuditResult | None:
         """Hotový (i zastavený) audit, pokud platí pro díl, studie, materiál a mapu tloušťky."""
+        if self.model_problem:
+            return None
         if self._audit_cache is None or self.computing:
             return None
         key, result = self._audit_cache
@@ -2866,6 +2907,7 @@ class ModelSession:
                          images: dict[str, list[tuple[str, bytes]]] | None = None
                          ) -> list[Path]:
         """Složka se zprávou auditu (HTML, CSV míst, podrobná CSV studií)."""
+        self._require_complete_part("výstup NDT")
         audit = self.ndt_audit
         if audit is None:
             raise DocumentError("Nejdřív spusť předběžný NDT audit.")
@@ -2913,7 +2955,7 @@ class ModelSession:
 
     def ndt_design_estimate(self, settings: Design | dict[str, Any] | None = None
                             ) -> tuple[int, float]:
-        self._require_computed("odhad konstrukčního návrhu")
+        self._require_complete_part("odhad konstrukčního návrhu")
         design = self._get_ndt_design(settings)
         try:
             return estimate_design(design_baseline(self._require().to_dict(), design), design)
@@ -2926,7 +2968,7 @@ class ModelSession:
                            on_variant: Callable[[DesignVariant], None] | None = None
                            ) -> DesignResult:
         """Synchronní výpočet na kopiích dílu (CLI a testy)."""
-        self._require_computed("konstrukční návrh")
+        self._require_complete_part("konstrukční návrh")
         design = self._get_ndt_design(settings)
         key, doc = self._design_key(), self._require()
         try:
@@ -2943,7 +2985,7 @@ class ModelSession:
     def start_ndt_design(self, settings: Design | dict[str, Any] | None = None,
                          operator: str = "") -> DesignResult | None:
         """Výpočet variant na pozadí, s průběžným předáváním hotových variant."""
-        self._require_computed("konstrukční návrh")
+        self._require_complete_part("konstrukční návrh")
         design = self._get_ndt_design(settings)
         if self._runner is None:
             return self.compute_ndt_design(design, operator)
@@ -2994,6 +3036,8 @@ class ModelSession:
     @property
     def ndt_design(self) -> DesignResult | None:
         """Srovnání platné pro současnou podobu modelu."""
+        if self.model_problem:
+            return None
         if self._design_cache is None or self.computing:
             return None
         key, outcome = self._design_cache
@@ -3006,7 +3050,7 @@ class ModelSession:
         self._design_cache = None
 
     def _design_variant(self, index: int) -> DesignVariant:
-        self._require_computed("použití konstrukční varianty")
+        self._require_complete_part("použití konstrukční varianty")
         outcome = self.ndt_design
         if outcome is None:
             raise DocumentError("Nejdřív spočítej konstrukční návrh pro tento model.")
@@ -3039,6 +3083,7 @@ class ModelSession:
     def export_ndt_design(self, folder: str | Path,
                           images: dict[str, list[tuple[str, bytes]]] | None = None
                           ) -> list[Path]:
+        self._require_complete_part("výstup NDT")
         outcome = self.ndt_design
         if outcome is None:
             raise DocumentError("Nejdřív spočítej konstrukční návrh.")
@@ -3059,6 +3104,8 @@ class ModelSession:
     @property
     def ndt_probe_preview(self) -> Probe | None:
         """Sonda ukázky varianty (úhel a odrazy zatím neuložené ve studii), jinak None."""
+        if self.model_problem:
+            return None
         request = self.ndt_placement_request
         override = self._probe_override
         if request is None or override is None or override[0] != request[0]:
@@ -3067,6 +3114,7 @@ class ModelSession:
 
     def ndt_access_contact(self, shapes: list[Any]) -> list[dict[str, Any]]:
         """Kontaktní plochy vybrané ve 3D jako odkazy významem (jdou i do pomocného procesu)."""
+        self._require_complete_part("práce s NDT geometrií")
         faces, edges = split_shapes(self._model_shapes(shapes))
         if edges or not faces:
             raise DocumentError("Kontaktní plochy vyber ve 3D – jen plochy, ne hrany.")
@@ -3084,7 +3132,7 @@ class ModelSession:
     def ndt_access_analysis(self, study_id: str, options: AccessOptions | dict | None = None,
                             contact: list[dict[str, Any]] | None = None) -> Analysis:
         """Připravená analýza (bez výpočtu) – pro odhad i výpočet."""
-        self._require_computed("návrh poloh sondy")
+        self._require_complete_part("návrh poloh sondy")
         record = self.ndt_study(study_id)
         state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
         if record["method"] != "UT" or state != "ok":
@@ -3182,11 +3230,13 @@ class ModelSession:
     @property
     def ndt_access(self) -> AccessResult | None:
         """Hotová (i zastavená) analýza, pokud platí pro díl, cíl a rozměry sondy."""
+        if self.model_problem:
+            return None
         if self._access_cache is None or self.document is None:
             return None
         key, result = self._access_cache
         try:
-            if self._access_key(key[1]) != key:
+            if not self._ndt_study_is_ok(key[1]) or self._access_key(key[1]) != key:
                 self._access_cache = None
                 return None
         except DocumentError:
@@ -3198,6 +3248,7 @@ class ModelSession:
         self._access_cache = None
 
     def _access_variant(self, rank: int) -> tuple[str, VariantResult]:
+        self._require_complete_part("práce s NDT geometrií")
         result = self.ndt_access
         if result is None:
             raise DocumentError("Nejdřív spusť návrh poloh sondy.")
@@ -3263,6 +3314,7 @@ class ModelSession:
                 [c.state for c in contact])
 
     def export_ndt_access(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_access
         if result is None:
             raise DocumentError("Nejdřív spusť návrh poloh sondy.")
@@ -3344,11 +3396,13 @@ class ModelSession:
     @property
     def ndt_plan_result(self) -> PlanResult | None:
         """Ověřený (a případně spočítaný) plán, pokud platí pro současné zadání."""
+        if self.model_problem:
+            return None
         if self._plan_cache is None or self.document is None:
             return None
         key, result = self._plan_cache
         try:
-            if self._plan_key(key[1]) != key:
+            if not self._ndt_study_is_ok(key[1]) or self._plan_key(key[1]) != key:
                 self._plan_cache = None
                 return None
         except DocumentError:
@@ -3386,7 +3440,7 @@ class ModelSession:
     def ndt_planner(self, study_id: str, options: PlanOptions | dict | None = None
                     ) -> Planner:
         """Plánovač pro studii (cíl, sonda, zóny) – bez výpočtu."""
-        self._require_computed("plán dráhy")
+        self._require_complete_part("plán dráhy")
         record = self.ndt_study(study_id)
         state = next((r.state for r in self.ndt_studies if r.id == study_id), None)
         if record["method"] != "UT" or state != "ok":
@@ -3537,6 +3591,7 @@ class ModelSession:
         """Ověří uložený plán na současném dílu (po kontrolním kroku, nájezd, zóny)
         a s ``coverage`` spočítá i pokrytí. Model se nemění – jen s ``confirm`` se platný
         zastaralý plán přihlásí k současnému dílu, cíli a sondě (jeden krok Zpět)."""
+        self._require_complete_part("ověření plánu dráhy")
         plan = self.ndt_plan(study_id)
         if plan is None:
             raise DocumentError("Studie zatím nemá plán dráhy.")
@@ -3583,6 +3638,7 @@ class ModelSession:
                              coverage: bool = True, confirm: bool = False
                              ) -> PlanResult | None:
         """Okno: ověření (a pokrytí) uloženého plánu v pomocném procesu."""
+        self._require_complete_part("ověření plánu dráhy")
         plan = self.ndt_plan(study_id)
         if plan is None:
             raise DocumentError("Studie zatím nemá plán dráhy.")
@@ -3793,6 +3849,8 @@ class ModelSession:
         """Kresba plánu dráhy studie pro okno: (klíč, (čáry po barvách, začátek, zóny)), nebo
         (None, None). Ověřený plán ukáže celou jízdu (přesuny, přestavení obloukem nad dílem
         ve výšce nájezdu), neověřený jen úseky. Klíč se mění jen se změnou kresby."""
+        if self.model_problem:
+            return None, None
         if study_id is None or self.document is None or self.result is None \
                 or self.result.part is None:
             return None, None
@@ -3852,6 +3910,7 @@ class ModelSession:
 
     def ndt_zone_from_selection(self, shapes: list[Any]) -> dict[str, Any]:
         """Zakázaná zóna kolem ploch či hran vybraných ve 3D (obalový kvádr + 1 mm)."""
+        self._require_complete_part("práce s NDT geometrií")
         faces, edges = split_shapes(self._model_shapes(shapes))
         items = [*faces, *edges]
         if not items:
@@ -3865,6 +3924,7 @@ class ModelSession:
         return {"name": f"zóna u ({center})", "min": low, "max": high}
 
     def export_ndt_plan(self, path: str | Path) -> Path:
+        self._require_complete_part("výstup NDT")
         result = self.ndt_plan_result
         if result is None:
             raise DocumentError("Plán dráhy zatím není ověřený – není co uložit.")
@@ -3911,7 +3971,7 @@ class ModelSession:
         return self._change(mutate)
 
     def _ndt_target(self, shapes: list[Any], point: Any) -> dict[str, Any]:
-        self._require_computed("výběr kontrolované oblasti")
+        self._require_complete_part("výběr kontrolované oblasti")
         if self.result is None or self.result.part is None:
             raise DocumentError("Model zatím nemá těleso, není z čeho vybírat.")
         faces, edges = split_shapes(self._model_shapes(shapes))
@@ -3931,7 +3991,7 @@ class ModelSession:
         if result.first_error is not None:
             raise DocumentError(f"Model má chybu v prvku {result.first_error.label} – nejdřív "
                                 "ji oprav, pak přidávej prvky z výběru.")
-        return result.part
+        return self._require_complete_part("přidání prvku z výběru")
 
     def _evaluate(self, value: Any) -> float:
         return evaluate(value, self._params())

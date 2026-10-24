@@ -299,7 +299,11 @@ def _ray(args: argparse.Namespace) -> int:
 
     origin, direction = _vector(args.origin, "--z"), _vector(args.direction, "--smer")
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     if result.part is None:
         raise ValueError("Model nemá těleso – paprsek nemá čím procházet.")
     try:
@@ -340,7 +344,11 @@ def _probe(args: argparse.Namespace) -> int:
         alpha, c1, c2 = _vector(args.snell, "--snell")
         refraction = refract(alpha, c1, c2, args.vlna)
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     if result.part is None:
         raise ValueError("Model nemá těleso – není kam sondu přiložit.")
     try:
@@ -488,7 +496,11 @@ def _coverage(args: argparse.Namespace) -> int:
     if args.cil and args.cil_plocha:
         raise ValueError("Zadej buď --cil, nebo --cil-plocha, ne obojí.")
     document = Document.load(args.model)
-    result = rebuild(document, _parse_overrides(args.overrides) or None)
+    overrides = _parse_overrides(args.overrides)
+    if overrides:
+        document = document.with_parameters(overrides)
+    result = rebuild(document)
+    require_complete_part(result)
     geo = PartGeometry(result.part)
     probe, device_lines, ut_material = _cli_device(args, document)
     placed = place(geo, probe, _vector(args.plocha, "--plocha"), angle=args.smer)
@@ -529,7 +541,11 @@ def _coverage(args: argparse.Namespace) -> int:
     compute = compute_volume if target is not None else coverage_compute
     covered = compute(geo, placed, **options)
     covered.assumptions.update(model=args.model.name, parameters=dict(result.parameters),
-                               study_id=args.studie,
+                               study_id=(args.studie if not args.cil and not args.cil_plocha
+                                         else None),
+                               device_study_id=args.studie,
+                               target_source=("jednorázové zadání" if args.cil or args.cil_plocha
+                                              else "uložená studie"),
                                part_fingerprint=part_fingerprint(document),
                                evaluated_target=(target["kind"] if target else
                                                  "points" if points else "faces"),
