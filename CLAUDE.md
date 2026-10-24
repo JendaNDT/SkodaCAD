@@ -1125,8 +1125,18 @@ kroky E.1–E.4, E01–E22. Schválení návrhu v PR #38 opravňuje tyto kroky i
 [evidence](docs/p1-4-overeni.md) rozlišuje postup a skutečné výsledky.
 Implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39),
 [nativní ověření](docs/p1-4-agent-overeni-macos-2026-10-24.md) odděluje skutečné
-kreslení od programového ovládání. Do main ji neslučovat bez dalšího pokynu.
+kreslení od programového ovládání. Po předání autor schválil sloučení slovy
+„ok, schvaluji“; P1.4 je na main jako `e7f9ac6`.
+[Evidence obou vydání](docs/p1-4-overeni.md#sloučení-a-vydání-z-main) dokládá
+1 549 testů na každém systému, kontrolu stažení a místní self-test vydání na M4.
 Zachovat formát 22; R03/R04/R12 a odbornou validaci nepovažovat za vyřešené.
+**P1.5 — návrh ke schválení, nikoli zahájená implementace:**
+[přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md),
+F1–F9, F.1–F.4 a P01–P24. Pokyn autora „tak to připrav“ opravňuje připravit
+návrh a PR; nenahrazuje schválení provedení. Doporučený rozsah je inventura,
+chybějící regrese, protokol a balíčky, bez změny produkčního chování.
+Nový produkční nález předložit se samostatným návrhem opravy; neupravovat
+`src`, tolerance, závislosti ani očekávání jen kvůli úspěšnému přijetí.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
