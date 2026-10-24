@@ -12,7 +12,7 @@ Produkční zdroje a všechny dosavadní testy jsou v těchto dvou základech sh
 | Krok | Stav |
 |---|---|
 | F.1 | Inventura konkrétních kontrol níže a nová výchozí baseline P0 hotové. Čtyři mezery M1–M4 jsou výslovně oddělené od existujících důkazů. Ruff OK, celý místní pytest **1 549 prošlo / 451,59 s**, bez chyb a přeskočení. Všech 180 odkazů matice má skutečně provedené případy v JUnit. |
-| F.2 | Čeká: doplnit M1–M4, bez změny zdrojů nebo dosavadních očekávání. |
+| F.2 | M1–M4 doplňuje `test_p15_acceptance.py`: **7 nových případů** bez GUI a s nezávislými prostorovými očekáváními. Cílená sada 7/7 prošla / 0,15 s; Ruff OK a celý místní běh **1 556 prošlo / 452,42 s**, bez chyb a přeskočení. Všech 80 původních testovacích souborů i produkční zdroje zůstávají byte shodné. |
 | F.3 | Čeká: nový nativní průchod a obě celé konečné CI včetně stažených balíčků. |
 | F.4 | Čeká: souhrn, srovnání, konečné předání autorovi; P1 není zatím přijata. |
 
@@ -54,6 +54,7 @@ důkaz správnosti; při inventuře byly čtené i skutečné podmínky testu.
 | GUI | `test_gui.py` |
 | EX | `test_examples_and_cli.py` |
 | NS | `test_ndt_study.py` |
+| PA | `test_p15_acceptance.py` |
 
 **Doloženo** níže znamená existující konkrétní regresi se správným očekáváním,
 která musí znovu projít na konečné verzi. **Doplnit** není úspěch.
@@ -72,11 +73,11 @@ už předem vyloučeného průniku, nikoli nově zjištěné chyby.
 | P06 — doloženo | `GV::test_add_without_effect_is_an_error_and_does_not_record_an_operation`, `GV::test_rejected_cut_keeps_geometry_and_recording` | Bezúčelné přidání, míjející/tečný/úplný řez, nezměněné těleso i záznamy. |
 | P07 — doloženo | `GV::test_bad_volume_tool_is_rejected_whole_without_changing_part_or_recording`, `GV::test_open_shell_can_have_positive_volume_without_being_acceptable`, `GM::test_unchanged_identity_does_not_bypass_guard_and_sketch_only_is_valid` | Prázdné/otevřené/smíšené tvary, malé složky a platný 2D mezikrok. |
 | P08 — doloženo | `GV::test_nonfinite_geometric_inputs_are_rejected_before_building`, `GV::test_cut_effect_boundary_at_different_scales`, `GV::test_add_effect_boundary_uses_result_and_not_tool_volume`, `GV::test_real_booleans_at_model_scales`, `GV::test_real_shallow_cut_is_decided_by_measured_not_nominal_effect` | Aritmetická hranice oddělená od skutečného OCCT; také konečnost vstupů a měřítka. |
-| P09 — doplnit M4 | `GV::test_add_overlap_contacts_separation_and_kernel_resolution`; existující zprávy `BC::test_core_cli_and_ai_report_the_same_actual_body_counts` | Skutečné mikromezery jsou ověřené přímo přes kontext; chybí spojení právě těchto dvou numerických případů se zprávou prvku po přepočtu. |
-| P10 — doplnit M1 | `FE::test_fillet_vertical_edges`, `GM::test_chamfer_four_vertical_corners_matches_formula_and_preserves_body_count` | Sražení už má bodovou kontrolu. Vnější R3 zatím ověřuje objem, chybí materiál v každém rohu a geometrie válcových zaoblení. |
+| P09 — doloženo, doplnění M4 | `GV::test_add_overlap_contacts_separation_and_kernel_resolution`, `BC::test_core_cli_and_ai_report_the_same_actual_body_counts`, `PA::test_microgap_result_reports_the_actual_body_count_without_claiming_connection` | Obě skutečné mikromezery nyní také přes celý recept se zprávou skutečného počtu po přepočtu; obálka, objem a materiál obou částí. |
+| P10 — doloženo, doplnění M1 | `FE::test_fillet_vertical_edges`, `GM::test_chamfer_four_vertical_corners_matches_formula_and_preserves_body_count`, `PA::test_vertical_fillet_keeps_material_and_radius_at_all_four_corners` | Vnější R3: správné čtyři válcové plochy/poloměry a materiál všech rohů ve třech výškách, původní díl zachovaný. Sražení má samostatnou bodovou kontrolu. |
 | P11 — doloženo | `GM::test_inner_corner_modifications_can_add_material` | Objemové vzorce, obálka, výplň vnitřního rohu a nezměněný původní díl pro oba druhy. |
-| P12 — doplnit M3 | `GM::test_open_shell_keeps_envelope_floor_and_wall_material`, `GM::test_shell_without_openings_or_with_impossible_wall_is_rejected` | 8 472, obálka, dno/stěny/dutina, bez otevření a nemožná stěna; doplnit explicitní nenalezenou otevřenou plochu. |
-| P13 — doplnit M2 | `SL::test_ruled_loft_between_squares_is_a_pyramid_frustum`, `SL::test_loft_between_circles_is_a_cone_frustum`, `SL::test_loft_errors_are_czech`, `SL::test_hollow_cone_has_wall_perpendicular_to_the_surface`, `SL::test_hollow_round_to_square_keeps_the_wall_in_the_sketch_planes` | Objem a chyby i oba významy duté stěny existují. Doplnit výšku, tři analytické průřezy a polohu materiálu u dvou jednoduchých plných loftů. |
+| P12 — doloženo, doplnění M3 | `GM::test_open_shell_keeps_envelope_floor_and_wall_material`, `GM::test_shell_without_openings_or_with_impossible_wall_is_rejected`, `PA::test_impossible_chamfer_and_missing_shell_face_leave_the_whole_box` | 8 472, obálka, dno/stěny/dutina, bez otevření a nemožná stěna; nově také explicitní nenalezená otevřená plocha bez náhradního výběru. |
+| P13 — doloženo, doplnění M2 | `SL::test_ruled_loft_between_squares_is_a_pyramid_frustum`, `SL::test_loft_between_circles_is_a_cone_frustum`, `SL::test_loft_errors_are_czech`, `SL::test_hollow_cone_has_wall_perpendicular_to_the_surface`, `SL::test_hollow_round_to_square_keeps_the_wall_in_the_sketch_planes`, `PA::test_loft_has_analytic_sections_and_material_on_the_correct_side` | Nově u obou plných loftů také výška, tři analytické průřezy a poloha materiálu na obou stranách pláště; řezy nemění zdroj. Duté přechody zachovávají existující význam. |
 | P14 — doloženo | `TX::test_whole_feature_failure_discards_all_context_changes`, `TX::test_real_late_failure_restores_operations_and_material`, `TX::test_thread_failure_after_drilling_discards_the_entire_hole`, `TX::test_failed_sketch_is_not_published_in_build_result` | Všech pět polí, aliasy, reálné pozdní podoperace i řízená chyba závitu; nikoli pouze objem. |
 | P15 — doloženo | `RS::test_equidistant_edges_reject_without_removing_original_material`, `RS::test_fixed_face_radius_is_hard_and_missing_type_is_not_a_fallback`, `RM::test_line_mapping_checks_both_endpoints_and_all_candidates`, `RM::test_entire_circular_arc_interval_is_contained`, `RC::test_ndt_methods_cannot_silently_use_only_the_unbroken_subset` | Jednoznačnost, pevné filtry, celý fragment/oblast a pořadí. Podrobná S01–S20 níže. |
 | P16 — známé omezení | `RL::test_deleted_hole_can_still_resolve_to_a_different_unique_geometric_match`, `RL::test_geometric_replacement_has_no_persisted_topological_identity`, `RL::test_top_offset_survives_deleted_pocket_without_proving_a_physical_floor` | Charakterizace přijetí náhradní shody; historická identita není vyřešená. |
@@ -89,16 +90,16 @@ už předem vyloučeného průniku, nikoli nově zjištěné chyby.
 | P23 — doloženo s vymezeným rozsahem | `CP::test_all_recursive_examples_keep_baseline_geometry_and_round_trip`, `CP::test_simple_legacy_recipe_loads_without_new_persisted_fields`, `NS::test_old_models_load_without_ndt_and_save_as_current_version` | 26 ukázek, jednoduché verze 1–22 a staré recepty bez NDT. Konkrétní novější sekce níže; netvrdí všechny možné historické kombinace. |
 | P24 — doplnit F.3/F.4 | Nové celé Windows/macOS CI, JUnit a self-testy stažených balíčků; baseline před/po | Výchozí baseline je uložená. Nové CI a konečné měření nejsou ještě vykazované jako hotové. |
 
-## Přesné mezery F.2
+## Mezery inventury a jejich doplnění F.2
 
-| ID | Minimální doplnění | Nezávislé očekávání |
+| ID a regrese | Doplnění | Nezávislé očekávání |
 |---|---|---|
-| M1 | Vnější svislá R3 na kvádru, všechny čtyři rohy. | Vzorec objemu, 1 solid, obálka, body uvnitř a mimo zaoblený roh ve více výškách, čtyři válcové plochy R3; původní Part se nezmění. |
-| M2 | Plný čtvercový a kruhový loft 40→20 / výška 30. | 28 000 / 7 000π, obálka, řezy z=5/15/25 s lineárně klesající stranou/poloměrem a body po obou stranách pláště; originál se řezy nemění. |
-| M3 | Explicitní sražení 50 a nenalezená otevřená plocha skořepiny. | Chyba správného prvku, český důvod, přeskočený konec, původní kvádr/obálka/materiál; žádná změna tolerance. |
-| M4 | Stejné dvě mikromezery přes celý recept. | 24 250, obálka, oba objemy a zpráva 1→skutečné N; při 10⁻⁸ N∈{1,2}, bez falešného tvrzení o fyzickém spojení. |
+| M1 — `PA::test_vertical_fillet_keeps_material_and_radius_at_all_four_corners` | Vnější svislá R3 na kvádru, všechny čtyři rohy. | Vzorec objemu, 1 solid, obálka, body uvnitř a mimo zaoblený roh ve více výškách, čtyři válcové plochy R3; původní Part se nezmění. |
+| M2 — `PA::test_loft_has_analytic_sections_and_material_on_the_correct_side` | Plný čtvercový a kruhový loft 40→20 / výška 30. | 28 000 / 7 000π, obálka, řezy z=5/15/25 s lineárně klesající stranou/poloměrem a body po obou stranách pláště; originál se řezy nemění. |
+| M3 — `PA::test_impossible_chamfer_and_missing_shell_face_leave_the_whole_box` | Explicitní sražení 50 a nenalezená otevřená plocha skořepiny. | Chyba správného prvku, český důvod, přeskočený konec, původní kvádr/obálka/materiál; žádná změna tolerance. |
+| M4 — `PA::test_microgap_result_reports_the_actual_body_count_without_claiming_connection` | Stejné dvě mikromezery přes celý recept. | 24 250, obálka, oba objemy a zpráva 1→skutečné N; při 10⁻⁸ N∈{1,2}, bez falešného tvrzení o fyzickém spojení. |
 
-Tyto mezery jsou chybějící důkazy, nikoli zatím prokázané produkční vady.
+Tyto mezery byly chybějící důkazy; nové regrese na stávajícím kódu prošly.
 Pokud nová regrese odhalí vadu, platí F8: reprodukce a samostatný návrh opravy.
 
 ## Předchozí smlouvy a matice
@@ -150,13 +151,13 @@ o tvrzení založené pouze na odkazu na soubor. Stavy P-případů se dědí v�
 | C01, C04 | P04; kapsa a rozdělení. |
 | C02, C03 | P06; miss/touch/whole. |
 | C05 | P05; skutečně obě díry. |
-| F01 | P10 / M1; doplnit prostorový důkaz. |
+| F01 | P10 / M1; doplněný prostorový důkaz. |
 | F02, H02 | P11; růst objemu vnitřního rohu je správný. |
 | F03 | `ER::test_too_large_fillet_keeps_previous_part_and_skips_rest`, `ER::test_feature_errors_have_czech_messages`, `GM::test_invalid_modification_dimensions_keep_previous_geometry`. |
 | H01 | P10; existující sražení čtyř rohů. |
-| H03 | P10 / M3; negativní rozměr existuje, s50 doplnit. |
-| S01, S02 | P12 / M3; chybějící konkrétní otevřenou plochu doplnit. |
-| L01, L02 | P13 / M2; prostorové průřezy doplnit. |
+| H03 | P10 / M3; negativní rozměr i nové s50. |
+| S01, S02 | P12 / M3; nyní i nenalezená konkrétní otevřená plocha. |
+| L01, L02 | P13 / M2; doplněné prostorové průřezy. |
 | L03, L04 | P13; existující chyby skic a oba významy dutého loftu. |
 | M01 | P02 a zprávy BC. |
 | M02 | P14; skutečné pozdní pole/zrcadlení. |
