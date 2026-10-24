@@ -1,22 +1,25 @@
 """P1.4 E.3: viditelná chyba, obnovení práce a offline diagnostika asistenta."""
 
+import os
 import sys
 import time
-from types import SimpleNamespace
+from types import SimpleNamespace  # noqa: E402
 
 import pytest
-from build123d import import_step
 
-from conftest import EXAMPLES, face_at
-from skodacad import DocumentError
-from skodacad.assistant import ModelTools, build_report
-from skodacad.gui.main_window import MainWindow
-from skodacad.worker import BackgroundRebuilder
-from test_gui import FakeViewer, edit
-from test_output_ndt import ndt_document, opened
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
-QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+from build123d import import_step  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
+
+from conftest import EXAMPLES, face_at  # noqa: E402
+from skodacad import DocumentError  # noqa: E402
+from skodacad.assistant import ModelTools, build_report  # noqa: E402
+from skodacad.gui.main_window import MainWindow  # noqa: E402
+from skodacad.worker import BackgroundRebuilder  # noqa: E402
+from test_gui import FakeViewer, edit  # noqa: E402
+from test_output_ndt import ndt_document, opened  # noqa: E402
 
 
 @pytest.fixture(scope="module")
