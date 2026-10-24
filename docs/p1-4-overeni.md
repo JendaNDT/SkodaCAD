@@ -1,9 +1,10 @@
 # P1.4 — implementace a ověření
 
 Autor 24. 10. 2026 schválil [E1–E9, E.1–E.4 a E01–E22](p1-4-navrh-exportu-a-ndt-pri-chybe.md)
-slovy „ok, schvaluji“. Implementace běží ve větvi `codex/p1-4-safe-outputs`
+slovy „ok, schvaluji“. Implementace proběhla ve větvi `codex/p1-4-safe-outputs`
 nad schváleným návrhem z PR #38 (`c2d0e97`); produkční základ je `main / f5fbe2c`.
-Do main se bez dalšího pokynu autora neslučuje.
+Po předání autor výslovně schválil sloučení. PR #39 je na main jako `e7f9ac6`;
+[závěrečné ověření vydání](#sloučení-a-vydání-z-main) je níže.
 
 ## Postup
 
@@ -59,7 +60,8 @@ nativní protokol ověřuje skutečné kreslení, ale netvrdí fyzické klikán�
 Implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39); zahrnuje
 také schválený návrh z PR #38. Konečné běhy obou workflow, konkrétní sestavení,
 stažené zprávy a balíčky uvádí popis PR při předání. Zelený starší commit není
-důkazem konečné hlavy PR. Vydání z `main` se tímto PR nespouští.
+důkazem konečné hlavy PR. Kontroly před sloučením vydání nespouštěly;
+vydání ze skutečného main po schváleném sloučení dokládá následující oddíl.
 
 Při chybě nejprve ulož pracovní JSON kopii, přečti prvek a příčinu pod stromem,
 oprav parametr/výběr nebo použij Zpět a počkej na úspěšný přepočet. Export se
@@ -69,4 +71,49 @@ Odborné ověření starého dílu se tím neobnovuje. Přepočet lze opakovat;
 Zastavit se vrací do posledního skutečně spočítaného receptu.
 
 Rozsah nezahrnuje nový formát, nové geometrické operace ani změnu algoritmů NDT.
-R03, R04, R12 a NDT-17 zůstávají otevřené. Bez dalšího pokynu autora neslučovat.
+R03, R04, R12 a NDT-17 zůstávají otevřené. Sloučení do main autor schválil až po předání.
+
+## Sloučení a vydání z main
+
+Po předání implementace a doporučení sloučit PR #39 autor odpověděl
+**„ok, schvaluji“**. PR bylo sloučené 24. 10. 2026 v 18:26 SELČ jako
+[`e7f9ac6111fa789a7bbaa80aba6e8cfda9c45271`](https://github.com/JendaNDT/SkodaCAD/commit/e7f9ac6111fa789a7bbaa80aba6e8cfda9c45271).
+Hlava implementace byla `3fe590d56ca2c9b5835a3fe5b174992d2f52a6c5`, testovací merge
+PR `214eb733c8a4873dc7b97e9cb2ac9e32002afc3f`. Jejich strom souborů i skutečný
+merge mají shodné SHA `772ba4b4e7d4e295e6d0dd1b10fdb283bb430164`.
+
+| Ověření 24. 10. 2026 | macOS | Windows |
+|---|---|---|
+| Celý běh ze skutečného main | [#158 / 40111552514](https://github.com/JendaNDT/SkodaCAD/actions/runs/40111552514), úspěch | [#199 / 40111552478](https://github.com/JendaNDT/SkodaCAD/actions/runs/40111552478), úspěch |
+| JUnit | 1 549 testů / 1 047,900 s, bez chyb a přeskočení | 1 549 testů / 1 520,503 s, bez chyb a přeskočení |
+| Ruff, baseline P0, sestavení | Úspěch, arm64 a hluboký podpis | Úspěch včetně kontroly DLL |
+| Druhá úloha — skutečně stažený balíček | Self-test `VÝSLEDEK: OK` | Self-test `VÝSLEDEK: OK` |
+| Zveřejnění po self-testu | [nejnovejsi-mac](https://github.com/JendaNDT/SkodaCAD/releases/tag/nejnovejsi-mac), správný commit | [nejnovejsi](https://github.com/JendaNDT/SkodaCAD/releases/tag/nejnovejsi), správný commit |
+
+Stažené zprávy i balíčky prošly SHA-256 podle metadat GitHubu a kontrolou CRC.
+Baseline nese skutečný commit main, čisté sledované zdroje, shodné otisky zdrojů
+(při rozlišení LF/CRLF), vstupů a měřiče. Všech šest fyzických podpisů odpovídá
+místní referenci, včetně každého z 1 000 paprsků s 20 mm materiálu. Časy mezi
+různými zařízeními/OS se nevydávají za srovnání rychlosti.
+
+Mac ZIP z Releases je bajtově totožný s vnitřním ZIPem otestovaného artefaktu
+`12567546537`; SHA-256 vydání je
+`215ec69c50793bd55ad4ac210b430deeaa87c8a20979a5018a41b03b8d079da3`.
+Windows ZIP z Releases má SHA-256
+`c9993ab003a82ffa840fd9b7e82828846add4cf6c085d41fc099751c0e2a6f0f`;
+všech **6 892 souborů** má stejnou cestu, velikost a SHA-256 jako v otestovaném
+artefaktu `12567602777`, včetně spustitelného souboru a potřebných DLL.
+Rozdíl komprese obou Windows ZIPů není rozdílem jejich souborů.
+Obě značky vydání ukazovaly při závěrečné kontrole na `e7f9ac6`;
+`releases/latest` zůstalo správně na Windows.
+
+Stažená vydaná aplikace pro Mac prošla na místním **Macu M4** hlubokým ověřením
+podpisu, architekturou arm64 a celým self-testem `VÝSLEDEK: OK` s odděleným
+testovacím profilem. Zpráva uvádí sestavení **e7f9ac6111fa (2026-10-24)**,
+skutečné OpenGL `Apple / Apple M4 / 2.1 Metal`, 3D kreslení, řez, výběr a přepočet
+v pomocném procesu. Windows se spouštěl v CI. Toto není nové fyzické ovládání všech
+dialogů ani odborné přijetí NDT-17. CI artefakty s balíčky mají retenci 7 dní, zprávy 14 dní;
+stažená surová evidence byla uchována v pracovním předání mimo repozitář.
+
+Tento záznam dokládá dokončení dodání P1.4. Neopravňuje zahájit P1.5 nebo P2
+a nemění zbytkové meze uvedené výše.

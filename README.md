@@ -1124,9 +1124,18 @@ zůstává protokolem skutečně provedených kontrol.
 autor 24. 10. 2026 schválil slovy „ok, schvaluji“: E1–E9, kroky E.1–E.4,
 E01–E22. Implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39);
 [evidence](docs/p1-4-overeni.md) a [nativní protokol](docs/p1-4-agent-overeni-macos-2026-10-24.md) uvádějí
-hotové kroky a zbývající ověření. Chybný recept zůstane k opravě, exporty/NDT
-vyžadují celý aktuální úspěšný model. Sloučení implementace vyžaduje další pokyn;
-P1.5, P2 a změna formátu další schválení. Model zůstává ve verzi 22.
+hotové kroky a meze ověření. Autor schválil sloučení; P1.4 je na main jako `e7f9ac6`.
+[Obě vydání z main](docs/p1-4-overeni.md#sloučení-a-vydání-z-main) prošla
+1 549 testy na každém systému a kontrolami stažených balíčků. Chybný recept zůstane
+k opravě, exporty/NDT vyžadují celý aktuální úspěšný model.
+[P1.5 — přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md)
+autor 24. 10. 2026 schválil slovem „schvaluji“: F1–F9, kroky F.1–F.4 a P01–P24.
+Inventura a 7 cílených regresí jsou hotové; celý místní běh má 1 556 úspěšných případů.
+[Evidence P1.5](docs/p1-5-overeni.md) a [nový nativní protokol](docs/p1-5-agent-overeni-macos-2026-10-24.md)
+oddělují místní kontroly, 15 kroků skutečného okna a otevřená omezení.
+Konečné CI a balíčky dokládá při předání [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41).
+Produkční chování je zachované; přijetí P1 a sloučení vyžadují další pokyn autora.
+P2 a změna formátu vyžadují vlastní schválení. Model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
 
