@@ -117,7 +117,8 @@ E1–E9, kroky E.1–E.4 a matice E01–E22. Ponechat poslední geometrii k opra
 exporty a NDT vyžadují celý aktuální úspěšný model. Návrh rozlišuje vadnou studii,
 zastavený audit a chybu samotného modelu. Autor odpověděl „ok, schvaluji“ na
 návrh a zahájení implementace. [Evidence P1.4](p1-4-overeni.md) rozlišuje postup
-od skutečného ověření. Sloučení do main vyžaduje samostatný pokyn autora;
+od skutečného ověření; implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39).
+Sloučení do main vyžaduje samostatný pokyn autora;
 P1.5 tím schválené není.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,

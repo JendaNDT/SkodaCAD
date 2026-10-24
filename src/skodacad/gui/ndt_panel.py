@@ -988,7 +988,9 @@ class NdtPanel(QWidget):
             self.details.setText("" if self.studies.count() else "Model zatím nemá NDT studii.")
             return
         record = self._record(study_id) or {}
-        faces = (_count(result.faces, "plocha", "plochy", "ploch")
+        faces = ("nelze vyhodnotit" if result.state == "broken" else
+                 "není zadaná" if result.state == "incomplete" else
+                 _count(result.faces, "plocha", "plochy", "ploch")
                  if result.target_kind == "faces" else _volume_text(record, result))
         lines = [f"<b>{result.name}</b> – {METHOD_LABELS.get(result.method, result.method)}",
                  f"Stav: <b>{result.mark} {result.label}</b> · kontrolovaná oblast: {faces}",
@@ -1005,7 +1007,7 @@ class NdtPanel(QWidget):
         result = self.current()
         selected = ready and self.current_id() is not None
         info = session.selection_info(self.window._picked)
-        has_part = ready and session.result is not None and session.result.part is not None
+        has_part = ready and not session.model_problem
         self.new_action.setEnabled(ready)
         self.target_action.setEnabled(selected and has_part and info.faces > 0
                                       and info.edges == 0)
@@ -1014,9 +1016,10 @@ class NdtPanel(QWidget):
         for action in (self.rename_action, self.method_action, self.note_action,
                        self.duplicate_action, self.delete_action):
             action.setEnabled(selected)
-        self.confirm_action.setEnabled(selected and result is not None
+        self.confirm_action.setEnabled(selected and has_part and result is not None
                                        and result.state == "stale")
-        self.verify_action.setEnabled(selected and result is not None and result.state == "ok")
+        self.verify_action.setEnabled(
+            selected and has_part and result is not None and result.state == "ok")
         record = self._record(self.current_id())
         self.unverify_action.setEnabled(selected and record is not None and "verified" in record)
         ut = selected and (self._record(self.current_id()) or {}).get("method") == "UT"
@@ -1566,7 +1569,9 @@ class NdtPanel(QWidget):
 
     def _show_yoke_text(self) -> None:
         placed = self.window.session.ndt_yoke
-        self.mt_yoke.setText(MT_YOKE_HINT if placed is None else placed.text)
+        session = self.window.session
+        note = session.ndt_preview_note(session.ndt_yoke_study())
+        self.mt_yoke.setText(MT_YOKE_HINT if placed is None else (note + " " + placed.text).strip())
 
     def edit_mt_settings(self) -> None:
         study_id = self._mt_study()
@@ -2249,7 +2254,9 @@ class NdtPanel(QWidget):
             zone = session.ndt_placement_zone
             zone_html = (f'<br><span style="color: #b9770e;"><b>{escape(zone)}</b></span>'
                          if zone else "")
-            self.placement_label.setText(f'<span style="color: {color};"><b>'
+            note = session.ndt_preview_note(session.ndt_placement_request[0])
+            note_html = escape(note) + "<br>" if note else ""
+            self.placement_label.setText(note_html + f'<span style="color: {color};"><b>'
                                          f"{placement.text}</b></span>{zone_html}{beam_html}")
         elif session.ndt_placement_request is not None and session.ndt_placement_error:
             self.placement_label.setText(f'<span style="color: #c0392b;">'

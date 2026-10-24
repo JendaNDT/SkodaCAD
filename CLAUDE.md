@@ -1123,7 +1123,9 @@ Zbytkové riziko historické identity zůstává otevřené.
 [export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md),
 kroky E.1–E.4, E01–E22. Schválení návrhu v PR #38 opravňuje tyto kroky implementovat;
 [evidence](docs/p1-4-overeni.md) rozlišuje postup a skutečné výsledky.
-Implementace má samostatnou větev a PR, do main ji neslučovat bez dalšího pokynu.
+Implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39),
+[nativní ověření](docs/p1-4-agent-overeni-macos-2026-10-24.md) odděluje skutečné
+kreslení od programového ovládání. Do main ji neslučovat bez dalšího pokynu.
 Zachovat formát 22; R03/R04/R12 a odbornou validaci nepovažovat za vyřešené.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);

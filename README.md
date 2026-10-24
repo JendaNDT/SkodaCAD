@@ -1122,7 +1122,8 @@ rozlišuje 1 451 testů, self-testy stažených balíčků a meze ručního ově
 zůstává protokolem skutečně provedených kontrol.
 [P1.4 — export a NDT při chybě modelu](docs/p1-4-navrh-exportu-a-ndt-pri-chybe.md)
 autor 24. 10. 2026 schválil slovy „ok, schvaluji“: E1–E9, kroky E.1–E.4,
-E01–E22. Implementace probíhá samostatně; [evidence](docs/p1-4-overeni.md) uvádí
+E01–E22. Implementace je v [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39);
+[evidence](docs/p1-4-overeni.md) a [nativní protokol](docs/p1-4-agent-overeni-macos-2026-10-24.md) uvádějí
 hotové kroky a zbývající ověření. Chybný recept zůstane k opravě, exporty/NDT
 vyžadují celý aktuální úspěšný model. Sloučení implementace vyžaduje další pokyn;
 P1.5, P2 a změna formátu další schválení. Model zůstává ve verzi 22.

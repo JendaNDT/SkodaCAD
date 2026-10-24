@@ -145,6 +145,7 @@ class MainWindow(QMainWindow):
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
         self._view_actions: list[QAction] = []
+        self.export_actions: list[QAction] = []
 
         if viewer_factory is None:
             from skodacad.gui.viewer import OccViewer
@@ -335,6 +336,7 @@ class MainWindow(QMainWindow):
         tree_buttons.addStretch()
         tree_layout.addLayout(tree_buttons)
         self.error_label = QLabel()
+        self.error_label.setTextFormat(Qt.TextFormat.PlainText)
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #c0392b; font-weight: bold;")
         self.error_label.hide()
@@ -559,8 +561,9 @@ class MainWindow(QMainWindow):
         end = tuple(o + d * reach for o, d in zip(origin, direction, strict=True))
         beam = self.session.ndt_beam
         points = beam.points if beam is not None else ()
-        self.viewer.show_probe(placement.body, placement.state, origin, end, placement.short,
-                               points)
+        note = self.session.ndt_preview_note(self.session.ndt_placement_request[0])
+        self.viewer.show_probe(placement.body, placement.state, origin, end,
+                               (note + " " + placement.short).strip(), points)
 
     def _refresh_plan(self) -> None:
         """Plán dráhy vybrané studie ve 3D: úseky, přesuny, přestavení a zakázané zóny."""
@@ -756,7 +759,9 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.save_as_action)
         export_menu = file_menu.addMenu("Exportovat")
         for fmt, label in EXPORT_FORMATS:
-            export_menu.addAction(self._action(label + "…", lambda f=fmt: self.export_dialog(f)))
+            action = self._action(label + "…", lambda f=fmt: self.export_dialog(f))
+            self.export_actions.append(action)
+            export_menu.addAction(action)
         file_menu.addSeparator()
         file_menu.addAction(self._action("Konec", self.close, "Ctrl+Q"))
         toolbar.addSeparator()
@@ -926,12 +931,8 @@ class MainWindow(QMainWindow):
         return True
 
     def export_dialog(self, fmt: str) -> None:
-        if self.session.computing:
-            self.statusBar().showMessage("Model se ještě přepočítává – export půjde, až bude "
-                                         "hotovo (nebo přepočet zastav).", 10000)
-            return
-        if self.session.result is None or self.session.result.part is None:
-            self._error("Není co exportovat", "Model zatím nemá žádné těleso.")
+        if problem := self.session.model_problem:
+            self._error("Export není dostupný", problem)
             return
         folder = self.session.path.parent if self.session.path else self.user_dir
         suggested = folder / f"{self._stem()}.{fmt}"
@@ -1321,8 +1322,13 @@ class MainWindow(QMainWindow):
         self.tree.clear()
         result = self.session.result
         document = self.session.document
-        if document is None or (result is None and not self.session.computing):
+        if document is None:
             self.error_label.hide()
+            self.tree.blockSignals(False)
+            return
+        if result is None and not self.session.computing:
+            self.error_label.setText(self.session.model_problem)
+            self.error_label.show()
             self.tree.blockSignals(False)
             return
         old = {s.id: s for s in result.statuses} if result else {}
@@ -1347,18 +1353,13 @@ class MainWindow(QMainWindow):
         if self._selected_id not in {row[0] for row in rows}:
             self._selected_id = None
         self.tree.blockSignals(False)
-        if self.session.computing or result is None:
-            if self._pending_shown:
-                self.error_label.hide()
-            return
-        error = result.first_error
-        if error is None:
-            self.error_label.hide()
-        else:
-            self.error_label.setText(f"✕ {error.label}: {error.message}")
-            self.error_label.show()
+        problem = self.session.model_problem
+        self.error_label.setText(problem)
+        self.error_label.setVisible(bool(problem))
 
     def _refresh_actions(self) -> None:
+        for action in self.export_actions:
+            action.setEnabled(not self.session.model_problem and not self.ai_busy)
         has_document = self.session.document is not None
         selected = self._selected_id is not None
         self.undo_action.setEnabled(self.session.can_undo)
@@ -1440,8 +1441,8 @@ class MainWindow(QMainWindow):
             f"Těžiště:  X {number(cx)}  Y {number(cy)}  Z {number(cz)}",
             f"Počet těles: {props.solids}",
         ]
-        if self._pending_shown:
-            lines.insert(0, "⏳ Přepočítává se – hodnoty jsou z minulého stavu:")
+        if self.session.model_problem:
+            lines.insert(0, "Diagnostický náhled – hodnoty zobrazené geometrie:")
         self.props_label.setText("\n".join(lines))
 
     def _selection_changed(self, shapes: list) -> None:
@@ -1674,7 +1675,8 @@ class MainWindow(QMainWindow):
             if field.text() != text:
                 field.setText(text)
         self.thickness_map_action.setChecked(session.map_visible)
-        self.export_map_action.setEnabled(found is not None and not session.computing)
+        self.export_map_action.setEnabled(
+            found is not None and not session.model_problem and not self.ai_busy)
         if found is not None:
             low, high = found.scale
             self.map_scale_label.setText(f"{number(low)} mm  ←  tenčí   ·   tlustší  →  "
@@ -1730,6 +1732,9 @@ class MainWindow(QMainWindow):
 
     def export_section(self) -> None:
         """Obrys řezu jako 2D výkres (DXF pro CAD a laser, SVG jako obrázek)."""
+        if problem := self.session.model_problem:
+            self._error("Export řezu není dostupný", problem)
+            return
         name = self.session.document.name if self.session.document else "rez"
         path, _ = QFileDialog.getSaveFileName(
             self, "Export řezu", str(self.user_dir / f"{name}-rez.dxf"),
@@ -1805,7 +1810,8 @@ class MainWindow(QMainWindow):
         self.section_action.setEnabled(has_part or settings is not None)
         self.section_action.setChecked(settings is not None)
         self.flip_section_action.setEnabled(settings is not None)
-        self.export_section_action.setEnabled(session.section is not None)
+        self.export_section_action.setEnabled(
+            session.section is not None and not session.model_problem and not self.ai_busy)
         self.section_face_action.setEnabled(
             has_part and session.selection_info(self._picked).faces == 1)
         for widget in (self.section_slider, self.section_field):

@@ -71,7 +71,7 @@ def part_problem(result: BuildResult | None) -> str:
         error = result.first_error
         cause = (f"prvek [{error.id}] {error.label} má chybu – {error.message}"
                  if error is not None else "některé prvky jsou přeskočené")
-        return (f"Model není dokončený: {cause}. Zobrazené těleso je poslední dobrý "
+        return (f"Model není dokončený: {cause.rstrip('.')}. Zobrazené těleso je poslední dobrý "
                 "mezistav. Oprav prvek nebo použij Zpět a potom operaci zopakuj.")
     if result.part is None or not result.part.solids():
         return "Model zatím nemá žádné těleso – nejdřív vytvoř objemový díl."

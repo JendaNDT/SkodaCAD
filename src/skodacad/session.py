@@ -1140,6 +1140,14 @@ class ModelSession:
             return evaluate_studies(None, self.document, model_problem=self.model_problem)
         return list(self.result.ndt) if self.result is not None else []
 
+    def ndt_preview_note(self, study_id: str | None) -> str:
+        """Pracovní náhled neplatné studie není výpočtem její kontrolované oblasti."""
+        state = next((s for s in self.ndt_studies if s.id == study_id), None)
+        reasons = {"stale": "studie je zastaralá", "incomplete": "studie je neúplná",
+                   "broken": "studie má neplatnou vazbu"}
+        return f"Pracovní náhled – {reasons[state.state]}." if state is not None \
+            and state.state in reasons else ""
+
     def _ndt_study_is_ok(self, study_id: str) -> bool:
         return any(study.id == study_id and study.state == "ok" for study in self.ndt_studies)
 
@@ -2104,6 +2112,10 @@ class ModelSession:
             return None
         return self._yoke_view[1]
 
+    def ndt_yoke_study(self) -> str | None:
+        """Studie aktuálně zobrazeného jha (bez odhalování mezipaměti oknu)."""
+        return self._yoke_view[0][1] if self.ndt_yoke is not None else None
+
     def ndt_yoke_settings(self) -> MtSettings | None:
         """Nastavení studie, se kterým vzniklo přiložené jho (obrys účinné oblasti)."""
         if self.ndt_yoke is None:
@@ -2164,6 +2176,7 @@ class ModelSession:
         ends = (*placed.poles, placed.center, placed.center)[:2]
         text = (f"jho {placed.spacing:g} mm".replace(".", ",")
                 + ("" if placed.ok else " – nevejde se"))
+        text = (self.ndt_preview_note(self._yoke_view[0][1]) + " " + text).strip()
         outline = placed.outline(self.ndt_yoke_settings()) if placed.ok else []
         return yoke_compound(placed), state, ends[0], ends[1], text, outline
 
@@ -2432,7 +2445,7 @@ class ModelSession:
             return None
         if record.get("method") != "RT":
             return None
-        key = (self.result, name, repr(record.get("rt")))
+        key = (self.result, study_id, name, repr(record))
         cached = self._rt_drawing_cache
         if cached is not None and cached[0][0] is key[0] and cached[0][1:] == key[1:]:
             return cached[1]
@@ -2454,6 +2467,7 @@ class ModelSession:
                 corners += [setup.source, corner]
         text = (f"{name}: f {projection.distance_mm:g} mm".replace(".", ",")
                 + ("" if setup.ok else " – " + SETUP_FAILURES.get(setup.kind, "nejde")))
+        text = (self.ndt_preview_note(study_id) + " " + text).strip()
         drawing = (Compound(shapes), state, setup.source, projection.aim, text, corners)
         self._rt_drawing_cache = (key, drawing)
         return drawing
