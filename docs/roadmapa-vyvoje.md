@@ -123,10 +123,11 @@ Autor po předání schválil sloučení; main obsahuje `e7f9ac6`.
 1 549 testy na každém systému, self-testy stažených balíčků a dalšími kontrolami.
 P1.5 tím schválené není.
 
-**P1.5 — návrh ke schválení:** [přijetí bezpečné geometrie](p1-5-navrh-prijeti-bezpecne-geometrie.md),
-F1–F9, F.1–F.4 a P01–P24. Autor požádal o přípravu návrhu, nikoli o provedení.
+**P1.5 — schváleno, provedení zahájeno:** [přijetí bezpečné geometrie](p1-5-navrh-prijeti-bezpecne-geometrie.md),
+F1–F9, F.1–F.4 a P01–P24. Autor 24. 10. 2026 po návrhu v PR #40 odpověděl „schvaluji“.
 Inventura a doplnění chybějících regresí mají spojit důkazy z P1.2–P1.4,
 ověřit pracovní postup i konečné balíčky a předložit omezené přijetí autorovi.
+[Evidence P1.5](p1-5-overeni.md) rozlišuje inventuru, doplnění a skutečné výsledky.
 Nové produkční opravy vyžadují samostatný návrh; R03/R04/R12 a NDT-17 zůstávají otevřené.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,

@@ -1,8 +1,9 @@
 # P1.5 — návrh přijetí bezpečné geometrie
 
-**Stav: konkrétní návrh ke schválení, 24. 10. 2026. P1.5 zatím není schválené ani zahájené.**
-Autor požádal „tak to připrav“ o návrh po ověření vydání P1.4. Tento pokyn
-opravňuje připravit dokument a PR; není schválením provedení níže uvedených kroků.
+**Stav: schváleno autorem 24. 10. 2026, provedení F.1–F.4 zahájeno.**
+Autor po předložení návrhového PR #40 a rozsahu F1–F9, F.1–F.4 a P01–P24
+odpověděl **„schvaluji“**. Tím povolil provedení; sloučení do main ani nové
+produkční opravy tím schválené nejsou. [Evidence provedení](p1-5-overeni.md).
 Základ: `main / e7f9ac6111fa789a7bbaa80aba6e8cfda9c45271`, sloučené
 [PR #39](https://github.com/JendaNDT/SkodaCAD/pull/39).
 
@@ -23,7 +24,7 @@ Ruff, měřicí baseline, sestavením, kontrolou staženého balíčku a zveřej
 Vydaná aplikace prošla i vlastním testem na Macu M4. To je výchozí důkaz,
 nikoli tvrzení, že už je celá P1 přijata nebo že neexistují jiné chyby.
 
-## 2. Rozhodnutí F1–F9 ke schválení
+## 2. Schválená rozhodnutí F1–F9
 
 | Bod | Doporučené rozhodnutí | Přesná hranice |
 |---|---|---|
@@ -98,7 +99,7 @@ a mez jednotlivé složky z D3. Složitější povrchy si ponechají zdůvodněn
 svých testů. NDT a výběrové tolerance se nesjednocují. Nový hraniční případ,
 který smlouvu nesplní, je nález; není důvod tiše povolit širší interval.
 
-## 5. Pořadí provedení po schválení
+## 5. Schválené pořadí provedení
 
 | Krok | Závislost a omezený rozsah | Výstup a dokončení |
 |---|---|---|
@@ -173,13 +174,13 @@ jen v rozsahu konkrétních úspěšných regresí a schválených pravidel, nik
 P16 zůstává přiznaná mez: úspěšná geometrická shoda není důkaz téže původní plochy.
 NDT výsledky jsou geometrické; úspěšná P1 není fyzikální ani odborná validace metod.
 
-## 8. Co bude znamenat následné schválení
+## 8. Rozsah schválení
 
-Doporučené schválení **F1–F9, F.1–F.4 a P01–P24** opravňuje provést inventuru,
+Schválení **F1–F9, F.1–F.4 a P01–P24** opravňuje provést inventuru,
 doplnit potřebné regrese a dokumentaci, provést uvedené zkoušky a předat výsledné
 implementační PR. Produkční nález vyžaduje postup F8. Tento návrhový PR ani budoucí
 implementační PR se neslučují do main bez výslovného pokynu autora.
 
-Tento dokument nyní nepředstírá schválení ani hotové výsledky P1.5.
+Schválení tohoto dokumentu nedokládá hotové výsledky ani autorovo konečné přijetí P1.5.
 P2, nové závislosti, architektura a modelový formát vyžadují vlastní konkrétní návrh.
 NDT-16 zůstává mimo rozsah; NDT-17 na něm nezávisí.

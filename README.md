@@ -1128,9 +1128,10 @@ hotové kroky a meze ověření. Autor schválil sloučení; P1.4 je na main jak
 [Obě vydání z main](docs/p1-4-overeni.md#sloučení-a-vydání-z-main) prošla
 1 549 testy na každém systému a kontrolami stažených balíčků. Chybný recept zůstane
 k opravě, exporty/NDT vyžadují celý aktuální úspěšný model.
-[P1.5 — návrh přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md)
-čeká na schválení: F1–F9, kroky F.1–F.4 a matice P01–P24. Jde o inventuru důkazů,
-potřebné regrese a přijetí dosavadního rozsahu; implementace zatím nezahájena.
+[P1.5 — přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md)
+autor 24. 10. 2026 schválil slovem „schvaluji“: F1–F9, kroky F.1–F.4 a P01–P24.
+Probíhá inventura důkazů a doplnění potřebných regresí;
+[evidence P1.5](docs/p1-5-overeni.md) odděluje hotové kontroly, mezery a omezení.
 P2 a změna formátu vyžadují vlastní schválení. Model zůstává ve verzi 22.
 Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out/p0-baseline.json`
 (výstup musí být nový soubor).
