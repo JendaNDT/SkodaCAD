@@ -1,6 +1,6 @@
 # P1.5 — návrh přijetí bezpečné geometrie
 
-**Stav: schváleno autorem 24. 10. 2026, provedení F.1–F.4 zahájeno.**
+**Stav: schváleno autorem 24. 10. 2026, provedení v [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41).**
 Autor po předložení návrhového PR #40 a rozsahu F1–F9, F.1–F.4 a P01–P24
 odpověděl **„schvaluji“**. Tím povolil provedení; sloučení do main ani nové
 produkční opravy tím schválené nejsou. [Evidence provedení](p1-5-overeni.md).

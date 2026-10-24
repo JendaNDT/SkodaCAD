@@ -13,8 +13,8 @@ Produkční zdroje a všechny dosavadní testy jsou v těchto dvou základech sh
 |---|---|
 | F.1 | Inventura konkrétních kontrol níže a nová výchozí baseline P0 hotové. Čtyři mezery M1–M4 jsou výslovně oddělené od existujících důkazů. Ruff OK, celý místní pytest **1 549 prošlo / 451,59 s**, bez chyb a přeskočení. Všech 180 odkazů matice má skutečně provedené případy v JUnit. |
 | F.2 | M1–M4 doplňuje `test_p15_acceptance.py`: **7 nových případů** bez GUI a s nezávislými prostorovými očekáváními. Cílená sada 7/7 prošla / 0,15 s; Ruff OK a celý místní běh **1 556 prošlo / 452,42 s**, bez chyb a přeskočení. Všech 80 původních testovacích souborů i produkční zdroje zůstávají byte shodné. |
-| F.3 | Čeká: nový nativní průchod a obě celé konečné CI včetně stažených balíčků. |
-| F.4 | Čeká: souhrn, srovnání, konečné předání autorovi; P1 není zatím přijata. |
+| F.3 | Nový nativní průchod **15/15** hotový podle [protokolu](p1-5-agent-overeni-macos-2026-10-24.md). Skutečný Cocoa/OccViewer a spawn, programové akce, náhrady dialogů. Konečné CI a stažené balíčky se doloží v PR #41 při předání. |
+| F.4 | Souhrn a srovnání níže; závěrečný místní Ruff OK a celý pytest **1 556 prošlo / 451,81 s**, bez chyb a přeskočení. Všech 188 odkazů matice má provedené úspěšné případy. Skutečné CI konečné hlavy a balíčky se dokládají při předání v PR #41. P1 není přijata za autora. |
 
 Výchozí baseline vznikla na stejném Macu M4, Python 3.12.14, s instalovanými
 knihovnami zaznamenanými ve zprávě: zahřátí + 3 měření, bez souběžných testů.
@@ -82,13 +82,13 @@ už předem vyloučeného průniku, nikoli nově zjištěné chyby.
 | P15 — doloženo | `RS::test_equidistant_edges_reject_without_removing_original_material`, `RS::test_fixed_face_radius_is_hard_and_missing_type_is_not_a_fallback`, `RM::test_line_mapping_checks_both_endpoints_and_all_candidates`, `RM::test_entire_circular_arc_interval_is_contained`, `RC::test_ndt_methods_cannot_silently_use_only_the_unbroken_subset` | Jednoznačnost, pevné filtry, celý fragment/oblast a pořadí. Podrobná S01–S20 níže. |
 | P16 — známé omezení | `RL::test_deleted_hole_can_still_resolve_to_a_different_unique_geometric_match`, `RL::test_geometric_replacement_has_no_persisted_topological_identity`, `RL::test_top_offset_survives_deleted_pocket_without_proving_a_physical_floor` | Charakterizace přijetí náhradní shody; historická identita není vyřešená. |
 | P17 — doloženo | `SK::test_existing_profile_transfers_projected_references_through_editor_and_history` | Přidání/výměna/smazání reference přes skutečné akce skicáře, geometrie, historie, kopie i zdrojové bajty; viewer/dialog jsou v tomto testu nahrazené. |
-| P18 — doloženo testy; nový nativní průchod čeká | `OG::test_failed_history_cannot_create_or_overwrite_geometry`, `OG::test_section_remains_visible_but_partial_recipe_cannot_export_it`, `OG::test_cli_refuses_all_outputs_before_mkdir_or_write`, `OG::test_valid_two_body_export_preserves_both_solids`, `EX::test_examples_build_and_export_everything`, `GUI::test_export_menu_writes_file` | Všechny formáty a přímé cesty, původní bytes, 2 tělesa po STEP. Platný kvádr přes GUI se znovunačteným STEP ověří i nový nativní protokol F.3. |
+| P18 — doloženo testy i novým nativním průchodem | `OG::test_failed_history_cannot_create_or_overwrite_geometry`, `OG::test_section_remains_visible_but_partial_recipe_cannot_export_it`, `OG::test_cli_refuses_all_outputs_before_mkdir_or_write`, `OG::test_valid_two_body_export_preserves_both_solids`, `EX::test_examples_build_and_export_everything`, `GUI::test_export_menu_writes_file` | Všechny formáty a přímé cesty, původní bytes, 2 tělesa po STEP. Nový nativní protokol F.3 ověřil i kvádr a dvě tělesa přes všechny GUI exporty a oba STEP znovu načetl. |
 | P19 — doloženo | `OG::test_invalid_json_can_be_saved_reopened_and_repaired_with_history`, `OQ::test_bad_recipe_can_be_saved_as_copy_reopened_and_repaired`, `OQ::test_parameter_repair_undo_redo_and_explicit_study_confirmation` | Chybná pracovní kopie, originál, oprava i odemčení/zamčení exportu a stav studie. |
 | P20 — doloženo | `ON::test_every_ndt_entry_rejects_partial_model_without_mutating_it`, `ON::test_each_real_result_cannot_reappear_after_worker_failure`, `ON::test_incomplete_confirmation_is_rejected_and_stale_study_does_not_block_geometry`, `OQ::test_stopped_audit_preserves_one_real_result_and_marks_the_remaining_study` | Všechny vstupy, skutečné výsledky všech metod, dostupnost, technické potvrzení a částečná zpráva. E01–E22 níže doplňuje konkrétní cesty. |
 | P21 — doloženo | `BG::test_rebuild_in_worker_matches_direct_rebuild`, `BG::test_crashed_worker_is_reported_and_replaced`, `BG::test_cancel_returns_to_last_computed_state_and_redo_retries`, `ON::test_late_reply_from_replaced_job_cannot_restore_old_result_or_map`, `OQ::test_timeout_and_stop_restore_the_actual_last_recipe` | Skutečný spawn/pád/rušení vedle oddělené řízené pozdní odpovědi a timeoutu. |
 | P22 — doloženo | `RI::test_cli_offline_report_history_and_saved_copy_keep_the_same_reference_state`, `OQ::test_export_handlers_refuse_before_opening_file_dialog`, `OQ::test_ai_reports_partial_image_and_repairs_offline`, `ON::test_successful_one_off_cli_uses_overridden_recipe_fingerprint` | Konzistence session/CLI/GUI/offline AI, přímá akce a původ skutečného receptu. |
 | P23 — doloženo s vymezeným rozsahem | `CP::test_all_recursive_examples_keep_baseline_geometry_and_round_trip`, `CP::test_simple_legacy_recipe_loads_without_new_persisted_fields`, `NS::test_old_models_load_without_ndt_and_save_as_current_version` | 26 ukázek, jednoduché verze 1–22 a staré recepty bez NDT. Konkrétní novější sekce níže; netvrdí všechny možné historické kombinace. |
-| P24 — doplnit F.3/F.4 | Nové celé Windows/macOS CI, JUnit a self-testy stažených balíčků; baseline před/po | Výchozí baseline je uložená. Nové CI a konečné měření nejsou ještě vykazované jako hotové. |
+| P24 — místní evidence doložená; konečné CI při předání | Nové celé Windows/macOS CI, JUnit a self-testy stažených balíčků; baseline před/po | Obě místní baseline a jejich fyzické podpisy se shodují. Konkrétní konečné běhy a balíčky dokládá PR #41 při předání. |
 
 ## Mezery inventury a jejich doplnění F.2
 
@@ -123,7 +123,7 @@ o tvrzení založené pouze na odkazu na soubor. Stavy P-případů se dědí v�
 | A3 | P06–P09, P12; bez tichého opravování nebo změny tolerancí. |
 | A4 | P02–P03, P09, `GUI::test_successful_body_counts_are_visible_in_tree_and_properties`, `GUI::test_long_feature_name_keeps_body_count_visible_in_a_narrow_tree`. |
 | A5 | P01–P23 a V1–V14 níže. |
-| A6, A7 | Historické commity/CI/autorovo přijetí v [P1.2A](p1-2a-overeni.md); nové cílové ověření P24 čeká. |
+| A6, A7 | Historické commity/CI/autorovo přijetí v [P1.2A](p1-2a-overeni.md); konečné cílové ověření P24 v PR #41. |
 | B1, B2 | P14; `TX::test_every_context_field_is_accounted_for`, `TX::test_candidate_container_changes_cannot_mutate_accepted_aliases`, `TX::test_whole_feature_failure_discards_all_context_changes`. |
 | B3 | `TX::test_mutation_of_an_owned_shape_copy_cannot_change_original_geometry`, `CP::test_all_recursive_examples_keep_baseline_geometry_and_round_trip`; audit vlastnictví při každém prvku všech ukázek. |
 | B4 | `TX::test_changed_working_parameters_are_rejected_before_any_publication`, `TX::test_changed_nested_json_is_rejected_without_mutating_the_source`, `TX::test_successful_return_does_not_accept_hidden_input_changes`. |
@@ -133,7 +133,7 @@ o tvrzení založené pouze na odkazu na soubor. Stavy P-případů se dědí v�
 | C3, C4 | P15; pevné filtry, normály, krajní roviny v S07–S08/S13. |
 | C5, C6 | P15, P17, P20; tvorba/přenos, celý fragment a všichni spotřebitelé v S09–S17. |
 | C7 | P16, P23; charakterizované meze, formát/IPC bez nových polí. |
-| C8 | Historické přijetí v [P1.3](p1-3-overeni.md); nová F.3/P24 čeká. |
+| C8 | Historické přijetí v [P1.3](p1-3-overeni.md); nová F.3 hotová, konečné CI P24 v PR #41. |
 | E1, E2 | P18, P21; celý aktuální model a výstupy. |
 | E3 | P19, P22; zachovaný chybný recept, oprava, diagnostika i historie. |
 | E4, E5 | P19–P20; NDT stavy, potvrzení a původ výsledků. |
@@ -230,7 +230,7 @@ o tvrzení založené pouze na odkazu na soubor. Stavy P-případů se dědí v�
 
 | Původní ID | Důkaz |
 |---|---|
-| E01, E02 | P18; EX všechny formáty, GUI exportní akce, OG obě tělesa po STEP; nový nativní průchod čeká. |
+| E01, E02 | P18; EX všechny formáty, GUI exportní akce, OG obě tělesa po STEP; nový nativní průchod 15/15 hotový. |
 | E03, E04 | `OG::test_failed_history_cannot_create_or_overwrite_geometry`, `OG::test_cli_refuses_all_outputs_before_mkdir_or_write`, `OQ::test_export_handlers_refuse_before_opening_file_dialog`. |
 | E05 | `OG::test_empty_or_sketch_only_model_has_no_exportable_body`, `OG::test_shared_guard_rejects_empty_shape_and_skipped_without_first_error`, `OQ::test_error_in_saved_measurement_does_not_block_valid_geometry_export`. |
 | E06 | `OQ::test_real_background_rebuild_recovers_window_actions`, vstupy ON v P20. |
@@ -245,7 +245,7 @@ o tvrzení založené pouze na odkazu na soubor. Stavy P-případů se dědí v�
 | E16 | `OQ::test_stopped_audit_preserves_one_real_result_and_marks_the_remaining_study`; skutečná první PT mapa a řízené doručení do auditu. |
 | E17 | Vstupy/výstupy ON v E09/E10 a `OQ::test_gui_cannot_export_old_report_or_pdf_after_worker_failure`. |
 | E18 | `test_ndt_design.py::test_variant_that_cannot_be_evaluated`, `test_ndt_design_session.py::test_session_settings_undo_and_separate_variant`; konkrétní neúspěšná varianta, odmítnuté použití a zachovaný originál. |
-| E19 | `OQ::test_partial_model_has_persistent_warning_and_unavailable_outputs`, P19/P21; nový nativní průchod čeká. |
+| E19 | `OQ::test_partial_model_has_persistent_warning_and_unavailable_outputs`, P19/P21; nový nativní průchod 15/15 hotový. |
 | E20 | `OQ::test_ai_reports_partial_image_and_repairs_offline`, `OQ::test_ai_labels_stale_body_after_failed_worker`. |
 | E21 | P19, přímé GUI ukládání a kopie. |
 | E22 | `ON::test_direct_cli_ndt_commands_never_use_partial_body`, `ON::test_successful_one_off_cli_uses_overridden_recipe_fingerprint`. |
@@ -270,7 +270,7 @@ README používaný AI se tímto nemění. Žádné nové NDT algoritmy ani jeji
 přijetí. NDT-16 mimo rozsah, NDT-17 samostatně. Více těles není sestava P5.
 
 Místní Qt testy mají náhradní viewer/dialogy, řízené poruchy nepředstírají pád
-OCCT. Nativní průchod a balíčky budou oddělené. Windows F7 vyžaduje skutečné
+OCCT. Zdrojový nativní průchod a test konkrétního balíčku jsou oddělené. Windows F7 vyžaduje skutečné
 spuštění v CI; fyzická ergonomie Windows ani všechny Retina/trackpad/GPU varianty
 se netvrdí. Samostatný souhlas autora je nutný pro konečné přijetí a sloučení.
 
@@ -278,3 +278,53 @@ Předání může proběhnout až po M1–M4, novém místním Ruff/celém pytes
 obou úplných konečných workflow, kontrole stažených balíčků, dostupném Mac
 průchodu a pravdivém protokolu. Případný produkční nález tuto bránu blokuje
 v povinném rozsahu a postupuje se podle F8, ne změnou očekávání.
+
+## Měření a kontrola rozsahu F.4
+
+Stejný Mac, prostředí, měřič i vstupy; 1 zahřátí a 3 samostatná opakování bez
+souběžných testů/nativního průchodu. Výchozí HEAD byl `ec26699`, následný `ecf06f8`,
+oba čisté. Produkční zdroje jsou shodné, jejich otisk je
+`e2fde6065e645b0ed1845f569773d298692eadf91bcd06961ab16abc93ab2399`.
+
+| Scénář | Před [ms] | Po [ms] | Fyzický podpis |
+|---|---:|---:|---|
+| rebuild:priruba.json | 28.987 | 30.124 | Shodné |
+| rebuild:krabicka.json | 64.631 | 64.921 | Shodné |
+| rebuild:ram.json | 141.947 | 147.894 | Shodné |
+| rebuild:ndt/cilove_objemy/tupy_svar_objem.json | 42.559 | 43.186 | Shodné |
+| encode-pickle-decode:priruba | 0.937 | 0.934 | Shodné |
+| ndt:1000-rays-plate | 73.958 | 72.567 | Shodné |
+
+Geometrie, přenos i všech 1 000 paprsků po 20 mm materiálu se shodují. Rozdíl
+času je pozorovaný rozptyl na nezměněném algoritmu, ne důkaz zrychlení/zpomalení
+P1.5. Procesové maximum paměti je 413.047 → 412.953 MiB
+včetně importů; nejde o spotřebu jednotlivého případu ani důkaz absence úniku.
+Tři vzorky nejsou statistická záruka. Mezi OS se časy přímo neporovnávají.
+
+Všech **80 původních testovacích souborů** je byte shodných s výchozím main.
+Přibyl jen `test_p15_acceptance.py` se 7 skutečnými geometrickými případy.
+`src/`, `examples/`, `packaging/`, `.github/` a `pyproject.toml` se nemění,
+stejně jako modelový formát 22, doslovná vymezení NDT a worker IPC. Oddíl README
+„Formát modelu“ používaný AI je zachovaný, R12 se neopravuje. Nevznikl časový práh,
+nová závislost ani náhradní geometrie. Nativní helpery jsou také nezměněné.
+
+## Konečná hlava, CI a přijetí
+
+Implementace je v [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41), který
+zahrnuje schválený návrh #40, inventuru F.1 a regresní F.2. F.3 má
+[nový nativní protokol](p1-5-agent-overeni-macos-2026-10-24.md); nejde o staré
+autorovo ruční potvrzení. Zdrojový otisk a helpery se porovnávají i s konečnou
+verzí. F.4 je závěrečná evidence a předání, nikoli přijetí P1 za autora.
+
+Při vytvoření evidenčního commitu konečné CI teprve poběží. **Při předání musí
+popis PR #41 obsahovat skutečnou konečnou hlavu, test merge, obě celé úspěšné CI,
+počty JUnit, stažené zprávy/artefakty a self-test vydaného artefaktu na místním
+Macu.** Zelené běhy staršího commitu se nepoužijí jako důkaz nové hlavy. Doklad
+budoucích výsledků se neodvozuje z tohoto odstavce; jde o pravidlo předání.
+Výsledky a balíčky se vážou ke konkrétním SHA a uchovají se před vypršením CI
+retence; běžný PR nezveřejní Releases.
+
+Technické předání je dokončené až po těchto kontrolách. Konečné přijetí rozsahu
+P1 a sloučení jsou následná rozhodnutí autora; P2, nový formát a odborná NDT-17
+zůstávají samostatné. Nalezené mezery M1–M4 vyřešily regrese, produkční vada
+vyžadující změnu podle F8 v těchto zkouškách zjištěna nebyla.

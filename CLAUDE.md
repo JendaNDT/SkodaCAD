@@ -1134,6 +1134,12 @@ Zachovat formát 22; R03/R04/R12 a odbornou validaci nepovažovat za vyřešené
 [přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md),
 F1–F9, F.1–F.4 a P01–P24. Autor po návrhovém PR #40 odpověděl „schvaluji“.
 [Evidence](docs/p1-5-overeni.md) vede konkrétní testy, mezery, měření a postup.
+F.1 inventura a F.2 sedm nových regresí prošly; celý místní běh má 1 556 případů.
+[Nativní protokol](docs/p1-5-agent-overeni-macos-2026-10-24.md) dokládá 15 kroků
+skutečného Cocoa/OccViewer okna s programovým ovládáním a náhradami dialogů.
+[PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41) při předání obsahuje
+konečná SHA, oba celé cílové běhy a kontroly stažených balíčků.
+P1 se tím nepřijímá za autora. Všech 80 původních testovacích souborů je zachovaných.
 Povolený rozsah je inventura, chybějící regrese, protokol a balíčky,
 bez změny produkčního chování.
 Nový produkční nález předložit se samostatným návrhem opravy; neupravovat
