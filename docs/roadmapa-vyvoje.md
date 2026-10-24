@@ -105,8 +105,18 @@ pokyn ke sloučení. R05 je vyřešené pro schválená pole, vlastnictví a pod
 C1–C8, kroky C.1–C.3 a S01–S20. Rozlišuje skupinu od jednoho odkazu, odmítá
 rovnocenné kandidáty a oslabování filtrů. Zachovává formát 22 a přiznává zbytkové
 riziko historické identity. Autor odpověděl „ok, schvaluji vše“ na C1–C8, C.1–C.3,
-S01–S20 a sloučení návrhového PR #36 (`c46d0e2`). [Implementace a ověření](p1-3-overeni.md)
-mají samostatný PR; jeho sloučení vyžaduje další pokyn. P1.4/P1.5 nejsou tímto schválené.
+S01–S20 a sloučení návrhového PR #36 (`c46d0e2`). Implementace je sloučená v
+[PR #37](https://github.com/JendaNDT/SkodaCAD/pull/37) jako `f5fbe2c` na samostatný
+pokyn autora. [Evidence sloučení a vydání](p1-3-overeni.md#sloučení-a-vydání-z-main)
+dokládá 1 451 testů, oba celé cílové workflow i self-test stažených balíčků;
+meze ručního přijetí a historické identity zůstávají výslovně uvedené.
+
+**P1.4 — konkrétní návrh ke schválení (24. 10. 2026), bez implementace:**
+[export a NDT při chybě modelu](p1-4-navrh-exportu-a-ndt-pri-chybe.md), rozhodnutí
+E1–E9, kroky E.1–E.4 a matice E01–E22. Ponechat poslední geometrii k opravě,
+exporty a NDT vyžadují celý aktuální úspěšný model. Návrh rozlišuje vadnou studii,
+zastavený audit a chybu samotného modelu. P1.4/P1.5 nejsou tímto schválené;
+sloučení návrhu i implementace vyžaduje souhlas autora.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.
