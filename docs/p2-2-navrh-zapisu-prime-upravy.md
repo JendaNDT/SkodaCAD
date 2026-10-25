@@ -1,7 +1,9 @@
 # P2.2 — návrh zápisu přímé úpravy do modelu
 
-**Stav: návrh ke schválení autorem, bez implementace.** `src/` se nemění, formát zůstává
-ve verzi 22 až do schválení. Vychází z `main` / `3cd612dc281ca45d76747f4976a5769f532c3329`
+**Stav: schváleno autorem 25. 10. 2026, bez implementace.** Autor odpověděl
+**„schvaluji H1–H8“** na výzvu, která uváděla i sloučení návrhového
+[PR #43](https://github.com/JendaNDT/SkodaCAD/pull/43) a zahájení P2.3. `src/` se tímto
+PR nemění, formát zůstává ve verzi 22 až do implementace. Vychází z `main` / `3cd612dc281ca45d76747f4976a5769f532c3329`
 (po sloučení [PR #42](https://github.com/JendaNDT/SkodaCAD/pull/42)). Navazuje na
 schválený [rozsah P2.1](p2-1-navrh-rozsahu-primeho-modelovani.md) (G1–G8, Q01–Q24)
 a na [bezpečné reference P1.3](p1-3-navrh-bezpecnych-referenci.md), oddíl 6, který

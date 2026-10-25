@@ -1152,10 +1152,11 @@ rozsah a nepotvrzené podbody jsou v protokolu.
 Q01–Q24 a [průzkum jádra](docs/p2-1-pruzkum-jadra.py) (`BRepOffset_MakeOffset`
 se `SetOffsetOnFace`), návrhové PR #42. Implementaci nezahajovat: P2.2 formát,
 P2.3 výpočet, P2.4 okno a P2.5 přijetí mají každý vlastní schválení.
-**P2.2 — návrh předložený autorovi 25. 10. 2026:**
+**P2.2 — schváleno autorem 25. 10. 2026** slovy „schvaluji H1–H8“:
 [zápis přímé úpravy](docs/p2-2-navrh-zapisu-prime-upravy.md), H1–H8 (`move_face`,
 `face_diameter`, pole `origin` = pojistka původu plochy, formát 23, oprava R12), W01–W16
-a [průzkum pojistky](docs/p2-2-pruzkum-puvodu.py). Bez schválení neimplementovat.
+a [průzkum pojistky](docs/p2-2-pruzkum-puvodu.py), PR #43. P2.3 (výpočet) se smí
+implementovat podle G1–G8 a H1–H8; P2.4 okno a P2.5 přijetí dál vyžadují schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
