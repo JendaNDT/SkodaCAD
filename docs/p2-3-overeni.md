@@ -77,7 +77,19 @@ oprava do samostatného návrhu.
 
 ## Celé ověření
 
-VYPLNIT po doběhnutí.
+- **Ruff** `src tests`: bez nálezů.
+- **Celý místní pytest** na hlavě `bc19afb` (cloud Linux, offscreen): **1 612 prošlo,
+  0 selhalo, 0 přeskočeno, 27 min 42 s**.
+- První celý běh (před dvěma opravami) ukázal 2 selhání ze 1 607: strážce polí kontextu
+  P1.2B (nové pole `history`) a strážce ukázek P1.2A (chyběla ukázka nových typů). Obojí
+  je opravené v kódu, ne změnou očekávání (viz tabulku změn).
+- **GitHub Actions na `bc19afb`:**
+  [Windows aplikace](https://github.com/JendaNDT/SkodaCAD/actions/runs/40243598023)
+  a [macOS aplikace](https://github.com/JendaNDT/SkodaCAD/actions/runs/40243597872) –
+  obě úlohy *sestaveni* (testy + balíček) i *kontrola-stazeni* (self-test staženého
+  balíčku) **úspěšné**. Běh z větve PR nezveřejní vydání „nejnovejsi“.
+- Ruční zkouška v okně ani na Macu zatím neproběhla – výběr plochy ve 3D přijde až
+  s P2.4; ukázku `prime_upravy.json` lze otevřít a měnit čísla úprav v panelu.
 
 ## Co zůstává
 
