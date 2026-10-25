@@ -123,16 +123,18 @@ Autor po předání schválil sloučení; main obsahuje `e7f9ac6`.
 1 549 testy na každém systému, self-testy stažených balíčků a dalšími kontrolami.
 P1.5 tím schválené není.
 
-**P1.5 — schváleno, provedení zahájeno:** [přijetí bezpečné geometrie](p1-5-navrh-prijeti-bezpecne-geometrie.md),
+**P1.5 — dokončeno a sloučeno:** [přijetí bezpečné geometrie](p1-5-navrh-prijeti-bezpecne-geometrie.md),
 F1–F9, F.1–F.4 a P01–P24. Autor 24. 10. 2026 po návrhu v PR #40 odpověděl „schvaluji“.
-Inventura a doplnění chybějících regresí mají spojit důkazy z P1.2–P1.4,
-ověřit pracovní postup i konečné balíčky a předložit omezené přijetí autorovi.
-[Evidence P1.5](p1-5-overeni.md) rozlišuje inventuru, doplnění a skutečné výsledky.
-F.1 a F.2 jsou dokončené, sedm nových případů a 1 556 úspěšných místních testů;
-[nativní protokol](p1-5-agent-overeni-macos-2026-10-24.md) má 15 kroků.
-Konečné CI a balíčky dokládá při předání [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41).
-Technické předání ani CI nezastupují konečné přijetí P1 autorem.
-Nové produkční opravy vyžadují samostatný návrh; R03/R04/R12 a NDT-17 zůstávají otevřené.
+[Evidence P1.5](p1-5-overeni.md) rozlišuje inventuru, doplnění a skutečné výsledky;
+sedm nových případů, 1 556 úspěšných místních testů a
+[nativní protokol](p1-5-agent-overeni-macos-2026-10-24.md) s 15 kroky.
+Autor sloučil [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41) jako `fe2a087`;
+obě workflow z main včetně kontroly stažení prošla.
+
+**P1 přijato autorem 25. 10. 2026** slovy „Přijímám P1“
+([zápis](p1-5-overeni.md#sloučení-a-přijetí-p1-autorem)). R03, R04/P16, R12, širší
+ruční matice Windows/macOS a NDT-17 zůstávají otevřené; nové produkční opravy dál
+vyžadují samostatný návrh.
 
 1. **P1.1 Smlouva operace** (po P0): navrhnout vstupy, očekávaný počet těles, jednotky,
    toleranci a postpodmínky pro přidání/odebrání/průnik, zaoblení, skořepinu a loft.
