@@ -1,7 +1,10 @@
 # P2.1 — návrh rozsahu přímého modelování
 
-**Stav: návrh ke schválení autorem, bez implementace.** Modelový formát zůstává ve
-verzi 22, `src/` se nemění. Vychází z `main` / `fe2a087757796946d9664ddd4a3aa0c2e1874037`
+**Stav: schváleno autorem 25. 10. 2026, bez implementace.** Autor v rozhovoru
+odpověděl **„schvaluji G1–G8“** na výzvu, která uváděla i sloučení návrhového
+[PR #42](https://github.com/JendaNDT/SkodaCAD/pull/42) a přípravu P2.2. Schválení se týká
+G1–G8 a matice Q01–Q24; P2.2–P2.5 ani nový formát tím schválené nejsou.
+Modelový formát zůstává ve verzi 22, `src/` se nemění. Vychází z `main` / `fe2a087757796946d9664ddd4a3aa0c2e1874037`
 (po sloučení [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41)); autor 25. 10. 2026
 [přijal P1](p1-5-overeni.md#sloučení-a-přijetí-p1-autorem). Navazuje na
 [roadmapu P2](roadmapa-vyvoje.md#p2--přímé-modelování-čeká-na-schválení-implementace),
