@@ -159,6 +159,11 @@ vyžadují samostatný návrh.
 G1–G8 a matice Q01–Q24, s [průzkumem jádra](p2-1-pruzkum-jadra.py). Návrh je v PR #42.
 Schválení P2.1 nespouští P2.2–P2.5 ani formát 23; každý krok má vlastní schválení.
 
+**P2.2 — návrh předložený autorovi 25. 10. 2026:**
+[zápis přímé úpravy](p2-2-navrh-zapisu-prime-upravy.md), rozhodnutí H1–H8 (typy
+`move_face` a `face_diameter`, pojistka původu plochy, formát 23, oprava R12) a matice
+W01–W16, s [průzkumem pojistky](p2-2-pruzkum-puvodu.py). Bez schválení se nic neimplementuje.
+
 1. **P2.1 Omezený rozsah** (P1): vybrat první podporované typy ploch a úprav; navržený
    začátek je posun rovinné plochy a změna válcového otvoru. Sepsat nepodporované případy.
 2. **P2.2 Historie** (P2.1): navrhnout reprezentaci operace a sémantické reference.
