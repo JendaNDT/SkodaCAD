@@ -50,7 +50,18 @@ def snapshot(ctx):
 
 def test_every_context_field_is_accounted_for():
     assert {f.name for f in fields(BuildContext)} == {
-        "params", "part", "sketches", "operations", "recording"}
+        "params", "part", "sketches", "operations", "recording", "history"}
+
+
+def test_candidate_cannot_change_history_of_accepted_parts(accepted_context):
+    """P2.3: historie dílů pro pojistku původu je v kandidátovi jen ke čtení."""
+    ctx = accepted_context
+    ctx.history.append(("base", ctx.part))
+    candidate, _ = ctx._fork_for_feature(feature_input())
+    assert candidate.history == tuple(ctx.history)
+    with pytest.raises(AttributeError):
+        candidate.history.append(("leak", None))
+    assert ctx.history == [("base", ctx.part)]
 
 
 def test_candidate_container_changes_cannot_mutate_accepted_aliases(accepted_context):

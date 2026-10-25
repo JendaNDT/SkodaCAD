@@ -122,7 +122,9 @@ class BuildContext:
     recording: list[Operation] | None = None  # operace právě počítaného prvku
     # Díl po každém dosud přijatém prvku (id, díl) – jen ke čtení; potřebuje ho pojistka
     # původu plochy u přímých úprav (P2.2, H3). Drží stejné objekty jako parts_before.
-    history: list[tuple[str, Part | None]] = field(default_factory=list)
+    # V kandidátovi prvku je to n-tice (jen ke čtení), zapisuje jen rebuild po přijetí.
+    history: list[tuple[str, Part | None]] | tuple[tuple[str, Part | None], ...] = field(
+        default_factory=list)
 
     def _fork_for_feature(self, feature: dict[str, Any]) -> tuple[BuildContext, dict[str, Any]]:
         """Vlastní kontejnery prvku; přijaté nativní tvary jsou jen pro čtení.
@@ -133,7 +135,7 @@ class BuildContext:
         candidate = BuildContext(
             params=self.params.copy(), part=self.part, sketches=self.sketches.copy(),
             operations={key: list(ops) for key, ops in self.operations.items()}, recording=[],
-            history=self.history)
+            history=tuple(self.history))  # n-tice: prvek historii nemůže změnit
         return candidate, copy.deepcopy(feature)
 
     def _accept_feature(self, candidate: BuildContext, original: dict[str, Any],
