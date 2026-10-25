@@ -14,6 +14,7 @@ Python 3.13.17, build123d 0.13.0, OCCT 8.0.1, PySide6 6.11.2 (offscreen).
 | `rebuild.py` | po přijetí prvku zapíše `(id, díl)` do `ctx.history`. |
 | `document.py` | `VERSION = 23`, načítání 1–23. |
 | `schema.py`, `gui/` | schémata obou typů s `menu=False` (v nabídce *Přidat prvek* nejsou – plochu vybere až P2.4), editor zobrazí plochu a původ jen ke čtení, číslo jde měnit. |
+| `examples/prime_upravy.json` (nová ukázka) | deska s čepem a dvěma dírami, horní plocha posunutá o −4 mm a kopie díry na Ø10; objem 37 922,478 mm³ = 60·40·16 + π·6²·14 − π·4²·16 − π·5²·16. Strážce `test_native_input_audit_examples_cover_all_registered_builders` vyžaduje ukázku pro každý typ prvku; ukázka má i baseline v `test_p12a_compatibility.py`. |
 | `README.md` | oddíl „Formát modelu“: verze 23 (oprava **R12**), oba typy v tabulce prvků a vlastní pododdíl – pokyn AI je tak zná. |
 | testy | nový `tests/test_direct_edit.py` (50 případů), GUI test editoru; u 17 kontrol uložené verze 22 → 23 (H6, nic jiného se v nich nemění). Strážce transakcí P1.2B (`test_every_context_field_is_accounted_for`) správně ohlásil nové pole `history`: kandidát prvku ho teď dostává jako n-tici jen ke čtení a nový test `test_candidate_cannot_change_history_of_accepted_parts` to hlídá. |
 
