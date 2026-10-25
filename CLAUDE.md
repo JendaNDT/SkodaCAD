@@ -1147,7 +1147,11 @@ Nový produkční nález předložit se samostatným návrhem opravy; neupravova
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
 rozsah a nepotvrzené podbody jsou v protokolu.
-P2 ani nový formát nezahajovat bez dalšího schválení.
+**P2.1 — návrh předložený autorovi 25. 10. 2026:**
+[rozsah přímého modelování](docs/p2-1-navrh-rozsahu-primeho-modelovani.md), G1–G8,
+Q01–Q24 a [průzkum jádra](docs/p2-1-pruzkum-jadra.py) (`BRepOffset_MakeOffset`
+se `SetOffsetOnFace`). Bez schválení autora nic z P2 neimplementovat; P2.2 formát,
+P2.3 výpočet, P2.4 okno a P2.5 přijetí mají každý vlastní schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 

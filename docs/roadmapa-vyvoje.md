@@ -154,6 +154,11 @@ vyžadují samostatný návrh.
 
 ## P2 — přímé modelování (čeká na schválení implementace)
 
+**P2.1 — návrh předložený autorovi 25. 10. 2026:**
+[rozsah přímého modelování](p2-1-navrh-rozsahu-primeho-modelovani.md), rozhodnutí
+G1–G8 a matice Q01–Q24, s [průzkumem jádra](p2-1-pruzkum-jadra.py). Dokud autor návrh
+neschválí, nic z P2 se neimplementuje; schválení P2.1 nespouští P2.2–P2.5 ani formát 23.
+
 1. **P2.1 Omezený rozsah** (P1): vybrat první podporované typy ploch a úprav; navržený
    začátek je posun rovinné plochy a změna válcového otvoru. Sepsat nepodporované případy.
 2. **P2.2 Historie** (P2.1): navrhnout reprezentaci operace a sémantické reference.
