@@ -281,6 +281,20 @@ class FieldsForm(QWidget):
 
         return holder, read
 
+    def _build_face(self, field: Field, value: Any):
+        """Plocha přímé úpravy – jen popis; mění se výběrem ve 3D (P2.4), ne textem."""
+        text = (describe_plane(value) if isinstance(value, dict) and "at" in value
+                else "(vyber plochu ve 3D)")
+        label = QLabel(text)
+        label.setWordWrap(True)
+        kept = copy.deepcopy(value)
+        return label, lambda: MISSING if kept is None else copy.deepcopy(kept)
+
+    def _build_origin(self, field: Field, value: Any):
+        """Původ plochy (id prvku) – jen ke čtení, doplní ho výběr plochy."""
+        label = QLabel(str(value) if value else "(chybí – vyber plochu znovu)")
+        return label, lambda: MISSING if value is None else value
+
     def _build_edges(self, field: Field, value: Any):
         if isinstance(value, list) or (isinstance(value, dict) and set(value) - _FORM_EDGE_KEYS):
             return self._build_picked_edges(value)

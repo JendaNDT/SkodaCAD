@@ -99,7 +99,7 @@ def test_all_recursive_examples_keep_baseline_geometry_and_round_trip(name, tmp_
     destination = tmp_path / path.name
     document.save(destination)
     restored = Document.load(destination)
-    assert restored == document and restored.to_dict()["version"] == VERSION == 22
+    assert restored == document and restored.to_dict()["version"] == VERSION == 23
     assert rebuild(restored).ok
     assert path.read_bytes() == original_bytes
 
@@ -121,5 +121,5 @@ def test_simple_legacy_recipe_loads_without_new_persisted_fields(version, tmp_pa
     path = tmp_path / "saved.json"
     document.save(path)
     saved = Document.load(path).to_dict()
-    assert saved["version"] == VERSION == 22
+    assert saved["version"] == VERSION == 23
     assert not any("message" in feature for feature in saved["features"])

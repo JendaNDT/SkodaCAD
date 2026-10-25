@@ -33,7 +33,7 @@ def test_all_example_recipes_round_trip_without_aliasing_or_source_write(path, t
     loaded.save(destination)
     restored = Document.load(destination)
     assert restored == expected
-    assert restored.to_dict()["version"] == VERSION == 22
+    assert restored.to_dict()["version"] == VERSION == 23
     assert path.read_bytes() == original_bytes
 
 

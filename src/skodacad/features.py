@@ -20,6 +20,7 @@ from build123d import (
     Circle,
     Cone,
     Cylinder,
+    Face,
     FilletPolyline,
     Kind,
     Line,
@@ -49,6 +50,8 @@ from build123d import (
     sweep,
 )
 
+from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
+from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
 from skodacad.geometry_validation import (
     GeometryValidationError,
@@ -68,6 +71,7 @@ from skodacad.selectors import (
     FACE_DIRECTIONS,
     face_plane,
     face_plane_at,
+    find_face,
     select_edges,
     select_faces,
 )
@@ -116,6 +120,9 @@ class BuildContext:
     # podle toho opakují prvky – stejné těleso přidají/odeberou na jiném místě.
     operations: dict[str, list[Operation]] = field(default_factory=dict)
     recording: list[Operation] | None = None  # operace právě počítaného prvku
+    # Díl po každém dosud přijatém prvku (id, díl) – jen ke čtení; potřebuje ho pojistka
+    # původu plochy u přímých úprav (P2.2, H3). Drží stejné objekty jako parts_before.
+    history: list[tuple[str, Part | None]] = field(default_factory=list)
 
     def _fork_for_feature(self, feature: dict[str, Any]) -> tuple[BuildContext, dict[str, Any]]:
         """Vlastní kontejnery prvku; přijaté nativní tvary jsou jen pro čtení.
@@ -125,7 +132,8 @@ class BuildContext:
         """
         candidate = BuildContext(
             params=self.params.copy(), part=self.part, sketches=self.sketches.copy(),
-            operations={key: list(ops) for key, ops in self.operations.items()}, recording=[])
+            operations={key: list(ops) for key, ops in self.operations.items()}, recording=[],
+            history=self.history)
         return candidate, copy.deepcopy(feature)
 
     def _accept_feature(self, candidate: BuildContext, original: dict[str, Any],
@@ -218,7 +226,8 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 # Každý 3D typ musí projít závěrečnou kontrolou i tehdy, když nevolá ctx.apply.
 # Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
-                             "pattern", "mirror", "fillet", "chamfer", "shell"))
+                             "pattern", "mirror", "fillet", "chamfer", "shell",
+                             "move_face", "face_diameter"))
 
 
 def feature(name: str, label_cz: str):
@@ -761,6 +770,51 @@ def build_shell(ctx: BuildContext, feature: dict[str, Any]) -> None:
     _accept_modification(ctx, candidate, before, "Skořepina", shell=True)
 
 
+# --- Přímé úpravy ploch (P2) ---------------------------------------------------------------
+
+
+DIRECT_EDIT_TYPES = {"move_face": "plane", "face_diameter": "cylinder"}
+
+
+def _edited_face(ctx: BuildContext, feature: dict[str, Any], label: str) -> tuple[Face, Vector]:
+    """Plocha přímé úpravy: odkaz významem (P1.3) + pojistka původu (P2.2, H2–H4)."""
+    spec = required(feature, "face")
+    wanted = DIRECT_EDIT_TYPES[feature["type"]]
+    if not isinstance(spec, dict) or spec.get("type") != wanted:
+        raise FeatureError(f"{label}: „face“ musí být plocha {{\"at\": [x, y, z], \"normal\": "
+                           f"[nx, ny, nz], \"type\": \"{wanted}\"}} – vyber ji ve 3D.")
+    face, point = find_face(ctx.part, spec)
+    try:
+        check_origin(ctx.history, face, point, feature.get("origin"), label)
+    except DirectEditError as exc:
+        raise FeatureError(str(exc)) from None
+    return face, point
+
+
+@feature("move_face", "Posunutí plochy")
+def build_move_face(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    label = "Posunutí plochy"
+    _modification_input(ctx, label)
+    distance = ctx.num(required(feature, "distance"))
+    face, point = _edited_face(ctx, feature, label)
+    try:
+        ctx.part = direct_move_face(ctx.part, face, point, distance, label)
+    except DirectEditError as exc:
+        raise FeatureError(str(exc)) from None
+
+
+@feature("face_diameter", "Průměr plochy")
+def build_face_diameter(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    label = "Průměr plochy"
+    _modification_input(ctx, label)
+    diameter = ctx.num(required(feature, "diameter"))
+    face, point = _edited_face(ctx, feature, label)
+    try:
+        ctx.part = set_diameter(ctx.part, face, point, diameter, label)
+    except DirectEditError as exc:
+        raise FeatureError(str(exc)) from None
+
+
 # --- Normalizované díly ----------------------------------------------------------------
 
 
@@ -914,8 +968,8 @@ def _source_operations(ctx: BuildContext, feature: dict[str, Any],
         if not ctx.operations[feature_id]:
             raise FeatureError(
                 f"{label}: prvek „{feature_id}“ sám nepřidává ani neubírá materiál (skica, "
-                "zaoblení, sražení, skořepina). Opakovat jde vysunutí, rotace, díry, pole a "
-                "zrcadlení – zaoblení dej do stromu až za tento prvek.")
+                "zaoblení, sražení, skořepina, přímá úprava plochy). Opakovat jde vysunutí, "
+                "rotace, díry, pole a zrcadlení – zaoblení dej do stromu až za tento prvek.")
     wanted = set(ids)
     return [op for feature_id, ops in ctx.operations.items() if feature_id in wanted
             for op in ops]
@@ -1048,6 +1102,11 @@ def describe(feature: dict[str, Any], params: dict[str, float] | None = None) ->
         text += f" – {part}"
         if feature.get("operation") == "cut":
             text += " (kapsa)"
+    elif feature["type"] == "move_face" and "distance" in feature:
+        value = _plain(feature["distance"], params)
+        text += f" – o {value} mm"
+    elif feature["type"] == "face_diameter" and "diameter" in feature:
+        text += f" – na Ø{_plain(feature['diameter'], params)}"
     elif feature["type"] == "loft":
         sketches = feature.get("sketches")
         count = len(sketches) if isinstance(sketches, list) else "?"

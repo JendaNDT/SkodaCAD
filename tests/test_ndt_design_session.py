@@ -16,7 +16,7 @@ EXAMPLE = EXAMPLES / "ndt" / "navrh_kapsa.json"
 
 
 def test_format_22_and_backwards_compatibility(tmp_path):
-    assert VERSION == 22
+    assert VERSION == 23
     document = Document.load(EXAMPLE)
     design = Design.from_dict(document.ndt["design"])
     assert design.study == "s3"
@@ -24,7 +24,7 @@ def test_format_22_and_backwards_compatibility(tmp_path):
     output = tmp_path / "kopie.json"
     document.save(output)
     assert Document.load(output) == document
-    assert json.loads(output.read_text(encoding="utf-8"))["version"] == 22
+    assert json.loads(output.read_text(encoding="utf-8"))["version"] == 23
 
     old = document.to_dict()
     old["version"] = 21

@@ -110,6 +110,8 @@ class Schema:
     label: str
     fields: tuple[Field, ...]
     help: str = ""
+    # Nabídka „Přidat prvek“: přímé úpravy ploch vznikají jen výběrem plochy ve 3D (P2.4).
+    menu: bool = True
 
 
 _NAME = Field("name", "Název", "text", required=False)
@@ -250,6 +252,25 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("thickness", "Tloušťka stěny [mm]", "number"),
             Field("open_faces", "Otevřené plochy", "faces", required=False),
         ), "Vydlabe díl na danou tloušťku stěny."),
+        Schema("move_face", "Posunutí plochy", (
+            _NAME,
+            Field("face", "Plocha", "face",
+                  help="Rovinná plocha vybraná ve 3D (bod a směr)."),
+            Field("origin", "Původ plochy", "origin",
+                  help="Prvek, kterým plocha vznikla – pojistka proti záměně plochy."),
+            Field("distance", "Posun [mm]", "number",
+                  help="+ ven z materiálu (přidá), − dovnitř (ubere). Sousední plochy se "
+                       "jen prodlouží nebo zkrátí."),
+        ), "Posune rovinnou plochu kolmo k ní – bez hledání prvku, který ji vytvořil.",
+            menu=False),
+        Schema("face_diameter", "Průměr plochy", (
+            _NAME,
+            Field("face", "Plocha", "face",
+                  help="Válcová plocha (díra nebo čep) vybraná ve 3D."),
+            Field("origin", "Původ plochy", "origin",
+                  help="Prvek, kterým plocha vznikla – pojistka proti záměně plochy."),
+            Field("diameter", "Nový průměr [mm]", "number", help="Osa zůstane na místě."),
+        ), "Změní průměr díry nebo čepu.", menu=False),
         Schema("pattern", "Pole", (
             _NAME,
             Field("features", "Opakované prvky", "features",
@@ -432,6 +453,10 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         feature.update(edges={"face": "top"}, distance=1)
     elif feature_type == "shell":
         feature.update(thickness=2, open_faces=["top"])
+    elif feature_type == "move_face":  # plochu a původ doplní až výběr ve 3D
+        feature["distance"] = 1
+    elif feature_type == "face_diameter":
+        feature["diameter"] = 10
     elif feature_type == "hole":
         feature.update(kind="tapped", size="M6", plane="top" if has_solid else "XY",
                        positions=[[0, 0]])

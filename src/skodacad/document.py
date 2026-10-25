@@ -46,10 +46,12 @@ FORMAT = "skodacad"
 # zóny („zones“) ve studii, verze 19 nastavení PT studie („pt“: nástroje, úhly, postup),
 # verze 20 nastavení MT studie („mt“: jho, rozteče, meze, nanesení a prohlídka),
 # verze 21 nastavení a projekce RT studie („rt“: zdroj, detektor, třída, projekce),
-# verze 22 zadání konstrukčního návrhu (ndt.design), výsledky zůstávají jen v paměti.
-VERSION = 22
+# verze 22 zadání konstrukčního návrhu (ndt.design), výsledky zůstávají jen v paměti,
+# verze 23 přímé úpravy ploch: prvky „move_face“ a „face_diameter“ s odkazem na plochu
+# a pojistkou původu („origin“) – návrh docs/p2-2-navrh-zapisu-prime-upravy.md.
+VERSION = 23
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22)
+                      20, 21, 22, 23)
 
 
 class DocumentError(ValueError):

@@ -242,6 +242,14 @@
   AI s pravidlem bez nástroje; referenční díl 10 `navrh_kapsa.json`. Jako první krok oprava:
   tvar skici s nulovou plochou = česká chyba (dřív tiše zahodil i ostatní tvary skici).
 
+- (25. 10. 2026, schváleno G1–G8 a H1–H8) **Přímé úpravy ploch – P2.3** (návrhy
+  `docs/p2-1-navrh-rozsahu-primeho-modelovani.md`, `docs/p2-2-navrh-zapisu-prime-upravy.md`):
+  prvky `move_face` (posun rovinné plochy, `distance`) a `face_diameter` (průměr válcové
+  plochy, `diameter`) mění hotový díl na konci stromu (`direct_edit.py`, jádro
+  `BRepOffset_MakeOffset` + `SetOffsetOnFace`). Odkaz `face` podle P1.3 bez pevného poloměru,
+  povinný `origin` = pojistka původu plochy. Formát verze 23. V okně jen zobrazení a změna
+  čísla; výběr ve 3D, náhled a nástroj AI jsou P2.4.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -308,6 +316,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `threads.py` | vymodelovaný vnitřní závit (ISO 68-1) jako drážka z rovinných plošek |
 | `standards.py` | normalizované díly: tabulky (šrouby, matice, podložky, ložiska, kolíky, pera, ocelové profily), tvary v místních souřadnicích, kapsy, průřezy profilů |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
+| `direct_edit.py` | přímé úpravy ploch (P2): `move_face`, `set_diameter` (posun jen vybrané plochy jádrem, kontroly vstupu G6 a výsledku G5), pojistka původu `face_origin` / `check_origin` nad `BuildContext.history` |
 | `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -1079,6 +1088,26 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   z hlášení macOS (`~/Library/Logs/DiagnosticReports/SkodaCAD*.ips`).
 - Kompatibilita platí, až ji uživatel ověří na MacBooku (seznam v `docs/ndt/08-navrh-macos.md`).
 
+## Známé pasti (přímé úpravy ploch)
+
+- `BRepOffset_MakeOffset` chce **jedno těleso** (`TopoDS_Solid`): se složeninou vrátí jen
+  skořápku. `Part(TopoDS_Solid)` hlásí objem 0 – výsledek se obalí `Compound` (ostatní
+  tělesa dílu beze změny vedle).
+- Plocha, která k tělesu nepatří, jádro **tiše přeskočí** a vrátí nezměněný díl; zaniklé
+  sražení nechá jako plochu s výměrou 0 a tečně navazující zaoblení „projde“ s rozbitou
+  tečností. Proto `_owner`, kontrola počtu ploch, `MIN_FACE_AREA` a předběžné
+  `tangent_neighbours` (spojitost hrany nebo úhel normál pod 1°; chytí i plošky závitu).
+- `OffsetFaces`/`Modified` historie u tohoto režimu nic nevrací – poloha upravené plochy
+  se ověřuje geometricky (`_has_plane`, `_has_cylinder`).
+- `Face.radius` vrací u některých válců (díra protínající okraj, kopie) **None** – poloměr
+  vždy přes `BRepAdaptor_Surface(...).Cylinder().Radius()` (`_cylinder_radius`). Stejná
+  past v `selectors.find_face` s `radius` je zapsaná jako nález N1 (`docs/p2-3-overeni.md`).
+- Díra, která protíná okraj dílu, je jen částečný válec – změna průměru tam mění topologii
+  a správně se odmítne (testy proto drží kopie děr celé uvnitř).
+- Pojistka původu prochází `ctx.history` odzadu: díl po každém přijatém prvku drží
+  `rebuild`; nový kód, který staví díl mimo `rebuild`, ji musí naplnit, jinak úprava
+  ohlásí chybějící původ.
+
 ## Jak přidat nový prvek
 
 1. Funkce v `features.py` s dekorátorem `@feature("typ", "Český název")`.
@@ -1157,6 +1186,9 @@ P2.3 výpočet, P2.4 okno a P2.5 přijetí mají každý vlastní schválení.
 `face_diameter`, pole `origin` = pojistka původu plochy, formát 23, oprava R12), W01–W16
 a [průzkum pojistky](docs/p2-2-pruzkum-puvodu.py), PR #43. P2.3 (výpočet) se smí
 implementovat podle G1–G8 a H1–H8; P2.4 okno a P2.5 přijetí dál vyžadují schválení.
+**P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, formát 23, README, testy
+Q01–Q23 a W01–W16 (`tests/test_direct_edit.py`), [evidence](docs/p2-3-overeni.md).
+Do main jen s výslovným souhlasem autora.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
