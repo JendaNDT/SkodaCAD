@@ -328,3 +328,20 @@ Technické předání je dokončené až po těchto kontrolách. Konečné přij
 P1 a sloučení jsou následná rozhodnutí autora; P2, nový formát a odborná NDT-17
 zůstávají samostatné. Nalezené mezery M1–M4 vyřešily regrese, produkční vada
 vyžadující změnu podle F8 v těchto zkouškách zjištěna nebyla.
+
+## Sloučení a přijetí P1 autorem
+
+- **Sloučení:** autor (`JendaNDT`) sloučil PR #41 do main 25. 10. 2026 v 0:29
+  (SELČ) jako `fe2a087757796946d9664ddd4a3aa0c2e1874037`.
+- **Vydání z main:** pro `fe2a087` prošly obě úlohy workflow
+  [Windows aplikace](https://github.com/JendaNDT/SkodaCAD/actions/runs/40138769540)
+  i [macOS aplikace](https://github.com/JendaNDT/SkodaCAD/actions/runs/40138769567)
+  (*sestaveni* i *kontrola-stazeni*). Vydání „nejnovejsi“ a „nejnovejsi-mac“ ukazují
+  na tentýž commit. Počty JUnit těchto běhů tento zápis nestahoval; doklad je úspěšný
+  stav obou úloh, nikoli nový místní běh.
+- **Přijetí:** autor 25. 10. 2026 v rozhovoru s Claude napsal **„Přijímám P1“**.
+  Tím přijal etapu P1 (P1.1–P1.5) v rozsahu schválených smluv a matic.
+- **Zůstává otevřené:** R03 (neatomický zápis), R04/P16 (historická identita ploch),
+  R12 (oddíl README pro AI), širší ruční matice Windows a macOS (Retina, trackpad,
+  GPU) a odborná validace NDT-17. Přijetí P1 nic z toho neprohlašuje za vyřešené
+  a samo neschvaluje P2, nový formát ani nové závislosti.

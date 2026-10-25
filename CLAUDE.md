@@ -1092,7 +1092,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Aktuální pokračování (24. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
+**Aktuální pokračování (25. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
 P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
@@ -1130,25 +1130,28 @@ kreslení od programového ovládání. Po předání autor schválil sloučení
 [Evidence obou vydání](docs/p1-4-overeni.md#sloučení-a-vydání-z-main) dokládá
 1 549 testů na každém systému, kontrolu stažení a místní self-test vydání na M4.
 Zachovat formát 22; R03/R04/R12 a odbornou validaci nepovažovat za vyřešené.
-**P1.5 — schváleno autorem 24. 10. 2026, provedení zahájeno:**
+**P1.5 — dokončeno a sloučeno:**
 [přijetí bezpečné geometrie](docs/p1-5-navrh-prijeti-bezpecne-geometrie.md),
-F1–F9, F.1–F.4 a P01–P24. Autor po návrhovém PR #40 odpověděl „schvaluji“.
-[Evidence](docs/p1-5-overeni.md) vede konkrétní testy, mezery, měření a postup.
-F.1 inventura a F.2 sedm nových regresí prošly; celý místní běh má 1 556 případů.
-[Nativní protokol](docs/p1-5-agent-overeni-macos-2026-10-24.md) dokládá 15 kroků
-skutečného Cocoa/OccViewer okna s programovým ovládáním a náhradami dialogů.
-[PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41) při předání obsahuje
-konečná SHA, oba celé cílové běhy a kontroly stažených balíčků.
-P1 se tím nepřijímá za autora. Všech 80 původních testovacích souborů je zachovaných.
-Povolený rozsah je inventura, chybějící regrese, protokol a balíčky,
-bez změny produkčního chování.
+F1–F9, F.1–F.4 a P01–P24 (autor po návrhovém PR #40: „schvaluji“).
+[Evidence](docs/p1-5-overeni.md) vede konkrétní testy, mezery, měření a postup;
+sedm nových regresí, 1 556 místních případů a
+[nativní protokol](docs/p1-5-agent-overeni-macos-2026-10-24.md) s 15 kroky.
+Autor sloučil [PR #41](https://github.com/JendaNDT/SkodaCAD/pull/41) jako `fe2a087`;
+obě workflow z main včetně kontroly stažení prošla.
+**P1 přijato autorem 25. 10. 2026** slovy „Přijímám P1“
+([zápis](docs/p1-5-overeni.md#sloučení-a-přijetí-p1-autorem)).
+R03, R04/P16, R12, zbytkové riziko historické identity, širší ruční matice
+Windows/macOS a odborná NDT-17 zůstávají otevřené.
 Nový produkční nález předložit se samostatným návrhem opravy; neupravovat
 `src`, tolerance, závislosti ani očekávání jen kvůli úspěšnému přijetí.
 [Audit a evidence P0](docs/p0-audit-a-overeni.md) obsahují rizika a postup ověření.
 Autor 20. 10. 2026 potvrdil [funkční průchod na Macu M4](docs/p0-rucni-overeni-macos-2026-10-20.md);
-rozsah a nepotvrzené podbody jsou v protokolu. NDT-17 a širší macOS/Windows matice zůstávají otevřené.
-P2 ani nový formát nezahajovat bez dalšího schválení. P1.5 provést v rozsahu F1–F9;
-sloučení a konečné přijetí vyžadují samostatný pokyn autora.
+rozsah a nepotvrzené podbody jsou v protokolu.
+**P2.1 — schváleno autorem 25. 10. 2026** slovy „schvaluji G1–G8“:
+[rozsah přímého modelování](docs/p2-1-navrh-rozsahu-primeho-modelovani.md), G1–G8,
+Q01–Q24 a [průzkum jádra](docs/p2-1-pruzkum-jadra.py) (`BRepOffset_MakeOffset`
+se `SetOffsetOnFace`), návrhové PR #42. Implementaci nezahajovat: P2.2 formát,
+P2.3 výpočet, P2.4 okno a P2.5 přijetí mají každý vlastní schválení.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
