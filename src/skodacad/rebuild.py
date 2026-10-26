@@ -113,6 +113,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None,
         result.parts_before[feature["id"]] = ctx.part
         message = _run_feature(ctx, feature)
         if message is None:
+            ctx.history.append((feature["id"], ctx.part))
             information = ""
             if feature["type"] in VOLUME_FEATURES:
                 previous = result.parts_before[feature["id"]]

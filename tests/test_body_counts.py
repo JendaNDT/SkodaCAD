@@ -112,7 +112,7 @@ def test_new_rejections_can_be_undone_redone_repaired_and_saved(kind, tmp_path):
     saved = tmp_path / "copy.json"
     session.save(saved)
     data = Document.load(saved).to_dict()
-    assert data["version"] == 22 and path.read_bytes() == original
+    assert data["version"] == 23 and path.read_bytes() == original
     assert all("message" not in feature for feature in data["features"])
 
 

@@ -275,7 +275,7 @@ def test_settings_are_saved_in_pt_study_as_one_undo_step(tmp_path):
     session.redo()
     path = session.save(tmp_path / "pt.json")
     data = Document.load(path).to_dict()
-    assert data["version"] == 22 and data["ndt"]["studies"][2]["pt"]["step_mm"] == 20
+    assert data["version"] == 23 and data["ndt"]["studies"][2]["pt"]["step_mm"] == 20
     with pytest.raises(DocumentError, match="jen PT"):
         opened("kapsa").set_ndt_pt_settings("s1", QUICK)  # s1 kapsy je UT studie
     with pytest.raises(DocumentError, match="Hlavní nástroj"):
@@ -375,7 +375,7 @@ def test_cli_prints_pt_summary_saves_settings_and_build_shows_disclaimer(tmp_pat
     assert code == 0, out.err
     assert PT_MAP in out.out and PT_DISCLAIMER in out.out and "Odhad" in out.err
     saved = json.loads(model.read_text(encoding="utf-8"))
-    assert saved["version"] == 22
+    assert saved["version"] == 23
     assert saved["ndt"]["studies"][0]["pt"]["fine_tool_mm"] == 2
     assert (tmp_path / "pt.csv").exists()
     assert main(["kapilarni", str(model), "--studie", "s9"]) == 2

@@ -2395,3 +2395,29 @@ def test_audit_panel_is_locked_while_ai_works(rt_window):
     w.set_assistant_busy(False)
     panel.refresh()
     assert panel.run_action.isEnabled() and w.audit_dock.isEnabled()
+
+
+def test_direct_edit_feature_shows_its_face_and_edits_only_the_value(window, tmp_path):
+    """P2.3: přímá úprava ze souboru – plocha a původ jen k prohlédnutí, číslo jde měnit.
+    Výběr plochy ve 3D a nabídka přijdou s P2.4, proto v „Přidat prvek“ zatím nejsou."""
+    from skodacad.document import Document
+
+    document = Document.load(window.session.path)
+    face = {"at": [70, 0, 0], "normal": [0, 0, -1], "type": "plane"}
+    document.features.append({"id": "tensi", "type": "move_face", "face": face,
+                              "origin": "deska", "distance": -3})
+    path = tmp_path / "upravy.json"
+    document.save(path)
+    before = window.session.properties.volume_mm3
+    assert window.open_model(path) and window.session.result.ok
+    assert all(a.text() not in ("Posunutí plochy", "Průměr plochy")
+               for a in window.add_feature_actions.values())
+    window.tree.setCurrentItem(window.tree.topLevelItem(len(document.features) - 1))
+    assert "u bodu 70; 0; 0" in form_field(window, "face").text()
+    assert form_field(window, "origin").text() == "deska"
+    thinner = window.session.properties.volume_mm3
+    assert thinner < before
+    set_text(form_field(window, "distance"), "-6")
+    feature = window.session.feature("tensi")
+    assert feature["face"] == face and feature["origin"] == "deska" and feature["distance"] == -6
+    assert before - window.session.properties.volume_mm3 == pytest.approx(2 * (before - thinner))

@@ -1,0 +1,30 @@
+{
+  "format": "skodacad",
+  "version": 23,
+  "name": "Přímé úpravy ploch",
+  "description": "Deska s čepem a dvěma dírami. Poslední dva prvky jsou přímé úpravy: horní plocha desky posunutá o 4 mm dolů (čep zůstane na místě a prodlouží se) a kopie díry zvětšená na Ø10.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {"H": 20, "d": 8},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys desky", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 60, "height": 40}]},
+    {"id": "deska", "type": "extrude", "name": "Deska", "sketch": "obrys", "distance": "H"},
+    {"id": "cep_skica", "type": "sketch", "name": "Čep", "plane": "top",
+     "elements": [{"shape": "circle", "diameter": 12, "center": [-15, 0]}]},
+    {"id": "cep", "type": "extrude", "name": "Čep", "sketch": "cep_skica", "distance": 10,
+     "operation": "add"},
+    {"id": "dira_skica", "type": "sketch", "name": "Díra", "plane": "XY",
+     "elements": [{"shape": "circle", "diameter": "d", "center": [15, -8]}]},
+    {"id": "dira", "type": "extrude", "name": "Díra", "sketch": "dira_skica",
+     "operation": "cut", "through_all": true},
+    {"id": "pole", "type": "pattern", "name": "Druhá díra", "features": ["dira"],
+     "kind": "linear", "count": 2, "direction": "Y", "spacing": 16},
+    {"id": "tensi", "type": "move_face", "name": "Tenčí deska",
+     "face": {"at": [0, 15, 20], "normal": [0, 0, 1], "type": "plane"},
+     "origin": "deska", "distance": -4},
+    {"id": "vetsi_dira", "type": "face_diameter", "name": "Větší druhá díra",
+     "face": {"at": [19, 8, 8], "normal": [-1, 0, 0], "type": "cylinder"},
+     "origin": "pole", "diameter": 10}
+  ]
+}

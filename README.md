@@ -770,7 +770,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 15,
+  "version": 23,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -803,6 +803,8 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
 | `pattern` | pole – opakuje prvky | `features` (`["dira1"]`), `kind` (`circular`/`linear`), `count` (včetně původního); kruhové: `axis`, `center` (`[x, y, z]`), `angle` (výchozí 360); lineární: `direction` (`X`/`Y`/`Z`), `spacing`, pro mřížku `direction2`, `count2`, `spacing2` |
 | `mirror` | zrcadlení | `plane`, `offset`, `features` (bez nich se zrcadlí celý díl) |
+| `move_face` | posunutí rovinné plochy (přímá úprava) | `face`, `origin`, `distance` (+ ven z materiálu, − dovnitř) |
+| `face_diameter` | nový průměr válcové plochy – díry nebo čepu (přímá úprava) | `face`, `origin`, `diameter` |
 
 * **`plane`** – základní rovina `XY`, `XZ`, `YZ`, nebo plocha dílu `top`, `bottom`, `front`,
   `back`, `left`, `right`. Souřadnice skici na ploše dílu jsou globální (na `top` platí X a Y dílu).
@@ -814,6 +816,29 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 * **`direction`** – `normal` (ven z roviny), `reverse` (opačně), `both` (symetricky, `distance` je
   celková tloušťka). Řez (`cut`) jde ve výchozím stavu do materiálu.
 * **`through_all": true`** – řez skrz celý díl.
+
+### Přímé úpravy ploch (`move_face`, `face_diameter`, verze 23)
+
+```json
+{"id": "tensi_deska", "type": "move_face", "name": "Tenčí deska",
+ "face": {"at": [10, 15, 20], "normal": [0, 0, 1], "type": "plane"},
+ "origin": "deska", "distance": -3}
+{"id": "dira_8", "type": "face_diameter",
+ "face": {"at": [18, 12, 10], "normal": [-1, 0, 0], "type": "cylinder"},
+ "origin": "pole", "diameter": 8}
+```
+
+* Mění **hotový díl** v místě prvku ve stromu – hodí se i na díl bez historie. Sousední
+  plochy se jen prodlouží nebo zkrátí; čep stojící na posunuté ploše zůstane na místě.
+* **`face`** – plocha jako u měření: bod `at` na ploše, směr `normal` ven z materiálu
+  a `type` (`plane` u posunutí, `cylinder` u průměru). Pevný poloměr se neukládá.
+* **`origin`** – id prvku, kterým plocha vznikla (od kterého v bodě `at` na díle
+  nepřetržitě je). Je povinný: když se po změně dřívějšího prvku najde plocha jiného
+  původu, prvek skončí chybou místo tiché záměny. Doplní ho výběr plochy ve 3D.
+* Odmítne se: posun 0 nebo stejný průměr, plocha s hladce navazujícím sousedem
+  (zaoblení, vymodelovaný závit), kužel, koule a obecné plochy, úprava, při které by
+  soused zanikl, plocha splynula s jinou nebo vnikla do jiné části tělesa.
+* Pole a zrcadlení vybraných prvků přímé úpravy neopakují (jako zaoblení).
 
 ### Tvary ve skice (`elements`)
 

@@ -150,7 +150,7 @@ def test_invalid_json_can_be_saved_reopened_and_repaired_with_history(output_ses
     saved = session.save(tmp_path / "work.json")
     restored = ModelSession()
     restored.open(saved)
-    assert not restored.result.ok and Document.load(saved).to_dict()["version"] == 22
+    assert not restored.result.ok and Document.load(saved).to_dict()["version"] == 23
     fixed = restored.feature("bad")
     fixed["radius"] = 2
     restored.update_feature("bad", fixed)

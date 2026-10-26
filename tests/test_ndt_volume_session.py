@@ -37,7 +37,7 @@ def test_older_versions_keep_face_studies_and_original_file_until_explicit_save(
     assert session.ndt_study("s1")["target"] == data["ndt"]["studies"][0]["target"]
     session.save(tmp_path / "kopie.json")
     assert old.read_bytes() == before
-    assert json.loads((tmp_path / "kopie.json").read_text(encoding="utf-8"))["version"] == 22
+    assert json.loads((tmp_path / "kopie.json").read_text(encoding="utf-8"))["version"] == 23
 
 
 def test_loading_volume_normalizes_frame_without_mutation_and_round_trips(tmp_path):

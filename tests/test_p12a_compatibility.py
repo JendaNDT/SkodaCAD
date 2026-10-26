@@ -12,6 +12,8 @@ from skodacad.features import FEATURE_TYPES
 
 # Změřeno před změnou jádra na main 15b8bf4. Kompatibilita, nikoli analytický důkaz.
 EXAMPLE_BASELINE = {
+    "prime_upravy.json": (  # P2.3: 60·40·16 + π·6²·14 − π·4²·16 − π·5²·16
+        37922.47791665435, (-30.0, -20.0, 0.0, 30.0, 20.0, 30.0), 1),
     "cep.json": (
         24339.35340053283,
         (-40.0000001, -10.0000001, -10.0000001, 40.0000001, 10.0000001, 10.0000001),
@@ -99,7 +101,7 @@ def test_all_recursive_examples_keep_baseline_geometry_and_round_trip(name, tmp_
     destination = tmp_path / path.name
     document.save(destination)
     restored = Document.load(destination)
-    assert restored == document and restored.to_dict()["version"] == VERSION == 22
+    assert restored == document and restored.to_dict()["version"] == VERSION == 23
     assert rebuild(restored).ok
     assert path.read_bytes() == original_bytes
 
@@ -121,5 +123,5 @@ def test_simple_legacy_recipe_loads_without_new_persisted_fields(version, tmp_pa
     path = tmp_path / "saved.json"
     document.save(path)
     saved = Document.load(path).to_dict()
-    assert saved["version"] == VERSION == 22
+    assert saved["version"] == VERSION == 23
     assert not any("message" in feature for feature in saved["features"])

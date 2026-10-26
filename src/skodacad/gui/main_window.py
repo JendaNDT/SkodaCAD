@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.add_feature(k))
-            for key, schema in FEATURE_SCHEMAS.items()
+            for key, schema in FEATURE_SCHEMAS.items() if schema.menu
         }
         self.profile_sketch_action = self._action("Skica – nakreslit obrys…",
                                                   self.add_profile_sketch)
