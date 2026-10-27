@@ -1,1 +1,2 @@
 tests/fixtures/step/*.step -text
+tests/fixtures/step-p33/*.step -text

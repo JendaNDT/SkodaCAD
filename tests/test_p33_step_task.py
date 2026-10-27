@@ -1,0 +1,67 @@
+"""Životní cyklus izolovaného průzkumného procesu STEP."""
+import time
+from pathlib import Path
+
+from skodacad.step_task import StepTask
+
+SOURCE = Path(__file__).parent / "fixtures" / "step" / "01-jedno-teleso.step"
+
+
+def wait(task):
+    for _ in range(500):
+        result = task.poll()
+        if result is not None:
+            return result
+        time.sleep(0.02)
+    task.cancel()
+    raise AssertionError("Proces nedokončil kontrolu")
+
+
+def test_valid_step_in_child():
+    task = StepTask(SOURCE.read_bytes())
+    try:
+        result = wait(task)
+        assert not result.error
+        assert result.facts.solids == 1
+        assert result.facts.volume_mm3 == 24000
+        from skodacad.worker import _shape_from
+
+        restored = _shape_from(("Part", result.shape_bytes))
+        assert len(restored.solids()) == 1
+        assert restored.volume == 24000
+    finally:
+        task.cancel()
+
+
+def test_timeout_stops_process():
+    task = StepTask(SOURCE.read_bytes(), timeout=0.001)
+    time.sleep(0.02)
+    outcome = task.poll()
+    assert "časový limit" in outcome.error
+    assert not task._process.is_alive()
+
+
+def test_cancel_stops_process():
+    task = StepTask(SOURCE.read_bytes())
+    task.cancel()
+    assert not task._process.is_alive()
+    assert task.poll() is None
+
+
+def test_memory_limit_stops_process(monkeypatch):
+    monkeypatch.setattr("skodacad.step_task._resident_bytes", lambda _: 1024)
+    task = StepTask(SOURCE.read_bytes(), max_rss=1)
+    outcome = task.poll()
+    assert "limit paměti" in outcome.error
+    assert not task._process.is_alive()
+
+
+def test_reported_repair_is_rejected_in_child():
+    path = Path(__file__).parent / "fixtures" / "step-p33" / "obracena-plocha.step"
+    task = StepTask(path.read_bytes())
+    try:
+        outcome = wait(task)
+        assert outcome.facts is None
+        assert "oprava" in outcome.error
+    finally:
+        task.cancel()
