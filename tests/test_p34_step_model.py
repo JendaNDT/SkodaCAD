@@ -136,3 +136,11 @@ def test_source_cannot_be_silently_replaced():
     with pytest.raises(DocumentError, match="totožného"):
         session.update_feature("step_import1", changed)
     assert session.document.to_dict() == before
+
+
+def test_packaged_self_test_exercises_step():
+    from skodacad.gui.app import _self_test_step
+
+    lines = []
+    assert _self_test_step(lines)
+    assert any("Import STEP" in line and "24000" in line for line in lines)

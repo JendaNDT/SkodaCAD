@@ -70,3 +70,19 @@ Po plné sadě byl samostatně doplněn a ověřen test, že běžná úprava pr
 data zdroje; test nevolá vzdálené AI API. Další změny
 před odevzdáním tvoří skripty pro přenos mezi OS, dokumentace a tato cílená
 regrese. Ověření na Windows dosud nebylo dokončeno.
+
+Při prvním pokusu přenosového workflow na Windows selhal výpis testovacího
+skriptu na kódování konzole `cp1252`; před výpisem byl první model vytvořen,
+ve druhé úloze první přenesený model načten a vyexportován. Nejde o úspěšně
+ukončené workflow. Skripty nyní používají ASCII výstup a workflow zapíná UTF-8;
+opravený přenos se musí znovu celý ověřit.
+
+Konečná místní zkušební `.app` po přesunutí čtení souboru do pomocného procesu
+prošla agentovým průchodem v reálném 3D: náhled 40 × 30 × 20 mm, 24 000 mm³,
+potvrzení a vykreslení. Její rozšířený self-test importu, uložení a opětovného
+otevření prošel. Toto stále není ruční přijetí autorem ani zkouška Windows.
+
+Poslední místní úplná sada po přesunutí čtení do procesu a po doplnění
+STEP self-testu: **1 688 testů prošlo**, Ruff prošel. Poslední zkušební macOS
+sestavení prošlo kontrolou podpisu a self-testem včetně STEP; agent v něm
+znovu provedl výběr souboru, náhled, potvrzení a vykreslení kvádru.

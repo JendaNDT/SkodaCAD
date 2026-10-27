@@ -30,7 +30,7 @@ def create(folder: Path) -> None:
         session.add_step_import(raw, name)
         assert session.result.ok, session.result.first_error
         session.save(folder / (name + ".json"))
-        print(f"Vytvořen model s vloženým zdrojem {name}.")
+        print(f"Created model with embedded source {name}.")
 
 
 def check(folder: Path) -> None:
@@ -62,7 +62,7 @@ def check(folder: Path) -> None:
             assert abs(outcome.facts.volume_mm3 - volume) <= 1e-5
         finally:
             task.cancel()
-        print(f"Otevřen a exportován {name}: {tuple(size)} mm, {part.volume:.6f} mm³.")
+        print(f"Opened and exported {name}: {tuple(size)} mm, {part.volume:.6f} mm^3.")
 
 
 def main() -> None:

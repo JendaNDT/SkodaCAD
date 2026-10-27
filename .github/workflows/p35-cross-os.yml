@@ -9,6 +9,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  PYTHONUTF8: "1"
 jobs:
   vytvor-macos:
     runs-on: macos-15

@@ -941,7 +941,6 @@ class MainWindow(QMainWindow):
     def import_step_dialog(self) -> None:
         """Zkontroluje STEP mimo okno, ukáže náhled a teprve pak změní model."""
         from skodacad.step_probe import StepProbeError
-        from skodacad.step_source import read_source_file
         from skodacad.step_task import StepTask
         from skodacad.worker import _shape_from
 
@@ -955,8 +954,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            data = read_source_file(path)
-            task = StepTask(data)
+            task = StepTask(Path(path))
         except (StepProbeError, OSError, RuntimeError) as exc:
             self._error("Import STEP", str(exc))
             return
@@ -994,6 +992,7 @@ class MainWindow(QMainWindow):
         if outcome.error:
             self._error("Import STEP", outcome.error)
             return
+        data = outcome.source_bytes
         try:
             part = _shape_from(("Part", outcome.shape_bytes))
             facts = outcome.facts

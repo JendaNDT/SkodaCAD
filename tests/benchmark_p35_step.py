@@ -24,9 +24,9 @@ def main():
             time.sleep(0.1)
         if result.error:
             raise RuntimeError(result.error)
-        print(f"STEP {len(data)} B, čas {time.monotonic() - started:.2f} s, "
-              f"nejvyšší změřená rezidentní paměť {highest / 1024**2:.1f} MiB, "
-              f"objem {result.facts.volume_mm3:.3f} mm³.")
+        print(f"STEP {len(data)} B, time {time.monotonic() - started:.2f} s, "
+              f"peak sampled resident memory {highest / 1024**2:.1f} MiB, "
+              f"volume {result.facts.volume_mm3:.3f} mm^3.")
     finally:
         task.cancel()
 

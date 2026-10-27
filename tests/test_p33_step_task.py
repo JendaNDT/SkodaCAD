@@ -106,3 +106,27 @@ def test_existing_worker_guard_kills_step_without_polling(monkeypatch):
         assert not worker.process.is_alive()
     finally:
         runner.close()
+
+
+def test_file_is_read_inside_controlled_process(tmp_path):
+    path = tmp_path / "source.step"
+    original = SOURCE.read_bytes()
+    path.write_bytes(original)
+    task = StepTask(path)
+    try:
+        result = wait(task)
+        assert not result.error
+        assert result.source_bytes == original
+        assert result.facts.size_bytes == len(original)
+    finally:
+        task.cancel()
+
+
+def test_missing_file_reports_error_in_child(tmp_path):
+    task = StepTask(tmp_path / "neexistuje.step")
+    try:
+        result = wait(task)
+        assert result.facts is None
+        assert "nelze přečíst" in result.error
+    finally:
+        task.cancel()

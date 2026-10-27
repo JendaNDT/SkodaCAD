@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from skodacad.step_probe import MAX_STEP_BYTES, StepFacts, StepProbeError
@@ -16,20 +17,22 @@ MAX_RSS = 1024 * 1024 * 1024
 DEFAULT_TIMEOUT = 60.0
 
 
-def _worker(conn: Any, data: bytes) -> None:
+def _worker(conn: Any, source: bytes | Path) -> None:
     from build123d import Compound
     from OCP.BinTools import BinTools
 
     from skodacad.step_probe import _inspect_step
+    from skodacad.step_source import read_source_file
 
     try:
+        data = read_source_file(source) if isinstance(source, Path) else source
         facts, shape = _inspect_step(data)
         output = io.BytesIO()
         BinTools.Write_s(Compound([shape.solids()[0]]).wrapped, output)
         raw = output.getvalue()
         if len(raw) > 64 * 1024 * 1024:
             raise StepProbeError("Převedené těleso je příliš velké.")
-        conn.send((True, (facts, raw)))
+        conn.send((True, (facts, raw, data if isinstance(source, Path) else None)))
     except Exception as exc:  # noqa: BLE001 -- pomocný proces musí vrátit chybu
         conn.send((False, str(exc) if isinstance(exc, StepProbeError)
                    else f"Kontrola STEP selhala ({type(exc).__name__})."))
@@ -87,15 +90,18 @@ def _resident_bytes(pid: int) -> int | None:
 class StepOutcome:
     facts: StepFacts | None = None
     shape_bytes: bytes | None = None
+    source_bytes: bytes | None = None
     error: str = ""
 
 
 class StepTask:
     """Kontrola a převzetí výsledku běží nezávisle na volání ``poll``."""
 
-    def __init__(self, data: bytes, timeout: float = DEFAULT_TIMEOUT,
+    def __init__(self, data: bytes | Path, timeout: float = DEFAULT_TIMEOUT,
                  max_rss: int = MAX_RSS) -> None:
-        if not isinstance(data, bytes) or not data or len(data) > MAX_STEP_BYTES:
+        if not isinstance(data, (bytes, Path)):
+            raise StepProbeError("Zdroj STEP musí být soubor nebo bajty.")
+        if isinstance(data, bytes) and (not data or len(data) > MAX_STEP_BYTES):
             raise StepProbeError("STEP je prázdný nebo větší než povolených 16 MiB.")
         if timeout <= 0 or max_rss <= 0:
             raise ValueError("Mez času a paměti musí být kladná.")
@@ -162,8 +168,8 @@ class StepTask:
     def _receive(self) -> None:
         try:
             success, result = self._conn.recv()
-            outcome = (StepOutcome(facts=result[0], shape_bytes=result[1]) if success
-                       else StepOutcome(error=result))
+            outcome = (StepOutcome(facts=result[0], shape_bytes=result[1], source_bytes=result[2])
+                       if success else StepOutcome(error=result))
         except (EOFError, OSError):
             outcome = StepOutcome(error="Pomocný proces kontroly STEP skončil bez výsledku.")
         finally:
