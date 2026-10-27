@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import copy
 import json
+import math
 import os
 import sys
 import threading
@@ -206,6 +207,12 @@ VIEW_TOOL = _tool(
     {"view": {"type": "string", "enum": ["current", "iso", "front", "top", "right"],
               "description": "current = pohled uživatele, jinak standardní pohled."}},
     ("view",))
+DIRECT_EDIT_TOOL = _tool(
+    "propose_direct_edit", "Navrhni přímou úpravu plochy vybrané uživatelem ve 3D. "
+    "Zobrazí se dialog s náhledem; změna se provede jen po potvrzení uživatele.",
+    {"kind": {"type": "string", "enum": ["move_face", "face_diameter"]},
+     "value": {"type": "number", "description": "Posun nebo nový průměr v mm."}},
+    ("kind", "value"))
 VIEW_NAMES = {"current": "aktuální pohled", "iso": "izometrie", "front": "zepředu",
               "top": "shora", "right": "zprava"}
 
@@ -249,13 +256,16 @@ class ModelTools:
     """Nástroje nad otevřeným modelem (``ModelSession``). ``look(view)`` vrátí PNG dílu
     (jen v okně – příkazová řádka obrázky nemá)."""
 
-    def __init__(self, session: Any, look: Callable[[str], bytes | None] | None = None):
+    def __init__(self, session: Any, look: Callable[[str], bytes | None] | None = None,
+                 direct_edit: Callable[[str, float], bool] | None = None):
         self.session = session
         self.look = look
+        self.direct_edit = direct_edit
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        return [*MODEL_TOOLS, VIEW_TOOL] if self.look else list(MODEL_TOOLS)
+        result = [*MODEL_TOOLS, VIEW_TOOL] if self.look else list(MODEL_TOOLS)
+        return [*result, DIRECT_EDIT_TOOL] if self.direct_edit else result
 
     # --- popis kroku pro uživatele --------------------------------------------------
 
@@ -281,6 +291,8 @@ class ModelTools:
             return f"Skládám celý model znovu ({count} prvků)"
         if name == "view_part":
             return f"Dívám se na díl ({VIEW_NAMES.get(data.get('view'), 'pohled')})"
+        if name == "propose_direct_edit":
+            return "Připravuji náhled přímé úpravy vybrané plochy"
         texts = {"get_model": "Čtu model", "delete_parameter": "Mažu parametr {name}",
                  "delete_feature": "Mažu prvek {id}", "move_feature": "Přesouvám prvek {id}",
                  "set_part_info": "Měním údaje dílu"}
@@ -338,6 +350,9 @@ class ModelTools:
     def _tool_add_feature(self, data: dict[str, Any]) -> ToolOutput:
         feature = _object(data, "feature")
         kind = _text(feature, "type")
+        if kind in ("move_face", "face_diameter"):
+            raise ToolInputError("Přímou úpravu navrhni nástrojem propose_direct_edit; "
+                                 "musí ji potvrdit uživatel po náhledu.")
         after = data.get("after")
         if after is not None and not isinstance(after, str):
             raise ToolInputError("„after“ musí být id prvku nebo null.")
@@ -351,6 +366,8 @@ class ModelTools:
         feature_id = _text(data, "id")
         changes = _object(data, "changes")
         feature = self.session.feature(feature_id)
+        if feature["type"] in ("move_face", "face_diameter"):
+            raise ToolInputError("Přímou úpravu změň v okně po náhledu a potvrzení uživatelem.")
         for key, value in changes.items():
             if key in ("id", "type") and value != feature.get(key):
                 raise ToolInputError("U prvku nejde změnit id ani typ – přidej nový prvek.")
@@ -362,11 +379,16 @@ class ModelTools:
         return ToolOutput("Prvek upraven.", changed=True)
 
     def _tool_delete_feature(self, data: dict[str, Any]) -> ToolOutput:
-        self.session.delete_feature(_text(data, "id"))
+        feature_id = _text(data, "id")
+        if self.session.feature(feature_id)["type"] in ("move_face", "face_diameter"):
+            raise ToolInputError("Přímou úpravu může odstranit uživatel v okně.")
+        self.session.delete_feature(feature_id)
         return ToolOutput("Prvek smazán.", changed=True)
 
     def _tool_move_feature(self, data: dict[str, Any]) -> ToolOutput:
         feature_id = _text(data, "id")
+        if self.session.feature(feature_id)["type"] in ("move_face", "face_diameter"):
+            raise ToolInputError("Přímou úpravu může přesunout uživatel v okně.")
         after = data.get("after")
         index = self.session.feature_index(feature_id)
         if after is None:
@@ -390,12 +412,30 @@ class ModelTools:
     def _tool_replace_model(self, data: dict[str, Any]) -> ToolOutput:
         model = copy.deepcopy(_object(data, "model"))
         current = self.session.document
+        features = model.get("features", [])
+        if not isinstance(features, list) or not all(isinstance(f, dict) for f in features):
+            raise ToolInputError("„features“ musí být seznam objektů.")
+        direct = lambda items: [f for f in items if f.get("type") in  # noqa: E731
+                                ("move_face", "face_diameter")]
+        if direct(features) != direct(current.features if current else []):
+            raise ToolInputError("Přímé úpravy nelze obejít nahrazením modelu; použij náhled.")
         kept = "ndt" not in model and current is not None and bool(current.ndt)
         if kept:  # studie jsou práce uživatele – přestavba dílu je jen označí jako zastaralé
             model["ndt"] = copy.deepcopy(current.ndt)
         self.session.replace_document(model)
         return ToolOutput("Model nahrazen." + (" NDT studie uživatele zůstaly." if kept else ""),
                           changed=True)
+
+    def _tool_propose_direct_edit(self, data: dict[str, Any]) -> ToolOutput:
+        kind, value = data.get("kind"), data.get("value")
+        if kind not in ("move_face", "face_diameter") or not isinstance(value, (int, float)) \
+                or isinstance(value, bool) or not math.isfinite(value):
+            raise ToolInputError("Zadej druh přímé úpravy a konečnou číselnou hodnotu.")
+        if self.direct_edit is None:
+            raise ToolInputError("Přímá úprava vyžaduje okno a výběr plochy uživatelem.")
+        if self.direct_edit(kind, value):
+            return ToolOutput("Uživatel náhled potvrdil a úprava byla použita.", changed=True)
+        return ToolOutput("Úprava nebyla použita; uživatel ji nepotvrdil.")
 
     def _tool_view_part(self, data: dict[str, Any]) -> ToolOutput:
         view = data.get("view", "current")

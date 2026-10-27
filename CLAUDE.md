@@ -248,7 +248,7 @@
   plochy, `diameter`) mění hotový díl na konci stromu (`direct_edit.py`, jádro
   `BRepOffset_MakeOffset` + `SetOffsetOnFace`). Odkaz `face` podle P1.3 bez pevného poloměru,
   povinný `origin` = pojistka původu plochy. Formát verze 23. V okně jen zobrazení a změna
-  čísla; výběr ve 3D, náhled a nástroj AI jsou P2.4.
+  čísla; P2.4 doplňuje výběr ve 3D, náhled a návrhový nástroj AI s potvrzením uživatele.
 
 ## Architektura (`src/skodacad/`)
 
@@ -1189,6 +1189,8 @@ implementovat podle G1–G8 a H1–H8; P2.4 okno a P2.5 přijetí dál vyžaduj�
 **P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, formát 23, README, testy
 Q01–Q23 a W01–W16 (`tests/test_direct_edit.py`), [evidence](docs/p2-3-overeni.md).
 Do main jen s výslovným souhlasem autora.
+**P2.4 — zadáno autorem 27. 10. 2026:** ovládání přímých úprav ve 3D, náhled a
+potvrzení v okně i pro návrhy AI. P2.5 přijetí je samostatný krok.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 

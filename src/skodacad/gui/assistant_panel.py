@@ -120,7 +120,7 @@ class AssistantPanel(QWidget):
         self.settings = AssistantSettings.load(settings_path(window.user_dir))
         self.client_factory = make_client  # testy podstrčí odpovědi bez sítě
         self.assistant: Assistant | None = None
-        self.tools = ModelTools(window.session, self._look)
+        self.tools = ModelTools(window.session, self._look, window.direct_edit_dialog)
         self._worker: _Worker | None = None
         self._entries: list[tuple[str, str]] = []
 

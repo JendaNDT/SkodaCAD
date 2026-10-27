@@ -30,9 +30,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from build123d import GeomType, Vector
+from build123d import GeomType, Vector, Vertex
 
 from skodacad.buildinfo import build_text, libraries_text
+from skodacad.direct_edit import face_origin
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
 from skodacad.export import export
 from skodacad.expressions import (
@@ -227,7 +228,8 @@ _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "d
                         "through_all", "kind", "size", "fit", "modeled_thread", "features",
                         "direction2"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
-SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole")
+SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole", "move_face",
+                      "face_diameter")
 
 
 def parse_parameter_text(text: str) -> int | float | str:
@@ -780,6 +782,114 @@ class ModelSession:
 
     # --- výběr ve 3D ---------------------------------------------------------------
 
+    def preview_direct_edit(self, kind: str, shapes: list[Any], point: Any, value: float | str,
+                            feature_id: str | None = None) -> DirectEditPreview:
+        """Spočítá návrh na kopii; dokument ani historie Zpět se tím nemění."""
+        if kind not in ("move_face", "face_diameter"):
+            raise DocumentError("Neznámý druh přímé úpravy.")
+        document = self._require()
+        if feature_id:
+            self._require_computed("převzetí výběru")
+            if self.result is None or self.result.part is None or self._computed != document:
+                raise DocumentError("Model nemá aktuální vypočtený díl – přepočítej jej.")
+            final = self.result.part
+        else:
+            final = self._final_part()
+        faces, edges = split_shapes(self._model_shapes(shapes))
+        if len(faces) != 1 or edges:
+            raise DocumentError("Vyber právě jednu plochu, bez dalších hran.")
+        index = self.feature_index(feature_id) if feature_id else len(document.features)
+        if feature_id:
+            feature = self.feature(feature_id)
+            if feature["type"] != kind:
+                raise DocumentError("Vybraný prvek není tato přímá úprava.")
+            from skodacad.picking import map_faces
+
+            part = self.result.parts_before.get(feature_id)
+            if part is None:
+                raise DocumentError("Před úpravou není dostupné těleso.")
+            try:
+                faces = map_faces(faces, part)
+            except SelectionError as exc:
+                raise DocumentError(str(exc)) from None
+        else:
+            feature = new_feature(kind, document.features)
+            part = final
+        face = faces[0]
+        expected = GeomType.PLANE if kind == "move_face" else GeomType.CYLINDER
+        if face.geom_type != expected:
+            raise DocumentError("Vyber rovinnou plochu pro posun nebo válcovou pro průměr.")
+        if not any(face.is_same(known) for known in part.faces()):
+            raise DocumentError("Plocha nepatří k dílu – vyber ji znovu.")
+        try:
+            where = Vector(*point) if point is not None else face.position_at(0.5, 0.5)
+            distance, on_face, _ = face.distance_to_with_closest_points(Vertex(where))
+            if distance > 1e-3:
+                raise DocumentError("Bod výběru neleží na ploše – klikni na ni znovu.")
+            normal = face.normal_at(on_face)
+            spec = {"at": list(on_face), "normal": list(normal),
+                    "type": "plane" if kind == "move_face" else "cylinder"}
+            found, actual = find_face(part, spec)
+            if not found.is_same(face):
+                raise DocumentError("Plochu nelze jednoznačně určit – klikni dál od hrany.")
+            history = [(f["id"], (self.result.parts_before.get(document.features[i + 1]["id"])
+                                   if i + 1 < len(document.features) else final))
+                       for i, f in enumerate(document.features[:index])]
+            origin = face_origin(history, found, actual)
+        except SelectionError as exc:
+            raise DocumentError(str(exc)) from None
+        if not origin:
+            raise DocumentError("Původ plochy nelze bezpečně určit – vyber jinou plochu.")
+        feature.update(face=spec, origin=origin)
+        feature["distance" if kind == "move_face" else "diameter"] = value
+        candidate = copy.deepcopy(document)
+        if feature_id:
+            candidate.features[index] = feature
+        else:
+            candidate.features.append(feature)
+        result = rebuild(candidate)
+        if problem := part_problem(result):
+            error = result.first_error
+            detail = f"{error.label}: {error.message}" if error else problem
+            raise DocumentError(f"Náhled nelze použít: {detail} Původní model se nezměnil.")
+        return DirectEditPreview(copy.deepcopy(document), feature, feature_id, result)
+
+    def apply_direct_edit(self, preview: DirectEditPreview) -> str:
+        """Přijme jen stále aktuální návrh jako jediný krok historie."""
+        if self._require() != preview.document or self.computing:
+            raise DocumentError("Model se od náhledu změnil – vytvoř náhled znovu.")
+        feature = copy.deepcopy(preview.feature)
+        if preview.feature_id:
+            index = self.feature_index(preview.feature_id)
+            self._change(lambda doc: doc.features.__setitem__(index, feature))
+        else:
+            self._change(lambda doc: doc.features.append(feature))
+        return feature["id"]
+
+    def preview_direct_feature(self, feature: dict[str, Any]) -> DirectEditPreview:
+        """Náhled změny hodnot existující úpravy bez změny jejího původu."""
+        document = self._require()
+        self._require_computed("náhled úpravy")
+        if self._computed != document:
+            raise DocumentError("Model není aktuálně přepočítaný – přepočítej jej.")
+        feature_id = feature.get("id")
+        index = self.feature_index(feature_id)
+        original = document.features[index]
+        if original["type"] not in ("move_face", "face_diameter") \
+                or feature.get("type") != original["type"] \
+                or feature.get("face") != original.get("face") \
+                or feature.get("origin") != original.get("origin"):
+            raise DocumentError("Výběr plochy změň příkazem Převzít výběr.")
+        candidate = copy.deepcopy(document)
+        candidate.features[index] = copy.deepcopy(feature)
+        result = rebuild(candidate)
+        if problem := part_problem(result):
+            error = result.first_error
+            detail = f"{error.label}: {error.message}" if error else problem
+            raise DocumentError(f"Náhled nelze použít: {detail} Původní model se nezměnil.")
+        return DirectEditPreview(copy.deepcopy(document), copy.deepcopy(feature), feature_id,
+                                 result)
+
     def selection_info(self, shapes: list[Any]) -> SelectionInfo:
         """Co je vybrané kliknutím ve 3D (počty a český popis pro stavový řádek)."""
         faces, edges = split_shapes(shapes)
@@ -820,6 +930,12 @@ class ModelSession:
         feature = self.feature(feature_id)
         if feature["type"] not in SELECTION_FEATURES:
             raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
+        if feature["type"] in ("move_face", "face_diameter"):
+            key = "distance" if feature["type"] == "move_face" else "diameter"
+            preview = self.preview_direct_edit(feature["type"], shapes, point,
+                                               self._evaluate(feature[key]), feature_id)
+            self.apply_direct_edit(preview)
+            return self.result
         self._require_computed("převzetí výběru")
         shapes = self._model_shapes(shapes)
         part = self.result.parts_before.get(feature_id) if self.result else None
@@ -4244,6 +4360,14 @@ class SelectionInfo:
     edges: int
     text: str  # český popis, "" = nic nevybráno
     flat_faces: int = 0  # rovinné plochy kolmé k ose X/Y/Z – jen na nich jde skica a skořepina
+
+
+@dataclass(frozen=True)
+class DirectEditPreview:
+    document: Document
+    feature: dict[str, Any]
+    feature_id: str | None
+    result: BuildResult
 
 
 def _is_flat(face: Any) -> bool:

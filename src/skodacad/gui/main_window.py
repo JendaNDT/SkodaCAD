@@ -49,6 +49,7 @@ from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.audit_panel import MARK as AUDIT_MARK
 from skodacad.gui.audit_panel import AuditPanel
 from skodacad.gui.design_panel import DesignPanel
+from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
@@ -80,6 +81,8 @@ SELECTION_ACTIONS = {
     "sketch": "Skica na vybrané ploše",
     "hole": "Díra na vybrané ploše",
     "shell": "Skořepina – otevřít vybrané plochy",
+    "move_face": "Posunout vybranou plochu…",
+    "face_diameter": "Změnit průměr vybrané plochy…",
 }
 
 MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost a tloušťka stěny "
@@ -1021,6 +1024,9 @@ class MainWindow(QMainWindow):
 
     def add_from_selection(self, feature_type: str) -> None:
         """Nový prvek z výběru ve 3D (zaoblení kliknutých hran, skica na ploše …)."""
+        if feature_type in ("move_face", "face_diameter"):
+            self.direct_edit_dialog(feature_type)
+            return
         picked, point = list(self._picked), self.viewer.picked_point
         new_id: list[str] = []
         if self._apply(lambda: new_id.append(
@@ -1036,11 +1042,43 @@ class MainWindow(QMainWindow):
         """Výběr ve 3D do prvku vybraného ve stromu (hrany zaoblení, rovina skici …)."""
         if self._selected_id is None:
             return
+        feature = self.session.feature(self._selected_id)
+        if feature["type"] in ("move_face", "face_diameter"):
+            key = "distance" if feature["type"] == "move_face" else "diameter"
+            try:
+                value = self.session._evaluate(feature[key])
+            except (ValueError, KeyError):
+                value = None
+            self.direct_edit_dialog(feature["type"], value, self._selected_id)
+            return
         picked = list(self._picked)
         point = getattr(self.viewer, "picked_point", None)
         if self._apply(lambda: self.session.apply_selection(self._selected_id, picked, replace,
                                                             point=point), structural=False):
             self._load_editor()
+
+    def direct_edit_dialog(self, kind: str, value: float | None = None,
+                           feature_id: str | None = None,
+                           edited_feature: dict | None = None) -> bool:
+        """Náhled nad kopií, potvrzení a vrácení zobrazení při zrušení."""
+        dialog = DirectEditDialog(self, kind, list(self._picked), self.viewer.picked_point,
+                                  value, feature_id, edited_feature)
+        try:
+            accepted = self._exec_dialog(dialog) == QDialog.DialogCode.Accepted
+            preview = dialog.preview if accepted else None
+        finally:
+            dialog.deleteLater()
+            self._shown_key = None
+            self._refresh_all()
+        if preview is None:
+            return False
+        new_id = []
+        if not self._apply(lambda: new_id.append(self.session.apply_direct_edit(preview)),
+                           structural=False):
+            return False
+        self._selected_id = new_id[0]
+        self._reload_all()
+        return True
 
     def delete_feature(self) -> None:
         if self._selected_id is None:
@@ -1057,6 +1095,18 @@ class MainWindow(QMainWindow):
 
     def _feature_edited(self, feature_id: str, feature: dict) -> None:
         # Formulář zůstává, jak ho uživatel vyplnil – přestavět jen strom, 3D a vlastnosti.
+        if feature["type"] in ("move_face", "face_diameter"):
+            key = "distance" if feature["type"] == "move_face" else "diameter"
+            if feature.get(key) != self.session.feature(feature_id).get(key):
+                try:
+                    value = self.session._evaluate(feature[key])
+                except (ValueError, KeyError) as exc:
+                    self._error("Úprava nejde provést", str(exc))
+                    self._load_editor()
+                    return
+                self.direct_edit_dialog(feature["type"], value, feature_id, feature)
+                self._load_editor()
+                return
         self._apply(lambda: self.session.update_feature(feature_id, feature), structural=False)
 
     def add_parameter(self) -> None:
@@ -1383,7 +1433,8 @@ class MainWindow(QMainWindow):
         flat = info.faces > 0 and info.flat_faces == info.faces
         needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,  # skica a díra jdou
                  "sketch": info.faces == 1, "hole": info.faces == 1,  # i na šikmou a válcovou
-                 "shell": flat}
+                 "shell": flat, "move_face": info.faces == 1 and info.edges == 0,
+                 "face_diameter": info.faces == 1 and info.edges == 0}
         for key, action in self.selection_actions.items():
             action.setEnabled(has_part and needs[key])
         document = self.session.document
@@ -1393,7 +1444,9 @@ class MainWindow(QMainWindow):
         texts = {"fillet": "Přidat vybrané hrany do: ", "chamfer": "Přidat vybrané hrany do: ",
                  "sketch": "Přesunout na vybranou plochu: ",
                  "hole": "Přidat díru v místě kliknutí do: ",
-                 "shell": "Otevřít vybrané plochy v: "}
+                 "shell": "Otevřít vybrané plochy v: ",
+                 "move_face": "Převzít vybranou plochu do: ",
+                 "face_diameter": "Převzít vybranou plochu do: "}
         if kind in SELECTION_FEATURES:
             self.add_to_feature_action.setText(texts[kind] + describe(feature))
         else:
