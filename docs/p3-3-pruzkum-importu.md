@@ -100,11 +100,13 @@ k aplikaci: `step_probe.py` odmítá zprávy z čtení a převodu, sestavy, jin�
 počet než jedno těleso, neplatnou geometrii a jiné než jednoznačné jednotky mm
 či palec; `step_source.py` ověřuje vložené bajty, velikost a SHA-256;
 `step_task.py` spouští diagnostiku odděleně a umožňuje zrušení, hlídá čas a
-průběžně měří rezidentní paměť. Přenos tvaru probíhá přes binární zápis OCCT.
+průběžně měří rezidentní paměť. Kontrolu vykonává pomocné vlákno nezávisle na
+dotazování okna; výsledek přijímá další vlákno. Přenos tvaru probíhá přes binární
+zápis OCCT.
 
 **Průběžné měření paměti není pevný limit operačního systému:** mezi dvěma
-kontrolami může proces limit překročit; měření funguje jen při pravidelném
-volání `poll` a jeho chování na Windows dosud nebylo ověřeno. Proto tento kód
+kontrolami může proces limit překročit a jeho chování na Windows dosud nebylo
+ověřeno. Proto tento kód
 zatím nesplňuje ochranu prostředků pro uživatelský import. `probe_step` je
 blokující a nastavení jádra je globální v procesu: nesmí se volat přímo z GUI
 ani souběžně s jinou úlohou OCCT. V této podobě nejde o dokončené P3.3, natož
@@ -113,3 +115,8 @@ P3.4 či P3.5; přístup do okna ani změna formátu zatím nejsou zavedeny.
 Průběžná úplná sada na místním Macu: **1 665 testů prošlo**, Ruff prošel.
 Zahrnuje sadu P3.1 z nesloučené větve; nově přidaný kontrolní případ hlášené
 opravy v pomocném procesu byl navíc ověřen samostatně. Nejde o přijetí P3.5.
+
+Po zavedení samostatného dohledu nad procesem prošla na místním Macu další
+úplná sada: **1 667 testů**, Ruff bez chyby. Další cílené testy ověřily také
+selhání měření paměti a dvě předběžná opětovná načtení po exportu. Předběžné
+zkoušky nenahrazují přijetí aplikace ani přenos mezi dvěma systémy.

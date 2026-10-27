@@ -38,3 +38,12 @@ def test_restore_requires_identical_data_without_mutating_original():
     assert record == before
     assert source_bytes(restore_source(record, raw)) == raw
     assert record == before
+
+
+def test_size_boundary():
+    from skodacad.step_probe import MAX_STEP_BYTES
+
+    original = b"x" * MAX_STEP_BYTES
+    assert source_bytes(source_record(original, "part.step")) == original
+    with pytest.raises(StepProbeError, match="16 MiB"):
+        source_record(original + b"x", "part.step")

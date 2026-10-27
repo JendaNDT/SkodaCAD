@@ -5,6 +5,7 @@ import io
 import multiprocessing
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -90,7 +91,7 @@ class StepOutcome:
 
 
 class StepTask:
-    """Výsledek se čte pomocí poll; ukončení, lhůtu a paměť kontroluje volající."""
+    """Kontrola a převzetí výsledku běží nezávisle na volání ``poll``."""
 
     def __init__(self, data: bytes, timeout: float = DEFAULT_TIMEOUT,
                  max_rss: int = MAX_RSS) -> None:
@@ -102,46 +103,81 @@ class StepTask:
         self._conn, child = context.Pipe(duplex=False)
         self._process = context.Process(target=_worker, args=(child, data), daemon=True,
                                         name="skodacad-step-kontrola")
-        self._process.start()
+        try:
+            self._process.start()
+        except BaseException:
+            child.close()
+            self._conn.close()
+            raise
         child.close()
         self._deadline = time.monotonic() + timeout
         self._max_rss = max_rss
-        self._finished = False
+        self._done = threading.Event()
+        self._stopped = threading.Event()
+        self._lock = threading.Lock()
+        self._outcome: StepOutcome | None = None
+        self._delivered = False
+        threading.Thread(target=self._monitor, daemon=True, name="step-monitor").start()
+        threading.Thread(target=self._receive, daemon=True, name="step-result").start()
+
+    def _publish(self, outcome: StepOutcome) -> bool:
+        with self._lock:
+            if self._done.is_set():
+                return False
+            self._outcome = outcome
+            self._done.set()
+            return True
+
+    def _stop_process(self) -> None:
+        if self._process.is_alive():
+            self._process.terminate()
+        self._process.join(timeout=2)
+        if self._process.is_alive():
+            self._process.kill()
+            self._process.join(timeout=2)
+        self._stopped.set()
+
+    def _monitor(self) -> None:
+        while not self._done.is_set():
+            if time.monotonic() >= self._deadline:
+                error = "Kontrola STEP překročila časový limit."
+            elif not self._process.is_alive():
+                return  # odpověď či konec roury převezme čtecí vlákno
+            else:
+                try:
+                    memory = _resident_bytes(self._process.pid)
+                except Exception:  # noqa: BLE001 -- selhání měření nesmí vypnout dohled
+                    memory = None
+                if memory is None and self._process.is_alive():
+                    error = "Nelze ověřit využití paměti kontroly STEP."
+                elif memory is not None and memory > self._max_rss:
+                    error = "Kontrola STEP překročila limit paměti."
+                else:
+                    self._done.wait(0.1)
+                    continue
+            if self._publish(StepOutcome(error=error)):
+                self._stop_process()
+            return
+
+    def _receive(self) -> None:
+        try:
+            success, result = self._conn.recv()
+            outcome = (StepOutcome(facts=result[0], shape_bytes=result[1]) if success
+                       else StepOutcome(error=result))
+        except (EOFError, OSError):
+            outcome = StepOutcome(error="Pomocný proces kontroly STEP skončil bez výsledku.")
+        finally:
+            self._conn.close()
+        if self._publish(outcome):
+            self._stop_process()
 
     def cancel(self) -> None:
-        if not self._finished:
-            if self._process.is_alive():
-                self._process.terminate()
-            self._process.join(timeout=2)
-            if self._process.is_alive():
-                self._process.kill()
-                self._process.join(timeout=2)
-            self._conn.close()
-            self._finished = True
+        if self._publish(StepOutcome(error="Kontrola STEP byla zrušena.")):
+            self._stop_process()
+        self._delivered = True
 
     def poll(self) -> StepOutcome | None:
-        if self._finished:
+        if not self._done.is_set() or self._delivered:
             return None
-        if time.monotonic() >= self._deadline:
-            self.cancel()
-            return StepOutcome(error="Kontrola STEP překročila časový limit.")
-        if self._process.is_alive():
-            memory = _resident_bytes(self._process.pid)
-            if memory is not None and memory > self._max_rss:
-                self.cancel()
-                return StepOutcome(error="Kontrola STEP překročila limit paměti.")
-            if memory is None and self._process.is_alive():
-                self.cancel()
-                return StepOutcome(error="Nelze ověřit využití paměti kontroly STEP.")
-        try:
-            if self._conn.poll():
-                success, result = self._conn.recv()
-                self.cancel()
-                return (StepOutcome(facts=result[0], shape_bytes=result[1]) if success
-                        else StepOutcome(error=result))
-        except (EOFError, OSError):
-            pass
-        if not self._process.is_alive():
-            self.cancel()
-            return StepOutcome(error="Pomocný proces kontroly STEP skončil bez výsledku.")
-        return None
+        self._delivered = True
+        return self._outcome

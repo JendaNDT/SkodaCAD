@@ -36,8 +36,9 @@ def test_valid_step_in_child():
 def test_timeout_stops_process():
     task = StepTask(SOURCE.read_bytes(), timeout=0.001)
     time.sleep(0.02)
-    outcome = task.poll()
+    outcome = wait(task)
     assert "časový limit" in outcome.error
+    assert task._stopped.wait(5)
     assert not task._process.is_alive()
 
 
@@ -51,8 +52,9 @@ def test_cancel_stops_process():
 def test_memory_limit_stops_process(monkeypatch):
     monkeypatch.setattr("skodacad.step_task._resident_bytes", lambda _: 1024)
     task = StepTask(SOURCE.read_bytes(), max_rss=1)
-    outcome = task.poll()
+    outcome = wait(task)
     assert "limit paměti" in outcome.error
+    assert task._stopped.wait(5)
     assert not task._process.is_alive()
 
 
@@ -65,3 +67,24 @@ def test_reported_repair_is_rejected_in_child():
         assert "oprava" in outcome.error
     finally:
         task.cancel()
+
+
+def test_limits_enforced_without_polling(monkeypatch):
+    monkeypatch.setattr("skodacad.step_task._resident_bytes", lambda _: 1024)
+    task = StepTask(SOURCE.read_bytes(), max_rss=1)
+    assert task._done.wait(5)
+    assert task._stopped.wait(5)
+    assert not task._process.is_alive()
+    assert "limit paměti" in task.poll().error
+
+
+def test_memory_monitor_exception_stops_process(monkeypatch):
+    def fail(_pid):
+        raise RuntimeError("neočekávaná chyba měření")
+
+    monkeypatch.setattr("skodacad.step_task._resident_bytes", fail)
+    task = StepTask(SOURCE.read_bytes())
+    outcome = wait(task)
+    assert "ověřit využití paměti" in outcome.error
+    assert task._stopped.wait(5)
+    assert not task._process.is_alive()
