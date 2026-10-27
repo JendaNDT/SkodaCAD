@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import io
 import multiprocessing
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from skodacad.rebuild import BuildResult
@@ -91,8 +92,13 @@ def decode_result(data: dict[str, Any]) -> BuildResult:
 # --- pomocný proces -----------------------------------------------------------------------
 
 
-def _worker_main(conn: Any) -> None:
+_STEP_PHASE = None  # nastaveno pouze v procesu přepočtu
+
+
+def _worker_main(conn: Any, step_phase: Any) -> None:
     """Smyčka pomocného procesu: přijme model, přepočítá ho, pošle výsledek zpět."""
+    global _STEP_PHASE  # proces sdělí rodiči, kdy pracuje se STEP
+    _STEP_PHASE = step_phase
     from skodacad.document import Document, DocumentError  # jádro se načte hned – pak je
     from skodacad.rebuild import rebuild  # proces připravený
 
@@ -240,8 +246,49 @@ def _worker_main(conn: Any) -> None:
 class _Worker:
     process: Any
     conn: Any
+    step_phase: Any
+    shutdown: threading.Event = field(default_factory=threading.Event)
+    limit_error: str = ""
+
+    def guard_step(self) -> None:
+        """Dohled pouze během převodu STEP; bez závislosti na dotazování okna."""
+        from skodacad.step_task import DEFAULT_TIMEOUT, MAX_RSS, _resident_bytes
+
+        started = None
+        while not self.shutdown.wait(0.1):
+            if not self.process.is_alive():
+                return
+            if not self.step_phase.is_set():
+                started = None
+                continue
+            if started is None:
+                started = time.monotonic()
+            if time.monotonic() - started > DEFAULT_TIMEOUT:
+                error = "Převod STEP překročil časový limit."
+            else:
+                try:
+                    memory = _resident_bytes(self.process.pid)
+                except Exception:  # noqa: BLE001 -- selhání dohledu zastaví převod
+                    memory = None
+                if memory is None:
+                    error = "Nelze ověřit využití paměti převodu STEP."
+                elif memory > MAX_RSS:
+                    error = "Převod STEP překročil limit paměti."
+                else:
+                    continue
+            if self.shutdown.is_set() or not self.step_phase.is_set():
+                started = None
+                continue
+            self.limit_error = error
+            try:
+                if self.process.is_alive():
+                    self.process.terminate()
+            except OSError:
+                pass  # proces mohl právě skončit
+            return
 
     def stop(self) -> None:
+        self.shutdown.set()
         try:
             self.conn.close()
         except OSError:
@@ -282,11 +329,14 @@ class BackgroundRebuilder:
 
     def _spawn(self) -> _Worker:
         parent, child = self._context.Pipe()
-        process = self._context.Process(target=_worker_main, args=(child,), daemon=True,
+        phase = self._context.Event()
+        process = self._context.Process(target=_worker_main, args=(child, phase), daemon=True,
                                         name="skodacad-prepocet")
         process.start()
         child.close()
-        return _Worker(process, parent)
+        worker = _Worker(process, parent, phase)
+        threading.Thread(target=worker.guard_step, daemon=True, name="step-worker-guard").start()
+        return worker
 
     @property
     def busy(self) -> bool:
@@ -360,9 +410,23 @@ class BackgroundRebuilder:
         worker = self._active
         if worker is None:
             return None
+        if worker.limit_error:
+            reason = worker.limit_error
+            worker.stop()
+            self._active = None
+            if not self._idle:
+                self._idle.append(self._spawn())
+            return Finished(self._job, error=reason)
         try:
             if worker.conn.poll():
                 kind, job, payload = worker.conn.recv()
+                if worker.limit_error:
+                    reason = worker.limit_error
+                    worker.stop()
+                    self._active = None
+                    if not self._idle:
+                        self._idle.append(self._spawn())
+                    return Finished(job, error=reason)
                 if kind in ("progress", "prepared", "variant", "entry", "design_progress",
                             "design_prepared", "design_variant"):
                     return Finished(job, update=(kind, payload))
@@ -394,10 +458,13 @@ class BackgroundRebuilder:
             pass
         if worker.process.is_alive():
             return None
+        reason = worker.limit_error
         worker.stop()  # proces spadl (např. chyba v knihovně jádra)
         self._active = None
         if not self._idle:
             self._idle.append(self._spawn())
+        if reason:
+            return Finished(self._job, error=reason)
         return Finished(self._job, error=f"Pomocný proces přepočtu spadl (kód "
                                          f"{worker.process.exitcode}). Zkus poslední "
                                          "změnu vrátit tlačítkem Zpět.")

@@ -307,7 +307,7 @@ def test_probe_is_stored_in_study_with_undo(tmp_path):
     assert "verified" not in session.ndt_study("s1")  # sonda je zadání studie
     assert session.ndt_probe("s1") == Probe.straight(12)
     path = session.save(tmp_path / "zebro.json")
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 23
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 24
     session.undo()
     assert "device" not in session.ndt_study("s1")
     with pytest.raises(DocumentError, match="Průměr sondy musí být číslo"):

@@ -229,7 +229,7 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 # Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
                              "pattern", "mirror", "fillet", "chamfer", "shell",
-                             "move_face", "face_diameter"))
+                             "move_face", "face_diameter", "step_import"))
 
 
 def feature(name: str, label_cz: str):
@@ -1036,6 +1036,40 @@ def build_pattern(ctx: BuildContext, feature: dict[str, Any]) -> None:
     operations = _source_operations(ctx, feature, "Pole")
     _repeat(ctx, operations, transforms, "Pole",
             "kopie leží mimo díl, zkontroluj osu, směr, rozteč a počet")
+
+
+@feature("step_import", "Import STEP")
+def build_step_import(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Jediný uzavřený díl z ověřeného, do modelu vloženého STEP."""
+    import time
+
+    from build123d import Compound
+
+    from skodacad.step_probe import StepProbeError, _inspect_step
+    from skodacad.step_source import source_bytes
+    from skodacad.step_task import StepTask
+    from skodacad.worker import _STEP_PHASE, _shape_from
+
+    if ctx.part is not None:
+        raise FeatureError("Import STEP musí být prvním objemovým tělesem.")
+    try:
+        data = source_bytes(feature)
+        if _STEP_PHASE is not None:
+            _, shape = _inspect_step(data)
+            part = Part(Compound([shape.solids()[0]]).wrapped)
+        else:
+            task = StepTask(data)
+            try:
+                while (result := task.poll()) is None:
+                    time.sleep(0.02)
+                if result.error:
+                    raise StepProbeError(result.error)
+                part = _shape_from(("Part", result.shape_bytes))
+            finally:
+                task.cancel()
+        ctx.apply(part, "new", "Import STEP")
+    except (StepProbeError, OSError) as exc:
+        raise FeatureError(str(exc)) from exc
 
 
 @feature("mirror", "Zrcadlení")

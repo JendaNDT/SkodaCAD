@@ -119,6 +119,9 @@ _NAME = Field("name", "Název", "text", required=False)
 FEATURE_SCHEMAS: dict[str, Schema] = {
     schema.type: schema
     for schema in (
+        Schema("step_import", "Import STEP", (_NAME,),
+               "Originální STEP je uložen v modelu; původní historie není dostupná.",
+               menu=False),
         Schema("sketch", "Skica", (
             _NAME,
             Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
@@ -410,8 +413,10 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     """
     schema = FEATURE_SCHEMAS[feature_type]
     before = existing if index is None else existing[:index]
-    has_solid = any(f.get("type") in ("extrude", "revolve", "sweep", "loft", "standard")
-                    for f in before)
+    has_solid = any(
+        f.get("type") in ("extrude", "revolve", "sweep", "loft", "standard", "step_import")
+        for f in before
+    )
     sketches = [f["id"] for f in before if f.get("type") == "sketch"]
 
     ids = {f.get("id") for f in existing}

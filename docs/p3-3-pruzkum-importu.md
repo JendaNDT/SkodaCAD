@@ -1,6 +1,6 @@
 # P3.3 — průzkum importní služby
 
-**Stav: průzkum, importní služba není hotová.** Podklad k návrhu P3.2;
+**Stav: průzkum před implementací; aktuální stav je v [evidenci P3.3–P3.5](p3-3-5-overeni.md).** Podklad k návrhu P3.2;
 vzorky P3.1 jsou zatím v [PR #46](https://github.com/JendaNDT/SkodaCAD/pull/46).
 P3.3 musí číst mimo Qt, rozlišit jednotky, počet a platnost těles, umožnit
 zrušení a neprovádět tiché opravy.
@@ -95,8 +95,8 @@ ani Windows v tomto průzkumu spuštěny nebyly. P3.3 tím zatím není implemen
 
 ## Rozpracovaný základ P3.3
 
-Na větvi navazující na PR #46 vznikl experimentální kód, zatím nepřipojený
-k aplikaci: `step_probe.py` odmítá zprávy z čtení a převodu, sestavy, jiný
+V první fázi na větvi navazující na PR #46 vznikl experimentální kód, tehdy
+ještě nepřipojený k aplikaci: `step_probe.py` odmítá zprávy z čtení a převodu, sestavy, jiný
 počet než jedno těleso, neplatnou geometrii a jiné než jednoznačné jednotky mm
 či palec; `step_source.py` ověřuje vložené bajty, velikost a SHA-256;
 `step_task.py` spouští diagnostiku odděleně a umožňuje zrušení, hlídá čas a
@@ -109,8 +109,8 @@ kontrolami může proces limit překročit a jeho chování na Windows dosud neb
 ověřeno. Proto tento kód
 zatím nesplňuje ochranu prostředků pro uživatelský import. `probe_step` je
 blokující a nastavení jádra je globální v procesu: nesmí se volat přímo z GUI
-ani souběžně s jinou úlohou OCCT. V této podobě nejde o dokončené P3.3, natož
-P3.4 či P3.5; přístup do okna ani změna formátu zatím nejsou zavedeny.
+ani souběžně s jinou úlohou OCCT. Toto je historický stav průzkumu; navazující připojení a jeho meze popisuje
+[evidence](p3-3-5-overeni.md).
 
 Průběžná úplná sada na místním Macu: **1 665 testů prošlo**, Ruff prošel.
 Zahrnuje sadu P3.1 z nesloučené větve; nově přidaný kontrolní případ hlášené
@@ -120,3 +120,20 @@ Po zavedení samostatného dohledu nad procesem prošla na místním Macu dalš�
 úplná sada: **1 667 testů**, Ruff bez chyby. Další cílené testy ověřily také
 selhání měření paměti a dvě předběžná opětovná načtení po exportu. Předběžné
 zkoušky nenahrazují přijetí aplikace ani přenos mezi dvěma systémy.
+
+## Napojení na stávající přepočet
+
+Dosavadní `BackgroundRebuilder` vytváří proces `skodacad-prepocet` jako
+`daemon=True`. Ověřený pokus s procesem stejného typu skončil chybou Pythonu
+`daemonic processes are not allowed to have children`. Přímo spustit `StepTask`
+ze stávajícího procesu přepočtu proto nelze. Pouhá změna na `daemon=False` by
+navíc při násilném ukončení rodiče sama neprokázala ukončení jeho potomka.
+
+Bezpečný směr pro pokračování je rozšířit stávající proces přepočtu o samostatnou
+úlohu STEP a kontrolovat jeho běh z rodiče, případně výslovně řídit celý strom
+procesů; každá varianta musí zvlášť pokrýt první náhled, přepočet po otevření,
+Zastavit, zavření okna, pád i časový a paměťový limit. Nesmí se přitom zavést
+časový limit STEP na celou dlouhou NDT úlohu. Změnu je třeba prokázat testy na
+obou systémech a v zabalené aplikaci. Navazující vývoj používá stávající proces s dohledem rodiče během převodu;
+ověření a zbývající meze jsou v [evidenci](p3-3-5-overeni.md). Jednoduché
+vnoření `StepTask` do přepočtu není bezpečné řešení.

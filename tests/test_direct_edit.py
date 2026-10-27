@@ -354,15 +354,15 @@ def test_q22_parameter_change_before_the_edit_follows_or_stops():
 # --- W01–W16: zápis a pojistka (P2.2) --------------------------------------------------
 
 
-def test_w01_w02_old_files_open_and_save_as_23(tmp_path):
-    for version in range(1, 23):
+def test_w01_w02_old_files_open_and_save_as_current(tmp_path):
+    for version in range(1, 24):
         data = model().to_dict() | {"version": version}
         document = Document.from_dict(data)
         assert rebuild(document).part.volume == pytest.approx(BOX)
     path = tmp_path / "stary.json"
     model().save(path)
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["version"] == VERSION == 23 and Document.load(path) == model()
+    assert saved["version"] == VERSION == 24 and Document.load(path) == model()
 
 
 def test_w03_both_types_survive_save_and_open(tmp_path):
@@ -378,7 +378,7 @@ def test_w03_both_types_survive_save_and_open(tmp_path):
 
 def test_w04_newer_version_is_refused():
     with pytest.raises(DocumentError, match="novější"):
-        Document.from_dict(model().to_dict() | {"version": 24})
+        Document.from_dict(model().to_dict() | {"version": 25})
 
 
 @pytest.mark.parametrize(("face", "words"), [
@@ -469,7 +469,7 @@ def test_w15_ndt_study_goes_stale_and_measurement_follows():
 
 def test_w16_ai_prompt_knows_the_new_format():
     prompt = system_prompt()
-    assert "move_face" in prompt and "face_diameter" in prompt and '"version": 23' in prompt
+    assert "move_face" in prompt and "face_diameter" in prompt and '"version": 24' in prompt
 
 
 def test_q23_session_undo_redo_and_reopen(tmp_path):

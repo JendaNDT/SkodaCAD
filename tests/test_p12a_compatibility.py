@@ -101,18 +101,18 @@ def test_all_recursive_examples_keep_baseline_geometry_and_round_trip(name, tmp_
     destination = tmp_path / path.name
     document.save(destination)
     restored = Document.load(destination)
-    assert restored == document and restored.to_dict()["version"] == VERSION == 23
+    assert restored == document and restored.to_dict()["version"] == VERSION == 24
     assert rebuild(restored).ok
     assert path.read_bytes() == original_bytes
 
 
-def test_native_input_audit_examples_cover_all_registered_builders():
+def test_native_input_audit_examples_cover_legacy_builders():
     exercised = {feature["type"] for path in EXAMPLES.rglob("*.json")
                  for feature in Document.load(path).features}
-    assert exercised == set(FEATURE_TYPES)
+    assert exercised == set(FEATURE_TYPES) - {"step_import"}
 
 
-@pytest.mark.parametrize("version", range(1, 23))
+@pytest.mark.parametrize("version", range(1, 24))
 def test_simple_legacy_recipe_loads_without_new_persisted_fields(version, tmp_path):
     source = make_doc(box_features()).to_dict()
     source["version"] = version
@@ -123,5 +123,5 @@ def test_simple_legacy_recipe_loads_without_new_persisted_fields(version, tmp_pa
     path = tmp_path / "saved.json"
     document.save(path)
     saved = Document.load(path).to_dict()
-    assert saved["version"] == VERSION == 23
+    assert saved["version"] == VERSION == 24
     assert not any("message" in feature for feature in saved["features"])

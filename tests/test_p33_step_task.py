@@ -88,3 +88,21 @@ def test_memory_monitor_exception_stops_process(monkeypatch):
     assert "ověřit využití paměti" in outcome.error
     assert task._stopped.wait(5)
     assert not task._process.is_alive()
+
+
+def test_existing_worker_guard_kills_step_without_polling(monkeypatch):
+    from skodacad.worker import BackgroundRebuilder
+
+    monkeypatch.setattr("skodacad.step_task._resident_bytes", lambda _pid: 2**31)
+    runner = BackgroundRebuilder()
+    worker = runner._idle[0]
+    try:
+        worker.step_phase.set()
+        deadline = time.monotonic() + 5
+        while not worker.limit_error and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert "limit paměti" in worker.limit_error
+        worker.process.join(timeout=3)
+        assert not worker.process.is_alive()
+    finally:
+        runner.close()

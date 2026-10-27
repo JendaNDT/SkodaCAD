@@ -677,6 +677,37 @@ class ModelSession:
         """Kopie prvku (úpravy jdou jen přes ``update_feature``)."""
         return copy.deepcopy(self._require().features[self.feature_index(feature_id)])
 
+    def add_step_import(self, data: bytes, source_name: str) -> str:
+        """Vloží původní zdroj STEP do prázdného modelu jako jediný vratný krok."""
+        from skodacad.step_probe import StepProbeError
+        from skodacad.step_source import source_record
+
+        if self._require().features:
+            raise DocumentError("Import STEP zatím vyžaduje prázdný model – založ nový díl.")
+        try:
+            source = source_record(data, source_name)
+        except StepProbeError as exc:
+            raise DocumentError(str(exc)) from exc
+        feature = {"id": "step_import1", "type": "step_import", "name": "Importovaný díl",
+                   **source}
+        self._change(lambda document: document.features.append(feature))
+        return feature["id"]
+
+    def restore_step_source(self, feature_id: str, data: bytes) -> BuildResult:
+        """Nahradí chybějící obsah pouze totožným zdrojem podle uloženého otisku."""
+        from skodacad.step_probe import StepProbeError
+        from skodacad.step_source import restore_source
+
+        index = self.feature_index(feature_id)
+        feature = self._require().features[index]
+        if feature.get("type") != "step_import":
+            raise DocumentError("Vybraný prvek není import STEP.")
+        try:
+            restored = restore_source(feature, data)
+        except StepProbeError as exc:
+            raise DocumentError(str(exc)) from exc
+        return self._change(lambda document: document.features.__setitem__(index, restored))
+
     def add_feature(self, feature_type: str, after_id: str | None = None,
                     values: dict[str, Any] | None = None,
                     feature_id: str | None = None) -> str:
@@ -687,6 +718,8 @@ class ModelSession:
         zadat ``feature_id`` (jinak se vytvoří, např. „sketch2“)."""
         if feature_type not in FEATURE_SCHEMAS:
             raise DocumentError(f"Neznámý typ prvku „{feature_type}“.")
+        if feature_type == "step_import":
+            raise DocumentError("STEP vlož pomocí příkazu Importovat STEP.")
         features = self._require().features
         index = self.feature_index(after_id) + 1 if after_id else len(features)
         feature = new_feature(feature_type, features, index)
@@ -706,6 +739,10 @@ class ModelSession:
         original = self._require().features[index]
         if feature.get("id") != feature_id or feature.get("type") != original["type"]:
             raise DocumentError("U prvku nejde změnit id ani typ.")
+        if original["type"] == "step_import":
+            keys = ("data", "sha256", "size_bytes", "encoding", "source_name")
+            if any(feature.get(key) != original.get(key) for key in keys):
+                raise DocumentError("Zdroj STEP lze obnovit jen z totožného souboru.")
         updated = copy.deepcopy(feature)
         return self._change(lambda doc: doc.features.__setitem__(index, updated))
 

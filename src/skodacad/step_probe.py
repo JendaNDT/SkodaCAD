@@ -32,6 +32,18 @@ def probe_step(data: bytes) -> StepFacts:
 
 def _inspect_step(data: bytes):
     """Kontrolované skutečnosti a tvar; nepředávat přímo mimo proces."""
+    from skodacad.worker import _STEP_PHASE
+
+    if _STEP_PHASE is not None:
+        _STEP_PHASE.set()
+    try:
+        return _inspect_step_inner(data)
+    finally:
+        if _STEP_PHASE is not None:
+            _STEP_PHASE.clear()
+
+
+def _inspect_step_inner(data: bytes):
     if not isinstance(data, bytes) or not data:
         raise StepProbeError("STEP je prázdný nebo nejde přečíst.")
     if len(data) > MAX_STEP_BYTES:

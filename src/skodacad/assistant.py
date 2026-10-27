@@ -455,8 +455,17 @@ class ModelTools:
         ])
 
 
+def _ai_document(data: dict[str, Any]) -> dict[str, Any]:
+    """Zdroj STEP zůstane v modelu; AI dostane identitu, nikoliv velký binární obsah."""
+    result = copy.deepcopy(data)
+    for feature in result.get("features", []):
+        if feature.get("type") == "step_import":
+            feature.pop("data", None)
+    return result
+
+
 def model_json(session: Any) -> str:
-    return json.dumps(session.document.to_dict(), ensure_ascii=False, indent=1)
+    return json.dumps(_ai_document(session.document.to_dict()), ensure_ascii=False, indent=1)
 
 
 def build_report(session: Any) -> str:
@@ -668,6 +677,7 @@ class Assistant:
 
     def user_content(self, text: str, document: dict[str, Any], report: str) -> str:
         """Dotaz uživatele; aktuální model se přidá, jen když ho Claude ještě neviděl."""
+        document = _ai_document(document)
         if document == self.seen:
             return text
         self.seen = copy.deepcopy(document)
@@ -716,7 +726,7 @@ class Assistant:
                 results.append(output.block(block.id))
             self.messages.append({"role": "user", "content": results})
             if document_now is not None:
-                self.seen = copy.deepcopy(document_now())
+                self.seen = _ai_document(document_now())
             if self.cancel_event.is_set():
                 raise Cancelled()
         raise AssistantError(f"Asistent udělal {MAX_ROUNDS} kroků a pořád nekončí – zastavil "
