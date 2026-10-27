@@ -56,6 +56,9 @@ class FakeViewer(QtWidgets.QWidget):
     def highlight(self, shapes):
         self.highlighted = list(shapes)
 
+    def show_design_ghost(self, original):
+        self.design_ghost = original
+
     def show_measurement(self, lines):
         self.measurement = list(lines)
 
@@ -944,6 +947,92 @@ def test_sketch_on_clicked_face(empty_window):
     assert feature["plane"] == "front"
     assert feature["elements"][0]["center"] == [8, 4]  # na přední ploše: x a výška z
     assert form_field(w, "plane").currentData() == "front"
+
+
+def test_direct_edit_preview_cancel_and_apply(empty_window, monkeypatch):
+    w = empty_window
+    build_box(w)
+    before = w.session.document.to_dict()
+    part = shown_part(w)
+    face = face_at(part, 0, 0, 10)
+    w.viewer.click([face], point=(0, 0, 10))
+
+    def cancel(dialog):
+        dialog.value.setText("2")
+        dialog.calculate()
+        assert dialog.apply_button.isEnabled()
+        assert w.session.document.to_dict() == before
+        assert w.viewer.parts[-1][0].volume == pytest.approx(40 * 30 * 12)
+        dialog.value.setText("3")
+        assert not dialog.apply_button.isEnabled()
+        assert w.viewer.parts[-1][0].volume == pytest.approx(40 * 30 * 10)
+        return QtWidgets.QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(w, "_exec_dialog", cancel)
+    action(w, "Posunout vybranou plochu…").trigger()
+    assert w.session.document.to_dict() == before
+    assert w.viewer.parts[-1][0].volume == pytest.approx(40 * 30 * 10)
+    w.viewer.click([face_at(shown_part(w), 0, 0, 10)], point=(0, 0, 10))
+
+    def accept(dialog):
+        dialog.value.setText("2")
+        dialog.calculate()
+        assert dialog.apply_button.isEnabled()
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(w, "_exec_dialog", accept)
+    action(w, "Posunout vybranou plochu…").trigger()
+    assert w.session.result.part.volume == pytest.approx(40 * 30 * 12)
+    w.session.undo()
+    assert w.session.document.to_dict() == before
+
+
+def test_ai_direct_edit_needs_user_confirmation(empty_window, monkeypatch):
+    w = empty_window
+    build_box(w)
+    before = w.session.document.to_dict()
+    w.viewer.click([face_at(shown_part(w), 0, 0, 10)], point=(0, 0, 10))
+
+    def confirm(dialog):
+        dialog.calculate()
+        assert w.session.document.to_dict() == before
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(w, "_exec_dialog", confirm)
+    output = w.assistant_panel.tools.run("propose_direct_edit", {"kind": "move_face", "value": 2})
+    assert output.changed
+    assert w.session.result.part.volume == pytest.approx(40 * 30 * 12)
+
+
+def test_direct_edit_accepts_parameter_expression(empty_window, monkeypatch):
+    w = empty_window
+    build_box(w)
+    w.session.add_parameter("zmena", "2")
+    w._reload_all()
+    w.viewer.click([face_at(shown_part(w), 0, 0, 10)], point=(0, 0, 10))
+
+    def confirm(dialog):
+        dialog.value.setText("neznamy + 1")
+        dialog.calculate()
+        assert not dialog.apply_button.isEnabled()
+        dialog.value.setText("zmena * 2")
+        dialog.calculate()
+        assert dialog.apply_button.isEnabled()
+        assert dialog.preview.result.part.volume == pytest.approx(40 * 30 * 14)
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(w, "_exec_dialog", confirm)
+    action(w, "Posunout vybranou plochu…").trigger()
+    assert w.session.document.features[-1]["distance"] == "zmena * 2"
+    w.session.set_parameter("zmena", "3")
+    assert w.session.result.part.volume == pytest.approx(40 * 30 * 16)
+
+
+def test_diameter_dialog_warns_about_hole_annotations(empty_window):
+    from skodacad.gui.direct_edit_dialog import DirectEditDialog
+
+    dialog = DirectEditDialog(empty_window, "face_diameter", [], None)
+    assert any("označení závitu" in label.text() for label in dialog.findChildren(QtWidgets.QLabel))
 
 
 def test_curved_face_offers_sketch_but_not_shell(window, no_dialogs, slot_errors):
@@ -2397,9 +2486,8 @@ def test_audit_panel_is_locked_while_ai_works(rt_window):
     assert panel.run_action.isEnabled() and w.audit_dock.isEnabled()
 
 
-def test_direct_edit_feature_shows_its_face_and_edits_only_the_value(window, tmp_path):
-    """P2.3: přímá úprava ze souboru – plocha a původ jen k prohlédnutí, číslo jde měnit.
-    Výběr plochy ve 3D a nabídka přijdou s P2.4, proto v „Přidat prvek“ zatím nejsou."""
+def test_direct_edit_feature_shows_its_face_and_edits_only_the_value(window, tmp_path, monkeypatch):
+    """Hodnota existující úpravy se mění až po náhledu a potvrzení."""
     from skodacad.document import Document
 
     document = Document.load(window.session.path)
@@ -2417,6 +2505,24 @@ def test_direct_edit_feature_shows_its_face_and_edits_only_the_value(window, tmp
     assert form_field(window, "origin").text() == "deska"
     thinner = window.session.properties.volume_mm3
     assert thinner < before
+
+    def cancel(dialog):
+        dialog.calculate()
+        assert dialog.apply_button.isEnabled()
+        return QtWidgets.QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(window, "_exec_dialog", cancel)
+    set_text(form_field(window, "distance"), "-5")
+    assert window.session.feature("tensi")["distance"] == -3
+    assert window.session.properties.volume_mm3 == pytest.approx(thinner)
+
+    def confirm(dialog):
+        dialog.calculate()
+        assert dialog.apply_button.isEnabled()
+        assert window.session.feature("tensi")["distance"] == -3
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(window, "_exec_dialog", confirm)
     set_text(form_field(window, "distance"), "-6")
     feature = window.session.feature("tensi")
     assert feature["face"] == face and feature["origin"] == "deska" and feature["distance"] == -6

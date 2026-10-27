@@ -819,6 +819,16 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 
 ### Přímé úpravy ploch (`move_face`, `face_diameter`, verze 23)
 
+V okně klikni na jednu plochu, otevři pravým tlačítkem nabídku a zvol posunutí plochy
+nebo změnu průměru. Zadej hodnotu v mm nebo výraz s parametry a stiskni **Zobrazit
+náhled**: původní díl je průhledný, navržený výsledek plný. **Použít** zapíše úpravu
+jako jeden krok Zpět;
+**Zrušit** model nezmění. Změna hodnoty existující přímé úpravy také vyžaduje náhled.
+Plochu existující úpravy lze znovu vybrat příkazem **Převzít vybranou plochu**.
+Asistent může navrhnout úpravu plochy vybrané uživatelem, ale její použití musí uživatel
+potvrdit v tomtéž dialogu. Výpočet náhledu u složitých dílů může chvíli trvat.
+Změna průměru díry nemění její původní označení závitu ani tabulkovou velikost.
+
 ```json
 {"id": "tensi_deska", "type": "move_face", "name": "Tenčí deska",
  "face": {"at": [10, 15, 20], "normal": [0, 0, 1], "type": "plane"},

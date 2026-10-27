@@ -167,7 +167,8 @@ schválení opravňuje implementaci P2.3 podle tohoto zápisu (bez sloučení do
 
 **P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, prvky `move_face`
 a `face_diameter`, formát 23, README pro AI (R12), testy Q01–Q23 a W01–W16;
-[evidence](p2-3-overeni.md). P2.4 (výběr ve 3D, náhled, AI) a P2.5 čekají na schválení.
+[evidence](p2-3-overeni.md). P2.4 (výběr ve 3D, náhled a AI) autor zadal k implementaci;
+P2.5 (přejímka) zůstává samostatnou etapou.
 
 1. **P2.1 Omezený rozsah** (P1): vybrat první podporované typy ploch a úprav; navržený
    začátek je posun rovinné plochy a změna válcového otvoru. Sepsat nepodporované případy.
