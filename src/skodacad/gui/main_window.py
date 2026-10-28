@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -438,6 +439,24 @@ class MainWindow(QMainWindow):
         self.drawing_list.setObjectName("drawing_dimensions")
         self.drawing_list.setMinimumHeight(70)
         drawing_layout.addWidget(self.drawing_list)
+        self.drawing_list.currentRowChanged.connect(self._drawing_selection_changed)
+        placement = QHBoxLayout()
+        self.dimension_view = QComboBox()
+        for label, key in (("Zepředu", "front"), ("Shora", "top"), ("Zprava", "right")):
+            self.dimension_view.addItem(label, key)
+        self.dimension_side = QComboBox()
+        self.dimension_side.addItem("Dole / vlevo", "low")
+        self.dimension_side.addItem("Nahoře / vpravo", "high")
+        self.dimension_offset = QDoubleSpinBox()
+        self.dimension_offset.setRange(1, 60)
+        self.dimension_offset.setValue(6)
+        self.dimension_offset.setSuffix(" mm")
+        apply_placement = QPushButton("Umístit kótu")
+        apply_placement.clicked.connect(self.set_drawing_dimension_placement)
+        for widget in (self.dimension_view, self.dimension_side, self.dimension_offset,
+                       apply_placement):
+            placement.addWidget(widget)
+        drawing_layout.addLayout(placement)
         layout.addWidget(drawing_box)
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
@@ -1789,6 +1808,7 @@ class MainWindow(QMainWindow):
                 self.drawing_list.setCurrentItem(item)
 
     def show_drawing_preview(self) -> None:
+        from skodacad.drawing_annotations import annotations
         from skodacad.drawing_geometry import DrawingGeometryError
         from skodacad.drawing_sheet import layout
         from skodacad.gui.drawing_preview import DrawingPreviewDialog
@@ -1803,7 +1823,48 @@ class MainWindow(QMainWindow):
         except (DocumentError, DrawingGeometryError) as exc:
             self._error("Náhled výkresu nelze vytvořit", str(exc))
             return
-        DrawingPreviewDialog(sheet, self).exec()
+        dimensions = self._busy(lambda: annotations(self.session.document, self.session.result,
+                                                    sheet))
+        DrawingPreviewDialog(sheet, dimensions, self).exec()
+
+    def _drawing_selection_changed(self, _row: int) -> None:
+        item = self.drawing_list.currentItem()
+        if item is None or self.session.document is None:
+            return
+        records = (self.session.document.drawing or {}).get("dimensions", [])
+        record = next((d for d in records if d["id"] == item.data(_FEATURE_ID)), None)
+        if record is None:
+            return
+        placement = record.get("placement") or {}
+        axis = record.get("axis")
+        if record["kind"] == "distance":
+            axis = record["a"]["normal"][1]
+        default_view = "top" if axis == "y" else "front"
+        if record["kind"] in ("diameter", "radius"):
+            features = self.session.document.features
+            source = next((f for f in features if f.get("id") == record.get("origin")), {})
+            sketch = next((f for f in features if f.get("id") == source.get("sketch")), {})
+            plane = sketch.get("plane", "XY")
+            default_view = ({"XY": "top", "XZ": "front", "YZ": "right"}.get(plane, "top")
+                            if isinstance(plane, str) else "top")
+        self.dimension_view.setCurrentIndex(self.dimension_view.findData(
+            placement.get("view", default_view)))
+        self.dimension_side.setCurrentIndex(self.dimension_side.findData(
+            placement.get("side", "low")))
+        self.dimension_offset.setValue(placement.get("offset", 6))
+
+    def set_drawing_dimension_placement(self) -> None:
+        item = self.drawing_list.currentItem()
+        if item is None:
+            return
+        try:
+            self._busy(lambda: self.session.set_drawing_dimension_placement(
+                item.data(_FEATURE_ID), self.dimension_view.currentData(),
+                self.dimension_side.currentData(), self.dimension_offset.value()))
+        except DocumentError as exc:
+            self._error("Kótu nelze umístit", str(exc))
+            return
+        self._refresh_all()
 
     def add_drawing_dimension(self) -> None:
         kind, axis = self.drawing_kind.currentData()

@@ -2539,3 +2539,18 @@ def test_drawing_dimensions_are_visible_and_removable(window):
     w.drawing_list.setCurrentRow(0)
     w.remove_drawing_dimension()
     assert w.drawing_list.count() == 0
+
+
+def test_drawing_dimension_placement_in_window_is_saved_and_undoable(window):
+    w = window
+    w.drawing_kind.setCurrentIndex(0)
+    w.add_drawing_dimension()
+    w.drawing_list.setCurrentRow(0)
+    w.dimension_view.setCurrentIndex(w.dimension_view.findData("top"))
+    w.dimension_side.setCurrentIndex(w.dimension_side.findData("high"))
+    w.dimension_offset.setValue(12)
+    w.set_drawing_dimension_placement()
+    placement = w.session.document.drawing["dimensions"][0]["placement"]
+    assert placement == {"view": "top", "side": "high", "offset": 12}
+    w.session.undo()
+    assert "placement" not in w.session.document.drawing["dimensions"][0]
