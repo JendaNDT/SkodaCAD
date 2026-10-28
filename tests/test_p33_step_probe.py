@@ -12,6 +12,7 @@ STEP = ROOT / "step"
 @pytest.mark.parametrize(("name", "unit", "maximum", "volume"), [
     ("01-jedno-teleso.step", "millimetre", (40, 30, 20), 24000),
     ("04-palce.step", "inch", (50.8, 25.4, 12.7), 16387.064),
+    ("07-metry.step", "metre", (10, 13, 17), 2210),
 ])
 def test_single_solid(name, unit, maximum, volume):
     facts = probe_step((STEP / name).read_bytes())
@@ -36,6 +37,15 @@ def test_reject_invalid_or_unsupported(path, reason):
 def test_size_limit():
     with pytest.raises(StepProbeError, match="16 MiB"):
         probe_step(b"x" * (MAX_STEP_BYTES + 1))
+
+
+def test_other_length_unit_remains_unsupported():
+    raw = (STEP / "07-metry.step").read_bytes()
+    metre = b"LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.)"
+    centimetre = b"LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.CENTI.,.METRE.)"
+    assert metre in raw
+    with pytest.raises(StepProbeError, match="jednotky|Jednotky"):
+        probe_step(raw.replace(metre, centimetre))
 
 
 def test_global_shape_fix_setting_is_restored():

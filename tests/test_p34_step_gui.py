@@ -57,6 +57,23 @@ def test_corrupt_step_does_not_modify_document(window, monkeypatch):
     assert window.session.result.part is None
 
 
+def test_metre_import_preview_and_confirmation(window, monkeypatch):
+    metre_step = STEP.with_name("07-metry.step")
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a: (str(metre_step), ""))
+    prompts = []
+
+    def confirm(*args):
+        prompts.append(args[2])
+        return QtWidgets.QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", confirm)
+    window.import_step_dialog()
+    assert prompts and "jednotka zdroje: metry" in prompts[0]
+    assert "10 × 13 × 17 mm" in prompts[0]
+    assert window.session.result.ok
+    assert window.session.result.part.volume == pytest.approx(2210, abs=1e-5)
+
+
 def test_cancel_running_import_preserves_document(window, monkeypatch):
     from PySide6.QtCore import QTimer
 

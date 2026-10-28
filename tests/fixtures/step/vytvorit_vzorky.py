@@ -16,7 +16,7 @@ STAMP = "2026-01-01T00:00:00"
 
 
 def write_separate(name, shapes, unit="MM"):
-    """Samostatné kořeny, případně výstupní jednotka INCH; souřadnice zadány v mm."""
+    """Samostatné kořeny s výstupní jednotkou; souřadnice jsou zadány v mm."""
     writer = STEPControl_Writer()
     if not Interface_Static.SetCVal_s("write.step.unit", unit):
         raise RuntimeError(f"Jednotku {unit} nelze nastavit")
@@ -41,6 +41,7 @@ def main():
     export_step(Compound(children=[first, second], label="Sestava"),
                 HERE / "03-sestava.step", timestamp=STAMP)
     write_separate("04-palce.step", [Box(50.8, 25.4, 12.7, align=ALIGN)], "INCH")
+    write_separate("07-metry.step", [Box(10, 13, 17, align=ALIGN)], "M")
     export_step(Face.make_rect(40, 20), HERE / "05-otevrena-plocha.step", timestamp=STAMP)
     # Záměrně uříznutý soubor; nejde o další platný STEP ani o automatickou opravu.
     source = (HERE / "01-jedno-teleso.step").read_bytes()

@@ -28,7 +28,7 @@ def check_in_child(raw):
         task.cancel()
 
 
-@pytest.mark.parametrize("name", ["01-jedno-teleso.step", "04-palce.step"])
+@pytest.mark.parametrize("name", ["01-jedno-teleso.step", "04-palce.step", "07-metry.step"])
 def test_embedded_source_and_export_reimport(name, tmp_path):
     original = (FIXTURES / name).read_bytes()
     record = source_record(original, name)
