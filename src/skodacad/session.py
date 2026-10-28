@@ -1102,6 +1102,18 @@ class ModelSession:
         self._change(mutate)
         return did
 
+    def set_drawing_title_block(self, number: str, revision: str, author: str,
+                                date: str) -> BuildResult:
+        def mutate(doc: Document) -> None:
+            if doc.drawing is None:
+                doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
+            title = {"number": number, "revision": revision, "author": author, "date": date}
+            if any(title.values()):
+                doc.drawing["title_block"] = title
+            else:
+                doc.drawing.pop("title_block", None)
+        return self._change(mutate)
+
     def set_drawing_section(self, axis: str | None, position: float = 0,
                             flipped: bool = False) -> BuildResult:
         def mutate(doc: Document) -> None:

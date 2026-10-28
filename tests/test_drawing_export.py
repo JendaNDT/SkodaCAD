@@ -155,6 +155,8 @@ def test_pdf_contains_explicit_tolerance_text(tmp_path):
 
     app = widgets.QApplication.instance() or widgets.QApplication([])
     doc, result = with_dimensions()
+    doc.drawing["title_block"] = {"number": "V-12", "revision": "B",
+                                  "author": "Novák", "date": "28.10.2026"}
     sheet = layout(doc, result, scale=0.5)
     plain_path = export(doc, result, sheet, tmp_path / "plain.pdf")
     doc.drawing["dimensions"][0]["tolerance"] = {"upper": 0.1, "lower": -0.1}
@@ -171,8 +173,27 @@ def test_pdf_contains_explicit_tolerance_text(tmp_path):
     text = reader.getAllText(0).text()
     if text:
         assert "80 ±0.1" in text and "Ø20 +0.02/-0.05" in text
+        assert "V-12" in text and "Novák" in text and "28.10.2026" in text
     image = reader.render(0, QSize(1200, 850))
     original = plain.render(0, QSize(1200, 850))
     assert not image.isNull() and not original.isNull()
     assert image != original
     assert app is not None
+
+
+def test_title_block_export_contains_model_and_explicit_metadata(tmp_path):
+    from skodacad.drawing_annotations import annotations
+    from skodacad.drawing_export import _title_rows
+
+    doc, result = with_dimensions()
+    doc.material = "ocel"
+    doc.drawing["title_block"] = {"number": "V-12", "revision": "B",
+                                  "author": "Novák", "date": "28.10.2026"}
+    sheet = layout(doc, result, scale=0.5)
+    rows = [text for _, text in _title_rows(doc, sheet, annotations(doc, result, sheet))]
+    path = export(doc, result, sheet, tmp_path / "popis.dxf")
+    texts = [e.dxf.text for e in ezdxf.readfile(path).modelspace() if e.dxftype() == "TEXT"]
+    assert all(text in texts for text in rows)
+    assert any("Příruba" in t and "ocel" in t for t in rows)
+    assert any("V-12" in t and "B" in t for t in rows)
+    assert any("Novák" in t and "28.10.2026" in t for t in rows)

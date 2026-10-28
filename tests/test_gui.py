@@ -2605,3 +2605,25 @@ def test_export_warns_before_saving_overlapping_dimensions(window, tmp_path, mon
     window._refresh_all()
     visible = [window.drawing_list.item(i).text() for i in range(window.drawing_list.count())]
     assert any(first in text for text in visible) and any(second in text for text in visible)
+
+
+def test_drawing_title_dialog_saves_and_reopens(window, monkeypatch):
+    def fill(_window, dialog):
+        fields = dialog.findChildren(QtWidgets.QLineEdit)
+        assert len(fields) == 4
+        for field, value in zip(fields, ("V-12", "B", "Novák", "28.10.2026"), strict=True):
+            field.setText(value)
+        return QtWidgets.QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", fill)
+    window.edit_drawing_title_block()
+    assert window.session.document.drawing["title_block"]["number"] == "V-12"
+
+    def cancel(_window, dialog):
+        fields = dialog.findChildren(QtWidgets.QLineEdit)
+        assert [f.text() for f in fields] == ["V-12", "B", "Novák", "28.10.2026"]
+        return QtWidgets.QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(MainWindow, "_exec_dialog", cancel)
+    window.edit_drawing_title_block()
+    assert window.session.document.drawing["title_block"]["revision"] == "B"
