@@ -18,6 +18,16 @@ def check_drawing(drawing: Any) -> None:
     scale = drawing.get("scale", 1)
     if isinstance(scale, bool) or not isinstance(scale, (int, float)) or scale not in SCALES:
         raise DocumentError("Výkres má nepodporované měřítko.")
+    section = drawing.get("section")
+    if section is not None:
+        if not isinstance(section, dict) or section.get("axis") not in ("X", "Y", "Z"):
+            raise DocumentError("Řez výkresu musí mít osu X, Y nebo Z.")
+        position = section.get("position")
+        if (isinstance(position, bool) or not isinstance(position, (int, float))
+                or not math.isfinite(position)):
+            raise DocumentError("Poloha řezu musí být konečné číslo v mm.")
+        if not isinstance(section.get("flipped", False), bool):
+            raise DocumentError("Otočení řezu musí být ano nebo ne.")
     dimensions = drawing.get("dimensions", [])
     if not isinstance(dimensions, list):
         raise DocumentError("Kóty výkresu musí být seznam.")

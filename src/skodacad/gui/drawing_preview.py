@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
 from skodacad.drawing_annotations import AnnotationSet
+from skodacad.drawing_section_mark import section_mark
 from skodacad.drawing_sheet import MARGIN, TITLE_HEIGHT, Sheet
 
 
@@ -41,10 +42,14 @@ class SheetPreview(QWidget):
                                 (page.height - 2 * MARGIN) * scale))
         painter.drawLine(point(MARGIN, MARGIN + TITLE_HEIGHT),
                          point(page.width - MARGIN, MARGIN + TITLE_HEIGHT))
+        painter.drawLine(point(page.width - MARGIN - 60, MARGIN + 24),
+                         point(page.width - MARGIN - 10, MARGIN + 24))
+        painter.drawText(point(page.width - MARGIN - 60, MARGIN + 27), "Kontrola: 50 mm")
         for view in page.views:
             dx, dy = view.offset
             for edges, style in ((view.geometry.visible, Qt.PenStyle.SolidLine),
-                                 (view.geometry.hidden, Qt.PenStyle.DashLine)):
+                                 (view.geometry.hidden, Qt.PenStyle.DashLine),
+                                 (view.geometry.hatching, Qt.PenStyle.SolidLine)):
                 painter.setPen(QPen(QColor("#111"), 1.2, style))
                 for edge in edges:
                     steps = 1 if edge.geom_type == GeomType.LINE else 96
@@ -54,6 +59,17 @@ class SheetPreview(QWidget):
                         painter.drawLine(point(previous.X + dx, previous.Y + dy),
                                          point(current.X + dx, current.Y + dy))
                         previous = current
+            if view.name == "section":
+                painter.drawText(point(view.bounds[0], view.bounds[3] + 2), page.section_label)
+        mark = section_mark(page)
+        if mark is not None:
+            painter.setPen(QPen(QColor("#111"), 1, Qt.PenStyle.DashDotLine))
+            painter.drawLine(point(*mark.line[0]), point(*mark.line[1]))
+            painter.setPen(QPen(QColor("#111"), 1))
+            for a, b in mark.arrows:
+                painter.drawLine(point(*a), point(*b))
+            for label in mark.labels:
+                painter.drawText(point(*label), "A")
         painter.setPen(QPen(QColor("#145d9c"), 1))
         painter.setBrush(QColor("#145d9c"))
         for dimension in self.dimensions.items:
@@ -80,7 +96,7 @@ class DrawingPreviewDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Pracovní náhled listu")
         layout = QVBoxLayout(self)
-        note = QLabel("Pracovní náhled pohledů a kót. Řez, popisové pole a export zatím "
+        note = QLabel("Pracovní náhled pohledů, řezu a kót. Popisové pole a export zatím "
                       "nejsou hotové; zkontroluj čitelnost kót.")
         note.setWordWrap(True)
         layout.addWidget(note)

@@ -73,3 +73,47 @@ def test_preview_renders_the_sheet_without_exporting():
     assert image.pixelColor(300, 225).alpha() == 255
     widget.close()
     assert app is not None
+
+
+def test_section_is_placed_and_hatched_and_cannot_be_silently_dropped():
+    document = box(width=40, height=30, depth=20)
+    result = rebuild(document)
+    document.drawing = {"dimensions": [], "section": {"axis": "Y", "position": 10}}
+    sheet = layout(document, result)
+    section = next(view for view in sheet.views if view.name == "section")
+    assert section.geometry.visible and section.geometry.hatching
+    assert section.bounds[0] > next(v for v in sheet.views if v.name == "front").bounds[2]
+    document.drawing["section"]["position"] = 1000
+    with pytest.raises(ValueError, match="Rovina řezu"):
+        layout(document, result)
+
+
+def test_section_settings_survive_save_and_undo():
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(box().to_dict())
+    session.set_drawing_section("X", 20, True)
+    saved = Document.from_dict(session.document.to_dict())
+    assert saved.drawing["section"] == {"axis": "X", "position": 20, "flipped": True}
+    session.undo()
+    assert session.document.drawing is None
+
+
+@pytest.mark.parametrize(("axis", "position", "component", "expected"), [
+    ("X", 20, 0, -1), ("Y", 10, 1, 1), ("Z", 10, 1, -1),
+])
+@pytest.mark.parametrize("flipped", [False, True])
+def test_section_arrows_point_toward_retained_material(axis, position, component, expected,
+                                                       flipped):
+    from skodacad.drawing_section_mark import section_mark
+
+    document = box(width=40, height=30, depth=20)
+    result = rebuild(document)
+    document.drawing = {"dimensions": [], "section": {"axis": axis, "position": position,
+                                                       "flipped": flipped}}
+    mark = section_mark(layout(document, result))
+    start, end = mark.arrows[0]
+    delta = end[component] - start[component]
+    assert delta == pytest.approx(4 * expected * (-1 if flipped else 1))

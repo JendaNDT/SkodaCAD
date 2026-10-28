@@ -204,6 +204,20 @@ tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo 
   zmizí, měření se zbarví červeně a napíše proč.
 * Měří se vždy jedna nebo dvě věci; u víc vybraných se nic nezměří.
 
+### Pracovní výkres
+
+V panelu **Měření → Příprava kót výkresu** přidej podporované kóty, zvol list a měřítko.
+U vybrané kóty lze nastavit pohled, stranu a odstup. Pro řez A–A zvol osu, polohu
+v milimetrech a případně otočení; nastavení potvrď tlačítkem **Nastavit řez**. Náhled
+ukáže pohledy, kóty, rovinu řezu a šrafy; pokud se obsah nevejde, zvol větší list
+nebo menší měřítko.
+
+Tlačítko **Export PDF/DXF…** uloží pracovní výkres. Neplatné kóty, zastaralý model
+nebo nepodporovanou křivku PDF aplikace oznámí a export zastaví. Při tisku nastav
+skutečnou velikost a změř kontrolní úsečku 50 mm. Výkres před výrobou zkontroluj:
+zatím chybí některé druhy kót, tolerance, úplné popisové pole a automatická kontrola
+všech překrytí. Fyzický tisk a otevření DXF v jiné CAD aplikaci ještě nebyly ověřeny.
+
 ### Mapa tloušťky stěny (NDT)
 
 Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tloušťky stěny** (klávesa
