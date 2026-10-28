@@ -2527,3 +2527,15 @@ def test_direct_edit_feature_shows_its_face_and_edits_only_the_value(window, tmp
     feature = window.session.feature("tensi")
     assert feature["face"] == face and feature["origin"] == "deska" and feature["distance"] == -6
     assert before - window.session.properties.volume_mm3 == pytest.approx(2 * (before - thinner))
+
+
+def test_drawing_dimensions_are_visible_and_removable(window):
+    w = window
+    w.drawing_kind.setCurrentIndex(0)  # celkový rozměr X
+    w.add_drawing_dimension()
+    assert w.drawing_list.count() == 1
+    assert "Celkový rozměr X" in w.drawing_list.item(0).text()
+    assert "✕" not in w.drawing_list.item(0).text()
+    w.drawing_list.setCurrentRow(0)
+    w.remove_drawing_dimension()
+    assert w.drawing_list.count() == 0

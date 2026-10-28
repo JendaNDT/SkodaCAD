@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QProgressDialog,
+    QPushButton,
     QScrollArea,
     QSlider,
     QToolButton,
@@ -396,6 +397,33 @@ class MainWindow(QMainWindow):
         self.saved_list.setMinimumHeight(60)
         saved_layout.addWidget(self.saved_list)
         layout.addWidget(saved_box, stretch=1)
+        drawing_box = QGroupBox("Příprava kót výkresu")
+        drawing_layout = QVBoxLayout(drawing_box)
+        note = QLabel("Výkres a export zatím nejsou hotové. Průměr a poloměr lze navázat "
+                      "na válcovou plochu otvoru vytvořeného jednou kruhovou skicou.")
+        note.setWordWrap(True)
+        drawing_layout.addWidget(note)
+        self.drawing_kind = QComboBox()
+        for label, kind, axis in (("Celkový rozměr X", "overall", "x"),
+                                  ("Celkový rozměr Y", "overall", "y"),
+                                  ("Celkový rozměr Z", "overall", "z"),
+                                  ("Průměr vybrané plochy", "diameter", ""),
+                                  ("Poloměr vybrané plochy", "radius", "")):
+            self.drawing_kind.addItem(label, (kind, axis))
+        drawing_layout.addWidget(self.drawing_kind)
+        drawing_buttons = QHBoxLayout()
+        add = QPushButton("Přidat kótu")
+        add.clicked.connect(self.add_drawing_dimension)
+        remove = QPushButton("Odebrat kótu")
+        remove.clicked.connect(self.remove_drawing_dimension)
+        drawing_buttons.addWidget(add)
+        drawing_buttons.addWidget(remove)
+        drawing_layout.addLayout(drawing_buttons)
+        self.drawing_list = QListWidget()
+        self.drawing_list.setObjectName("drawing_dimensions")
+        self.drawing_list.setMinimumHeight(70)
+        drawing_layout.addWidget(self.drawing_list)
+        layout.addWidget(drawing_box)
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 
@@ -1331,6 +1359,7 @@ class MainWindow(QMainWindow):
         self._refresh_progress()
         self._update_highlight()
         self._refresh_saved_measurements()
+        self._refresh_drawing_dimensions()
         self._refresh_thickness_map()
         self._refresh_section_panel()
         self._refresh_probe()
@@ -1712,6 +1741,57 @@ class MainWindow(QMainWindow):
         if self._current_saved() is not None and not self._measured:
             self._show_measure_line(self._current_saved().value)  # díl je nový – čáru znovu
         self._refresh_measure_actions()
+
+    def _refresh_drawing_dimensions(self) -> None:
+        document = self.session.document
+        records = (document.drawing or {}).get("dimensions", []) if document else []
+        selected = self.drawing_list.currentItem()
+        selected_id = selected.data(_FEATURE_ID) if selected else None
+        try:
+            results = {item.id: item for item in self.session.drawing_dimensions()}
+        except DocumentError:
+            results = {}
+        self.drawing_list.clear()
+        for record in records:
+            kind = record["kind"]
+            label = (f"Celkový rozměr {record['axis'].upper()}" if kind == "overall"
+                     else "Průměr otvoru" if kind == "diameter" else "Poloměr otvoru")
+            result = results.get(record["id"])
+            if result is None:
+                text = f"⏳ {label}"
+            elif result.value is None:
+                text = f"✕ {label}: {result.error}"
+            else:
+                text = f"{label}: {format_value(result.value, 'mm')}"
+            item = QListWidgetItem(text)
+            item.setData(_FEATURE_ID, record["id"])
+            if result is not None and result.error:
+                item.setForeground(_STATUS_COLORS["error"])
+                item.setToolTip(result.error)
+            self.drawing_list.addItem(item)
+            if record["id"] == selected_id:
+                self.drawing_list.setCurrentItem(item)
+
+    def add_drawing_dimension(self) -> None:
+        kind, axis = self.drawing_kind.currentData()
+        face = self._picked[0] if len(self._picked) == 1 else None
+        try:
+            self._busy(lambda: self.session.add_drawing_dimension(kind, axis=axis, face=face))
+        except DocumentError as exc:
+            self._error("Kótu nelze přidat", str(exc))
+            return
+        self._refresh_all()
+
+    def remove_drawing_dimension(self) -> None:
+        item = self.drawing_list.currentItem()
+        if item is None:
+            return
+        try:
+            self._busy(lambda: self.session.remove_drawing_dimension(item.data(_FEATURE_ID)))
+        except DocumentError as exc:
+            self._error("Kótu nelze odebrat", str(exc))
+            return
+        self._refresh_all()
 
     def _current_saved_id(self) -> str | None:
         item = self.saved_list.currentItem()

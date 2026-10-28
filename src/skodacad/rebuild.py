@@ -7,6 +7,8 @@ historie v běžném CADu (✓ / ✕ / přeskočeno).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -48,6 +50,7 @@ class BuildResult:
     thickness_map: ThicknessMap | None = None  # mapa tloušťky stěny (jen když se chtěla)
     map_error: str = ""  # proč mapa nejde spočítat
     ndt: list[StudyResult] = field(default_factory=list)  # stavy NDT studií na dílu
+    model_signature: str = ""  # kontrola aktuálnosti geometrie vůči dokumentu
 
     @property
     def ok(self) -> bool:
@@ -86,6 +89,13 @@ def require_complete_part(result: BuildResult | None) -> Part:
     return result.part
 
 
+def model_signature(document: Document) -> str:
+    """Otisk vstupů geometrie; kresba a jiná metadata geometrii nemění."""
+    data = {"features": document.features, "parameters": document.parameters}
+    encoded = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def rebuild(document: Document, overrides: dict[str, Any] | None = None,
             with_map: bool = False) -> BuildResult:
     """Postaví díl z dokumentu. ``overrides`` dočasně mění hodnoty parametrů, ``with_map``
@@ -98,7 +108,7 @@ def rebuild(document: Document, overrides: dict[str, Any] | None = None,
         raise DocumentError(str(exc)) from None
 
     ctx = BuildContext(params=params)
-    result = BuildResult(part=None, parameters=params)
+    result = BuildResult(part=None, parameters=params, model_signature=model_signature(document))
     failed = False
 
     for feature in document.features:

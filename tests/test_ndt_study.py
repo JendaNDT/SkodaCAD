@@ -9,7 +9,7 @@ import pytest
 
 from conftest import EXAMPLES, face_at
 from skodacad import Document, rebuild
-from skodacad.document import VERSION, DocumentError
+from skodacad.document import DocumentError
 from skodacad.ndt.study import (
     StudyError,
     duplicate,
@@ -54,7 +54,7 @@ def test_old_models_load_without_ndt_and_save_as_current_version(path, tmp_path)
     document = Document.load(path)
     assert document.ndt is None
     data = document.to_dict()
-    assert "ndt" not in data and data["version"] == VERSION == 24
+    assert "ndt" not in data and data["version"] == 24
 
 
 def test_study_survives_save_and_load(tmp_path):

@@ -60,6 +60,7 @@ def encode_result(result: BuildResult) -> dict[str, Any]:
     return {
         "part": _shape_bytes(result.part),
         "parameters": dict(result.parameters),
+        "model_signature": result.model_signature,
         "statuses": list(result.statuses),
         "parts_before": {key: _shape_bytes(part) for key, part in result.parts_before.items()},
         "sketches": {key: (tuple(plane.origin), tuple(plane.x_dir), tuple(plane.z_dir),
@@ -78,6 +79,7 @@ def decode_result(data: dict[str, Any]) -> BuildResult:
     return BuildResult(
         part=_shape_from(data["part"]),
         parameters=data["parameters"],
+        model_signature=data["model_signature"],
         statuses=data["statuses"],
         parts_before={key: _shape_from(raw) for key, raw in data["parts_before"].items()},
         sketches={key: (Plane(origin, x_dir, z_dir), _shape_from(raw))

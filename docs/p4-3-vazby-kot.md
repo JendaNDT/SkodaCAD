@@ -1,0 +1,28 @@
+# P4.3 — první vazby kót
+
+Tato etapa připravuje ukládání a přepočet vybraných kót. Nejde zatím o hotový
+výkres ani export PDF/DXF a neprohlašuje se soulad s výkresovou normou.
+
+## Uložení a kompatibilita
+
+Formát modelu 25 přidává nepovinný objekt `drawing`. Starší verze 1–24 se nadále
+načítají bez změny obsahu. Dokud model nemá výkres, uloží se ve verzi 24;
+s výkresem se uloží ve verzi 25, kterou starší aplikace nemusí otevřít. Výkres je součástí stejného
+souboru jako model a prochází Zpět/Znovu. Nahrazení modelu asistentem zachovává
+výkres uživatele, který ovšem může následně obsahovat neplatné vazby.
+
+Každá kóta má samostatné id a druh. Celkový rozměr s osou X/Y/Z znamená obálku
+celého dílu. Průměr nebo poloměr zatím podporuje pouze válcovou plochu otvoru
+vytvořeného odebráním jediné kruhové skici v základní rovině. Ukládá se původ
+plochy a otisk historie prvků, nikoli index plochy ani ručně zadaná hodnota.
+Kóta se přepočítává při změně hodnot parametrů; pokud se změní recept prvků,
+původ zmizí či odpovídá více válcům, je neplatná a vyžaduje nové určení.
+Při chybném nebo zastaralém výpočtu nevznikne žádná hodnota. Je to úmyslně
+konzervativní první podmnožina, nikoliv obecné sledování topologické identity.
+
+## Zbývá
+
+Doplnit kótování konkrétních hran a vzdáleností, vazby dalších typů prvků,
+umístění kót v pohledech, zobrazení listu, řez, PDF/DXF a nezávislou kontrolu
+exportu i tisku. Výstup smí vzniknout teprve po ověření všech vazeb a úplnosti
+modelu; při neplatné nebo nejednoznačné kótě nesmí být potichu vypuštěna.
