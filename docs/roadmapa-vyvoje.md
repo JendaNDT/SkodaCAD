@@ -186,6 +186,7 @@ P2.5 (přejímka) zůstává samostatnou etapou.
 
 1. **P3.1 Sada vstupů** (P1): jeden solid, několik solidů, sestava, jiné jednotky,
    otevřený povrch a poškozený soubor; u každého původ a očekávané rozměry.
+   [Připravená sada a její omezení](p3-1-step-vstupy.md).
 2. **P3.2 Uložení importu**: rozhodnout přenositelné uložení zdroje, identitu, odkazy,
    velikost a obnovu chybějícího souboru. Schválit formát před implementací.
 3. **P3.3 Importní služba** (P3.1–2): mimo Qt, diagnostika jednotek/těles/platnosti,
