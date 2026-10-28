@@ -133,7 +133,9 @@ def annotations(document: Document, result: BuildResult, sheet: Sheet) -> Annota
             default_offset = 6 + 6 * counts.get(key, 0)
             counts[key] = counts.get(key, 0) + 1
             offset = placement.get("offset", default_offset)
-            label = f"{value.value:.6f}".rstrip("0").rstrip(".")
+            label = f"{value.value:.9f}".rstrip("0").rstrip(".")
+            if float(label) == 0 and value.value != 0:
+                raise ValueError("Rozměr je příliš malý pro přesné zobrazení.")
             if face is None:
                 if kind == "overall":
                     box = result.part.bounding_box()
