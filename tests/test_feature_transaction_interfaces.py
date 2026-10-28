@@ -46,8 +46,10 @@ def test_partial_or_complete_result_survives_existing_bin_tools_protocol(kind, r
     result = rebuild(late_failure_document(kind, repaired))
     encoded = encode_result(result)
     assert set(encoded) == {"part", "parameters", "statuses", "parts_before", "sketches",
-                            "measurements", "thickness_map", "map_error", "ndt"}
+                            "measurements", "thickness_map", "map_error", "ndt",
+                            "model_signature"}
     restored = decode_result(pickle.loads(pickle.dumps(encoded)))
+    assert restored.model_signature == encoded["model_signature"]
     assert restored.statuses == result.statuses
     assert restored.parameters == result.parameters
     assert_case(restored, kind, repaired)
