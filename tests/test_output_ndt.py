@@ -66,7 +66,7 @@ def test_failed_history_never_validates_targets_or_computes_thickness(tmp_path, 
         assert study.faces == 0 and study.volume_mm3 == study.requested_volume_mm3 == 0
         assert study.verified == "Neověřeno."
     payload = encode_result(result)
-    assert len(payload) == 9
+    assert len(payload) == 10 and payload["model_signature"] == result.model_signature
     copied = decode_result(pickle.loads(pickle.dumps(payload)))
     assert copied.ndt == result.ndt and copied.map_error == result.map_error
 
