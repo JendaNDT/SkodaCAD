@@ -36,6 +36,8 @@ class Annotation:
 class AnnotationSet:
     items: tuple[Annotation, ...]
     warnings: tuple[str, ...]
+    collisions: tuple[str, ...] = ()
+    collision_check_complete: bool = True
 
 
 def _project(point: Any, view: PlacedView, scale: float) -> Point:
@@ -172,4 +174,11 @@ def annotations(document: Document, result: BuildResult, sheet: Sheet) -> Annota
             items.append(annotation)
         except Exception as exc:  # noqa: BLE001 – nepodložená kóta se nesmí vykreslit jako platná
             warnings.append(f"Kóta {did}: {str(exc) or type(exc).__name__}")
-    return AnnotationSet(tuple(items), tuple(warnings))
+    try:
+        from skodacad.drawing_collisions import check
+
+        report = check(sheet, tuple(items))
+        return AnnotationSet(tuple(items), tuple(warnings), report.messages, report.complete)
+    except Exception:  # noqa: BLE001 – neúspěšná kontrola se musí viditelně přiznat
+        return AnnotationSet(tuple(items), tuple(warnings),
+                             ("Kontrolu překrytí se nepodařilo dokončit.",), False)
