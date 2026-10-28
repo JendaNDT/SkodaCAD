@@ -12,7 +12,9 @@ souboru jako model a prochází Zpět/Znovu. Nahrazení modelu asistentem zachov
 výkres uživatele, který ovšem může následně obsahovat neplatné vazby.
 
 Každá kóta má samostatné id a druh. Celkový rozměr s osou X/Y/Z znamená obálku
-celého dílu. Průměr nebo poloměr zatím podporuje pouze válcovou plochu otvoru
+celého dílu. Vzdálenost podporuje dvě rovnoběžné rovinné plochy pocházející z jednoduchých
+obdélníkových vysunutí v základních rovinách. Průměr nebo poloměr podporuje
+pouze válcovou plochu otvoru
 vytvořeného odebráním jediné kruhové skici v základní rovině. Ukládá se původ
 plochy a otisk historie prvků, nikoli index plochy ani ručně zadaná hodnota.
 Kóta se přepočítává při změně hodnot parametrů; pokud se změní recept prvků,
@@ -22,7 +24,10 @@ konzervativní první podmnožina, nikoliv obecné sledování topologické iden
 
 ## Zbývá
 
-Doplnit kótování konkrétních hran a vzdáleností, vazby dalších typů prvků,
-umístění kót v pohledech, zobrazení listu, řez, PDF/DXF a nezávislou kontrolu
+Doplnit kótování konkrétních hran a dalších druhů vzdáleností, vazby dalších typů prvků,
+umístění kót v pohledech, dokončení listu, řez, PDF/DXF a nezávislou kontrolu
 exportu i tisku. Výstup smí vzniknout teprve po ověření všech vazeb a úplnosti
 modelu; při neplatné nebo nejednoznačné kótě nesmí být potichu vypuštěna.
+
+Pracovní náhled listu rozmisťuje tři pohledy podle zvoleného formátu a měřítka.
+Kóty, řez ani popisové pole v něm zatím nejsou; náhled není exportní výkres.

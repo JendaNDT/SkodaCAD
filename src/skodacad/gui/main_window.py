@@ -400,13 +400,28 @@ class MainWindow(QMainWindow):
         drawing_box = QGroupBox("Příprava kót výkresu")
         drawing_layout = QVBoxLayout(drawing_box)
         note = QLabel("Výkres a export zatím nejsou hotové. Průměr a poloměr lze navázat "
-                      "na válcovou plochu otvoru vytvořeného jednou kruhovou skicou.")
+                      "na válcovou plochu otvoru vytvořeného jednou kruhovou skicou; "
+                      "vzdálenost na dvě rovnoběžné plochy obdélníkového vysunutí.")
         note.setWordWrap(True)
         drawing_layout.addWidget(note)
+        preview_settings = QHBoxLayout()
+        self.drawing_paper = QComboBox()
+        self.drawing_paper.addItems(["A4", "A3"])
+        self.drawing_scale = QComboBox()
+        for label, value in (("1:1", 1), ("1:2", 0.5), ("1:5", 0.2),
+                             ("1:10", 0.1), ("2:1", 2), ("5:1", 5)):
+            self.drawing_scale.addItem(label, value)
+        preview = QPushButton("Náhled pohledů")
+        preview.clicked.connect(self.show_drawing_preview)
+        preview_settings.addWidget(self.drawing_paper)
+        preview_settings.addWidget(self.drawing_scale)
+        preview_settings.addWidget(preview)
+        drawing_layout.addLayout(preview_settings)
         self.drawing_kind = QComboBox()
         for label, kind, axis in (("Celkový rozměr X", "overall", "x"),
                                   ("Celkový rozměr Y", "overall", "y"),
                                   ("Celkový rozměr Z", "overall", "z"),
+                                  ("Vzdálenost dvou ploch", "distance", ""),
                                   ("Průměr vybrané plochy", "diameter", ""),
                                   ("Poloměr vybrané plochy", "radius", "")):
             self.drawing_kind.addItem(label, (kind, axis))
@@ -1755,6 +1770,7 @@ class MainWindow(QMainWindow):
         for record in records:
             kind = record["kind"]
             label = (f"Celkový rozměr {record['axis'].upper()}" if kind == "overall"
+                     else "Vzdálenost ploch" if kind == "distance"
                      else "Průměr otvoru" if kind == "diameter" else "Poloměr otvoru")
             result = results.get(record["id"])
             if result is None:
@@ -1772,11 +1788,29 @@ class MainWindow(QMainWindow):
             if record["id"] == selected_id:
                 self.drawing_list.setCurrentItem(item)
 
+    def show_drawing_preview(self) -> None:
+        from skodacad.drawing_geometry import DrawingGeometryError
+        from skodacad.drawing_sheet import layout
+        from skodacad.gui.drawing_preview import DrawingPreviewDialog
+
+        try:
+            self.session._require_computed("náhled výkresu")
+            if self.session.document is None:
+                raise DocumentError("Není otevřený žádný model.")
+            sheet = self._busy(lambda: layout(self.session.document, self.session.result,
+                                             paper=self.drawing_paper.currentText(),
+                                             scale=self.drawing_scale.currentData()))
+        except (DocumentError, DrawingGeometryError) as exc:
+            self._error("Náhled výkresu nelze vytvořit", str(exc))
+            return
+        DrawingPreviewDialog(sheet, self).exec()
+
     def add_drawing_dimension(self) -> None:
         kind, axis = self.drawing_kind.currentData()
         face = self._picked[0] if len(self._picked) == 1 else None
         try:
-            self._busy(lambda: self.session.add_drawing_dimension(kind, axis=axis, face=face))
+            self._busy(lambda: self.session.add_drawing_dimension(
+                kind, axis=axis, face=face, faces=list(self._picked)))
         except DocumentError as exc:
             self._error("Kótu nelze přidat", str(exc))
             return

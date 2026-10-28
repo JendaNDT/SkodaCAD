@@ -1068,8 +1068,9 @@ class ModelSession:
         return [evaluate(document, self.result, item)
                 for item in (document.drawing or {}).get("dimensions", [])]
 
-    def add_drawing_dimension(self, kind: str, *, axis: str = "", face: Any = None) -> str:
-        from skodacad.drawing_dimensions import new_cylinder, new_overall
+    def add_drawing_dimension(self, kind: str, *, axis: str = "", face: Any = None,
+                              faces: list[Any] | None = None) -> str:
+        from skodacad.drawing_dimensions import new_cylinder, new_distance, new_overall
 
         document = self._require()
         self._require_computed("uložení kóty")
@@ -1081,6 +1082,11 @@ class ModelSession:
         did = f"d{number}"
         if kind == "overall":
             record = new_overall(document, self.result, did, axis)
+        elif kind == "distance":
+            selected, edges = split_shapes(self._model_shapes(faces or []))
+            if len(selected) != 2 or edges:
+                raise DocumentError("Vyber právě dvě rovinné plochy.")
+            record = new_distance(document, self.result, did, selected)
         else:
             shapes = self._model_shapes([face]) if face is not None else []
             faces, edges = split_shapes(shapes)

@@ -32,6 +32,18 @@ def check_drawing(drawing: Any) -> None:
         if kind == "overall":
             if item.get("axis") not in ("x", "y", "z"):
                 raise DocumentError(f"Kóta „{did}“ má neplatnou osu.")
+        elif kind == "distance":
+            for key in ("a", "b"):
+                ref = item.get(key)
+                if (not isinstance(ref, dict) or not isinstance(ref.get("origin"), str)
+                        or not ref["origin"] or ref.get("normal") not in
+                        ("+x", "-x", "+y", "-y", "+z", "-z")):
+                    raise DocumentError(f"Kóta „{did}“ nemá platný odkaz na plochu.")
+            if item["a"]["normal"][1] != item["b"]["normal"][1]:
+                raise DocumentError(f"Kóta „{did}“ nemá rovnoběžné plochy.")
+            recipe = item.get("recipe")
+            if not isinstance(recipe, str) or not re.fullmatch(r"[0-9a-f]{64}", recipe):
+                raise DocumentError(f"Kóta „{did}“ nemá platnou pojistku historie.")
         elif kind in ("diameter", "radius"):
             origin, recipe = item.get("origin"), item.get("recipe")
             if not isinstance(origin, str) or not origin:

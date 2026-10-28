@@ -117,3 +117,50 @@ def test_assistant_replacement_preserves_user_drawing():
     with pytest.raises(ToolInputError, match="Výkres"):
         ModelTools(session)._tool_replace_model({"model": replacement})
     assert session.document.drawing == drawing
+
+
+def test_distance_between_bound_faces_follows_parameter_and_invalidates_recipe():
+    from skodacad.drawing_dimensions import new_distance
+
+    document = Document(parameters={"W": 40, "H": 20}, features=[
+        {"id": "sketch", "type": "sketch", "plane": "XY", "elements": [
+            {"shape": "rectangle", "width": "W", "height": 30}]},
+        {"id": "body", "type": "extrude", "sketch": "sketch", "distance": "H"},
+    ])
+    result = rebuild(document)
+    faces = [f for f in result.part.faces() if f.geom_type == GeomType.PLANE
+             and abs(f.normal_at().X) > 0.9]
+    record = new_distance(document, result, "d1", faces)
+    document.drawing = {"dimensions": [record]}
+    assert Document.from_dict(document.to_dict()).drawing == document.drawing
+    assert evaluate(document, result, record).value == pytest.approx(40)
+    document.parameters["W"] = 55
+    assert evaluate(document, rebuild(document), record).value == pytest.approx(55)
+    document.features[0]["elements"][0]["height"] = 31
+    assert evaluate(document, rebuild(document), record).value is None
+
+
+def test_nonparallel_faces_cannot_form_distance_dimension():
+    from skodacad.drawing_dimensions import new_distance
+
+    document = model()
+    result = rebuild(document)
+    faces = [f for f in result.part.faces() if f.geom_type == GeomType.PLANE]
+    pair = next((a, b) for a in faces for b in faces
+                if abs(a.normal_at().dot(b.normal_at())) < 0.1)
+    with pytest.raises(DocumentError, match="rovnoběžné"):
+        new_distance(document, result, "d1", list(pair))
+
+
+def test_session_distance_accepts_two_selected_faces_and_undo():
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(model().to_dict())
+    parallel = [face.wrapped for face in session.result.part.faces()
+                if face.geom_type == GeomType.PLANE and abs(face.normal_at().Z) > 0.9]
+    session.add_drawing_dimension("distance", faces=parallel)
+    assert session.drawing_dimensions()[0].value == pytest.approx(10)
+    session.set_parameter("H", "15")
+    assert session.drawing_dimensions()[0].value == pytest.approx(15)
+    session.undo()
+    assert session.drawing_dimensions()[0].value == pytest.approx(10)

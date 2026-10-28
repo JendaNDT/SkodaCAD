@@ -11,10 +11,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from build123d import Face, GeomType
+from build123d import Face, GeomType, Vector
 
 from skodacad.direct_edit import face_origin
 from skodacad.document import Document, DocumentError
+from skodacad.measure import inner_point
 from skodacad.rebuild import BuildResult, model_signature, require_complete_part
 
 
@@ -57,6 +58,80 @@ def _supported_origin(document: Document, origin: str) -> bool:
     elements = sketch.get("elements")
     return (isinstance(elements, list) and len(elements) == 1
             and isinstance(elements[0], dict) and elements[0].get("shape") == "circle")
+
+
+def _supported_plane_origin(document: Document, origin: str) -> bool:
+    feature = next((f for f in document.features if f.get("id") == origin), None)
+    if (not feature or feature.get("type") != "extrude"
+            or feature.get("operation", "new") not in ("new", "add")):
+        return False
+    sketch = next((f for f in document.features if f.get("id") == feature.get("sketch")), None)
+    if not sketch or sketch.get("type") != "sketch" or sketch.get("plane", "XY") not in (
+            "XY", "XZ", "YZ"):
+        return False
+    elements = sketch.get("elements")
+    return (isinstance(elements, list) and len(elements) == 1
+            and isinstance(elements[0], dict) and elements[0].get("shape") == "rectangle")
+
+
+def _normal_key(face: Face) -> str:
+    if face.geom_type != GeomType.PLANE:
+        raise DocumentError("Pro vzdálenost vyber rovinné plochy.")
+    normal = face.normal_at(face.position_at(0.5, 0.5)).normalized()
+    components = (normal.X, normal.Y, normal.Z)
+    axis = max(range(3), key=lambda i: abs(components[i]))
+    if abs(abs(components[axis]) - 1) > 1e-7:
+        raise DocumentError("Zatím lze kótovat jen plochy kolmé na osu X, Y nebo Z.")
+    return ("+" if components[axis] > 0 else "-") + "xyz"[axis]
+
+
+def _planes(document: Document, result: BuildResult, reference: dict[str, str]) -> list[Face]:
+    origin, normal = reference.get("origin"), reference.get("normal")
+    if not isinstance(origin, str) or not _supported_plane_origin(document, origin):
+        raise DocumentError("Původ plochy není podporovaný – vyber ji znovu.")
+    part = _current(document, result)
+    history = _history(document, result)
+    matches = []
+    for face in part.faces():
+        if face.geom_type != GeomType.PLANE:
+            continue
+        try:
+            if _normal_key(face) != normal:
+                continue
+        except DocumentError:
+            continue
+        if face_origin(history, face, inner_point(face)) == origin:
+            matches.append(face)
+    return matches
+
+
+def new_distance(document: Document, result: BuildResult, dimension_id: str,
+                 faces: list[Face]) -> dict[str, Any]:
+    part = _current(document, result)
+    if len(faces) != 2 or faces[0].is_same(faces[1]):
+        raise DocumentError("Vyber dvě různé rovnoběžné plochy.")
+    refs = []
+    history = _history(document, result)
+    for face in faces:
+        if not any(face.is_same(f) for f in part.faces()):
+            raise DocumentError("Plocha nepatří k aktuálnímu dílu.")
+        normal = _normal_key(face)
+        origin = face_origin(history, face, inner_point(face))
+        if not origin:
+            raise DocumentError("Původ plochy nelze určit – vyber ji znovu.")
+        ref = {"origin": origin, "normal": normal}
+        found = _planes(document, result, ref)
+        if len(found) != 1 or not found[0].is_same(face):
+            raise DocumentError("Plocha není jednoznačná – kótu nelze bezpečně uložit.")
+        refs.append(ref)
+    if refs[0]["normal"][1] != refs[1]["normal"][1]:
+        raise DocumentError("Vybrané plochy nejsou rovnoběžné.")
+    record = {"id": dimension_id, "kind": "distance", "a": refs[0], "b": refs[1],
+              "recipe": _recipe(document)}
+    measured = evaluate(document, result, record)
+    if measured.value is None or measured.value <= 1e-7:
+        raise DocumentError(measured.error or "Vzdálenost ploch musí být kladná.")
+    return record
 
 
 def _cylinders(document: Document, result: BuildResult, origin: str) -> list[Face]:
@@ -110,6 +185,24 @@ def evaluate(document: Document, result: BuildResult, dimension: dict[str, Any])
             if axis not in ("x", "y", "z"):
                 raise DocumentError("Neplatná osa celkového rozměru.")
             value = getattr(part.bounding_box().size, axis.upper())
+        elif kind == "distance":
+            if dimension.get("recipe") != _recipe(document):
+                raise DocumentError("Historie modelu se změnila – vyber plochy kóty znovu.")
+            refs = (dimension.get("a"), dimension.get("b"))
+            if not all(isinstance(ref, dict) for ref in refs):
+                raise DocumentError("Vzdálenost nemá platné odkazy na plochy.")
+            if refs[0].get("normal", "")[1:] != refs[1].get("normal", "")[1:]:
+                raise DocumentError("Plochy již nejsou rovnoběžné.")
+            matches = [_planes(document, result, ref) for ref in refs]
+            if any(len(items) != 1 for items in matches) or matches[0][0].is_same(matches[1][0]):
+                raise DocumentError("Plochy zanikly nebo nejsou jednoznačné – vyber je znovu.")
+            first, second = matches[0][0], matches[1][0]
+            point_a = inner_point(first)
+            point_b = inner_point(second)
+            normal = Vector(first.normal_at(point_a)).normalized()
+            value = abs((point_b - point_a).dot(normal))
+            if value <= 1e-7:
+                raise DocumentError("Plochy už nemají kladnou vzdálenost.")
         elif kind in ("diameter", "radius"):
             if dimension.get("recipe") != _recipe(document):
                 raise DocumentError("Historie modelu se změnila – vyber plochu kóty znovu.")
