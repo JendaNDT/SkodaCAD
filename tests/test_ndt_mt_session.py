@@ -48,7 +48,7 @@ def test_format_20_saves_mt_and_rejects_it_in_other_studies(tmp_path):
     session = quick(opened())
     path = session.save(tmp_path / "deska.json")
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["version"] == 23 and data["ndt"]["studies"][1]["mt"]["step_mm"] == 25
+    assert data["version"] == 24 and data["ndt"]["studies"][1]["mt"]["step_mm"] == 25
     data["ndt"]["studies"][0]["mt"] = {"spacing_mm": 100}
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(DocumentError, match="nastavení MT"):

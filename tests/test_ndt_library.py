@@ -192,7 +192,7 @@ def test_format_17_stores_probe_origins_and_ut_material(tmp_path):
     path = tmp_path / "deska.json"
     document.save(path)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["version"] == 23
+    assert data["version"] == 24
     loaded = Document.load(path).ndt["studies"][0]
     assert study_probe(loaded) == probe and study_material(loaded) == MATERIALS["hlinik"]
     loaded["material"] = {"name": "x", "c_l": 5000, "c_t": 6000, "source": "s"}

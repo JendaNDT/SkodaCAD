@@ -206,12 +206,39 @@ def _run_self_test(lines: _Report) -> int:
 
         ok = _self_test_window(lines, last_model) and ok
         ok = _self_test_background(models, lines) and ok
+        ok = _self_test_step(lines) and ok
     except Exception:  # noqa: BLE001 – zpráva musí vzniknout i při nečekané chybě
         ok = False
         lines.append("✕ Neočekávaná chyba:\n" + traceback.format_exc())
 
     lines.append("VÝSLEDEK: OK" if ok else "VÝSLEDEK: CHYBA")
     return 0 if ok else 1
+
+
+def _self_test_step(lines: list[str]) -> bool:
+    """Přenos zdroje STEP a otevření modelu i v zabalené aplikaci."""
+    from build123d import Align, Box, export_step
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        step = folder / "kvadr.step"
+        export_step(Box(40, 30, 20, align=(Align.MIN,) * 3), step)
+        session = ModelSession()
+        session.new_document()
+        session.add_step_import(step.read_bytes(), "kvadr.step")
+        if not session.result.ok:
+            lines.append(f"✕ Import STEP: {session.result.first_error.message}")
+            return False
+        path = session.save(folder / "model.json")
+        reopened = ModelSession()
+        reopened.open(path)
+        part = reopened.result.part
+        if (not reopened.result.ok or part is None or len(part.solids()) != 1
+                or abs(part.volume - 24000) > 1e-5):
+            lines.append("✕ Import STEP: po opětovném otevření nesouhlasí těleso nebo objem.")
+            return False
+        lines.append("✓ Import STEP: jedno těleso, objem 24000 mm³, uložení a otevření")
+        return True
 
 
 def _self_test_window(lines: list[str], model: Path | None) -> bool:

@@ -1189,6 +1189,13 @@ implementovat podle G1–G8 a H1–H8; P2.4 okno a P2.5 přijetí dál vyžaduj�
 **P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, formát 23, README, testy
 Q01–Q23 a W01–W16 (`tests/test_direct_edit.py`), [evidence](docs/p2-3-overeni.md).
 Do main jen s výslovným souhlasem autora.
+**P3.3–P3.5 — rozpracováno v PR #47:** autor zadal společné pokračování.
+Návrh [P3.2](docs/p3-2-navrh-ulozeni-step.md), omezený import jednoho tělesa
+s vloženým STEP, náhledem a formátem 24; [evidence](docs/p3-3-5-overeni.md).
+Sestavy a ohlášené opravy se odmítají; paměťový dohled je vzorkovaný, ne pevný
+limit OS. Výsledky přenosu na Windows/macOS a přijetí autora uvádět jen podle
+skutečného stavu CI a následných zkoušek; zatím neslučovat bez výslovného
+souhlasu autora. PR #47 navazuje na nesloučené PR #46.
 **P2.4 — zadáno autorem 27. 10. 2026:** ovládání přímých úprav ve 3D, náhled a
 potvrzení v okně i pro návrhy AI. P2.5 přijetí je samostatný krok.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.

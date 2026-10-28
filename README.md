@@ -770,7 +770,7 @@ Mapa tloušťky stěny:
 ```json
 {
   "format": "skodacad",
-  "version": 23,
+  "version": 24,
   "name": "Plochá příruba",
   "material": "ocel",
   "parameters": {"D": 165, "t": 18, "k": "D - 40"},
@@ -791,6 +791,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 
 | `type` | Co dělá | Hodnoty |
 |---|---|---|
+| `step_import` | vložený zdroj STEP, první těleso | `source_name`, `size_bytes`, `sha256`, `encoding`, `data` – vzniká příkazem Importovat STEP, AI jej nesestavuje ani nepřepisuje |
 | `sketch` | 2D skica | `plane`, `offset`, `elements` (seznam tvarů) |
 | `extrude` | vysunutí skici | `sketch`, `distance`, `operation`, `direction`, `through_all` |
 | `revolve` | rotace skici kolem osy | `sketch`, `axis` (`X`/`Y`/`Z`), `angle` (výchozí 360) |
@@ -816,6 +817,15 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 * **`direction`** – `normal` (ven z roviny), `reverse` (opačně), `both` (symetricky, `distance` je
   celková tloušťka). Řez (`cut`) jde ve výchozím stavu do materiálu.
 * **`through_all": true`** – řez skrz celý díl.
+
+### Import STEP (`step_import`, verze 24)
+
+Příkaz **Soubor → Importovat STEP** v prázdném modelu přečte jeden platný uzavřený
+objemový díl v mm nebo palcích, ukáže jeho náhled a vyžádá potvrzení. Původní STEP
+(do 16 MiB) se uloží do modelu; původní parametrická historie není k dispozici.
+Sestavy, více těles, otevřené plochy a soubory s hlášenými opravami se odmítají.
+Při poškození uložených dat lze vybrat import ve stromu a použít **Obnovit zdroj
+STEP** se stejným původním souborem. AI zdrojová data nevidí a nesmí je vytvářet.
 
 ### Přímé úpravy ploch (`move_face`, `face_diameter`, verze 23)
 

@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QScrollArea,
     QSlider,
     QToolButton,
@@ -757,6 +758,10 @@ class MainWindow(QMainWindow):
                     )
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
+        import_action = self._action("Importovat STEP…", self.import_step_dialog)
+        file_menu.addAction(import_action)
+        toolbar.addAction(import_action)
+        file_menu.addAction(self._action("Obnovit zdroj STEP…", self.restore_step_dialog))
         file_menu.addAction(self.save_action)
         toolbar.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
@@ -932,6 +937,109 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Uloženo: {path}", 8000)
         self._refresh_title()
         return True
+
+    def import_step_dialog(self) -> None:
+        """Zkontroluje STEP mimo okno, ukáže náhled a teprve pak změní model."""
+        from skodacad.step_probe import StepProbeError
+        from skodacad.step_task import StepTask
+        from skodacad.worker import _shape_from
+
+        document = self.session.document
+        if document is None or document.features:
+            self._error("Import STEP", "Nejdřív založ nový prázdný model.")
+            return
+        snapshot = document.to_dict()
+        path, _ = QFileDialog.getOpenFileName(self, "Vybrat STEP", str(self.user_dir),
+                                              "STEP (*.step *.stp)")
+        if not path:
+            return
+        try:
+            task = StepTask(Path(path))
+        except (StepProbeError, OSError, RuntimeError) as exc:
+            self._error("Import STEP", str(exc))
+            return
+        progress = QProgressDialog("Kontroluji STEP…", "Zrušit", 0, 0, self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        loop = QEventLoop(self)
+        timer = QTimer(self)
+        results = []
+        canceled = []
+
+        def poll() -> None:
+            if (outcome := task.poll()) is not None:
+                results.append(outcome)
+                loop.quit()
+
+        def cancel() -> None:
+            canceled.append(True)
+            loop.quit()
+
+        progress.canceled.connect(cancel)
+        timer.timeout.connect(poll)
+        timer.start(75)
+        progress.show()
+        try:
+            loop.exec()
+        finally:
+            timer.stop()
+            progress.canceled.disconnect(cancel)
+            progress.close()
+            task.cancel()
+        if canceled or not results:
+            return
+        outcome = results[0]
+        if outcome.error:
+            self._error("Import STEP", outcome.error)
+            return
+        data = outcome.source_bytes
+        try:
+            part = _shape_from(("Part", outcome.shape_bytes))
+            facts = outcome.facts
+            box = facts.bounds_mm
+            size = (box[3] - box[0], box[4] - box[1], box[5] - box[2])
+            self.viewer.show_part(part, fit=True)
+            answer = QMessageBox.question(
+                self, "Náhled importu STEP",
+                f"Rozměry: {size[0]:g} × {size[1]:g} × {size[2]:g} mm\n"
+                f"Objem: {facts.volume_mm3:g} mm³\n"
+                f"Tělesa: {facts.solids}; jednotka zdroje: {facts.unit}\n\n"
+                "Původní parametrická historie ve STEP není dostupná.\n"
+                "Vložit tento díl do modelu?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+        finally:
+            self._shown_key = None
+            self._refresh_all(fit=True)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if self.session.document is None or self.session.document.to_dict() != snapshot:
+            self._error("Import STEP", "Model se během náhledu změnil. Zkus import znovu.")
+            return
+        self._apply(lambda: self.session.add_step_import(data, Path(path).name))
+
+    def restore_step_dialog(self) -> None:
+        """Obnoví obsah vybraného prvku pouze z totožného původního souboru."""
+        from skodacad.step_probe import StepProbeError
+        from skodacad.step_source import read_source_file
+
+        if self._selected_id is None or self.session.document is None:
+            self._error("Obnovení STEP", "Nejdřív ve stromu vyber import STEP.")
+            return
+        selected = self.session.feature(self._selected_id)
+        if selected.get("type") != "step_import":
+            self._error("Obnovení STEP", "Vybraný prvek není import STEP.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Najít původní STEP", str(self.user_dir),
+                                              "STEP (*.step *.stp)")
+        if not path:
+            return
+        try:
+            data = read_source_file(path)
+        except StepProbeError as exc:
+            self._error("Obnovení STEP", str(exc))
+            return
+        self._apply(lambda: self.session.restore_step_source(selected["id"], data))
 
     def export_dialog(self, fmt: str) -> None:
         if problem := self.session.model_problem:

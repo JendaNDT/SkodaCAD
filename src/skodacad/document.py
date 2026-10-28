@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import stat
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -49,9 +52,10 @@ FORMAT = "skodacad"
 # verze 22 zadání konstrukčního návrhu (ndt.design), výsledky zůstávají jen v paměti,
 # verze 23 přímé úpravy ploch: prvky „move_face“ a „face_diameter“ s odkazem na plochu
 # a pojistkou původu („origin“) – návrh docs/p2-2-navrh-zapisu-prime-upravy.md.
-VERSION = 23
+# Verze 24: vložený zdroj STEP – prvek step_import.
+VERSION = 24
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23)
+                      20, 21, 22, 23, 24)
 
 
 class DocumentError(ValueError):
@@ -106,6 +110,10 @@ class Document:
             seen.add(feature_id)
             if not isinstance(feature.get("type"), str):
                 raise DocumentError(f"Prvek „{feature_id}“ nemá „type“.")
+            if feature["type"] == "step_import" and version < 24:
+                raise DocumentError("Import STEP vyžaduje formát modelu verze 24.")
+        if sum(feature.get("type") == "step_import" for feature in features) > 1:
+            raise DocumentError("Model zatím podporuje nejvýš jeden import STEP.")
 
         measurements = data.get("measurements", [])
         if not isinstance(measurements, list):
@@ -204,7 +212,22 @@ class Document:
 
     def save(self, path: str | Path) -> None:
         text = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-        Path(path).write_text(text + "\n", encoding="utf-8")
+        target = Path(path).resolve()
+        temporary = None
+        try:
+            # Soubor ve stejné složce lze nahradit jedinou operací až po úspěšném zápisu.
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                             dir=target.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(text + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            if target.exists():
+                os.chmod(temporary, stat.S_IMODE(target.stat().st_mode))
+            os.replace(temporary, target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def with_parameters(self, overrides: dict[str, Any]) -> Document:
         """Kopie dokumentu se změněnými hodnotami parametrů."""
