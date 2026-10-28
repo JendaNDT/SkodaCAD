@@ -1818,7 +1818,7 @@ class MainWindow(QMainWindow):
                 text = f"✕ {label}: {result.error}"
             else:
                 text = f"{label}: {format_value(result.value, 'mm')}"
-            item = QListWidgetItem(text)
+            item = QListWidgetItem(f"{record['id']} — {text}")
             item.setData(_FEATURE_ID, record["id"])
             if result is not None and result.error:
                 item.setForeground(_STATUS_COLORS["error"])
@@ -1871,12 +1871,33 @@ class MainWindow(QMainWindow):
         DrawingPreviewDialog(sheet, dimensions, self).exec()
 
     def export_drawing(self) -> None:
-        from skodacad.drawing_export import export
+        from skodacad.drawing_annotations import annotations
+        from skodacad.drawing_export import collision_notice, export
         from skodacad.drawing_geometry import DrawingGeometryError
         from skodacad.drawing_sheet import layout
 
+        try:
+            self.session._require_computed("export výkresu")
+            if self.session.document is None:
+                raise DocumentError("Není otevřený žádný model.")
+            sheet = self._busy(lambda: layout(self.session.document, self.session.result,
+                                             paper=self.drawing_paper.currentText(),
+                                             scale=self.drawing_scale.currentData()))
+            dimensions = self._busy(lambda: annotations(self.session.document,
+                                                         self.session.result, sheet))
+            if dimensions.warnings:
+                raise DocumentError(" ".join(dimensions.warnings))
+        except (DocumentError, DrawingGeometryError, OSError, ValueError) as exc:
+            self._error("Výkres nelze vyvézt", str(exc))
+            return
+        notice = collision_notice(dimensions)
+        title = ("Export – možné překrytí kót, zkontroluj náhled" if notice
+                 else "Export pracovního výkresu")
+        if notice:
+            self.statusBar().showMessage(notice, 30000)
+            QApplication.processEvents()
         filename, chosen = QFileDialog.getSaveFileName(
-            self, "Export pracovního výkresu", "vykres.pdf",
+            self, title, "vykres.pdf",
             "PDF – výkres (*.pdf);;DXF – výkres (*.dxf)")
         if not filename:
             return
@@ -1885,17 +1906,19 @@ class MainWindow(QMainWindow):
             path = path.with_suffix(".dxf" if chosen.startswith("DXF") else ".pdf")
         try:
             self.session._require_computed("export výkresu")
-            if self.session.document is None:
-                raise DocumentError("Není otevřený žádný model.")
-            sheet = self._busy(lambda: layout(self.session.document, self.session.result,
-                                             paper=self.drawing_paper.currentText(),
-                                             scale=self.drawing_scale.currentData()))
+            current = self._busy(lambda: annotations(self.session.document,
+                                                      self.session.result, sheet))
+            notice = collision_notice(current)
+            if notice:
+                self.statusBar().showMessage(notice, 30000)
+                QApplication.processEvents()
             self._busy(lambda: export(self.session.document, self.session.result, sheet, path))
         except (DocumentError, DrawingGeometryError, OSError, ValueError) as exc:
             self._error("Výkres nelze vyvézt", str(exc))
             return
-        self.statusBar().showMessage("Pracovní výkres uložen; zkontroluj jej před výrobou.",
-                                     10000)
+        self.statusBar().showMessage(
+            f"Výkres uložen. {notice}" if notice
+            else "Pracovní výkres uložen; zkontroluj jej před výrobou.", 30000 if notice else 10000)
 
     def _drawing_selection_changed(self, _row: int) -> None:
         item = self.drawing_list.currentItem()

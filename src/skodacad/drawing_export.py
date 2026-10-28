@@ -73,6 +73,14 @@ def _scale_label(scale: float) -> str:
     return {0.1: "1:10", 0.2: "1:5", 0.5: "1:2", 1: "1:1", 2: "2:1", 5: "5:1"}[scale]
 
 
+def collision_notice(dimensions: AnnotationSet) -> str:
+    if not dimensions.collision_check_complete:
+        return "Kontrola překrytí není úplná – ověř kóty."
+    if dimensions.collisions:
+        return "Možné překrytí kót – zkontroluj náhled."
+    return ""
+
+
 def _pdf_points(edge: Edge, dx: float, dy: float) -> list[tuple[float, float]]:
     if edge.geom_type == GeomType.LINE:
         count = 1
@@ -146,6 +154,8 @@ def _pdf(document: Document, sheet: Sheet, dimensions: AnnotationSet, target: st
         painter.drawText(point(MARGIN + 3, MARGIN + 6), _title(document))
         painter.drawText(point(MARGIN + 3, MARGIN + 12),
                          f"Měřítko {_scale_label(sheet.scale)} | mm")
+        if notice := collision_notice(dimensions):
+            painter.drawText(point(MARGIN + 3, MARGIN + 18), notice)
         painter.drawText(point(sheet.width - MARGIN - 60, MARGIN + 27), "Kontrola: 50 mm")
         for view in sheet.views:
             for edges, style in ((view.geometry.visible, Qt.PenStyle.SolidLine),
@@ -228,6 +238,9 @@ def _dxf(document: Document, sheet: Sheet, dimensions: AnnotationSet, target: st
                     (MARGIN + 12, f"Měřítko {_scale_label(sheet.scale)} | mm")):
         exporter._modelspace.add_text(text, dxfattribs={  # pinned build123d API
             "insert": (MARGIN + 3, y, 0), "height": 2.5, "layer": "popisy"})
+    if notice := collision_notice(dimensions):
+        exporter._modelspace.add_text(notice, dxfattribs={
+            "insert": (MARGIN + 3, MARGIN + 18, 0), "height": 2.5, "layer": "popisy"})
     exporter._modelspace.add_text("Kontrola: 50 mm", dxfattribs={
         "insert": (sheet.width - MARGIN - 60, MARGIN + 27, 0), "height": 2.5,
         "layer": "popisy"})

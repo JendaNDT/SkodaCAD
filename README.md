@@ -215,8 +215,10 @@ nebo menší měřítko.
 Tlačítko **Export PDF/DXF…** uloží pracovní výkres. Neplatné kóty, zastaralý model
 nebo nepodporovanou křivku PDF aplikace oznámí a export zastaví. Při tisku nastav
 skutečnou velikost a změř kontrolní úsečku 50 mm. Výkres před výrobou zkontroluj:
-zatím chybí některé druhy kót, tolerance, úplné popisové pole a automatická kontrola
-všech překrytí. Fyzický tisk a otevření DXF v jiné CAD aplikaci ještě nebyly ověřeny.
+program upozorní na možná překrytí textů, kótovacích čar a některých hran, ale tato
+kontrola není úplná. Upozornění je i v exportovaném výkresu. Zatím chybí některé
+druhy kót, tolerance a úplné popisové pole. Fyzický tisk a otevření DXF v jiné CAD
+aplikaci ještě nebyly ověřeny.
 
 ### Mapa tloušťky stěny (NDT)
 

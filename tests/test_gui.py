@@ -2579,3 +2579,29 @@ def test_export_drawing_from_panel(window, tmp_path, monkeypatch):
     window.export_drawing()
     assert path.exists() and path.stat().st_size > 100
     assert "zkontroluj" in window.statusBar().currentMessage()
+
+
+def test_export_warns_before_saving_overlapping_dimensions(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    path = tmp_path / "vykres.dxf"
+    window.drawing_scale.setCurrentIndex(window.drawing_scale.findData(0.5))
+    first = window.session.add_drawing_dimension("overall", axis="x")
+    second = window.session.add_drawing_dimension("overall", axis="x")
+    for dimension in (first, second):
+        window.session.set_drawing_dimension_placement(dimension, "front", "low", 6)
+    seen = []
+
+    def save_dialog(_parent, title, *_args):
+        seen.append((title, window.statusBar().currentMessage()))
+        return str(path), "DXF"
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", save_dialog)
+    monkeypatch.setattr(window, "_error", lambda title, message: pytest.fail(f"{title}: {message}"))
+    window.export_drawing()
+    assert path.exists()
+    assert "překrytí" in seen[0][0] and "překrytí" in seen[0][1]
+    assert "překrytí" in window.statusBar().currentMessage()
+    window._refresh_all()
+    visible = [window.drawing_list.item(i).text() for i in range(window.drawing_list.count())]
+    assert any(first in text for text in visible) and any(second in text for text in visible)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from build123d import GeomType
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
 from skodacad.drawing_annotations import AnnotationSet
@@ -70,8 +70,11 @@ class SheetPreview(QWidget):
                 painter.drawLine(point(*a), point(*b))
             for label in mark.labels:
                 painter.drawText(point(*label), "A")
-        painter.setPen(QPen(QColor("#145d9c"), 1))
+        painter.setPen(QPen(QColor("#145d9c"), max(0.7, 0.2 * scale)))
         painter.setBrush(QColor("#145d9c"))
+        dimension_font = QFont("Arial")
+        dimension_font.setPixelSize(max(1, round(2.5 * scale)))
+        painter.setFont(dimension_font)
         for dimension in self.dimensions.items:
             for start, end in dimension.lines:
                 painter.drawLine(point(*start), point(*end))
@@ -81,12 +84,13 @@ class SheetPreview(QWidget):
             if length > 1:
                 ux, uy = (b.x() - a.x()) / length, (b.y() - a.y()) / length
                 for tip, direction in ((a, 1), (b, -1)) if len(dimension.lines) == 3 else ((a, 1),):
-                    back = QPointF(tip.x() + direction * ux * 6, tip.y() + direction * uy * 6)
+                    back = QPointF(tip.x() + direction * ux * 2 * scale,
+                                   tip.y() + direction * uy * 2 * scale)
                     painter.drawPolygon(QPolygonF([tip,
-                        QPointF(back.x() - uy * 2.5, back.y() + ux * 2.5),
-                        QPointF(back.x() + uy * 2.5, back.y() - ux * 2.5)]))
+                        QPointF(back.x() - uy * 0.7 * scale, back.y() + ux * 0.7 * scale),
+                        QPointF(back.x() + uy * 0.7 * scale, back.y() - ux * 0.7 * scale)]))
             label = point(*dimension.label)
-            painter.drawText(QPointF(label.x() + 3, label.y() - 3), dimension.text)
+            painter.drawText(label, dimension.text)
         painter.end()
 
 
@@ -96,8 +100,8 @@ class DrawingPreviewDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Pracovní náhled listu")
         layout = QVBoxLayout(self)
-        note = QLabel("Pracovní náhled pohledů, řezu a kót. Popisové pole a export zatím "
-                      "nejsou hotové; zkontroluj čitelnost kót.")
+        note = QLabel("Pracovní náhled pohledů, řezu a kót. Zkontroluj čitelnost a výrobní "
+                      "údaje před exportem.")
         note.setWordWrap(True)
         layout.addWidget(note)
         if dimensions and dimensions.warnings:
@@ -107,5 +111,15 @@ class DrawingPreviewDialog(QDialog):
             warning.setTextFormat(Qt.TextFormat.PlainText)
             warning.setStyleSheet("color: #b42318; font-weight: bold;")
             layout.addWidget(warning)
+        if dimensions and dimensions.collisions:
+            details = list(dimensions.collisions[:8])
+            if len(dimensions.collisions) > len(details):
+                details.append("Další upozornění se zobrazí po opravě uvedených kót.")
+            collision = QLabel("Upozornění na možné překrytí – zkontroluj umístění kót:\n"
+                               + "\n".join(details))
+            collision.setWordWrap(True)
+            collision.setTextFormat(Qt.TextFormat.PlainText)
+            collision.setStyleSheet("color: #9a5700; font-weight: bold;")
+            layout.addWidget(collision)
         layout.addWidget(SheetPreview(sheet, dimensions))
         self.resize(900, 650)
