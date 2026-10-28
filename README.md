@@ -821,7 +821,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 ### Import STEP (`step_import`, verze 24)
 
 Příkaz **Soubor → Importovat STEP** v prázdném modelu přečte jeden platný uzavřený
-objemový díl v mm nebo palcích, ukáže jeho náhled a vyžádá potvrzení. Původní STEP
+objemový díl v milimetrech, metrech nebo palcích, ukáže jeho náhled a vyžádá potvrzení. Původní STEP
 (do 16 MiB) se uloží do modelu; původní parametrická historie není k dispozici.
 Sestavy, více těles, otevřené plochy a soubory s hlášenými opravami se odmítají.
 Při poškození uložených dat lze vybrat import ve stromu a použít **Obnovit zdroj

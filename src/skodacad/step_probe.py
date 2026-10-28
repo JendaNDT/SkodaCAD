@@ -81,7 +81,7 @@ def _inspect_step_inner(data: bytes):
         length, angle, solid_angle = (Sequence_TCollection_AsciiString() for _ in range(3))
         reader.FileUnits(length, angle, solid_angle)
         units = {length.Value(i).ToCString().strip().lower() for i in range(1, length.Length() + 1)}
-        if len(units) != 1 or not units.issubset({"millimetre", "inch"}):
+        if len(units) != 1 or not units.issubset({"millimetre", "metre", "inch"}):
             raise StepProbeError("Jednotky STEP chybí, jsou nejednoznačné nebo nejsou podporované.")
         reader.SetSystemLengthUnit(1.0)
         if reader.TransferRoots() != 1 or reader.NbShapes() != 1:

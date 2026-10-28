@@ -996,6 +996,7 @@ class MainWindow(QMainWindow):
         try:
             part = _shape_from(("Part", outcome.shape_bytes))
             facts = outcome.facts
+            unit_name = {"millimetre": "milimetry", "metre": "metry", "inch": "palce"}[facts.unit]
             box = facts.bounds_mm
             size = (box[3] - box[0], box[4] - box[1], box[5] - box[2])
             self.viewer.show_part(part, fit=True)
@@ -1003,7 +1004,7 @@ class MainWindow(QMainWindow):
                 self, "Náhled importu STEP",
                 f"Rozměry: {size[0]:g} × {size[1]:g} × {size[2]:g} mm\n"
                 f"Objem: {facts.volume_mm3:g} mm³\n"
-                f"Tělesa: {facts.solids}; jednotka zdroje: {facts.unit}\n\n"
+                f"Tělesa: {facts.solids}; jednotka zdroje: {unit_name}\n\n"
                 "Původní parametrická historie ve STEP není dostupná.\n"
                 "Vložit tento díl do modelu?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

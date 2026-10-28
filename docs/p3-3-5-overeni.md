@@ -1,9 +1,10 @@
 # P3.3–P3.5 — evidence vývoje a ověřování
 
-**Stav: rozpracováno, bez přijetí a bez sloučení.** Rozsah je záměrně omezen na
+**Stav: sloučeno v PR #46 a #47 se souhlasem autora.** Původní rozsah byl omezen na
 jeden platný uzavřený díl se známou jednotkou milimetr nebo palec, velikost
 zdroje nejvýš 16 MiB. Sestavy, více těles, volné plochy, neznámé jednotky,
-poškozené vstupy a hlášené opravy se odmítají. Neexistuje záruka, že OCCT
+poškozené vstupy a hlášené opravy se odmítají. Následné rozšíření o metry je
+popsáno v [samostatné evidenci](p3-step-metry.md). Neexistuje záruka, že OCCT
 nahlásí každou změnu interní reprezentace; referenční vstupy a analytické
 kontroly nejsou testem všech STEP souborů.
 

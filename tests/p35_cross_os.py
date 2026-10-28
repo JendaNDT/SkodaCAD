@@ -1,10 +1,11 @@
 """Vytvoření a kontrola přenositelných modelů pro CI na dvou operačních systémech.
 
-Spuštění: python tests/p35_cross_os.py create|check SLOŽKA
+Spuštění: python tests/p35_cross_os.py fetch-onshape|create|check SLOŽKA
 """
 import argparse
 import hashlib
 import time
+import urllib.request
 from pathlib import Path
 
 from skodacad.session import ModelSession
@@ -17,13 +18,29 @@ CASES = {
                               (40.0, 30.0, 20.0), 24000.0),
     "04-palce.step": ("1bbd9ecfdbbe43e829ac0a7a5a2d9f3985c14bec2898b99a2192e592da4448fe",
                        (50.8, 25.4, 12.7), 16387.064),
+    "07-metry.step": ("c2cee005d3c3bcf18ef644e2493b7787a9f4625e6d43c6e08a8b43de820a8b73",
+                       (10.0, 13.0, 17.0), 2210.0),
+    "onshape-metry.step": ("31d3fd438c1bfe01951619a83a2744a442dfe05b46931c356e375ba89dce916d",
+                           (20.0, 20.0, 20.0), 8000.0),
 }
+ONSHAPE_URL = ("https://gist.githubusercontent.com/MattFerraro/"
+               "76adbd74042696895e7f9b0f87313a88/raw/"
+               "a7d49498a42152d0453ceb3d125fe0d9570009c4/1cm%20cube.step")
+
+
+def fetch_onshape(folder: Path) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(ONSHAPE_URL, timeout=30) as response:  # noqa: S310
+        raw = response.read(1024 * 1024)
+    assert hashlib.sha256(raw).hexdigest() == CASES["onshape-metry.step"][0]
+    (folder / "onshape-metry.step").write_bytes(raw)
 
 
 def create(folder: Path) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     for name, (digest, _, _) in CASES.items():
-        raw = (FIXTURES / name).read_bytes()
+        source = folder / name if name == "onshape-metry.step" else FIXTURES / name
+        raw = source.read_bytes()
         assert hashlib.sha256(raw).hexdigest() == digest
         session = ModelSession()
         session.new_document()
@@ -67,10 +84,10 @@ def check(folder: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("create", "check"))
+    parser.add_argument("action", choices=("fetch-onshape", "create", "check"))
     parser.add_argument("folder", type=Path)
     args = parser.parse_args()
-    (create if args.action == "create" else check)(args.folder)
+    {"fetch-onshape": fetch_onshape, "create": create, "check": check}[args.action](args.folder)
 
 
 if __name__ == "__main__":

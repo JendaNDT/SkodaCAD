@@ -22,6 +22,7 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: python -m pip install -e .
+      - run: python tests/p35_cross_os.py fetch-onshape p35-mac
       - run: python tests/p35_cross_os.py create p35-mac
       - run: python tests/benchmark_p35_step.py
       - uses: actions/upload-artifact@v4
@@ -38,6 +39,7 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: python -m pip install -e .
+      - run: python tests/p35_cross_os.py fetch-onshape p35-windows
       - run: python tests/p35_cross_os.py create p35-windows
       - run: python tests/benchmark_p35_step.py
       - uses: actions/upload-artifact@v4
