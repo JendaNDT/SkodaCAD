@@ -51,6 +51,20 @@ def check_drawing(drawing: Any) -> None:
             if (isinstance(offset, bool) or not isinstance(offset, (int, float))
                     or not math.isfinite(offset) or not 1 <= offset <= 60):
                 raise DocumentError(f"Odstup kóty „{did}“ musí být 1 až 60 mm.")
+        if "tolerance" in item:
+            tolerance = item["tolerance"]
+            if not isinstance(tolerance, dict) or set(tolerance) != {"upper", "lower"}:
+                raise DocumentError(f"Tolerance kóty „{did}“ musí obsahovat horní "
+                                    "a dolní odchylku.")
+            upper, lower = tolerance["upper"], tolerance["lower"]
+            if any(isinstance(v, bool) or not isinstance(v, (int, float))
+                   or not math.isfinite(v) or abs(v) > 1000000 for v in (upper, lower)):
+                raise DocumentError(f"Odchylky kóty „{did}“ musí být konečná čísla v mm.")
+            if any(round(v, 6) != v for v in (upper, lower)):
+                raise DocumentError(f"Odchylky kóty „{did}“ smí mít nejvýše 6 desetinných míst.")
+            if upper < 0 or lower > 0:
+                raise DocumentError(f"Horní odchylka kóty „{did}“ musí být nezáporná "
+                                    "a dolní nekladná.")
         kind = item.get("kind")
         if kind == "overall":
             if item.get("axis") not in ("x", "y", "z"):

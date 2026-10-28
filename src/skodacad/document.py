@@ -54,9 +54,10 @@ FORMAT = "skodacad"
 # a pojistkou původu („origin“) – návrh docs/p2-2-navrh-zapisu-prime-upravy.md.
 # Verze 24: vložený zdroj STEP – prvek step_import.
 # Verze 25: uložené nastavení výkresu a kóty.
-VERSION = 25
+# Verze 26: výslovné tolerance kót; starší aplikace je nesmí přehlédnout.
+VERSION = 26
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25)
+                      20, 21, 22, 23, 24, 25, 26)
 
 
 class DocumentError(ValueError):
@@ -140,6 +141,8 @@ class Document:
             from skodacad.drawing_data import check_drawing
 
             check_drawing(drawing)
+            if version < 26 and any("tolerance" in d for d in drawing.get("dimensions", [])):
+                raise DocumentError("Tolerance kót vyžadují formát modelu verze 26.")
 
         thickness_map = data.get("thickness_map")
         if thickness_map is not None:
@@ -191,7 +194,9 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": VERSION if self.drawing is not None else 24,
+            "version": (26 if self.drawing is not None and any(
+                "tolerance" in d for d in self.drawing.get("dimensions", []))
+                else 25 if self.drawing is not None else 24),
             "name": self.name,
             "description": self.description,
             "units": self.units,

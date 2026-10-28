@@ -207,7 +207,11 @@ tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo 
 ### Pracovní výkres
 
 V panelu **Měření → Příprava kót výkresu** přidej podporované kóty, zvol list a měřítko.
-U vybrané kóty lze nastavit pohled, stranu a odstup. Pro řez A–A zvol osu, polohu
+U vybrané kóty lze nastavit pohled, stranu a odstup. Tlačítkem **Nastavit toleranci**
+zadej horní (kladnou nebo nulovou) a dolní (zápornou nebo nulovou) odchylku v mm;
+například +0,1 a −0,1 se zobrazí jako ±0,1. Tolerance lze odebrat samostatným
+tlačítkem. Ukládají se s výkresem a zůstávají stejné při změně jmenovitého rozměru.
+Soubor s tolerancí vyžaduje aktuální verzi aplikace (formát 26). Pro řez A–A zvol osu, polohu
 v milimetrech a případně otočení; nastavení potvrď tlačítkem **Nastavit řez**. Náhled
 ukáže pohledy, kóty, rovinu řezu a šrafy; pokud se obsah nevejde, zvol větší list
 nebo menší měřítko.
@@ -217,7 +221,7 @@ nebo nepodporovanou křivku PDF aplikace oznámí a export zastaví. Při tisku 
 skutečnou velikost a změř kontrolní úsečku 50 mm. Výkres před výrobou zkontroluj:
 program upozorní na možná překrytí textů, kótovacích čar a některých hran, ale tato
 kontrola není úplná. Upozornění je i v exportovaném výkresu. Zatím chybí některé
-druhy kót, tolerance a úplné popisové pole. Fyzický tisk a otevření DXF v jiné CAD
+druhy kót, toleranční značky uložení a úplné popisové pole. Fyzický tisk a otevření DXF v jiné CAD
 aplikaci ještě nebyly ověřeny.
 
 ### Mapa tloušťky stěny (NDT)

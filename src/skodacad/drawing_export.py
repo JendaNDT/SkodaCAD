@@ -1,6 +1,6 @@
 """Jednostránkový pracovní výkres do PDF/DXF v milimetrech.
 
-Bez tolerancí a značek není výkres automaticky způsobilý k výrobě. PDF podporuje
+Výkres bez všech potřebných značek není automaticky způsobilý k výrobě. PDF podporuje
 úsečky, lomené B-spliny prvního stupně a kružnice (aproximace max. 0,005 mm
 na listu); ostatní křivky odmítne. DXF předává geometrii jádru přes build123d.
 """
@@ -27,6 +27,10 @@ _MAX_SEGMENTS = 4096
 
 def _check(document: Document, result: BuildResult, sheet: Sheet) -> AnnotationSet:
     require_complete_part(result)
+    if document.drawing is not None:
+        from skodacad.drawing_data import check_drawing
+
+        check_drawing(document.drawing)
     section_mark(sheet)
     values = annotations(document, result, sheet)
     if values.warnings:
