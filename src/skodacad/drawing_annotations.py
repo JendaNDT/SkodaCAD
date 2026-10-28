@@ -13,7 +13,7 @@ from build123d import Edge, GeomType
 
 from skodacad.document import Document
 from skodacad.drawing_dimensions import _cylinders, _planes, evaluate
-from skodacad.drawing_sheet import MARGIN, PlacedView, Sheet
+from skodacad.drawing_sheet import MARGIN, PlacedView, Sheet, section_key
 from skodacad.measure import _surface_axis, inner_point
 from skodacad.rebuild import BuildResult, model_signature
 
@@ -96,7 +96,8 @@ def _fits(sheet: Sheet, annotation: Annotation) -> bool:
 
 def annotations(document: Document, result: BuildResult, sheet: Sheet) -> AnnotationSet:
     if (result.model_signature != sheet.model_signature
-            or sheet.model_signature != model_signature(document)):
+            or sheet.model_signature != model_signature(document)
+            or sheet.section_key != section_key(document)):
         return AnnotationSet((), ("Náhled patří staršímu stavu modelu – vytvoř ho znovu.",))
     views = {view.name: view for view in sheet.views}
     items: list[Annotation] = []

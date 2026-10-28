@@ -2554,3 +2554,28 @@ def test_drawing_dimension_placement_in_window_is_saved_and_undoable(window):
     assert placement == {"view": "top", "side": "high", "offset": 12}
     w.session.undo()
     assert "placement" not in w.session.document.drawing["dimensions"][0]
+
+
+def test_drawing_section_can_be_set_and_removed(window):
+    w = window
+    w.drawing_section_enabled.setChecked(True)
+    w.drawing_section_axis.setCurrentText("Y")
+    w.drawing_section_position.setValue(5)
+    w.set_drawing_section()
+    assert w.session.document.drawing["section"] == {"axis": "Y", "position": 5.0,
+                                                       "flipped": False}
+    w.drawing_section_enabled.setChecked(False)
+    w.set_drawing_section()
+    assert "section" not in w.session.document.drawing
+
+
+def test_export_drawing_from_panel(window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+
+    path = tmp_path / "vykres.dxf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(path), "DXF"))
+    monkeypatch.setattr(window, "_error", lambda title, message: pytest.fail(f"{title}: {message}"))
+    window.drawing_scale.setCurrentIndex(window.drawing_scale.findData(0.5))
+    window.export_drawing()
+    assert path.exists() and path.stat().st_size > 100
+    assert "zkontroluj" in window.statusBar().currentMessage()

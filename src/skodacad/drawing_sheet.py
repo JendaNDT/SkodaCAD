@@ -11,7 +11,7 @@ from build123d import Compound
 
 from skodacad.document import Document, DocumentError
 from skodacad.drawing_data import SCALES
-from skodacad.drawing_geometry import DrawingView, project_view
+from skodacad.drawing_geometry import DrawingView, project_section, project_view
 from skodacad.rebuild import BuildResult, model_signature, require_complete_part
 
 PAPER = {"A4": (297.0, 210.0), "A3": (420.0, 297.0)}
@@ -37,6 +37,15 @@ class Sheet:
     scale: float
     views: tuple[PlacedView, ...]
     model_signature: str
+    section_label: str = ""
+    section_key: tuple[str, float, bool] | None = None
+
+
+def section_key(document: Document) -> tuple[str, float, bool] | None:
+    section = (document.drawing or {}).get("section")
+    if section is None:
+        return None
+    return (section["axis"], section["position"], section.get("flipped", False))
 
 
 def _bounds(view: DrawingView) -> tuple[float, float, float, float]:
@@ -66,6 +75,10 @@ def layout(document: Document, result: BuildResult, *, paper: str = "A4", scale:
     if result.model_signature != model_signature(document):
         raise DocumentError("Přepočet neodpovídá modelu – nejprve model přepočítej.")
     geometry = {name: project_view(part, name, scale) for name in views}
+    section = (document.drawing or {}).get("section")
+    if section is not None:
+        geometry["section"] = project_section(part, section["axis"], section["position"],
+                                               flipped=section.get("flipped", False), scale=scale)
     boxes = {name: _bounds(view) for name, view in geometry.items()}
     # Ortogonální pohledy sdílejí souřadnice: X pro čelní/horní, Z pro čelní/pravý.
     left_width = boxes["right"][2] - boxes["right"][0] if "right" in boxes else 0.0
@@ -87,9 +100,18 @@ def layout(document: Document, result: BuildResult, *, paper: str = "A4", scale:
         b = boxes["right"]
         y = placements["front"][1] if "front" in placements else y_upper - b[1]
         placements["right"] = (MARGIN + PADDING - b[0], y)
+    if section is not None:
+        rightmost = max(boxes[name][2] + offset[0] for name, offset in placements.items())
+        top = max(boxes[name][3] + offset[1] for name, offset in placements.items())
+        b = boxes["section"]
+        placements["section"] = (rightmost + GAP - b[0], top - b[3])
     width, height = PAPER[paper]
+    section_label = ""
+    if section is not None:
+        section_label = (f"Řez A–A ({section['axis']} = {section['position']:g} mm)"
+                         + (" (opačný směr)" if section.get("flipped", False) else ""))
     placed = []
-    for name in views:
+    for name in (*views, *(("section",) if section is not None else ())):
         b, offset = boxes[name], placements[name]
         translated = (b[0] + offset[0], b[1] + offset[1],
                       b[2] + offset[0], b[3] + offset[1])
@@ -98,5 +120,14 @@ def layout(document: Document, result: BuildResult, *, paper: str = "A4", scale:
                 or translated[2] > width - MARGIN - PADDING + 1e-6
                 or translated[3] > height - MARGIN - PADDING + 1e-6):
             raise DocumentError("Pohledy se na list nevejdou – zvol větší list nebo menší měřítko.")
+        if name == "section" and (translated[3] + 4 > height - MARGIN
+                                  or translated[0] + len(section_label) * 2.5 > width - MARGIN):
+            raise DocumentError("Popisek řezu se nevejde na list – změň měřítko nebo list.")
         placed.append(PlacedView(name, geometry[name], offset, translated))
-    return Sheet(paper, width, height, float(scale), tuple(placed), result.model_signature)
+    sheet = Sheet(paper, width, height, float(scale), tuple(placed), result.model_signature,
+                  section_label, section_key(document))
+    if section is not None:
+        from skodacad.drawing_section_mark import section_mark
+
+        section_mark(sheet)
+    return sheet

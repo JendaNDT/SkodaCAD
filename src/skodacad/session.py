@@ -1102,6 +1102,18 @@ class ModelSession:
         self._change(mutate)
         return did
 
+    def set_drawing_section(self, axis: str | None, position: float = 0,
+                            flipped: bool = False) -> BuildResult:
+        def mutate(doc: Document) -> None:
+            if axis is None:
+                if doc.drawing is not None:
+                    doc.drawing.pop("section", None)
+                return
+            if doc.drawing is None:
+                doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
+            doc.drawing["section"] = {"axis": axis, "position": position, "flipped": flipped}
+        return self._change(mutate)
+
     def set_drawing_dimension_placement(self, dimension_id: str, view: str, side: str,
                                         offset: float) -> BuildResult:
         dimensions = (self._require().drawing or {}).get("dimensions", [])

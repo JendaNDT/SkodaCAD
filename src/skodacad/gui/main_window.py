@@ -17,6 +17,7 @@ from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDockWidget,
@@ -400,8 +401,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(saved_box, stretch=1)
         drawing_box = QGroupBox("Příprava kót výkresu")
         drawing_layout = QVBoxLayout(drawing_box)
-        note = QLabel("Výkres a export zatím nejsou hotové. Průměr a poloměr lze navázat "
-                      "na válcovou plochu otvoru vytvořeného jednou kruhovou skicou; "
+        note = QLabel("Pracovní výkres vyžaduje kontrolu před výrobou. Průměr a poloměr "
+                      "lze navázat na válcovou plochu otvoru vytvořeného jednou kruhovou skicou; "
                       "vzdálenost na dvě rovnoběžné plochy obdélníkového vysunutí.")
         note.setWordWrap(True)
         drawing_layout.addWidget(note)
@@ -417,7 +418,25 @@ class MainWindow(QMainWindow):
         preview_settings.addWidget(self.drawing_paper)
         preview_settings.addWidget(self.drawing_scale)
         preview_settings.addWidget(preview)
+        export_drawing = QPushButton("Export PDF/DXF…")
+        export_drawing.clicked.connect(self.export_drawing)
+        preview_settings.addWidget(export_drawing)
         drawing_layout.addLayout(preview_settings)
+        section_settings = QHBoxLayout()
+        self.drawing_section_enabled = QCheckBox("Řez A–A")
+        self.drawing_section_axis = QComboBox()
+        self.drawing_section_axis.addItems(["X", "Y", "Z"])
+        self.drawing_section_position = QDoubleSpinBox()
+        self.drawing_section_position.setRange(-1000000, 1000000)
+        self.drawing_section_position.setDecimals(3)
+        self.drawing_section_position.setSuffix(" mm")
+        self.drawing_section_flipped = QCheckBox("Otočit")
+        save_section = QPushButton("Nastavit řez")
+        save_section.clicked.connect(self.set_drawing_section)
+        for widget in (self.drawing_section_enabled, self.drawing_section_axis,
+                       self.drawing_section_position, self.drawing_section_flipped, save_section):
+            section_settings.addWidget(widget)
+        drawing_layout.addLayout(section_settings)
         self.drawing_kind = QComboBox()
         for label, kind, axis in (("Celkový rozměr X", "overall", "x"),
                                   ("Celkový rozměr Y", "overall", "y"),
@@ -1394,6 +1413,7 @@ class MainWindow(QMainWindow):
         self._update_highlight()
         self._refresh_saved_measurements()
         self._refresh_drawing_dimensions()
+        self._refresh_drawing_section()
         self._refresh_thickness_map()
         self._refresh_section_panel()
         self._refresh_probe()
@@ -1807,9 +1827,31 @@ class MainWindow(QMainWindow):
             if record["id"] == selected_id:
                 self.drawing_list.setCurrentItem(item)
 
+    def _refresh_drawing_section(self) -> None:
+        document = self.session.document
+        section = (document.drawing or {}).get("section") if document else None
+        self.drawing_section_enabled.setChecked(section is not None)
+        if section:
+            self.drawing_section_axis.setCurrentText(section["axis"])
+            self.drawing_section_position.setValue(section["position"])
+            self.drawing_section_flipped.setChecked(section.get("flipped", False))
+
+    def set_drawing_section(self) -> None:
+        axis = (self.drawing_section_axis.currentText()
+                if self.drawing_section_enabled.isChecked() else None)
+        try:
+            self._busy(lambda: self.session.set_drawing_section(
+                axis, self.drawing_section_position.value(),
+                self.drawing_section_flipped.isChecked()))
+        except DocumentError as exc:
+            self._error("Řez nelze nastavit", str(exc))
+            return
+        self._refresh_all()
+
     def show_drawing_preview(self) -> None:
         from skodacad.drawing_annotations import annotations
         from skodacad.drawing_geometry import DrawingGeometryError
+        from skodacad.drawing_section_mark import section_mark
         from skodacad.drawing_sheet import layout
         from skodacad.gui.drawing_preview import DrawingPreviewDialog
 
@@ -1820,12 +1862,40 @@ class MainWindow(QMainWindow):
             sheet = self._busy(lambda: layout(self.session.document, self.session.result,
                                              paper=self.drawing_paper.currentText(),
                                              scale=self.drawing_scale.currentData()))
+            section_mark(sheet)
         except (DocumentError, DrawingGeometryError) as exc:
             self._error("Náhled výkresu nelze vytvořit", str(exc))
             return
         dimensions = self._busy(lambda: annotations(self.session.document, self.session.result,
                                                     sheet))
         DrawingPreviewDialog(sheet, dimensions, self).exec()
+
+    def export_drawing(self) -> None:
+        from skodacad.drawing_export import export
+        from skodacad.drawing_geometry import DrawingGeometryError
+        from skodacad.drawing_sheet import layout
+
+        filename, chosen = QFileDialog.getSaveFileName(
+            self, "Export pracovního výkresu", "vykres.pdf",
+            "PDF – výkres (*.pdf);;DXF – výkres (*.dxf)")
+        if not filename:
+            return
+        path = Path(filename)
+        if not path.suffix:
+            path = path.with_suffix(".dxf" if chosen.startswith("DXF") else ".pdf")
+        try:
+            self.session._require_computed("export výkresu")
+            if self.session.document is None:
+                raise DocumentError("Není otevřený žádný model.")
+            sheet = self._busy(lambda: layout(self.session.document, self.session.result,
+                                             paper=self.drawing_paper.currentText(),
+                                             scale=self.drawing_scale.currentData()))
+            self._busy(lambda: export(self.session.document, self.session.result, sheet, path))
+        except (DocumentError, DrawingGeometryError, OSError, ValueError) as exc:
+            self._error("Výkres nelze vyvézt", str(exc))
+            return
+        self.statusBar().showMessage("Pracovní výkres uložen; zkontroluj jej před výrobou.",
+                                     10000)
 
     def _drawing_selection_changed(self, _row: int) -> None:
         item = self.drawing_list.currentItem()
