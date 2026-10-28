@@ -7,7 +7,6 @@ import pytest
 
 from conftest import EXAMPLES, box_features, make_doc
 from skodacad import Document, DocumentError, rebuild
-from skodacad.document import VERSION
 from skodacad.session import ModelSession
 from skodacad.worker import decode_result, encode_result
 
@@ -33,7 +32,7 @@ def test_all_example_recipes_round_trip_without_aliasing_or_source_write(path, t
     loaded.save(destination)
     restored = Document.load(destination)
     assert restored == expected
-    assert restored.to_dict()["version"] == VERSION == 24
+    assert restored.to_dict()["version"] == 24
     assert path.read_bytes() == original_bytes
 
 

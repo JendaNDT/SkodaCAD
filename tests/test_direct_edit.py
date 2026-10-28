@@ -362,7 +362,7 @@ def test_w01_w02_old_files_open_and_save_as_current(tmp_path):
     path = tmp_path / "stary.json"
     model().save(path)
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["version"] == VERSION == 24 and Document.load(path) == model()
+    assert saved["version"] == 24 and Document.load(path) == model()
 
 
 def test_w03_both_types_survive_save_and_open(tmp_path):
@@ -378,7 +378,7 @@ def test_w03_both_types_survive_save_and_open(tmp_path):
 
 def test_w04_newer_version_is_refused():
     with pytest.raises(DocumentError, match="novější"):
-        Document.from_dict(model().to_dict() | {"version": 25})
+        Document.from_dict(model().to_dict() | {"version": VERSION + 1})
 
 
 @pytest.mark.parametrize(("face", "words"), [

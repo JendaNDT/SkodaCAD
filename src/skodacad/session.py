@@ -1058,6 +1058,61 @@ class ModelSession:
                 return index
         raise DocumentError(f"Měření „{measurement_id}“ v modelu není.")
 
+    # --- vazby výkresových kót --------------------------------------------------------------
+
+    def drawing_dimensions(self) -> list[Any]:
+        from skodacad.drawing_dimensions import evaluate
+
+        document = self._require()
+        self._require_computed("vyhodnocení kót")
+        return [evaluate(document, self.result, item)
+                for item in (document.drawing or {}).get("dimensions", [])]
+
+    def add_drawing_dimension(self, kind: str, *, axis: str = "", face: Any = None,
+                              faces: list[Any] | None = None) -> str:
+        from skodacad.drawing_dimensions import new_cylinder, new_distance, new_overall
+
+        document = self._require()
+        self._require_computed("uložení kóty")
+        dimensions = (document.drawing or {}).get("dimensions", [])
+        used = {item["id"] for item in dimensions}
+        number = 1
+        while f"d{number}" in used:
+            number += 1
+        did = f"d{number}"
+        if kind == "overall":
+            record = new_overall(document, self.result, did, axis)
+        elif kind == "distance":
+            selected, edges = split_shapes(self._model_shapes(faces or []))
+            if len(selected) != 2 or edges:
+                raise DocumentError("Vyber právě dvě rovinné plochy.")
+            record = new_distance(document, self.result, did, selected)
+        else:
+            shapes = self._model_shapes([face]) if face is not None else []
+            faces, edges = split_shapes(shapes)
+            if len(faces) != 1 or edges:
+                raise DocumentError("Vyber právě jednu válcovou plochu otvoru.")
+            record = new_cylinder(document, self.result, did, faces[0], kind)
+
+        def mutate(doc: Document) -> None:
+            if doc.drawing is None:
+                doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
+            doc.drawing.setdefault("dimensions", []).append(record)
+
+        self._change(mutate)
+        return did
+
+    def remove_drawing_dimension(self, dimension_id: str) -> BuildResult:
+        dimensions = (self._require().drawing or {}).get("dimensions", [])
+        if not any(item["id"] == dimension_id for item in dimensions):
+            raise DocumentError(f"Kóta „{dimension_id}“ ve výkresu není.")
+
+        def mutate(doc: Document) -> None:
+            doc.drawing["dimensions"] = [item for item in doc.drawing["dimensions"]
+                                         if item["id"] != dimension_id]
+
+        return self._change(mutate)
+
     # --- řez modelem (jen pohled, model se nemění) -----------------------------------------
 
     def set_section_axis(self, axis: str, position: float | None = None,

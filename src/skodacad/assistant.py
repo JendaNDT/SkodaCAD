@@ -422,6 +422,11 @@ class ModelTools:
         kept = "ndt" not in model and current is not None and bool(current.ndt)
         if kept:  # studie jsou práce uživatele – přestavba dílu je jen označí jako zastaralé
             model["ndt"] = copy.deepcopy(current.ndt)
+        # Výkres je práce uživatele: AI jej nesmí změnit ani zahodit při náhradě dílu.
+        if "drawing" in model and model["drawing"] != (current.drawing if current else None):
+            raise ToolInputError("Výkres lze upravit jen ve výkresových nástrojích.")
+        if current is not None and current.drawing is not None:
+            model["drawing"] = copy.deepcopy(current.drawing)
         self.session.replace_document(model)
         return ToolOutput("Model nahrazen." + (" NDT studie uživatele zůstaly." if kept else ""),
                           changed=True)

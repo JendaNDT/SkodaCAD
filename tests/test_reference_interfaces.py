@@ -63,12 +63,14 @@ def runner():
 
 @pytest.mark.parametrize("kind", FACTORIES)
 @pytest.mark.parametrize("repaired", [False, True])
-def test_reference_states_use_the_unchanged_nine_key_bin_tools_protocol(kind, repaired):
+def test_reference_states_use_bin_tools_protocol_with_model_signature(kind, repaired):
     result = rebuild(FACTORIES[kind](repaired))
     payload = encode_result(result)
     assert set(payload) == {"part", "parameters", "statuses", "parts_before", "sketches",
-                            "measurements", "thickness_map", "map_error", "ndt"}
+                            "measurements", "thickness_map", "map_error", "ndt",
+                            "model_signature"}
     restored = decode_result(pickle.loads(pickle.dumps(payload)))
+    assert restored.model_signature == result.model_signature
     assert restored.statuses == result.statuses
     assert restored.measurements == result.measurements and restored.ndt == result.ndt
     check(restored, kind, repaired)

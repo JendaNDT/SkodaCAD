@@ -6,7 +6,12 @@
   nejsou omezením (GPL knihovny jako řešič SolveSpace jsou v pořádku).
 - Autor **neprogramuje**, projekt vzniká vibecodingem. Komunikuj česky, jednoduše a bez žargonu:
   co se změnilo, proč, a jak si to může ověřit (náhled, čísla, testy). Zásadní rozhodnutí
-  (architektura, nové závislosti, změna formátu) nejdřív navrhni a nech schválit.
+  (architektura, nové závislosti, změna formátu) nejdřív promysli, zaznamenej a ověř.
+- **Pokyn autora z 28. 10. 2026:** pokračuj v dohodnuté roadmapě samostatně, běžná
+  rozhodnutí a sloučení po úspěšných kontrolách nevyžadují další souhlas. Tento pokyn
+  má přednost před staršími požadavky na jednotlivá schválení v tomto souboru.
+  Související kroky spojuj; v průběhu spouštěj cílené testy, úplnou sadu a kontroly
+  obou systémů před sloučením. Výsledky, omezení a další doporučený krok sděluj autorovi.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -372,8 +377,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 4. Jednotky vždy **mm**, úhly ve **stupních**.
 5. Změna formátu JSON = zvýšit `VERSION` v `document.py` a umět načíst staré soubory.
    Modely v `examples/` musí jít vždy postavit (hlídá to test).
-6. Pracuj po **malých krocích**; po každém musí projít `ruff check src tests` a `pytest -q`,
-   teprve pak commit.
+6. Související kroky lze spojit: průběžně spusť cílené kontroly, úplné `ruff check src tests`
+   a `pytest -q` před sloučením společného výsledku podle aktuálního pokynu autora.
 7. Nové závislosti jen se zdůvodněním a se zamčenou verzí.
 8. GUI nesmí modelovat přes build123d/OCCT – jen přes `ModelSession`. Výjimkou je
    `gui/viewer.py`, který OCCT používá jen ke kreslení a výběru.

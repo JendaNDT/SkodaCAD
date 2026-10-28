@@ -49,12 +49,14 @@ def test_core_cli_and_ai_report_the_same_actual_body_counts(body_case, tmp_path,
     assert path.read_bytes() == original
 
 
-def test_body_messages_survive_existing_transfer_without_new_protocol_fields(body_case):
+def test_body_messages_survive_transfer_with_model_signature(body_case):
     document, volume, count, transitions, _path = body_case
     encoded = encode_result(rebuild(document))
     assert set(encoded) == {"part", "parameters", "statuses", "parts_before", "sketches",
-                            "measurements", "thickness_map", "map_error", "ndt"}
+                            "measurements", "thickness_map", "map_error", "ndt",
+                            "model_signature"}
     restored = decode_result(pickle.loads(pickle.dumps(encoded)))
+    assert restored.model_signature == encoded["model_signature"]
     assert_transitions(restored, transitions)
     assert restored.part.volume == pytest.approx(volume, rel=1e-9)
     assert len(restored.part.solids()) == count

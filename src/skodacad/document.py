@@ -53,9 +53,10 @@ FORMAT = "skodacad"
 # verze 23 přímé úpravy ploch: prvky „move_face“ a „face_diameter“ s odkazem na plochu
 # a pojistkou původu („origin“) – návrh docs/p2-2-navrh-zapisu-prime-upravy.md.
 # Verze 24: vložený zdroj STEP – prvek step_import.
-VERSION = 24
+# Verze 25: uložené nastavení výkresu a kóty.
+VERSION = 25
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24)
+                      20, 21, 22, 23, 24, 25)
 
 
 class DocumentError(ValueError):
@@ -73,6 +74,7 @@ class Document:
     measurements: list[dict[str, Any]] = field(default_factory=list)  # uložená měření
     thickness_map: dict[str, Any] | None = None  # nastavení mapy tloušťky stěny (NDT)
     ndt: dict[str, Any] | None = None  # NDT studie {"studies": [...]} (nemění těleso)
+    drawing: dict[str, Any] | None = None  # výkres (nemění těleso)
 
     @classmethod
     def from_dict(cls, data: Any) -> Document:
@@ -131,6 +133,14 @@ class Document:
             if not isinstance(measurement.get("kind"), str):
                 raise DocumentError(f"Měření „{measurement_id}“ nemá „kind“ (druh měření).")
 
+        drawing = data.get("drawing")
+        if drawing is not None:
+            if version < 25:
+                raise DocumentError("Uložený výkres vyžaduje formát modelu verze 25.")
+            from skodacad.drawing_data import check_drawing
+
+            check_drawing(drawing)
+
         thickness_map = data.get("thickness_map")
         if thickness_map is not None:
             from skodacad.thickness_map import MapError, MapSettings
@@ -167,6 +177,7 @@ class Document:
             measurements=copy.deepcopy(measurements),
             thickness_map=copy.deepcopy(thickness_map),
             ndt=copy.deepcopy(ndt),
+            drawing=copy.deepcopy(drawing),
         )
         if ndt is not None and "design" in ndt:
             from skodacad.ndt.design import Design, DesignError
@@ -180,7 +191,7 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": VERSION,
+            "version": VERSION if self.drawing is not None else 24,
             "name": self.name,
             "description": self.description,
             "units": self.units,
@@ -193,6 +204,8 @@ class Document:
             data["thickness_map"] = copy.deepcopy(self.thickness_map)
         if self.ndt is not None:
             data["ndt"] = copy.deepcopy(self.ndt)
+        if self.drawing is not None:
+            data["drawing"] = copy.deepcopy(self.drawing)
         return data
 
     @classmethod

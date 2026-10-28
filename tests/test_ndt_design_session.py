@@ -16,7 +16,7 @@ EXAMPLE = EXAMPLES / "ndt" / "navrh_kapsa.json"
 
 
 def test_format_22_and_backwards_compatibility(tmp_path):
-    assert VERSION == 24
+    assert VERSION == 25
     document = Document.load(EXAMPLE)
     design = Design.from_dict(document.ndt["design"])
     assert design.study == "s3"
