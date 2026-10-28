@@ -476,6 +476,24 @@ class MainWindow(QMainWindow):
                        apply_placement):
             placement.addWidget(widget)
         drawing_layout.addLayout(placement)
+        tolerance_row = QHBoxLayout()
+        self.dimension_upper = QDoubleSpinBox()
+        self.dimension_lower = QDoubleSpinBox()
+        for control in (self.dimension_upper, self.dimension_lower):
+            control.setDecimals(6)
+            control.setSuffix(" mm")
+        self.dimension_upper.setRange(0, 1000000)
+        self.dimension_lower.setRange(-1000000, 0)
+        self.dimension_upper.setPrefix("Horní +")
+        self.dimension_lower.setPrefix("Dolní ")
+        save_tolerance = QPushButton("Nastavit toleranci")
+        save_tolerance.clicked.connect(self.set_drawing_dimension_tolerance)
+        remove_tolerance = QPushButton("Odebrat toleranci")
+        remove_tolerance.clicked.connect(self.remove_drawing_dimension_tolerance)
+        for widget in (self.dimension_upper, self.dimension_lower,
+                       save_tolerance, remove_tolerance):
+            tolerance_row.addWidget(widget)
+        drawing_layout.addLayout(tolerance_row)
         layout.addWidget(drawing_box)
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
@@ -1818,6 +1836,9 @@ class MainWindow(QMainWindow):
                 text = f"✕ {label}: {result.error}"
             else:
                 text = f"{label}: {format_value(result.value, 'mm')}"
+                if "tolerance" in record:
+                    tol = record["tolerance"]
+                    text += f" (odchylky +{tol['upper']:g} / {tol['lower']:g} mm)"
             item = QListWidgetItem(f"{record['id']} — {text}")
             item.setData(_FEATURE_ID, record["id"])
             if result is not None and result.error:
@@ -1945,6 +1966,9 @@ class MainWindow(QMainWindow):
         self.dimension_side.setCurrentIndex(self.dimension_side.findData(
             placement.get("side", "low")))
         self.dimension_offset.setValue(placement.get("offset", 6))
+        tolerance = record.get("tolerance") or {}
+        self.dimension_upper.setValue(tolerance.get("upper", 0))
+        self.dimension_lower.setValue(tolerance.get("lower", 0))
 
     def set_drawing_dimension_placement(self) -> None:
         item = self.drawing_list.currentItem()
@@ -1958,6 +1982,24 @@ class MainWindow(QMainWindow):
             self._error("Kótu nelze umístit", str(exc))
             return
         self._refresh_all()
+
+    def _apply_drawing_tolerance(self, upper: float | None, lower: float | None) -> None:
+        item = self.drawing_list.currentItem()
+        if item is None:
+            return
+        try:
+            self._busy(lambda: self.session.set_drawing_dimension_tolerance(
+                item.data(_FEATURE_ID), upper, lower))
+        except DocumentError as exc:
+            self._error("Toleranci nelze nastavit", str(exc))
+            return
+        self._refresh_all()
+
+    def set_drawing_dimension_tolerance(self) -> None:
+        self._apply_drawing_tolerance(self.dimension_upper.value(), self.dimension_lower.value())
+
+    def remove_drawing_dimension_tolerance(self) -> None:
+        self._apply_drawing_tolerance(None, None)
 
     def add_drawing_dimension(self) -> None:
         kind, axis = self.drawing_kind.currentData()

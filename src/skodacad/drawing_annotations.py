@@ -139,6 +139,19 @@ def annotations(document: Document, result: BuildResult, sheet: Sheet) -> Annota
             label = f"{value.value:.9f}".rstrip("0").rstrip(".")
             if float(label) == 0 and value.value != 0:
                 raise ValueError("Rozměr je příliš malý pro přesné zobrazení.")
+            tolerance = record.get("tolerance")
+            if tolerance is not None:
+                def fmt(number: float) -> str:
+                    return f"{number:.9f}".rstrip("0").rstrip(".") or "0"
+                upper, lower = tolerance["upper"], tolerance["lower"]
+                if value.value + lower < 0:
+                    raise ValueError("Dolní mez rozměru je záporná; uprav toleranci.")
+                if any(float(fmt(v)) != v for v in (upper, lower)):
+                    raise ValueError("Odchylka má příliš mnoho desetinných míst pro zobrazení.")
+                if upper == -lower:
+                    label += " ±" + fmt(upper)
+                else:
+                    label += " +" + fmt(upper) + "/-" + fmt(-lower)
             if face is None:
                 if kind == "overall":
                     box = result.part.bounding_box()

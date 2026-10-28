@@ -1124,6 +1124,23 @@ class ModelSession:
         return self._change(lambda doc: doc.drawing["dimensions"][index].update(
             placement=placement))
 
+    def set_drawing_dimension_tolerance(self, dimension_id: str,
+                                        upper: float | None, lower: float | None) -> BuildResult:
+        dimensions = (self._require().drawing or {}).get("dimensions", [])
+        index = next((i for i, item in enumerate(dimensions)
+                        if item["id"] == dimension_id), None)
+        if index is None:
+            raise DocumentError(f"Kóta „{dimension_id}“ ve výkresu není.")
+        if (upper is None) != (lower is None):
+            raise DocumentError("Zadej obě odchylky nebo toleranci odeber.")
+        def mutate(doc: Document) -> None:
+            item = doc.drawing["dimensions"][index]
+            if upper is None:
+                item.pop("tolerance", None)
+            else:
+                item["tolerance"] = {"upper": upper, "lower": lower}
+        return self._change(mutate)
+
     def remove_drawing_dimension(self, dimension_id: str) -> BuildResult:
         dimensions = (self._require().drawing or {}).get("dimensions", [])
         if not any(item["id"] == dimension_id for item in dimensions):

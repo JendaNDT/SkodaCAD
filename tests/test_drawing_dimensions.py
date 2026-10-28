@@ -75,7 +75,7 @@ def test_invalid_drawing_and_old_version_are_rejected():
     data["drawing"] = {"dimensions": [{"id": "d1", "kind": "diameter"}]}
     with pytest.raises(DocumentError):
         Document.from_dict(data)
-    data["version"] = VERSION - 1
+    data["version"] = 24
     with pytest.raises(DocumentError, match="verze 25"):
         Document.from_dict(data)
 
@@ -164,3 +164,39 @@ def test_session_distance_accepts_two_selected_faces_and_undo():
     assert session.drawing_dimensions()[0].value == pytest.approx(15)
     session.undo()
     assert session.drawing_dimensions()[0].value == pytest.approx(10)
+
+
+def test_tolerances_roundtrip_version_and_undo():
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(model().to_dict())
+    did = session.add_drawing_dimension("overall", axis="x")
+    session.set_drawing_dimension_tolerance(did, 0.1, -0.05)
+    data = session.document.to_dict()
+    assert data["version"] == 26
+    assert Document.from_dict(data).drawing == session.document.drawing
+    old = copy.deepcopy(data)
+    old["version"] = 25
+    with pytest.raises(DocumentError, match="verze 26"):
+        Document.from_dict(old)
+    session.undo()
+    assert session.document.to_dict()["version"] == 25
+    session.redo()
+    assert session.document.to_dict()["drawing"]["dimensions"][0]["tolerance"] == {
+        "upper": 0.1, "lower": -0.05}
+    session.set_drawing_dimension_tolerance(did, None, None)
+    assert session.document.to_dict()["version"] == 25
+
+
+@pytest.mark.parametrize("upper,lower", [(float("nan"), 0), (0, float("inf")),
+                                         (-0.1, 0), (0, 0.1), (True, 0),
+                                         (0.0000001, 0)])
+def test_invalid_tolerances_are_rejected_without_mutation(upper, lower):
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(model().to_dict())
+    did = session.add_drawing_dimension("overall", axis="x")
+    before = session.document.to_dict()
+    with pytest.raises(DocumentError):
+        session.set_drawing_dimension_tolerance(did, upper, lower)
+    assert session.document.to_dict() == before
