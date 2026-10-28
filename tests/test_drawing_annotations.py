@@ -157,3 +157,23 @@ def test_overall_circle_extension_lines_start_on_real_circle():
     for source, _ in dims.items[0].lines[:2]:
         x, y = source[0] - top.offset[0], source[1] - top.offset[1]
         assert (x * x + y * y) ** 0.5 == pytest.approx(20, abs=1e-5)
+
+
+@pytest.mark.parametrize(("plane", "view"), [("XY", "top"), ("XZ", "front"), ("YZ", "right")])
+def test_hole_dimension_uses_view_along_its_axis(plane, view):
+    doc = Document(features=[
+        {"id": "s", "type": "sketch", "plane": "XY", "elements": [
+            {"shape": "rectangle", "width": 40, "height": 30}]},
+        {"id": "body", "type": "extrude", "sketch": "s", "distance": 20},
+        {"id": "hs", "type": "sketch", "plane": plane, "elements": [
+            {"shape": "circle", "diameter": 8,
+             "center": [0, 0] if plane == "XY" else [0, 10]}]},
+        {"id": "hole", "type": "extrude", "sketch": "hs", "operation": "cut",
+         "through_all": True},
+    ])
+    result = rebuild(doc)
+    face = next(f for f in result.part.faces() if f.geom_type == GeomType.CYLINDER)
+    doc.drawing = {"dimensions": [new_cylinder(doc, result, "d1", face, "diameter")]}
+    _, dims = annotated(doc, result)
+    assert not dims.warnings
+    assert dims.items[0].view == view and dims.items[0].text == "Ø8"
