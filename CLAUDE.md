@@ -1199,6 +1199,11 @@ s výslovným souhlasem autora.
 **P2.4 — zadáno autorem 27. 10. 2026:** ovládání přímých úprav ve 3D, náhled a
 potvrzení v okně i pro návrhy AI. P2.5 přijetí je samostatný krok.
 NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P4.1 — autor schválil V1–V9 slovy „schvaluji vše“:**
+[návrh výkresu](docs/p4-1-navrh-vykresu.md). P4.2 připravuje výpočetní
+[geometrii pohledů a řezu](docs/p4-2-geometrie-pohledu.md); P4.3 musí předem
+samostatně navrhnout ukládání a vazby kót. Schválení nenahrazuje souhlas se
+sloučením do main.
 Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
