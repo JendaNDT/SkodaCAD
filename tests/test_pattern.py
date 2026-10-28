@@ -51,6 +51,13 @@ def hole_centers(part, diameter=6):
     return sorted(centers)
 
 
+def assert_hole_centers(part, expected):
+    actual = hole_centers(part)
+    assert len(actual) == len(expected)
+    for center, target in zip(actual, expected, strict=True):
+        assert center == pytest.approx(target, abs=1e-6)
+
+
 # --- kruhové pole --------------------------------------------------------------------
 
 
@@ -63,7 +70,7 @@ def test_circular_pattern_full_circle():
     expected = sorted((round(25 * math.cos(math.radians(a)), 6) + 0.0,
                        round(25 * math.sin(math.radians(a)), 6) + 0.0)
                       for a in range(0, 360, 60))
-    assert hole_centers(part) == pytest.approx(expected, abs=1e-6)
+    assert_hole_centers(part, expected)
 
 
 def test_circular_pattern_partial_angle_puts_last_copy_on_the_edge():
@@ -75,7 +82,7 @@ def test_circular_pattern_partial_angle_puts_last_copy_on_the_edge():
     expected = sorted((round(20 * math.cos(math.radians(a)), 6) + 0.0,
                        round(20 * math.sin(math.radians(a)), 6) + 0.0)
                       for a in (0, 30, 60, 90))
-    assert hole_centers(part) == pytest.approx(expected, abs=1e-6)
+    assert_hole_centers(part, expected)
 
 
 def test_circular_pattern_around_axis_through_point():
@@ -84,7 +91,7 @@ def test_circular_pattern_around_axis_through_point():
         {"id": "pole", "type": "pattern", "features": ["dira"], "kind": "circular",
          "count": 2, "center": [30, 0, 0]},
     ])
-    assert hole_centers(part) == pytest.approx([(20, 0), (40, 0)], abs=1e-6)
+    assert_hole_centers(part, [(20, 0), (40, 0)])
 
 
 def test_circular_pattern_of_revolved_boss_around_x():
@@ -131,7 +138,7 @@ def test_grid_pattern_with_negative_spacing():
     ])
     assert part.volume == pytest.approx(PLATE_VOLUME - 12 * math.pi * 3**2 * 5)
     expected = sorted((40 - 15 * i + 0.0, 20 - 20 * j + 0.0) for i in range(4) for j in range(3))
-    assert hole_centers(part) == pytest.approx(expected, abs=1e-6)
+    assert_hole_centers(part, expected)
 
 
 def test_pattern_count_from_parameter_and_original_change_updates_copies():
@@ -198,7 +205,7 @@ def test_mirror_feature_across_yz():
         {"id": "zrc", "type": "mirror", "features": ["dira"], "plane": "YZ"},
     ])
     assert part.volume == pytest.approx(PLATE_VOLUME - 2 * math.pi * 3**2 * 5)
-    assert hole_centers(part) == pytest.approx([(-30, 10), (30, 10)], abs=1e-6)
+    assert_hole_centers(part, [(-30, 10), (30, 10)])
     assert part.center().X == pytest.approx(0, abs=1e-6)
 
 
@@ -207,7 +214,7 @@ def test_mirror_feature_across_offset_plane():
         {"id": "zrc", "type": "mirror", "features": ["dira"], "plane": "XZ", "offset": 5},
     ])
     # posun jde po normále roviny jako u skici – u XZ je to −Y, rovina je tedy v y = −5
-    assert hole_centers(part) == pytest.approx([(30, -20), (30, 10)], abs=1e-6)
+    assert_hole_centers(part, [(30, -20), (30, 10)])
 
 
 def test_mirror_whole_part_across_its_face_doubles_it():
@@ -218,7 +225,7 @@ def test_mirror_whole_part_across_its_face_doubles_it():
     bbox = part.bounding_box()
     assert (bbox.min.X, bbox.max.X) == pytest.approx((-50, 150))
     assert len(part.solids()) == 1
-    assert hole_centers(part) == pytest.approx([(30, 0), (70, 0)], abs=1e-6)
+    assert_hole_centers(part, [(30, 0), (70, 0)])
 
 
 def test_mirror_whole_half_part_makes_symmetric_part():
@@ -245,7 +252,7 @@ def test_mirror_of_pattern_and_pattern_of_mirror():
     assert part.volume == pytest.approx(PLATE_VOLUME - 8 * math.pi * 3**2 * 5)
     expected = sorted((sx * x + 0.0, sy * 15.0) for x in (30, 42) for sx in (1, -1)
                       for sy in (1, -1))
-    assert hole_centers(part) == pytest.approx(expected, abs=1e-6)
+    assert_hole_centers(part, expected)
 
 
 # --- chyby --------------------------------------------------------------------------
