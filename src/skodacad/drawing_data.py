@@ -1,6 +1,7 @@
 """Kontrola uložených dat výkresu; neprovádí výpočet ani export."""
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -28,6 +29,18 @@ def check_drawing(drawing: Any) -> None:
         if not isinstance(did, str) or not did.strip() or did in seen:
             raise DocumentError("Kóta musí mít jedinečné neprázdné textové id.")
         seen.add(did)
+        placement = item.get("placement")
+        if placement is not None:
+            if not isinstance(placement, dict):
+                raise DocumentError(f"Umístění kóty „{did}“ musí být objekt.")
+            if placement.get("view") not in ("front", "top", "right"):
+                raise DocumentError(f"Kóta „{did}“ má neplatný pohled.")
+            if placement.get("side") not in ("low", "high"):
+                raise DocumentError(f"Kóta „{did}“ má neplatnou stranu.")
+            offset = placement.get("offset")
+            if (isinstance(offset, bool) or not isinstance(offset, (int, float))
+                    or not math.isfinite(offset) or not 1 <= offset <= 60):
+                raise DocumentError(f"Odstup kóty „{did}“ musí být 1 až 60 mm.")
         kind = item.get("kind")
         if kind == "overall":
             if item.get("axis") not in ("x", "y", "z"):

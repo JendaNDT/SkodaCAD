@@ -36,6 +36,7 @@ class Sheet:
     height: float
     scale: float
     views: tuple[PlacedView, ...]
+    model_signature: str
 
 
 def _bounds(view: DrawingView) -> tuple[float, float, float, float]:
@@ -98,4 +99,4 @@ def layout(document: Document, result: BuildResult, *, paper: str = "A4", scale:
                 or translated[3] > height - MARGIN - PADDING + 1e-6):
             raise DocumentError("Pohledy se na list nevejdou – zvol větší list nebo menší měřítko.")
         placed.append(PlacedView(name, geometry[name], offset, translated))
-    return Sheet(paper, width, height, float(scale), tuple(placed))
+    return Sheet(paper, width, height, float(scale), tuple(placed), result.model_signature)
