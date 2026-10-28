@@ -177,3 +177,33 @@ def test_hole_dimension_uses_view_along_its_axis(plane, view):
     _, dims = annotated(doc, result)
     assert not dims.warnings
     assert dims.items[0].view == view and dims.items[0].text == "Ø8"
+
+
+def test_preview_draws_a_visible_dimension():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    widgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+    from PySide6.QtGui import QImage
+
+    from skodacad.gui.drawing_preview import SheetPreview
+
+    app = widgets.QApplication.instance() or widgets.QApplication([])
+    doc = model()
+    result = rebuild(doc)
+    doc.drawing = {"dimensions": [new_overall(doc, result, "d1", "x")]}
+    sheet, dims = annotated(doc, result)
+    widget = SheetPreview(sheet, dims)
+    widget.resize(600, 450)
+    image = QImage(widget.size(), QImage.Format.Format_ARGB32)
+    image.fill(0)
+    widget.render(image)
+    colored = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.blue() > color.red() + 25 and color.blue() > color.green() + 10:
+                colored += 1
+    assert colored > 10
+    widget.close()
+    assert app is not None
