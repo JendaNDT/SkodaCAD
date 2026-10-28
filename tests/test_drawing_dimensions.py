@@ -200,3 +200,25 @@ def test_invalid_tolerances_are_rejected_without_mutation(upper, lower):
     with pytest.raises(DocumentError):
         session.set_drawing_dimension_tolerance(did, upper, lower)
     assert session.document.to_dict() == before
+
+
+def test_title_block_is_versioned_and_undoable():
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(model().to_dict())
+    session.set_drawing_title_block("V-12", "B", "Novák", "28.10.2026")
+    data = session.document.to_dict()
+    assert data["version"] == 27
+    assert Document.from_dict(data).drawing["title_block"]["number"] == "V-12"
+    old = copy.deepcopy(data)
+    old["version"] = 26
+    with pytest.raises(DocumentError, match="verze 27"):
+        Document.from_dict(old)
+    session.undo()
+    assert session.document.to_dict()["version"] == 24
+    session.redo()
+    assert session.document.drawing["title_block"]["revision"] == "B"
+    before = session.document.to_dict()
+    with pytest.raises(DocumentError, match="popisového pole"):
+        session.set_drawing_title_block("špatný\ntext", "", "", "")
+    assert session.document.to_dict() == before

@@ -28,6 +28,15 @@ def check_drawing(drawing: Any) -> None:
             raise DocumentError("Poloha řezu musí být konečné číslo v mm.")
         if not isinstance(section.get("flipped", False), bool):
             raise DocumentError("Otočení řezu musí být ano nebo ne.")
+    if "title_block" in drawing:
+        title = drawing["title_block"]
+        if not isinstance(title, dict) or set(title) != {"number", "revision", "author", "date"}:
+            raise DocumentError("Popisové pole musí obsahovat číslo, revizi, autora a datum.")
+        for key, limit in (("number", 24), ("revision", 12), ("author", 24), ("date", 16)):
+            value = title[key]
+            if (not isinstance(value, str) or len(value) > limit
+                    or any(ord(c) < 32 or ord(c) == 127 for c in value)):
+                raise DocumentError(f"Údaj popisového pole „{key}“ je neplatný nebo příliš dlouhý.")
     dimensions = drawing.get("dimensions", [])
     if not isinstance(dimensions, list):
         raise DocumentError("Kóty výkresu musí být seznam.")

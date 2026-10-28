@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -422,6 +423,9 @@ class MainWindow(QMainWindow):
         export_drawing.clicked.connect(self.export_drawing)
         preview_settings.addWidget(export_drawing)
         drawing_layout.addLayout(preview_settings)
+        title_button = QPushButton("Popisové pole…")
+        title_button.clicked.connect(self.edit_drawing_title_block)
+        drawing_layout.addWidget(title_button)
         section_settings = QHBoxLayout()
         self.drawing_section_enabled = QCheckBox("Řez A–A")
         self.drawing_section_axis = QComboBox()
@@ -1869,6 +1873,39 @@ class MainWindow(QMainWindow):
             return
         self._refresh_all()
 
+    def edit_drawing_title_block(self) -> None:
+        if self.session.document is None:
+            return
+        saved = (self.session.document.drawing or {}).get("title_block", {})
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Popisové pole výkresu")
+        form = QFormLayout(dialog)
+        controls = {}
+        for key, label, limit in (("number", "Číslo výkresu", 24), ("revision", "Revize", 12),
+                                  ("author", "Autor", 24), ("date", "Datum", 16)):
+            field = QLineEdit(saved.get(key, ""))
+            field.setMaxLength(limit)
+            form.addRow(label, field)
+            controls[key] = field
+        note = QLabel("Název dílu a materiál se přebírají z modelu.")
+        note.setWordWrap(True)
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if self._exec_dialog(dialog) != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._busy(lambda: self.session.set_drawing_title_block(
+                *(controls[key].text().strip() for key in
+                  ("number", "revision", "author", "date"))))
+        except DocumentError as exc:
+            self._error("Popisové pole nelze uložit", str(exc))
+            return
+        self._refresh_all()
+
     def show_drawing_preview(self) -> None:
         from skodacad.drawing_annotations import annotations
         from skodacad.drawing_geometry import DrawingGeometryError
@@ -1889,7 +1926,14 @@ class MainWindow(QMainWindow):
             return
         dimensions = self._busy(lambda: annotations(self.session.document, self.session.result,
                                                     sheet))
-        DrawingPreviewDialog(sheet, dimensions, self).exec()
+        try:
+            from skodacad.drawing_export import _title_rows
+
+            _title_rows(self.session.document, sheet, dimensions)
+        except DocumentError as exc:
+            self._error("Náhled výkresu nelze vytvořit", str(exc))
+            return
+        DrawingPreviewDialog(sheet, dimensions, self, document=self.session.document).exec()
 
     def export_drawing(self) -> None:
         from skodacad.drawing_annotations import annotations

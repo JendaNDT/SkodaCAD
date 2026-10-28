@@ -33,6 +33,7 @@ def _check(document: Document, result: BuildResult, sheet: Sheet) -> AnnotationS
         check_drawing(document.drawing)
     section_mark(sheet)
     values = annotations(document, result, sheet)
+    _title_rows(document, sheet, values)
     if values.warnings:
         raise DocumentError("Výkres nelze vyvést: " + " ".join(values.warnings))
     if len(values.items) != len((document.drawing or {}).get("dimensions", [])):
@@ -65,12 +66,25 @@ def _arrows(lines: tuple[Any, ...]) -> list[tuple[tuple[float, float], tuple[flo
     return result
 
 
-def _title(document: Document) -> str:
-    # Kótovací jádro neověřuje toleranci, materiálové ani technologické požadavky.
-    if (len(document.name) + len(document.material) > 80
-            or any(ord(c) < 32 for c in document.name + document.material)):
-        raise DocumentError("Název nebo materiál nelze bezpečně umístit do popisového pole.")
-    return f"{document.name} | {document.material} | Pracovní výkres – ověřit před výrobou"
+def _title_rows(document: Document, sheet: Sheet,
+                dimensions: AnnotationSet) -> list[tuple[float, str]]:
+    # Každý řádek je stejný v náhledu, PDF a DXF; pravá část patří kontrolní úsečce.
+    values = (document.drawing or {}).get("title_block", {})
+    name, material = document.name, document.material
+    if any(ord(c) < 32 or ord(c) == 127 for c in name + material):
+        raise DocumentError("Název nebo materiál nelze umístit do popisového pole.")
+    rows = [(6, f"{name} | {material}"),
+            (11, f"Číslo: {values.get('number', '')} | Revize: {values.get('revision', '')}"),
+            (16, f"Autor: {values.get('author', '')} | Datum: {values.get('date', '')}"),
+            (21, f"Měřítko {_scale_label(sheet.scale)} | mm"),
+            (31, "Pracovní výkres – ověřit před výrobou")]
+    if notice := collision_notice(dimensions):
+        rows.append((26, notice))
+    for y, text in rows:
+        available = sheet.width - 2 * MARGIN - 6 - (70 if y >= 26 else 0)
+        if len(text) * 2.5 > available:
+            raise DocumentError("Údaj popisového pole se nevejde na list – zkrať jej.")
+    return rows
 
 
 def _scale_label(scale: float) -> str:
@@ -155,11 +169,8 @@ def _pdf(document: Document, sheet: Sheet, dimensions: AnnotationSet, target: st
         font = QFont("Arial")
         font.setPixelSize(25)
         painter.setFont(font)
-        painter.drawText(point(MARGIN + 3, MARGIN + 6), _title(document))
-        painter.drawText(point(MARGIN + 3, MARGIN + 12),
-                         f"Měřítko {_scale_label(sheet.scale)} | mm")
-        if notice := collision_notice(dimensions):
-            painter.drawText(point(MARGIN + 3, MARGIN + 18), notice)
+        for y, text in _title_rows(document, sheet, dimensions):
+            painter.drawText(point(MARGIN + 3, MARGIN + y), text)
         painter.drawText(point(sheet.width - MARGIN - 60, MARGIN + 27), "Kontrola: 50 mm")
         for view in sheet.views:
             for edges, style in ((view.geometry.visible, Qt.PenStyle.SolidLine),
@@ -238,13 +249,9 @@ def _dxf(document: Document, sheet: Sheet, dimensions: AnnotationSet, target: st
         add_lines((*dimension.lines, *_arrows(dimension.lines)), "koty")
         exporter._modelspace.add_text(dimension.text, dxfattribs={  # pinned build123d API
             "insert": (*dimension.label, 0), "height": 2.5, "layer": "koty"})
-    for y, text in ((MARGIN + 6, _title(document)),
-                    (MARGIN + 12, f"Měřítko {_scale_label(sheet.scale)} | mm")):
+    for y, text in _title_rows(document, sheet, dimensions):
         exporter._modelspace.add_text(text, dxfattribs={  # pinned build123d API
-            "insert": (MARGIN + 3, y, 0), "height": 2.5, "layer": "popisy"})
-    if notice := collision_notice(dimensions):
-        exporter._modelspace.add_text(notice, dxfattribs={
-            "insert": (MARGIN + 3, MARGIN + 18, 0), "height": 2.5, "layer": "popisy"})
+            "insert": (MARGIN + 3, MARGIN + y, 0), "height": 2.5, "layer": "popisy"})
     exporter._modelspace.add_text("Kontrola: 50 mm", dxfattribs={
         "insert": (sheet.width - MARGIN - 60, MARGIN + 27, 0), "height": 2.5,
         "layer": "popisy"})

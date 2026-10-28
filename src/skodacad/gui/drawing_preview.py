@@ -6,6 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 
+from skodacad.document import Document
 from skodacad.drawing_annotations import AnnotationSet
 from skodacad.drawing_section_mark import section_mark
 from skodacad.drawing_sheet import MARGIN, TITLE_HEIGHT, Sheet
@@ -13,8 +14,9 @@ from skodacad.drawing_sheet import MARGIN, TITLE_HEIGHT, Sheet
 
 class SheetPreview(QWidget):
     def __init__(self, sheet: Sheet, dimensions: AnnotationSet | None = None,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, *, document: Document | None = None) -> None:
         super().__init__(parent)
+        self.document = document
         self.sheet = sheet
         self.dimensions = dimensions or AnnotationSet((), ())
         self.setMinimumSize(500, 360)
@@ -45,6 +47,14 @@ class SheetPreview(QWidget):
         painter.drawLine(point(page.width - MARGIN - 60, MARGIN + 24),
                          point(page.width - MARGIN - 10, MARGIN + 24))
         painter.drawText(point(page.width - MARGIN - 60, MARGIN + 27), "Kontrola: 50 mm")
+        if self.document is not None:
+            from skodacad.drawing_export import _title_rows
+
+            title_font = QFont("Arial")
+            title_font.setPixelSize(max(1, round(2.5 * scale)))
+            painter.setFont(title_font)
+            for y, text in _title_rows(self.document, page, self.dimensions):
+                painter.drawText(point(MARGIN + 3, MARGIN + y), text)
         for view in page.views:
             dx, dy = view.offset
             for edges, style in ((view.geometry.visible, Qt.PenStyle.SolidLine),
@@ -96,7 +106,7 @@ class SheetPreview(QWidget):
 
 class DrawingPreviewDialog(QDialog):
     def __init__(self, sheet: Sheet, dimensions: AnnotationSet | None = None,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, *, document: Document | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Pracovní náhled listu")
         layout = QVBoxLayout(self)
@@ -121,5 +131,5 @@ class DrawingPreviewDialog(QDialog):
             collision.setTextFormat(Qt.TextFormat.PlainText)
             collision.setStyleSheet("color: #9a5700; font-weight: bold;")
             layout.addWidget(collision)
-        layout.addWidget(SheetPreview(sheet, dimensions))
+        layout.addWidget(SheetPreview(sheet, dimensions, document=document))
         self.resize(900, 650)
