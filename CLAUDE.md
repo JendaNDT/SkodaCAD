@@ -254,6 +254,11 @@
   `BRepOffset_MakeOffset` + `SetOffsetOnFace`). Odkaz `face` podle P1.3 bez pevného poloměru,
   povinný `origin` = pojistka původu plochy. Formát verze 23. V okně jen zobrazení a změna
   čísla; P2.4 doplňuje výběr ve 3D, náhled a návrhový nástroj AI s potvrzením uživatele.
+- (29. 10. 2026, zadání autora „udělej skrývání pohledů“, podle pokynu z 28. 10.)
+  **Skryté pohledy výkresu** – `drawing.views` (neprázdný seznam z front/top/right v pořadí
+  na listu; bez klíče všechny tři), **formát 28**. Starší aplikace by skrytý pohled tiše
+  ukázala, proto nová verze. List a měřítko (`paper`, `scale`, verze 25) se od téhož dne
+  opravdu ukládají (`set_drawing_sheet`); formát se tím neměnil.
 
 ## Architektura (`src/skodacad/`)
 
@@ -1121,6 +1126,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   přepočtu plynulosti se kreslil jako hrana (čárkovaná čára v ose otvoru v pohledu zprava,
   u trubky dvě čáry navíc). Hladké hrany (C2 a víc) se nekreslí, ostré a tečné (zaoblení)
   zůstávají. Do originálu nezapisovat – 3D okno kreslí hrany dílu do C1.
+- Skryté pohledy (`drawing.views`, formát 28): kóta **bez** `placement` se ze skrytého
+  výchozího pohledu přesune do prvního zobrazeného, kde ji lze nakreslit; kóta s
+  `placement` ve skrytém pohledu se nepřesouvá (upozornění = export stojí). Označení řezu
+  potřebuje pohled shora (řez X/Y) nebo zepředu (řez Z), jinak česká chyba.
 - Primitiva build123d (`Box - Cylinder`) mají šev zapsaný správně a chybu neukážou: testy
   výkresu stavět z receptu (`rebuild(Document)`) a kontrolovat přesný seznam čar (i že žádná
   nepřebývá), ne jen `any(...)`.

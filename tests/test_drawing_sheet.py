@@ -161,3 +161,67 @@ def test_section_arrows_point_toward_retained_material(axis, position, component
     start, end = mark.arrows[0]
     delta = end[component] - start[component]
     assert delta == pytest.approx(4 * expected * (-1 if flipped else 1))
+
+
+def test_hidden_views_are_saved_versioned_and_undoable():
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(box().to_dict())
+    empty = session.document.to_dict()
+    session.set_drawing_views(["front", "top", "right"])  # všechny = nic se neukládá
+    assert session.document.to_dict() == empty and session.document.drawing is None
+    session.set_drawing_views(["right", "front"])
+    assert session.drawing_views() == ("front", "right")  # pořadí na listu
+    data = session.document.to_dict()
+    assert data["version"] == 28 and data["drawing"]["views"] == ["front", "right"]
+    old = copy.deepcopy(data)
+    old["version"] = 27
+    with pytest.raises(DocumentError, match="verze 28"):
+        Document.from_dict(old)
+    session.set_drawing_views(["front", "top", "right"])
+    assert "views" not in session.document.drawing
+    assert session.document.to_dict()["version"] == 25
+    session.undo()
+    assert session.drawing_views() == ("front", "right")
+    before = session.document.to_dict()
+    for wrong in ([], ["back"]):
+        with pytest.raises(DocumentError, match="pohled"):
+            session.set_drawing_views(wrong)
+        assert session.document.to_dict() == before
+
+
+@pytest.mark.parametrize("views", [[], "front", ["top", "front"], ["front", "front"],
+                                   ["front", "side"]])
+def test_invalid_saved_views_are_rejected(views):
+    data = box().to_dict()
+    data["version"] = 28
+    data["drawing"] = {"dimensions": [], "views": views}
+    with pytest.raises(DocumentError, match="Zobrazené pohledy"):
+        Document.from_dict(data)
+
+
+def test_p41_plate_with_section_fits_a4_only_without_right_view():
+    # Deska 100 × 60 × 10 z návrhu P4.1: tři pohledy + řez jsou na A4 1:1 o 3 mm širší.
+    document = box()
+    result = rebuild(document)
+    document.drawing = {"dimensions": [], "section": {"axis": "X", "position": 20}}
+    with pytest.raises(DocumentError, match="nevejdou"):
+        layout(document, result)
+    sheet = layout(document, result, views=("front", "top"))
+    assert [view.name for view in sheet.views] == ["front", "top", "section"]
+    front = next(view for view in sheet.views if view.name == "front")
+    assert front.bounds[2] - front.bounds[0] == pytest.approx(100)  # měřítko 1:1 zůstává
+
+
+@pytest.mark.parametrize(("axis", "position", "views", "needed"), [
+    ("X", 20, ("front", "right"), "shora"), ("Y", 10, ("front", "right"), "shora"),
+    ("Z", 5, ("top", "right"), "zepředu"),
+])
+def test_section_mark_needs_its_view_and_says_which(axis, position, views, needed):
+    document = box()
+    result = rebuild(document)
+    document.drawing = {"dimensions": [], "section": {"axis": axis, "position": position}}
+    with pytest.raises(DocumentError, match=f"v pohledu {needed}, který je skrytý"):
+        layout(document, result, paper="A3", views=views)

@@ -8,6 +8,7 @@ from typing import Any
 from skodacad.document import DocumentError
 
 SCALES = (0.1, 0.2, 0.5, 1, 2, 5)
+VIEWS = ("front", "top", "right")  # pořadí na listu i v uloženém seznamu
 
 
 def check_drawing(drawing: Any) -> None:
@@ -28,6 +29,13 @@ def check_drawing(drawing: Any) -> None:
             raise DocumentError("Poloha řezu musí být konečné číslo v mm.")
         if not isinstance(section.get("flipped", False), bool):
             raise DocumentError("Otočení řezu musí být ano nebo ne.")
+    if "views" in drawing:
+        views = drawing["views"]
+        if (not isinstance(views, list) or not views
+                or any(not isinstance(v, str) or v not in VIEWS for v in views)
+                or views != [v for v in VIEWS if v in views]):
+            raise DocumentError("Zobrazené pohledy výkresu musí být neprázdný seznam "
+                                "z „front“, „top“, „right“ v tomto pořadí, bez opakování.")
     if "title_block" in drawing:
         title = drawing["title_block"]
         if not isinstance(title, dict) or set(title) != {"number", "revision", "author", "date"}:

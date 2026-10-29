@@ -25,7 +25,9 @@ def section_mark(sheet: Sheet) -> SectionMark | None:
     source = "front" if axis == "Z" else "top"
     view = next((v for v in sheet.views if v.name == source), None)
     if view is None:
-        raise DocumentError("Pro označení roviny řezu chybí odpovídající pohled.")
+        raise DocumentError("Rovina řezu se označuje v pohledu "
+                            f"{'zepředu' if source == 'front' else 'shora'}, který je "
+                            "skrytý – zapni ho nebo řez vypni.")
     xmin, ymin, xmax, ymax = view.bounds
     normal = AXIS_NORMALS[axis]["XYZ".index(axis)]
     direction = normal if flipped else -normal  # šipka do ponechané části tělesa

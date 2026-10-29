@@ -21,6 +21,7 @@ Point = tuple[float, float]
 Line = tuple[Point, Point]
 _AXES = {"front": ("x", "z"), "top": ("x", "y"), "right": ("y", "z")}
 _DIRECTIONS = {"front": "y", "top": "z", "right": "x"}
+_VIEW_NAMES = {"front": "zepředu", "top": "shora", "right": "zprava"}
 
 
 @dataclass(frozen=True)
@@ -123,8 +124,14 @@ def annotations(document: Document, result: BuildResult, sheet: Sheet) -> Annota
                             if face is not None else "top" if axis == "y" else "front")
             placement = record.get("placement") or {}
             name = placement.get("view", default_view)
+            if "view" not in placement and name not in views:
+                # Výchozí pohled je skrytý: kóta bez vlastního umístění jde do prvního
+                # zobrazeného pohledu, kde ji lze nakreslit; hodnota se tím nemění.
+                name = next((n for n in views if (_DIRECTIONS[n] == axis if face is not None
+                                                  else axis in _AXES[n])), name)
             if name not in views:
-                raise ValueError("Zvolený pohled na listu chybí.")
+                raise ValueError(f"Pohled {_VIEW_NAMES[name]} je na listu skrytý – zapni ho "
+                                 "nebo kótu umísti do jiného pohledu.")
             view = views[name]
             if face is not None and _DIRECTIONS[name] != axis:
                 raise ValueError("Otvor není v tomto pohledu vidět jako kružnice.")

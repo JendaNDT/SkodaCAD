@@ -207,3 +207,30 @@ def test_preview_draws_a_visible_dimension():
     assert colored > 10
     widget.close()
     assert app is not None
+
+
+def test_dimension_without_placement_moves_from_hidden_view_value_unchanged():
+    doc = model()
+    result = rebuild(doc)
+    cylinder = next(f for f in result.part.faces() if f.geom_type == GeomType.CYLINDER)
+    doc.drawing = {"dimensions": [new_overall(doc, result, "d1", "y"),
+                                  new_cylinder(doc, result, "d2", cylinder, "diameter")]}
+    sheet = layout(doc, result, views=("front", "right"))
+    dims = annotations(doc, result, sheet)
+    # Celkový rozměr Y (výchozí shora) jde do pohledu zprava, hodnota zůstává 60.
+    assert [(item.id, item.view, item.text) for item in dims.items] == [("d1", "right", "60")]
+    # Svislý otvor je kružnicí jen shora: žádný náhradní pohled, kóta se nevykreslí.
+    assert len(dims.warnings) == 1 and "d2" in dims.warnings[0]
+    assert "shora je na listu skrytý" in dims.warnings[0]
+
+
+def test_dimension_placed_in_hidden_view_is_reported_not_moved():
+    doc = model()
+    result = rebuild(doc)
+    record = new_overall(doc, result, "d1", "x")
+    record["placement"] = {"view": "top", "side": "low", "offset": 8}
+    doc.drawing = {"dimensions": [record]}
+    dims = annotations(doc, result, layout(doc, result, views=("front", "right")))
+    assert not dims.items
+    assert dims.warnings == ("Kóta d1: Pohled shora je na listu skrytý – zapni ho nebo kótu "
+                             "umísti do jiného pohledu.",)
