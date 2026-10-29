@@ -42,11 +42,13 @@ def test_plate_line_includes_only_centers_where_probe_fits(parts, tmp_path):
 def test_plate_area_and_mesh_are_weighted_and_three_colors_are_discrete(parts):
     geo = parts["deska"]
     placed = place(geo, Probe.straight(10), (0, 0, 20))
+    # Krok cíle 10 mm: 1 536 vzorků (24 s); 5 mm = 6 144 vzorků, 63 s a 84,50 %.
     result = compute(geo, placed, faces=[face_at(geo.part, 0, 0, 0)],
-                     scan_step=5, target_step=5)
+                     scan_step=5, target_step=10)
     assert result.total_area == pytest.approx(200 * 100)
-    # Numerická tolerance nesmí rozšířit obrys za platný otisk sondy.
-    assert result.percent("covered") == pytest.approx(85.5, abs=2)
+    # Numerická tolerance nesmí rozšířit obrys za platný otisk sondy: střed sondy Ø10
+    # se vejde do 190 × 90 mm z 200 × 100 mm → 85,5 % (krok 10 mm dává 85,74 %).
+    assert result.percent("covered") == pytest.approx(85.5, abs=1)
     assert sum(result.percent(s) for s in ("covered", "uncovered", "uncertain")) == 100
     nodes, triangles, colors = result.mesh()
     assert len(triangles) == len(result.states) and len(nodes) == 3 * len(triangles)

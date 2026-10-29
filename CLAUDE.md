@@ -663,6 +663,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   kolize; vůle se měří k plochám dílu bez té, na které těleso stojí (`ignore_faces`).
 - Rychlost: paprsek ~0,25–0,4 ms (průsečíky + kontrola hran + `classify` úseků; mimo obalový
   kvádr se `classify` přeskočí), kolize 3–6 ms.
+- Průnik v NDT jen přes `geometry._common` (`SetNonDestructive(True)`). Výchozí
+  `BRepAlgoAPI_Common(a, b)` zapisuje do hran vstupů a posunuté kopie sondy sdílejí hrany:
+  každé přiložení přidalo záznam, kolize se zpomalovala úměrně počtu přiložení (deska,
+  6 000 přiložení: 4 → 45 ms, výpočet 202 s místo 54 s). Hlídá
+  `test_repeated_placements_do_not_write_into_shared_probe_edges`.
 - `skodacad paprsek --z -150,0,20`: argparse by zápornou trojici vzal jako volbu – `cli.
   _glue_negative` ji přilepí (`--z=-150,0,20`).
 

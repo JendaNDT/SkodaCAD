@@ -513,9 +513,10 @@ def _clearance_above(geo: PartGeometry, body: Any, origin: Point, normal: Point
 def _upper_part(geo: PartGeometry, origin: Point, normal: Point) -> Any | None:
     """Část dílu nad tečnou rovinou (ořezaná jednou pro každou rovinu na dílu)."""
     from build123d import Align, Box, Location, Plane, Vector
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
     from OCP.TopAbs import TopAbs_FACE
     from OCP.TopExp import TopExp_Explorer
+
+    from skodacad.ndt.geometry import _common
 
     offset = sum(o * n for o, n in zip(origin, normal, strict=True))
     key = (round(normal[0], 5), round(normal[1], 5), round(normal[2], 5), round(offset, 4))
@@ -532,7 +533,7 @@ def _upper_part(geo: PartGeometry, origin: Point, normal: Point) -> Any | None:
     plane_origin = center + n_vec * (offset - center.dot(n_vec) + 1e-3)
     half = Location(Plane(origin=plane_origin, z_dir=n_vec)) * Box(
         size, size, size, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    common = BRepAlgoAPI_Common(geo.part.wrapped, half.wrapped)
+    common = _common(geo.part, half)
     upper = None
     if common.IsDone():
         shape = common.Shape()

@@ -189,3 +189,22 @@ def test_beam_by_angle_on_top_and_side_faces(parts):
     assert place(plate, ANGLE, (0, 0, 20), angle=180).x_dir == pytest.approx((-1, 0, 0))
     side = place(plate, Probe.straight(10), (100, 0, 10), angle=0)  # boční plocha kolmá na X
     assert side.z_dir == pytest.approx((1, 0, 0)) and side.x_dir == pytest.approx((0, 1, 0))
+
+
+def test_repeated_placements_do_not_write_into_shared_probe_edges(parts):
+    # Posunuté kopie sondy sdílejí hrany. Průnik v OCCT do nich ve výchozím režimu
+    # zapisoval záznam za každou polohu a každá další kolize byla pomalejší
+    # (6 000 přiložení: 4 → 45 ms). Průniky NDT proto vstupní tvary nemění.
+    geo = parts["deska"]
+
+    def records(shape):
+        return sum(edge.wrapped.TShape().Curves().Size() for edge in shape.edges())
+
+    first = place(geo, Probe.straight(10), (-60, 0, 20)).body
+    before, part_before = records(first), records(geo.part)
+    for step in range(40):
+        placed = place(geo, Probe.straight(10), (-59 + 3 * step, 0, 20))
+        assert placed.ok
+    assert placed.body.edges()[0].wrapped.TShape() == first.edges()[0].wrapped.TShape()
+    assert records(placed.body) == before
+    assert records(geo.part) == part_before
