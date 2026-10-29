@@ -8,7 +8,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from build123d import Edge, Part, Vector
+from build123d import Compound, Edge, Part, Vector
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+from OCP.BRepLib import BRepLib
 
 from skodacad.geometry_validation import GeometryValidationError, inspect_volume
 from skodacad.section import SectionError, SectionPlane, axis_plane, cut
@@ -51,12 +53,25 @@ def _validate(part: Part | None, scale: float) -> None:
         raise DrawingGeometryError("Pohled zatím podporuje právě jedno těleso.")
 
 
+def _with_regularity(part: Part) -> Compound:
+    """Kopie dílu se zapsanou plynulostí hran pro skrývání čar.
+
+    Bez ní OCCT bere šev válce, kužele či koule a hranu mezi dvěma částmi téže
+    hladké plochy (navazující stejná díra) jako ostrou hranu a nakreslí čáru,
+    která na dílu není. Hladké hrany (C2 a víc) se pak nekreslí, tečné (zaoblení)
+    a ostré zůstávají. Kopie topologie: originál sdílí okno, jeho hrany se nemění.
+    """
+    copy = BRepBuilderAPI_Copy(part.wrapped, False).Shape()
+    BRepLib.EncodeRegularity_s(copy)
+    return Compound(copy)
+
+
 def _project(part: Part, direction: Vector, up: Vector, anchor: Vector,
              scale: float) -> DrawingView:
     box = part.bounding_box()
     distance = max(1.0, box.diagonal * 4 + (box.center() - anchor).length)
     try:
-        visible, hidden = part.project_to_viewport(
+        visible, hidden = _with_regularity(part).project_to_viewport(
             anchor + direction * distance, viewport_up=up, look_at=anchor
         )
         if not visible:

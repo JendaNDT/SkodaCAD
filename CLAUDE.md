@@ -1113,6 +1113,18 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `rebuild`; nový kód, který staví díl mimo `rebuild`, ji musí naplnit, jinak úprava
   ohlásí chybějící původ.
 
+## Známé pasti (výkres)
+
+- Pohledy a řez počítá skrývání čar OCCT (`project_to_viewport`) z **kopie** dílu se
+  zapsanou plynulostí hran (`drawing_geometry._with_regularity`, `BRepLib.EncodeRegularity`).
+  Šev válce u díry řezané skrz a u trubky z receptu nese neplatný záznam „ostrá“ (C0) – bez
+  přepočtu plynulosti se kreslil jako hrana (čárkovaná čára v ose otvoru v pohledu zprava,
+  u trubky dvě čáry navíc). Hladké hrany (C2 a víc) se nekreslí, ostré a tečné (zaoblení)
+  zůstávají. Do originálu nezapisovat – 3D okno kreslí hrany dílu do C1.
+- Primitiva build123d (`Box - Cylinder`) mají šev zapsaný správně a chybu neukážou: testy
+  výkresu stavět z receptu (`rebuild(Document)`) a kontrolovat přesný seznam čar (i že žádná
+  nepřebývá), ne jen `any(...)`.
+
 ## Jak přidat nový prvek
 
 1. Funkce v `features.py` s dekorátorem `@feature("typ", "Český název")`.
