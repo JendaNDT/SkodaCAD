@@ -160,13 +160,30 @@ class Collision:
 # --- jádro ---------------------------------------------------------------------------------
 
 
+def _common(a: Any, b: Any) -> Any:
+    """Průnik, který vstupní tvary nemění (``SetNonDestructive``). Výchozí režim OCCT
+    zapisuje do hran vstupů: posunuté kopie sondy sdílejí hrany, takže každé přiložení
+    přidalo záznam a další průnik byl pomalejší (6 000 přiložení: 4 → 45 ms na kolizi)."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+    from OCP.collections import List_TopoDS_Shape
+
+    arguments, tools = List_TopoDS_Shape(), List_TopoDS_Shape()
+    arguments.Append(getattr(a, "wrapped", a))
+    tools.Append(getattr(b, "wrapped", b))
+    common = BRepAlgoAPI_Common()
+    common.SetNonDestructive(True)
+    common.SetArguments(arguments)
+    common.SetTools(tools)
+    common.Build()
+    return common
+
+
 def overlap(a: Any, b: Any) -> float | None:
     """Objem průniku dvou těles [mm³]; None = průnik nejde spočítat (bere se jako kolize)."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
     from OCP.BRepGProp import BRepGProp
     from OCP.GProp import GProp_GProps
 
-    common = BRepAlgoAPI_Common(getattr(a, "wrapped", a), getattr(b, "wrapped", b))
+    common = _common(a, b)
     if not common.IsDone():  # OCCT 8: chyby hlásí jen IsDone
         return None
     props = GProp_GProps()
@@ -293,7 +310,6 @@ class PartGeometry:
         """Překrytí tělesa s dílem (dotyk není kolize) a vůle k dílu bez ``ignore_faces``
         (plocha, na které těleso stojí)."""
         from OCP.BRep import BRep_Builder
-        from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
         from OCP.BRepExtrema import BRepExtrema_DistShapeShape
         from OCP.BRepGProp import BRepGProp
         from OCP.GProp import GProp_GProps
@@ -301,7 +317,7 @@ class PartGeometry:
 
         shape = getattr(solid, "wrapped", solid)
         reasons: list[str] = []
-        common = BRepAlgoAPI_Common(self.part.wrapped, shape)
+        common = _common(self.part, shape)
         volume = 0.0
         if common.IsDone():  # OCCT 8: chyby hlásí jen IsDone (HasErrors tu není)
             props = GProp_GProps()
