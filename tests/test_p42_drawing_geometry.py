@@ -74,6 +74,96 @@ def test_section_shows_geometry_behind_plane_and_does_not_hatch_hole():
     assert any(abs(edge.start_point().X - 10) < 1e-6 for edge in visible_verticals)
 
 
+def recipe_part(*features):
+    from skodacad.document import Document
+    from skodacad.rebuild import rebuild
+
+    result = rebuild(Document(features=[
+        {"id": "s", "type": "sketch", "plane": "XY",
+         "elements": [{"shape": "rectangle", "width": 100, "height": 60}]},
+        {"id": "deska", "type": "extrude", "sketch": "s", "distance": 10}, *features]))
+    assert result.ok
+    return result.part
+
+
+def plate_with_through_hole():
+    # Deska z návrhu výkresu P4.1: 100 × 60 × 10, otvor Ø20 skrz, jako z okna aplikace.
+    return recipe_part(
+        {"id": "k", "type": "sketch", "plane": "XY",
+         "elements": [{"shape": "circle", "diameter": 20}]},
+        {"id": "otvor", "type": "extrude", "sketch": "k", "operation": "cut",
+         "through_all": True})
+
+
+def straight_lines(edges):
+    """Svislé úsečky jako (x, dolní y, horní y) a vodorovné jako (y, levé x, pravé x),
+    zaokrouhlené na 1e-6 mm (+ 0.0 sjednotí -0.0)."""
+    def mm(*values):
+        return tuple(round(value, 6) + 0.0 for value in values)
+
+    vertical, horizontal = [], []
+    for edge in edges:
+        if edge.geom_type != GeomType.LINE:
+            continue
+        a, b = edge.start_point(), edge.end_point()
+        if abs(a.X - b.X) < 1e-6:
+            vertical.append(mm(a.X, min(a.Y, b.Y), max(a.Y, b.Y)))
+        elif abs(a.Y - b.Y) < 1e-6:
+            horizontal.append(mm(a.Y, min(a.X, b.X), max(a.X, b.X)))
+    return sorted(vertical), sorted(horizontal)
+
+
+@pytest.mark.parametrize("view", ["front", "right"])
+def test_hole_seam_is_not_drawn_as_a_hidden_edge(view):
+    # Šev válcové plochy není hrana dílu: z boku má otvor jen dvě obrysové čáry,
+    # nikoli třetí čáru v ose (dřív v pohledu zprava).
+    result = project_view(plate_with_through_hole(), view)
+    vertical, horizontal = straight_lines(result.hidden)
+    assert len(result.hidden) == 2 and not horizontal
+    assert vertical == [(-10, 0, 10), (10, 0, 10)]
+
+
+def test_top_view_of_through_hole_has_circle_and_no_hidden_lines():
+    result = project_view(plate_with_through_hole(), "top")
+    assert not result.hidden
+    circles = [edge for edge in result.visible if edge.geom_type == GeomType.CIRCLE]
+    assert [edge.radius for edge in circles] == pytest.approx([10], abs=1e-6)
+
+
+def test_pipe_seams_are_not_drawn():
+    from pathlib import Path
+
+    from skodacad.document import Document
+    from skodacad.rebuild import rebuild
+
+    path = Path(__file__).parents[1] / "examples" / "ndt" / "trubka.json"
+    result = project_view(rebuild(Document.load(path)).part, "front")
+    vertical, horizontal = straight_lines(result.hidden)
+    # Trubka 114,3 × 6 podél X: skrytá je jen vnitřní stěna (r = 51,15), švy ne.
+    assert len(result.hidden) == 2 and not vertical
+    assert horizontal == [(-51.15, -150, 150), (51.15, -150, 150)]
+
+
+def test_tangent_edges_of_fillets_stay_visible():
+    part = recipe_part({"id": "r", "type": "fillet", "edges": {"parallel": "Z"}, "radius": 5})
+    vertical, _ = straight_lines(project_view(part, "front").visible)
+    # Obrys zaoblení (±50) i tečné hrany mezi zaoblením a čelní plochou (±45).
+    assert [line[0] for line in vertical] == pytest.approx([-50, -45, 45, 50], abs=1e-6)
+
+
+def test_projection_does_not_change_edges_of_the_model_part():
+    from OCP.BRep import BRep_Tool
+
+    part = plate_with_through_hole()
+    hole = next(face for face in part.faces() if face.geom_type == GeomType.CYLINDER)
+    seam = next(edge for edge in hole.edges()
+                if BRep_Tool.IsClosed_s(edge.wrapped, hole.wrapped))
+    before = BRep_Tool.Continuity_s(seam.wrapped, hole.wrapped, hole.wrapped)
+    project_view(part, "right")
+    # Plynulost se zapisuje jen do kopie – 3D okno kreslí hrany původního dílu.
+    assert BRep_Tool.Continuity_s(seam.wrapped, hole.wrapped, hole.wrapped) == before
+
+
 def test_section_flipped_direction_and_sheet_scale():
     front = project_section(box(), "Y", 15)
     opposite = project_section(box(), "Y", 15, flipped=True)
