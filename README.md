@@ -218,7 +218,15 @@ tlačítkem. Ukládají se s výkresem a zůstávají stejné při změně jmeno
 Soubor s tolerancí vyžaduje aktuální verzi aplikace (formát 26). Pro řez A–A zvol osu, polohu
 v milimetrech a případně otočení; nastavení potvrď tlačítkem **Nastavit řez**. Náhled
 ukáže pohledy, kóty, rovinu řezu a šrafy; pokud se obsah nevejde, zvol větší list
-nebo menší měřítko.
+nebo menší měřítko, nebo skryj pohled, který nepotřebuješ.
+
+Zaškrtávátky **Pohledy: Zepředu / Shora / Zprava** zvolíš, které pohledy výkres ukáže;
+aspoň jeden zůstane vždy. Kóta bez vlastního umístění se ze skrytého pohledu přesune do
+jiného zobrazeného pohledu, kde ji lze nakreslit (hodnota se nemění); kóta umístěná do
+skrytého pohledu a průměr otvoru, který je kružnicí jen ve skrytém pohledu, se nevykreslí
+a výkres to oznámí. Rovina řezu se označuje v pohledu shora (řez X a Y) nebo zepředu
+(řez Z) – ten musí zůstat zobrazený. Soubor se skrytým pohledem vyžaduje aktuální verzi
+aplikace (formát 28).
 
 Tlačítko **Export PDF/DXF…** uloží pracovní výkres. Neplatné kóty, zastaralý model
 nebo nepodporovanou křivku PDF aplikace oznámí a export zastaví. Při tisku nastav

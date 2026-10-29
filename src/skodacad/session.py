@@ -24,7 +24,7 @@ import json
 import math
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -1123,6 +1123,35 @@ class ModelSession:
                     return
                 doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
             doc.drawing.update(paper=paper, scale=scale)
+
+        return self._change(mutate)
+
+    def drawing_views(self) -> tuple[str, ...]:
+        """Zobrazené pohledy výkresu v pořadí na listu; bez uložené volby všechny tři."""
+        from skodacad.drawing_data import VIEWS
+
+        return tuple((self._require().drawing or {}).get("views", VIEWS))
+
+    def set_drawing_views(self, views: Iterable[str]) -> BuildResult:
+        """Uloží, které pohledy výkres ukazuje (jeden krok Zpět). Všechny tři = volba se
+        neukládá, aby soubor zůstal čitelný i starší aplikací."""
+        from skodacad.drawing_data import VIEWS
+
+        chosen = set(views)
+        if not chosen <= set(VIEWS):
+            raise DocumentError("Výkres umí jen pohled zepředu, shora a zprava.")
+        if not chosen:
+            raise DocumentError("Výkres musí ukazovat aspoň jeden pohled.")
+        ordered = [view for view in VIEWS if view in chosen]
+
+        def mutate(doc: Document) -> None:
+            if len(ordered) == len(VIEWS):
+                if doc.drawing is not None:
+                    doc.drawing.pop("views", None)
+                return
+            if doc.drawing is None:
+                doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
+            doc.drawing["views"] = ordered
 
         return self._change(mutate)
 

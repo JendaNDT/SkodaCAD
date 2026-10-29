@@ -16,6 +16,11 @@ dřív se zapisovaly jen výchozí A4 a 1:1 a okno je po otevření nečetlo. Vo
 jako jeden krok Zpět, náhled i export ji berou z modelu. Výchozí A4 a 1:1 u modelu bez
 výkresu výkres nezakládá. Formát se nemění (pole patří do verze 25).
 
+Zobrazené pohledy (`views`, např. `["front", "top"]`, vždy v pořadí zepředu, shora,
+zprava) přidává formát 28 (29. 10. 2026). Bez klíče výkres ukazuje všechny tři pohledy
+a soubor zůstává v dřívější verzi; starší aplikace soubor se skrytým pohledem odmítne,
+místo aby pohled tiše ukázala.
+
 Každá kóta má samostatné id a druh. Celkový rozměr s osou X/Y/Z znamená obálku
 celého dílu. Vzdálenost podporuje dvě rovnoběžné rovinné plochy pocházející z jednoduchých
 obdélníkových vysunutí v základních rovinách. Průměr nebo poloměr podporuje

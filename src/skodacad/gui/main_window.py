@@ -426,6 +426,17 @@ class MainWindow(QMainWindow):
         export_drawing.clicked.connect(self.export_drawing)
         preview_settings.addWidget(export_drawing)
         drawing_layout.addLayout(preview_settings)
+        views_row = QHBoxLayout()
+        views_row.addWidget(QLabel("Pohledy:"))
+        self.drawing_view_boxes: dict[str, QCheckBox] = {}
+        for label, key in (("Zepředu", "front"), ("Shora", "top"), ("Zprava", "right")):
+            box = QCheckBox(label)
+            box.setChecked(True)
+            box.toggled.connect(self._drawing_views_changed)
+            views_row.addWidget(box)
+            self.drawing_view_boxes[key] = box
+        views_row.addStretch()
+        drawing_layout.addLayout(views_row)
         title_button = QPushButton("Popisové pole…")
         title_button.clicked.connect(self.edit_drawing_title_block)
         drawing_layout.addWidget(title_button)
@@ -1865,6 +1876,12 @@ class MainWindow(QMainWindow):
             combo.blockSignals(True)  # zobrazení uloženého stavu není nová změna
             combo.setCurrentIndex(index)
             combo.blockSignals(False)
+        shown = self.session.drawing_views() if self.session.document else tuple(
+            self.drawing_view_boxes)
+        for key, box in self.drawing_view_boxes.items():
+            box.blockSignals(True)
+            box.setChecked(key in shown)
+            box.blockSignals(False)
 
     def _drawing_sheet_changed(self, _index: int) -> None:
         if self.session.document is None:
@@ -1874,6 +1891,16 @@ class MainWindow(QMainWindow):
                 self.drawing_paper.currentText(), self.drawing_scale.currentData()))
         except DocumentError as exc:
             self._error("List výkresu nelze nastavit", str(exc))
+        self._refresh_all()
+
+    def _drawing_views_changed(self, _checked: bool) -> None:
+        if self.session.document is None:
+            return
+        chosen = [key for key, box in self.drawing_view_boxes.items() if box.isChecked()]
+        try:
+            self._busy(lambda: self.session.set_drawing_views(chosen))
+        except DocumentError as exc:
+            self._error("Pohledy výkresu nelze nastavit", str(exc))
         self._refresh_all()
 
     def _refresh_drawing_section(self) -> None:
@@ -1943,7 +1970,8 @@ class MainWindow(QMainWindow):
                 raise DocumentError("Není otevřený žádný model.")
             paper, scale = self.session.drawing_sheet()
             sheet = self._busy(lambda: layout(self.session.document, self.session.result,
-                                             paper=paper, scale=scale))
+                                             paper=paper, scale=scale,
+                                             views=self.session.drawing_views()))
             section_mark(sheet)
         except (DocumentError, DrawingGeometryError) as exc:
             self._error("Náhled výkresu nelze vytvořit", str(exc))
@@ -1971,7 +1999,8 @@ class MainWindow(QMainWindow):
                 raise DocumentError("Není otevřený žádný model.")
             paper, scale = self.session.drawing_sheet()
             sheet = self._busy(lambda: layout(self.session.document, self.session.result,
-                                             paper=paper, scale=scale))
+                                             paper=paper, scale=scale,
+                                             views=self.session.drawing_views()))
             dimensions = self._busy(lambda: annotations(self.session.document,
                                                          self.session.result, sheet))
             if dimensions.warnings:

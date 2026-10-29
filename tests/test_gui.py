@@ -2628,6 +2628,23 @@ def test_drawing_paper_and_scale_are_saved_and_shown_after_undo_and_reopen(windo
     assert not w.session.can_undo  # zobrazení uloženého listu není nová změna
 
 
+def test_drawing_views_can_be_hidden_undone_and_last_one_stays(window, monkeypatch):
+    w = window
+    boxes = w.drawing_view_boxes
+    errors = []
+    monkeypatch.setattr(w, "_error", lambda title, message: errors.append(message))
+    boxes["right"].setChecked(False)
+    assert w.session.drawing_views() == ("front", "top") and not errors
+    w.undo()
+    assert boxes["right"].isChecked() and w.session.drawing_views() == (
+        "front", "top", "right")
+    boxes["front"].setChecked(False)
+    boxes["top"].setChecked(False)
+    boxes["right"].setChecked(False)  # poslední pohled odebrat nejde
+    assert errors and "aspoň jeden pohled" in errors[-1]
+    assert w.session.drawing_views() == ("right",) and boxes["right"].isChecked()
+
+
 def test_drawing_title_dialog_saves_and_reopens(window, monkeypatch):
     def fill(_window, dialog):
         fields = dialog.findChildren(QtWidgets.QLineEdit)
