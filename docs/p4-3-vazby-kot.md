@@ -11,6 +11,11 @@ s výkresem se uloží ve verzi 25, kterou starší aplikace nemusí otevřít. 
 souboru jako model a prochází Zpět/Znovu. Nahrazení modelu asistentem zachovává
 výkres uživatele, který ovšem může následně obsahovat neplatné vazby.
 
+List (`paper`, A4/A3) a měřítko (`scale`) výkresu se od 29. 10. 2026 opravdu ukládají:
+dřív se zapisovaly jen výchozí A4 a 1:1 a okno je po otevření nečetlo. Volba se ukládá
+jako jeden krok Zpět, náhled i export ji berou z modelu. Výchozí A4 a 1:1 u modelu bez
+výkresu výkres nezakládá. Formát se nemění (pole patří do verze 25).
+
 Každá kóta má samostatné id a druh. Celkový rozměr s osou X/Y/Z znamená obálku
 celého dílu. Vzdálenost podporuje dvě rovnoběžné rovinné plochy pocházející z jednoduchých
 obdélníkových vysunutí v základních rovinách. Průměr nebo poloměr podporuje

@@ -2607,6 +2607,27 @@ def test_export_warns_before_saving_overlapping_dimensions(window, tmp_path, mon
     assert any(first in text for text in visible) and any(second in text for text in visible)
 
 
+def test_drawing_paper_and_scale_are_saved_and_shown_after_undo_and_reopen(window, tmp_path,
+                                                                           monkeypatch):
+    w = window
+    monkeypatch.setattr(w, "_error", lambda title, message: pytest.fail(f"{title}: {message}"))
+    w.drawing_paper.setCurrentText("A3")
+    w.drawing_scale.setCurrentIndex(w.drawing_scale.findData(0.5))
+    assert w.session.drawing_sheet() == ("A3", 0.5)
+    w.undo()  # jen měřítko zpět, okno ukáže uložený stav
+    assert (w.drawing_paper.currentText(), w.drawing_scale.currentData()) == ("A3", 1)
+    w.redo()
+    path = tmp_path / "s_vykresem.json"
+    w.session.save(path)
+    w.undo()
+    w.undo()
+    assert (w.drawing_paper.currentText(), w.drawing_scale.currentData()) == ("A4", 1)
+    w.session.dirty = False  # jinak by se otevření ptalo na uložení (dialog by čekal)
+    assert w.open_model(path)
+    assert (w.drawing_paper.currentText(), w.drawing_scale.currentData()) == ("A3", 0.5)
+    assert not w.session.can_undo  # zobrazení uloženého listu není nová změna
+
+
 def test_drawing_title_dialog_saves_and_reopens(window, monkeypatch):
     def fill(_window, dialog):
         fields = dialog.findChildren(QtWidgets.QLineEdit)

@@ -207,6 +207,8 @@ tloušťky stěny). Měří se samo – stačí kliknout, výsledky jsou vpravo 
 ### Pracovní výkres
 
 V panelu **Měření → Příprava kót výkresu** přidej podporované kóty, zvol list a měřítko.
+List a měřítko se uloží s modelem (jde je vrátit Zpět) a po otevření souboru zůstanou;
+náhled i export je berou z modelu.
 Tlačítkem **Popisové pole…** zadej číslo výkresu, revizi, autora a datum; název dílu
 a materiál se přebírají z modelu. Údaje se uloží s výkresem a objeví se v náhledu i exportu.
 U vybrané kóty lze nastavit pohled, stranu a odstup. Tlačítkem **Nastavit toleranci**
