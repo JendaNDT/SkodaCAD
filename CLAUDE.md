@@ -667,7 +667,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `BRepAlgoAPI_Common(a, b)` zapisuje do hran vstupů a posunuté kopie sondy sdílejí hrany:
   každé přiložení přidalo záznam, kolize se zpomalovala úměrně počtu přiložení (deska,
   6 000 přiložení: 4 → 45 ms, výpočet 202 s místo 54 s). Hlídá
-  `test_repeated_placements_do_not_write_into_shared_probe_edges`.
+  `test_repeated_placements_do_not_write_into_shared_probe_edges`. Přes `_common` jde
+  i ořez buněk objemu (`volume_coverage._intersection` místo build123d `cell & target`,
+  se stejným `clean`): buňka 2,9 místo 4,8 ms (UT objem i RT objem svaru).
 - `skodacad paprsek --z -150,0,20`: argparse by zápornou trojici vzal jako volbu – `cli.
   _glue_negative` ji přilepí (`--z=-150,0,20`).
 
