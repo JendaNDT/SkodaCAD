@@ -101,6 +101,50 @@ def test_section_settings_survive_save_and_undo():
     assert session.document.drawing is None
 
 
+def test_paper_and_scale_survive_save_reopen_and_undo(tmp_path):
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(box(width=300).to_dict())
+    assert session.drawing_sheet() == ("A4", 1)
+    session.set_drawing_sheet("A4", 1)  # výchozí hodnoty výkres nezakládají
+    assert session.document.drawing is None
+    assert session.document.to_dict()["version"] == 24
+    session.set_drawing_sheet("A3", 0.5)
+    path = tmp_path / "deska.json"
+    session.save(path)
+    reopened = ModelSession()
+    reopened.open(path)
+    assert reopened.drawing_sheet() == ("A3", 0.5)
+    # Deska 300 mm se na A4 1:1 nevejde; uložené A3 1:2 dává čelní pohled 150 mm.
+    paper, scale = reopened.drawing_sheet()
+    sheet = layout(reopened.document, reopened.result, paper=paper, scale=scale)
+    front = next(view for view in sheet.views if view.name == "front")
+    assert (sheet.width, sheet.height) == PAPER["A3"]
+    assert front.bounds[2] - front.bounds[0] == pytest.approx(150)
+    session.set_drawing_sheet("A3", 0.5)  # stejné hodnoty = žádný nový krok Zpět
+    session.undo()
+    assert session.document.drawing is None and session.drawing_sheet() == ("A4", 1)
+    session.redo()
+    assert session.drawing_sheet() == ("A3", 0.5) and not session.can_redo
+
+
+@pytest.mark.parametrize(("paper", "scale"), [("A5", 1), ("A4", 0.3), ("A4", True),
+                                              ("A4", "1")])
+def test_unsupported_paper_or_scale_is_rejected_without_change(paper, scale):
+    from skodacad.session import ModelSession
+
+    session = ModelSession()
+    session.new_document()
+    session.replace_document(box().to_dict())
+    session.set_drawing_sheet("A3", 2)
+    before = session.document.to_dict()
+    with pytest.raises(DocumentError, match="list A4 nebo A3|měřítko"):
+        session.set_drawing_sheet(paper, scale)
+    assert session.document.to_dict() == before
+
+
 @pytest.mark.parametrize(("axis", "position", "component", "expected"), [
     ("X", 20, 0, -1), ("Y", 10, 1, 1), ("Z", 10, 1, -1),
 ])

@@ -414,6 +414,9 @@ class MainWindow(QMainWindow):
         for label, value in (("1:1", 1), ("1:2", 0.5), ("1:5", 0.2),
                              ("1:10", 0.1), ("2:1", 2), ("5:1", 5)):
             self.drawing_scale.addItem(label, value)
+        # List a měřítko se ukládají s výkresem (Zpět/Znovu), okno je jen ukazuje.
+        self.drawing_paper.currentIndexChanged.connect(self._drawing_sheet_changed)
+        self.drawing_scale.currentIndexChanged.connect(self._drawing_sheet_changed)
         preview = QPushButton("Náhled pohledů")
         preview.clicked.connect(self.show_drawing_preview)
         preview_settings.addWidget(self.drawing_paper)
@@ -1435,6 +1438,7 @@ class MainWindow(QMainWindow):
         self._update_highlight()
         self._refresh_saved_measurements()
         self._refresh_drawing_dimensions()
+        self._refresh_drawing_sheet()
         self._refresh_drawing_section()
         self._refresh_thickness_map()
         self._refresh_section_panel()
@@ -1852,6 +1856,26 @@ class MainWindow(QMainWindow):
             if record["id"] == selected_id:
                 self.drawing_list.setCurrentItem(item)
 
+    def _refresh_drawing_sheet(self) -> None:
+        paper, scale = (self.session.drawing_sheet() if self.session.document
+                        else ("A4", 1))
+        scales = [self.drawing_scale.itemData(i) for i in range(self.drawing_scale.count())]
+        for combo, index in ((self.drawing_paper, self.drawing_paper.findText(paper)),
+                             (self.drawing_scale, scales.index(scale))):
+            combo.blockSignals(True)  # zobrazení uloženého stavu není nová změna
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+
+    def _drawing_sheet_changed(self, _index: int) -> None:
+        if self.session.document is None:
+            return
+        try:
+            self._busy(lambda: self.session.set_drawing_sheet(
+                self.drawing_paper.currentText(), self.drawing_scale.currentData()))
+        except DocumentError as exc:
+            self._error("List výkresu nelze nastavit", str(exc))
+        self._refresh_all()
+
     def _refresh_drawing_section(self) -> None:
         document = self.session.document
         section = (document.drawing or {}).get("section") if document else None
@@ -1917,9 +1941,9 @@ class MainWindow(QMainWindow):
             self.session._require_computed("náhled výkresu")
             if self.session.document is None:
                 raise DocumentError("Není otevřený žádný model.")
+            paper, scale = self.session.drawing_sheet()
             sheet = self._busy(lambda: layout(self.session.document, self.session.result,
-                                             paper=self.drawing_paper.currentText(),
-                                             scale=self.drawing_scale.currentData()))
+                                             paper=paper, scale=scale))
             section_mark(sheet)
         except (DocumentError, DrawingGeometryError) as exc:
             self._error("Náhled výkresu nelze vytvořit", str(exc))
@@ -1945,9 +1969,9 @@ class MainWindow(QMainWindow):
             self.session._require_computed("export výkresu")
             if self.session.document is None:
                 raise DocumentError("Není otevřený žádný model.")
+            paper, scale = self.session.drawing_sheet()
             sheet = self._busy(lambda: layout(self.session.document, self.session.result,
-                                             paper=self.drawing_paper.currentText(),
-                                             scale=self.drawing_scale.currentData()))
+                                             paper=paper, scale=scale))
             dimensions = self._busy(lambda: annotations(self.session.document,
                                                          self.session.result, sheet))
             if dimensions.warnings:

@@ -1102,6 +1102,30 @@ class ModelSession:
         self._change(mutate)
         return did
 
+    def drawing_sheet(self) -> tuple[str, float]:
+        """Uložený list a měřítko výkresu; model bez výkresu má A4 a 1:1."""
+        drawing = self._require().drawing or {}
+        return drawing.get("paper", "A4"), drawing.get("scale", 1)
+
+    def set_drawing_sheet(self, paper: str, scale: float) -> BuildResult:
+        """Uloží list a měřítko výkresu (jeden krok Zpět). Výchozí A4 a 1:1 u modelu
+        bez výkresu výkres nezakládá – soubor pak zůstane čitelný i starší aplikací."""
+        from skodacad.drawing_data import SCALES
+
+        if paper not in ("A4", "A3"):
+            raise DocumentError("Výkres podporuje list A4 nebo A3.")
+        if isinstance(scale, bool) or scale not in SCALES:
+            raise DocumentError("Výkres má nepodporované měřítko.")
+
+        def mutate(doc: Document) -> None:
+            if doc.drawing is None:
+                if (paper, scale) == ("A4", 1):
+                    return
+                doc.drawing = {"paper": "A4", "scale": 1, "dimensions": []}
+            doc.drawing.update(paper=paper, scale=scale)
+
+        return self._change(mutate)
+
     def set_drawing_title_block(self, number: str, revision: str, author: str,
                                 date: str) -> BuildResult:
         def mutate(doc: Document) -> None:
