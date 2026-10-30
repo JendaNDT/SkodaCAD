@@ -41,7 +41,8 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5–P8 | nezahájeno | P5.1 datový návrh sestav předložit autorovi |
+| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) předán autorovi 30. 10. 2026 | schválení S1–S12, pak P5.2 |
+| P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
 Formát modelu je verze **28** (načítá verze 1–28). Výkon: průniky NDT bez zápisu do
@@ -251,6 +252,7 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
 
 1. **P5.1 Datový návrh** (P1–P3): oddělit díl, instanci a sestavu; identity, relativní
    cesty, cyklické odkazy, chybějící komponenty a verze. Formát nejprve schválit.
+   Návrh S1–S12 s průzkumem a maticí A01–A22: [p5-1-navrh-formatu-sestav.md](p5-1-navrh-formatu-sestav.md).
 2. **P5.2 Polohy**: vkládání, opakované instance, posun/rotace a pevná komponenta;
    změna instance nesmí měnit zdrojový díl ani jinou instanci.
 3. **P5.3 Základní vazby**: po odsouhlasení řešiče souosost, dotyk a vzdálenost,

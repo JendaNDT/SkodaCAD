@@ -1190,7 +1190,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5–P8 | nezahájeno | P5.1 datový návrh sestav (nový formát → nejdřív návrh) |
+| P5 sestavy | [návrh P5.1](docs/p5-1-navrh-formatu-sestav.md) předán autorovi | schválení S1–S12, pak P5.2 polohy |
+| P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
@@ -1290,9 +1291,13 @@ prvků, drsnost, geometrické tolerance, značky svarů a závitů, více listů
 **Výkon (29.–30. 10. 2026):** průniky NDT bez zápisu do vstupů – kolize se už
 nezpomaluje s počtem přiložení (PR #59, `d7b2963`); rychlejší ořez buněk objemu
 (PR #60, `7e138d6`). Výsledky NDT beze změny; testy na Windows 26:55 → 14:53 min.
-**P5–P8 a NDT-17 — nezahájeno.** Další v pořadí je P5 sestavy: P5.1 datový návrh (díl,
-instance, sestava, relativní cesty, chybějící komponenty) přináší nový formát – nejdřív
-návrh autorovi. NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P5 sestavy — návrh P5.1 předán autorovi 30. 10. 2026, bez implementace:**
+[formát sestav](docs/p5-1-navrh-formatu-sestav.md) S1–S12 (samostatný soubor `kind:
+"assembly"` ve verzi 29 s odkazy na soubory dílů vůči složce sestavy, poloha = posun
++ úhly kolem pevných os X→Y→Z, stavy chybějících komponent, cykly, díly se nikdy
+nepřepisují), [průzkum](docs/p5-1-pruzkum-sestav.py) a matice A01–A22 pro P5.2.
+Implementaci P5.2 zahájit až po schválení S1–S12.
+**P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
