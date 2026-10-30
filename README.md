@@ -259,8 +259,30 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
   i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.
 
-Zatím bez vazeb mezi díly (souosost, dotyk), kolizí, kusovníku a exportu sestavy – přijdou
-v dalších krocích (P5.3, P5.4). Polohy ze vazeb se pak budou ukládat stejně jako dnes ručně.
+**Vazby** – místo čísel řekneš, jak díly k sobě patří, a aplikace polohu dopočítá:
+
+- Klikni ve 3D na plochu první komponenty, **s Ctrl** na plochu druhé a dej *Přidat vazbu…*
+  (Ctrl+L). U dvou rovinných ploch vybereš **dotyk** (plochy na sobě), **zarovnání** (v jedné
+  rovině) nebo **vzdálenost** (dotyk s mezerou v mm, nabídne se dnešní vzdálenost; jde i výraz
+  s parametry sestavy), u dvou válcových ploch (díra, čep) je to **souosost**.
+- Vazby jsou ve stromu pod komponentami se stavem (✓ splněna, ✕ ve sporu, ✕ odkaz nenalezen).
+  Vybranou vazbu jde přejmenovat, u vzdálenosti změnit hodnotu (*Použít vazbu*) a smazat
+  (*Smazat vazbu* nebo Delete). Každá změna je jeden krok Zpět.
+- U komponenty je ve stromu vidět, co jí vazby nechaly: **plně určená**, **volná: 2 posuny,
+  1 otočení**, **ve sporu**. Volné pohyby zůstanou, jak byly; ruční posun nebo ±90° vázané
+  komponenty se přijme a vazby ji hned srovnají (změní se jen to, co je volné).
+- Vazba, která by odporovala ostatním, se **nepřijme** – okno řekne, které vazby si odporují,
+  a sestava zůstane, jak byla. Pevná komponenta a komponenta s polohou zadanou výrazem se
+  nehýbou nikdy (u výrazu poradí „nahraď výraz číslem“).
+- Když se díl změní (vyšší krabička), polohy se po načtení samy přepočítají, sestava dostane
+  hvězdičku „neuloženo“ a okno napíše, které polohy se změnily. Pokud se vazby po změně dílu
+  splnit nedají, polohy zůstanou a vazby jsou červeně „ve sporu“.
+- Ukázka: *Otevřít ukázku → Sestavy → krabicka_s_vazbami* – víčko určují tři vazby, nožičky
+  se dotýkají dna. Přepiš u vazby *Víčko na okraji* vzdálenost `mezera` třeba na 15 a víčko
+  se nadzvedne.
+
+Zatím bez úhlových a tečných vazeb, tažení vázaných dílů myší, kolizí, kusovníku a exportu
+sestavy (P5.4).
 
 ### Mapa tloušťky stěny (NDT)
 

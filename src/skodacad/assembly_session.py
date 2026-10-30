@@ -277,8 +277,13 @@ class AssemblySession:
         """Kliknutá plocha kopie ve 3D → odkaz vazby v souřadnicích dílu její komponenty
         (M2): bod, směr a druh plochy, bez poloměru – najde se i po změně rozměru."""
         from skodacad.measure import face_reference
+        from skodacad.picking import split_shapes
         from skodacad.selectors import SelectionError, find_face
 
+        faces, _edges = split_shapes([face])  # kliknutí z okna je tvar OCCT
+        if not faces:
+            raise AssemblyError("Vazba se zadává na plochách – klikni na plochu, ne na hranu.")
+        face = faces[0]
         result = self.result if self.result is not None else self.rebuild()
         instance = next((item for item in result.instances
                          if any(face.is_same(known) for known in item.part.faces())), None)
@@ -325,6 +330,28 @@ class AssemblySession:
             ends.append((rotation @ point + position, rotation @ normal))
         (pa, na), (pb, _nb) = ends
         return tidy(round(float(np.dot(pb - pa, na / np.linalg.norm(na))), 6))
+
+    def constraint_faces(self, constraint_id: str) -> list[Any]:
+        """Plochy vazby v poloze v sestavě (zvýraznění v okně); co nejde najít, vynechá."""
+        from skodacad.assembly_build import location
+        from skodacad.selectors import SelectionError, find_face
+
+        constraint = self._require().constraint(constraint_id)
+        result = self.result if self.result is not None else self.rebuild()
+        faces = []
+        for side in (constraint.a, constraint.b):
+            shape = result.local_shapes.get(side["component"])
+            if shape is None or "face" not in side:
+                continue
+            try:
+                face, _point = find_face(shape, side["face"])
+                rotation, position = self._pose(side["component"])
+            except (SelectionError, AssemblyError):
+                continue
+            component = self._require().component(side["component"])
+            angles = [evaluate(v, result.parameters) for v in component.rotation]
+            faces.append(face.moved(location(list(position), angles)).wrapped)
+        return faces
 
     @staticmethod
     def constraint_kinds(a: dict[str, Any], b: dict[str, Any]) -> list[str]:

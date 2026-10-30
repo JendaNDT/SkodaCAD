@@ -313,6 +313,40 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
     assembly.close()
+    return _self_test_constraints(window, lines, folder) and ok
+
+
+def _self_test_constraints(window, lines: list[str], folder) -> bool:
+    """Zabalená aplikace: vazby P5.3 – řešič (numpy) v balíčku, ukázka plně určená."""
+    sample = folder / "sestavy" / "krabicka_s_vazbami.json"
+    if not sample.is_file():
+        lines.append("✕ Vazby: chybí ukázka krabicka_s_vazbami.json")
+        return False
+    assembly = window.open_assembly(sample, template=True)
+    if assembly is None:
+        lines.append("✕ Vazby: ukázku nejde otevřít")
+        return False
+    session = assembly.session
+    result = session.result
+    try:
+        session.set_parameters({"mezera": 15})  # víčko se nadzvedne o 15 mm
+        lifted = session.assembly.component("vicko").position
+        session.undo()
+        back = session.assembly.component("vicko").position
+    except Exception as exc:  # noqa: BLE001 – self-test hlásí, nepadá
+        lines.append(f"✕ Vazby: {exc}")
+        ok = False
+    else:
+        freedom = result.status("vicko").freedom_text if result is not None else ""
+        ok = (result is not None and result.complete and len(result.constraints) == 7
+              and freedom == "plně určená" and lifted == [0, 0, 47] and back == [0, 0, 32])
+        if ok:
+            lines.append("✓ Vazby: 7 splněných, víčko plně určené, mezera 15 → z = 47 a Zpět")
+        else:
+            problems = "; ".join(result.problems) if result is not None else "bez výsledku"
+            lines.append(f"✕ Vazby: {freedom}, víčko {lifted}; {problems}")
+    session.dirty = False
+    assembly.close()
     return ok
 
 

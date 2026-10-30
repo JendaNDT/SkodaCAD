@@ -506,3 +506,21 @@ def test_cli_lists_constraints_and_freedom(box_project, capsys):
                         constraints=[constraint("v1", "mate", RIM, RING)])
     assert main(["sestava", str(path)]) == 0
     assert "liší od zapsaných" in capsys.readouterr().out
+
+
+def test_constraints_wait_for_parts_computed_in_background(box_project):
+    """Okno počítá díly v pomocném procesu: do té doby vazby čekají a polohy se nemění."""
+    from skodacad.assembly_build import Cache, build_part
+
+    path = box_assembly(box_project, constraints=[constraint("v1", "mate", RIM, RING)])
+    session = AssemblySession(Cache(builder=None))
+    session.open(path)
+    assert session.result.constraint("v1").state == "pending" and not session.dirty
+    assert placement(session, "vicko")[0] == [7, -4, 50]
+    with pytest.raises(AssemblyError, match="ještě počítá"):
+        session.add_constraint("flush", BOX_X, LID_X)
+    for source in list(session.cache.waiting.values()):
+        session.cache.store(source, build_part(source.document))
+    session.rebuild()
+    assert placement(session, "vicko")[0] == [7, -4, 32] and session.dirty
+    assert session.result.complete
