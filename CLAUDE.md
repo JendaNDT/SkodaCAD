@@ -281,6 +281,14 @@
   export jen úplné sestavy. Podsestavy, nejvýš 8 úrovní a 1 000 komponent. NDT, výkres
   a měření zůstávají v dílu. Zdroj se staví jednou, kopie sdílí tvar.
 
+- (30. 10. 2026, schváleno M1–M12) **Vazby v sestavě – P5.3** (`docs/p5-3-navrh-vazeb.md`):
+  dotyk, zarovnání, vzdálenost (i výrazem) a souosost mezi plochami komponent (odkaz
+  významem v souřadnicích dílu, nebo základní rovina/osa dílu); vlastní řešič tuhých těles
+  nad numpy po skupinách propojených komponent, nejmenší posun z dnešní polohy, pokus
+  o obrácení o 180°, stupně volnosti z hodnosti; spor = úprava se nepřijme, spor po změně
+  dílu = polohy zůstanou a sestava je neúplná; pevné a výrazové polohy řešič neposouvá;
+  výsledek do `placement` (jeden krok Zpět); **formát 30** jen pro sestavy s vazbami.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -1232,7 +1240,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3 vazeb](docs/p5-3-navrh-vazeb.md) předán | schválení M1–M12, P5.3A/B vazby, P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3 vazeb](docs/p5-3-navrh-vazeb.md) **schválen** (M1–M12) | P5.3A/B vazby, P5.4 kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1349,7 +1357,7 @@ díl*). **P5.3 vazby – návrh předán 30. 10. 2026:** [vazby](docs/p5-3-navrh
 (dotyk, zarovnání, vzdálenost, souosost; odkazy na plochy významem a základní roviny/osy
 dílu; vlastní řešič tuhých těles nad numpy po skupinách, nejmenší posun, obrácení o 180°,
 spor = úprava se nepřijme; formát 30 jen se vazbami), [průzkum](docs/p5-3-pruzkum-vazeb.py),
-matice B01–B20. Implementaci zahájit až po schválení M1–M12.
+matice B01–B20. **Schváleno autorem 30. 10. 2026 („schvaluji M1–M12“, PR #64).**
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
