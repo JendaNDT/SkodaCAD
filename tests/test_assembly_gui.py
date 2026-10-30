@@ -361,6 +361,38 @@ def test_b20_constraints_in_tree_add_by_two_clicks_edit_and_delete(constrained, 
     assert len(window.session.assembly.constraints) == 7 and not window.session.can_undo
 
 
+def test_constraint_edit_keeps_accessibility_model_indexes_alive(constrained):
+    """macOS AX clients retain cell indexes while an edit refreshes the tree."""
+    from PySide6.QtCore import QPersistentModelIndex
+
+    window = constrained
+    pick_constraint(window, "v1")
+    index = QPersistentModelIndex(window.tree.currentIndex().siblingAtColumn(0))
+    bill_cell = window.bill_table.item(0, 1)
+    bill_name = bill_cell.text()
+    group = window.tree.currentItem().parent()
+    group.setExpanded(False)
+    assert index.data() == "Víčko na okraji"
+    window.constraint_value.setText("15")
+    window.constraint_name.setText("Víčko nad krabičkou")
+    window.constraint_apply.click()
+    assert window.session.assembly.component("vicko").position == [0, 0, 47]
+    assert index.isValid() and index.data() == "Víčko nad krabičkou"
+    assert bill_cell.text() == bill_name
+    assert not group.isExpanded()
+    assert window.tree.currentIndex().siblingAtColumn(0) == index
+    press(window, "Zpět")
+    assert index.isValid() and index.data() == "Víčko na okraji"
+    assert window.session.assembly.component("vicko").position == [0, 0, 32]
+    # Removing a different constraint must not destroy this accessible cell either.
+    pick_constraint(window, "v4")
+    press(window, "Smazat vazbu")
+    assert index.isValid() and index.data() == "Víčko na okraji"
+    press(window, "Zpět")
+    assert items(window).count(("  Nožička 1 na dně", "✓")) == 1
+    assert index.isValid()
+
+
 def test_constraint_errors_in_window_are_czech_dialogs(constrained, dialogs):
     window = constrained
     press(window, "Přidat vazbu…")  # bez výběru: tlačítko je vypnuté, akce nic neudělá

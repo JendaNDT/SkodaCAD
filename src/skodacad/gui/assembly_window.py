@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -68,6 +69,11 @@ log = logging.getLogger(__name__)
 AXES = ("x", "y", "z")
 FILTER = "Sestava ŠkodaCAD (*.json)"
 PART_FILTER = "Díl nebo sestava ŠkodaCAD (*.json)"
+# In the macOS 27.2 / Qt 6.11.2 accessibility-driven acceptance, native
+# single-filter panels left valid JSON/CSV paths disabled. Use Qt's dialog
+# for assembly files and exports, keeping the same filename filters.
+FILE_OPTIONS = (QFileDialog.Option.DontUseNativeDialog if sys.platform == "darwin"
+                else QFileDialog.Option(0))
 MARK = (0.85, 0.10, 0.10)  # kulička v těžišti průniku vybrané kolize
 GONE = "přijatá kolize – už není"
 
@@ -365,14 +371,15 @@ class AssemblyWindow(QMainWindow):
         start = self.session.path.parent if self.session.path else self.user_dir
         path, _ = QFileDialog.getSaveFileName(
             self, "Nová sestava – kam ji uložit (cesty k dílům se počítají od její složky)",
-            str(start / "sestava.json"), FILTER)
+            str(start / "sestava.json"), FILTER, options=FILE_OPTIONS)
         if path:
             self.new_assembly(path if path.lower().endswith(".json") else path + ".json",
                               Path(path).stem)
 
     def open_dialog(self) -> None:
         start = self.session.path.parent if self.session.path else self.user_dir
-        path, _ = QFileDialog.getOpenFileName(self, "Otevřít sestavu", str(start), FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, "Otevřít sestavu", str(start), FILTER,
+                                              options=FILE_OPTIONS)
         if path:
             self.open_assembly(path)
 
@@ -390,7 +397,8 @@ class AssemblyWindow(QMainWindow):
             return False
         start = (self.user_dir / self.session.path.name if self.template
                  else self.session.path or self.user_dir)  # ukázku ukládat mimo ukázky
-        path, _ = QFileDialog.getSaveFileName(self, "Uložit sestavu jako", str(start), FILTER)
+        path, _ = QFileDialog.getSaveFileName(self, "Uložit sestavu jako", str(start), FILTER,
+                                              options=FILE_OPTIONS)
         if not path:
             return False
         path = path if path.lower().endswith(".json") else path + ".json"
@@ -413,7 +421,8 @@ class AssemblyWindow(QMainWindow):
             self._error("Vložit díl", "Nejdřív založ nebo otevři sestavu.")
             return
         path, _ = QFileDialog.getOpenFileName(self, "Vložit díl nebo podsestavu",
-                                              str(self.session.path.parent), PART_FILTER)
+                                              str(self.session.path.parent), PART_FILTER,
+                                              options=FILE_OPTIONS)
         if path:
             self.insert(path)
 
@@ -548,7 +557,8 @@ class AssemblyWindow(QMainWindow):
         if component is None:
             return
         path, _ = QFileDialog.getOpenFileName(self, "Najít soubor komponenty",
-                                              str(self.session.path.parent), PART_FILTER)
+                                              str(self.session.path.parent), PART_FILTER,
+                                              options=FILE_OPTIONS)
         if path:
             self.relink(component, path)
 
@@ -681,7 +691,7 @@ class AssemblyWindow(QMainWindow):
             return
         start = self.session.path.with_name(f"{self.session.path.stem}-kusovnik.csv")
         path, _ = QFileDialog.getSaveFileName(self, "Uložit kusovník", str(start),
-                                              "CSV (*.csv)")
+                                              "CSV (*.csv)", options=FILE_OPTIONS)
         if path:
             path = path if path.lower().endswith(".csv") else path + ".csv"
             if self._run("Kusovník se nepodařilo uložit",
@@ -700,7 +710,7 @@ class AssemblyWindow(QMainWindow):
         if self.template:
             start = self.user_dir / start.name
         path, _ = QFileDialog.getSaveFileName(self, "Exportovat sestavu do STEP", str(start),
-                                              "STEP (*.step *.stp)")
+                                              "STEP (*.step *.stp)", options=FILE_OPTIONS)
         if path:
             path = path if path.lower().endswith((".step", ".stp")) else path + ".step"
             if self._run("Export STEP se nepodařil", lambda: self.session.export_step(path)):
@@ -771,9 +781,7 @@ class AssemblyWindow(QMainWindow):
             texts = [row["label"].capitalize(), row["pair"], row["value"],
                      " – ".join(part for part in (row["note"], row["reason"]) if part)]
             for column, text in enumerate(texts):
-                cell = QTableWidgetItem(text)
-                cell.setToolTip(text)
-                self.findings.setItem(index, column, cell)
+                self._set_cell(self.findings, index, column, text)
             if self._finding is not None and (row["a"], row["b"]) == (self._finding["a"],
                                                                       self._finding["b"]):
                 chosen = index
@@ -809,9 +817,7 @@ class AssemblyWindow(QMainWindow):
                      grams.replace(".", ","), ", ".join(row.components),
                      f"{row.ndt} (jen pro díl)" if row.ndt else ""]
             for column, text in enumerate(texts):
-                cell = QTableWidgetItem(text)
-                cell.setToolTip(text)
-                self.bill_table.setItem(index, column, cell)
+                self._set_cell(self.bill_table, index, column, text)
         self.bill_table.resizeColumnsToContents()
         mass = total_mass(rows)
         text = (f"Řádků {len(rows)}, kusů {sum(row.count for row in rows)}, hmotnost celkem "
@@ -822,6 +828,17 @@ class AssemblyWindow(QMainWindow):
                      "kusovník úplné sestavy.")
         self.bill_note.setText(f"{text}\n{NDT_NOTE}" if result is not None
                                else "Nejdřív založ nebo otevři sestavu.")
+
+    @staticmethod
+    def _set_cell(table: QTableWidget, row: int, column: int, text: str) -> None:
+        """Update cells in place, preserving native accessibility references."""
+        cell = table.item(row, column)
+        if cell is None:
+            cell = QTableWidgetItem()
+            table.setItem(row, column, cell)
+        if cell.text() != text:
+            cell.setText(text)
+        cell.setToolTip(text)
 
     # --- výběr ---------------------------------------------------------------------------
 
@@ -978,8 +995,49 @@ class AssemblyWindow(QMainWindow):
 
     def _fill_tree(self, result: AssemblyResult | None) -> None:
         self.tree.blockSignals(True)
-        self.tree.clear()
+        # Cocoa accessibility keeps references to the selected table cells. Clearing
+        # the whole model on every edit leaves those references dangling (macOS
+        # 27.2 / Qt 6.11.2: SIGSEGV in libqcocoa while reading the AX hierarchy).
+        # Keep existing rows and notify Qt of individual insertions/removals instead.
+        previous: dict[str, QTreeWidgetItem] = {}
+
+        def remember(item: QTreeWidgetItem) -> None:
+            previous[item.data(0, Qt.ItemDataRole.UserRole)] = item
+            for index in range(item.childCount()):
+                remember(item.child(index))
+
+        for index in range(self.tree.topLevelItemCount()):
+            remember(self.tree.topLevelItem(index))
+
+        def row(key: Any, texts: list[str], parent: QTreeWidgetItem | None,
+                index: int) -> QTreeWidgetItem:
+            encoded = json.dumps(key)
+            item = previous.pop(encoded, None)
+            created = item is None
+            if item is None:
+                item = QTreeWidgetItem()
+                item.setData(0, Qt.ItemDataRole.UserRole, encoded)
+            old_parent = item.parent()
+            old_index = (old_parent.indexOfChild(item) if old_parent is not None
+                         else self.tree.indexOfTopLevelItem(item))
+            if item.treeWidget() is None or old_parent is not parent or old_index != index:
+                if old_parent is not None:
+                    old_parent.takeChild(old_index)
+                elif old_index >= 0:
+                    self.tree.takeTopLevelItem(old_index)
+                if parent is None:
+                    self.tree.insertTopLevelItem(index, item)
+                else:
+                    parent.insertChild(index, item)
+            if created:
+                item.setExpanded(True)
+            for column, text in enumerate(texts):
+                if item.text(column) != text:
+                    item.setText(column, text)
+            return item
+
         items: dict[tuple[str, ...], QTreeWidgetItem] = {}
+        positions: dict[tuple[str, ...], int] = {}
         for status in result.statuses if result is not None else []:
             parent = items.get(status.ids[:-1])
             state = "✓" if status.state == "ok" else f"✕ {LABELS[status.state]}"
@@ -990,44 +1048,50 @@ class AssemblyWindow(QMainWindow):
             if status.freedom_text and status.freedom_text != "pevná":
                 state += f" {status.freedom_text}"
             name = status.label + (" (pevná)" if status.fixed else "")
-            item = QTreeWidgetItem([name, status.source, state])
+            parent_ids = status.ids[:-1]
+            index = positions.get(parent_ids, 0)
+            positions[parent_ids] = index + 1
+            item = row(list(status.ids), [name, status.source, state], parent, index)
             tip = "\n".join([status.reason, *status.warnings]).strip()
             for column in range(3):
                 item.setToolTip(column, tip)
-            item.setData(0, Qt.ItemDataRole.UserRole, json.dumps(list(status.ids)))
-            if parent is None:
-                self.tree.addTopLevelItem(item)
-            else:
-                parent.addChild(item)
             items[status.ids] = item
         constraints = [c for c in result.constraints if c.depth == 0] if result else []
         chosen = None
         if constraints:
-            group = QTreeWidgetItem([f"Vazby ({len(constraints)})", "", ""])
-            group.setData(0, Qt.ItemDataRole.UserRole, json.dumps(None))
-            self.tree.addTopLevelItem(group)
-            for constraint in constraints:
+            group = row(None, [f"Vazby ({len(constraints)})", "", ""], None,
+                        positions.get((), 0))
+            for index, constraint in enumerate(constraints):
                 state = ("✓" if constraint.state == "ok"
                          else f"✕ {CONSTRAINT_LABELS[constraint.state]}")
-                item = QTreeWidgetItem([constraint.label, f"{constraint.type_label}: "
-                                        + " ↔ ".join(constraint.components), state])
+                key = constraint.ids[-1]
+                item = row({"constraint": key}, [constraint.label,
+                           f"{constraint.type_label}: " + " ↔ ".join(constraint.components),
+                           state], group, index)
                 for column in range(3):
                     item.setToolTip(column, constraint.reason)
-                key = constraint.ids[-1]
-                item.setData(0, Qt.ItemDataRole.UserRole, json.dumps({"constraint": key}))
-                group.addChild(item)
                 if key == self._constraint:
                     chosen = item
-        self.tree.expandAll()
+        # Remove children before their parents, without resetting unrelated rows.
+        for item in reversed(list(previous.values())):
+            parent = item.parent()
+            if parent is None:
+                self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(item))
+            else:
+                parent.takeChild(parent.indexOfChild(item))
         selected = items.get(self._selected) if self._selected else None
-        if selected is not None:
-            selected.setSelected(True)
-        else:
+        if selected is None:
             self._selected = None
-        if chosen is not None:
-            chosen.setSelected(True)
-        else:
+        if chosen is None:
             self._constraint = None
+        target = chosen if chosen is not None else selected
+        for item in self.tree.selectedItems():
+            if item is not target:
+                item.setSelected(False)
+        if self.tree.currentItem() is not target:
+            self.tree.setCurrentItem(target)
+        if target is not None:
+            target.setSelected(True)
         self.tree.blockSignals(False)
 
     def _refresh_selection(self) -> None:
