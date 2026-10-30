@@ -1,0 +1,13 @@
+{
+  "format": "skodacad",
+  "version": 24,
+  "name": "Šroub M3 × 10 ISO 4762",
+  "description": "Šroub s válcovou hlavou a vnitřním šestihranem ISO 4762 M3 × 10. Hlava leží na rovině XY, dřík míří do −Z.",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {},
+  "features": [
+    {"id": "sroub", "name": "Šroub M3 × 10", "type": "standard", "kind": "socket_screw",
+     "size": "M3", "length": 10, "plane": "XY", "positions": [[0, 0]]}
+  ]
+}

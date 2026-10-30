@@ -61,9 +61,11 @@ FORMAT = "skodacad"
 # docs/p5-1-navrh-formatu-sestav.md). Díly se dál ukládají v nejnižší potřebné verzi.
 # Verze 30: vazby v sestavě („constraints“, návrh docs/p5-3-navrh-vazeb.md); sestava bez
 # vazeb zůstává ve verzi 29.
-VERSION = 30
+# Verze 31: kontroly sestavy („checks“: mez vůle a přijaté kolize, návrh
+# docs/p5-4-navrh-kontrol.md); sestava bez nich zůstává ve verzi 29 nebo 30.
+VERSION = 31
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31)
 ASSEMBLY_KIND = "assembly"
 
 

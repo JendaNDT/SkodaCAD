@@ -209,6 +209,7 @@ class Instance:
     material: str
     volume_mm3: float
     mass_kg: float | None
+    base: Any = None  # tentýž díl v jeho vlastních souřadnicích (export STEP)
 
 
 @dataclass
@@ -223,6 +224,8 @@ class AssemblyResult:
         default_factory=dict)
     # Tvar komponent nejvyšší úrovně v jejich vlastních souřadnicích (odkazy vazeb z okna).
     local_shapes: dict[str, Any] = field(default_factory=dict)
+    # Poloha každé umístěné komponenty vůči její úrovni (strom exportu STEP).
+    locations: dict[tuple[str, ...], Any] = field(default_factory=dict)
 
     @property
     def complete(self) -> bool:
@@ -567,7 +570,7 @@ def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...],
             continue
         piece.instances = [Instance(ids=status.ids, file=status.file, part=built.part,
                                     material=built.material, volume_mm3=built.volume_mm3,
-                                    mass_kg=built.mass_kg)]
+                                    mass_kg=built.mass_kg, base=built.part)]
     if assembly.constraints:
         _solve_level(assembly, pieces, prefix, result, parameters)
     if not prefix:
@@ -578,6 +581,7 @@ def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...],
         if piece.position is None or piece.angles is None or not piece.instances:
             continue
         where = location(piece.position, piece.angles)
+        result.locations[piece.status.ids] = where
         placed.extend(replace(instance, part=instance.part.moved(where))
                       for instance in piece.instances)
     return placed

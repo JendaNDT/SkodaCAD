@@ -23,6 +23,11 @@ a souosost (``coaxial``). Odkaz je plocha významem v souřadnicích dílu kompo
 (``{"component": "vicko", "face": {"at": [...], "normal": [...], "type": "plane"}}``) nebo
 základní rovina či osa dílu (``{"component": "noha", "plane": "XY"}``, ``"axis": "Z"``).
 Sestava bez vazeb se ukládá ve verzi 29, s vazbami ve verzi 30.
+
+Kontroly (formát 31, rozhodnutí K1–K12 v ``docs/p5-4-navrh-kontrol.md``): nepovinné
+``checks`` s mezí vůle (``clearance``, mm) a přijatými kolizemi (``accepted``: dvojice
+komponent jako cesty id, objem průniku při přijetí a poznámka). Výsledky kontrol se
+neukládají – jsou pohled.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,12 +45,16 @@ from typing import Any
 from skodacad.document import ASSEMBLY_KIND, FORMAT, DocumentError, write_json
 
 FIRST_VERSION = 29  # první verze formátu, která zná sestavy
-VERSION = 30  # vazby (constraints)
+VERSION = 31  # kontroly (checks); vazby (constraints) od verze 30
+CONSTRAINTS_VERSION = 30
+DEFAULT_CLEARANCE = 0.5  # mm, výchozí mez vůle (K2, zvoleno)
 MAX_DEPTH = 8  # úrovní podsestav (S10, zvoleno)
 MAX_COMPONENTS = 1000  # komponent po rozbalení podsestav (S10, zvoleno)
 
 _TOP_KEYS = {"format", "kind", "version", "name", "description", "units", "parameters",
-             "components", "constraints"}
+             "components", "constraints", "checks"}
+_CHECK_KEYS = {"clearance", "accepted"}
+_ACCEPTED_KEYS = {"a", "b", "volume", "note"}
 _COMPONENT_KEYS = {"id", "name", "source", "placement", "fixed"}
 _SOURCE_KEYS = {"path", "fingerprint"}
 _PLACEMENT_KEYS = {"position", "rotation"}
@@ -301,6 +311,93 @@ class Component:
         return data
 
 
+def _ids(value: Any, where: str) -> list[str]:
+    if (not isinstance(value, list) or not value
+            or any(not isinstance(item, str) or not item for item in value)):
+        raise AssemblyError(f"{where} musí být cesta id komponent, např. [\"sroub_1\"].")
+    return list(value)
+
+
+@dataclass
+class Accepted:
+    """Přijatá kolize (K3): dvojice komponent, objem průniku při přijetí a poznámka."""
+
+    a: list[str]
+    b: list[str]
+    volume: float
+    note: str = ""
+
+    @property
+    def key(self) -> frozenset[tuple[str, ...]]:
+        return frozenset((tuple(self.a), tuple(self.b)))
+
+    @classmethod
+    def from_dict(cls, data: Any, index: int) -> Accepted:
+        where = f"Přijatá kolize č. {index}"
+        if not isinstance(data, dict):
+            raise AssemblyError(f"{where} musí být objekt.")
+        _unknown(data, _ACCEPTED_KEYS, where)
+        a = _ids(data.get("a"), f"{where}, „a“")
+        b = _ids(data.get("b"), f"{where}, „b“")
+        if a == b:
+            raise AssemblyError(f"{where}: kolize musí být mezi dvěma různými komponentami.")
+        volume = data.get("volume")
+        if (isinstance(volume, bool) or not isinstance(volume, (int, float))
+                or not math.isfinite(volume) or volume < 0):
+            raise AssemblyError(f"{where}: „volume“ musí být nezáporný objem v mm³.")
+        note = data.get("note", "")
+        if not isinstance(note, str):
+            raise AssemblyError(f"{where}: „note“ musí být text.")
+        return cls(a=a, b=b, volume=volume, note=note)
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"a": list(self.a), "b": list(self.b), "volume": self.volume}
+        if self.note:
+            data["note"] = self.note
+        return data
+
+
+@dataclass
+class Checks:
+    """Nastavení kontrol sestavy (K4): mez vůle a přijaté kolize."""
+
+    clearance: float = DEFAULT_CLEARANCE
+    accepted: list[Accepted] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return self.clearance == DEFAULT_CLEARANCE and not self.accepted
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Checks:
+        if not isinstance(data, dict):
+            raise AssemblyError("„checks“ musí být objekt s „clearance“ a „accepted“.")
+        _unknown(data, _CHECK_KEYS, "Kontroly sestavy")
+        clearance = data.get("clearance", DEFAULT_CLEARANCE)
+        if (isinstance(clearance, bool) or not isinstance(clearance, (int, float))
+                or not math.isfinite(clearance) or clearance <= 0):
+            raise AssemblyError("Mez vůle „clearance“ musí být kladné číslo v mm.")
+        raw = data.get("accepted", [])
+        if not isinstance(raw, list):
+            raise AssemblyError("„accepted“ musí být seznam přijatých kolizí.")
+        accepted = [Accepted.from_dict(item, index) for index, item in enumerate(raw, 1)]
+        if len({item.key for item in accepted}) != len(accepted):
+            raise AssemblyError("Stejná dvojice komponent je mezi přijatými kolizemi dvakrát.")
+        return cls(clearance=clearance, accepted=accepted)
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        if self.clearance != DEFAULT_CLEARANCE:
+            data["clearance"] = self.clearance
+        if self.accepted:
+            data["accepted"] = [item.to_dict() for item in self.accepted]
+        return data
+
+    def find(self, a: Sequence[str], b: Sequence[str]) -> Accepted | None:
+        key = frozenset((tuple(a), tuple(b)))
+        return next((item for item in self.accepted if item.key == key), None)
+
+
 @dataclass
 class Assembly:
     """Soubor sestavy: název, popis, parametry pro polohy a seznam komponent."""
@@ -311,6 +408,7 @@ class Assembly:
     parameters: dict[str, Any] = field(default_factory=dict)
     components: list[Component] = field(default_factory=list)
     constraints: list[Constraint] = field(default_factory=list)
+    checks: Checks = field(default_factory=Checks)
 
     @classmethod
     def from_dict(cls, data: Any) -> Assembly:
@@ -328,9 +426,13 @@ class Assembly:
             raise AssemblyError(f"Sestavy existují až od formátu verze {FIRST_VERSION}, soubor "
                                 f"uvádí verzi {version}.")
         _unknown(data, _TOP_KEYS, "Sestava")
-        if "constraints" in data and version < 30:
-            raise AssemblyError(f"Vazby jsou až ve formátu verze 30, soubor uvádí verzi "
-                                f"{version}.")
+        if "constraints" in data and version < CONSTRAINTS_VERSION:
+            raise AssemblyError(f"Vazby jsou až ve formátu verze {CONSTRAINTS_VERSION}, "
+                                f"soubor uvádí verzi {version}.")
+        if "checks" in data and version < VERSION:
+            raise AssemblyError(f"Kontroly sestavy jsou až ve formátu verze {VERSION}, soubor "
+                                f"uvádí verzi {version}.")
+        checks = Checks.from_dict(data["checks"]) if "checks" in data else Checks()
         if data.get("units", "mm") != "mm":
             raise AssemblyError(f"Jednotky „{data.get('units')}“ nejsou podporované, "
                                 "sestava musí být v mm.")
@@ -368,13 +470,14 @@ class Assembly:
         return cls(name=data.get("name", "Nová sestava"),
                    description=data.get("description", ""),
                    parameters=copy.deepcopy(parameters), components=components,
-                   constraints=constraints)
+                   constraints=constraints, checks=checks)
 
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
             "kind": ASSEMBLY_KIND,
-            "version": VERSION if self.constraints else FIRST_VERSION,
+            "version": (VERSION if not self.checks.empty
+                        else CONSTRAINTS_VERSION if self.constraints else FIRST_VERSION),
             "name": self.name,
             "description": self.description,
             "units": self.units,
@@ -383,6 +486,8 @@ class Assembly:
         }
         if self.constraints:
             data["constraints"] = [constraint.to_dict() for constraint in self.constraints]
+        if not self.checks.empty:
+            data["checks"] = self.checks.to_dict()
         return data
 
     def constraint(self, constraint_id: str) -> Constraint:

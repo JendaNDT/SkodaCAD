@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from skodacad.assembly import (
+    Accepted,
     Assembly,
     AssemblyError,
     Component,
@@ -74,6 +75,7 @@ class AssemblySession:
         self.dirty = False
         self.cache = cache or Cache()
         self.notice = ""  # polohy podle vazeb se při sestavení změnily (okno ukáže a smaže)
+        self._checked: tuple[Any, Any] | None = None  # (klíč, výsledek kontroly) – pohled
         self._undo: list[Assembly] = []
         self._redo: list[Assembly] = []
         self._group: int | None = None
@@ -226,8 +228,101 @@ class AssemblySession:
         def mutate(a: Assembly) -> None:
             a.components.remove(a.component(component_id))
             a.constraints = [c for c in a.constraints if component_id not in c.components]
+            a.checks.accepted = [item for item in a.checks.accepted
+                                 if component_id not in (item.a[0], item.b[0])]
 
         return self._change(mutate)
+
+    # --- kontroly (P5.4) -----------------------------------------------------------------
+
+    def set_clearance(self, value: float) -> AssemblyResult:
+        """Mez vůle v mm (K2) – jeden krok Zpět."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0:
+            raise AssemblyError("Mez vůle musí být kladné číslo v mm.")
+
+        def mutate(a: Assembly) -> None:
+            a.checks.clearance = tidy(float(value))
+
+        return self._change(mutate)
+
+    def accept_collision(self, a: Sequence[str], b: Sequence[str], volume: float,
+                         note: str = "") -> AssemblyResult:
+        """Přijme kolizi dvojice komponent s objemem průniku (K3) – jeden krok Zpět."""
+        result = self.result if self.result is not None else self.rebuild()
+        for ids in (a, b):
+            result.status(list(ids))  # neznámá komponenta = česká chyba
+        record = Accepted(a=list(a), b=list(b), volume=round(float(volume), 3),
+                          note=note.strip())
+
+        def mutate(assembly: Assembly) -> None:
+            assembly.checks.accepted = [item for item in assembly.checks.accepted
+                                        if item.key != record.key]
+            assembly.checks.accepted.append(record)
+
+        return self._change(mutate)
+
+    def unaccept_collision(self, a: Sequence[str], b: Sequence[str]) -> AssemblyResult:
+        key = frozenset((tuple(a), tuple(b)))
+        if not any(item.key == key for item in self._require().checks.accepted):
+            raise AssemblyError("Tahle dvojice komponent není mezi přijatými kolizemi.")
+
+        def mutate(assembly: Assembly) -> None:
+            assembly.checks.accepted = [item for item in assembly.checks.accepted
+                                        if item.key != key]
+
+        return self._change(mutate)
+
+    def check(self, progress: Callable[[int, int], None] | None = None) -> Any:
+        """Kolize a vůle úplné sestavy (K1, K2); výsledek si sezení pamatuje jako pohled."""
+        from skodacad.assembly_check import check
+
+        result = self.result if self.result is not None else self.rebuild()
+        outcome = check(result, self._require().checks, progress=progress)
+        self.store_check(outcome)
+        return outcome
+
+    def store_check(self, outcome: Any) -> None:
+        """Převezme výsledek kontroly (i z pomocného procesu) pro současnou sestavu."""
+        from skodacad.assembly_check import geometry_key
+
+        if self.result is not None:
+            self._checked = ((geometry_key(self.result), outcome.clearance), outcome)
+
+    def last_check(self) -> Any:
+        """Poslední kontrola, pokud pořád platí (stejné díly, polohy a mez vůle); přijaté
+        kolize se do ní promítnou bez nového výpočtu. Jinak None."""
+        from skodacad.assembly_check import geometry_key
+
+        if self._checked is None or self.result is None or self.assembly is None:
+            return None
+        key, outcome = self._checked
+        if key != (geometry_key(self.result), self.assembly.checks.clearance):
+            return None
+        return outcome.with_accepted(self.assembly.checks)
+
+    def bill(self) -> list[Any]:
+        """Rozbalený kusovník (K6) – v okně i z neúplné sestavy (s nápisem „neúplný“)."""
+        from skodacad.assembly_check import bill
+
+        result = self.result if self.result is not None else self.rebuild()
+        return bill(result, self._require_path())
+
+    def write_bill(self, path: str | Path) -> Path:
+        """Kusovník do CSV (K7) – jen z úplné sestavy."""
+        from skodacad.assembly_check import write_bill
+
+        result = self.result if self.result is not None else self.rebuild()
+        if not result.complete:
+            raise AssemblyError("Kusovník jde uložit jen z úplné sestavy – nejdřív oprav "
+                                "chybějící komponenty, chyby dílů a vazby ve sporu.")
+        return write_bill(self.bill(), path, self._require().name)
+
+    def export_step(self, path: str | Path) -> Path:
+        """Úplná sestava do STEP se stromem dílů (K8)."""
+        from skodacad.assembly_check import export_step
+
+        result = self.result if self.result is not None else self.rebuild()
+        return export_step(result, path, self._require().name)
 
     # --- vazby (P5.3) -----------------------------------------------------------------
 

@@ -1,0 +1,16 @@
+{
+  "format": "skodacad",
+  "version": 24,
+  "name": "Deska se závitem M3",
+  "description": "Deska 40 × 30 × 6 mm se závitovou dírou M3 uprostřed. Závit je jen vyznačený – díra má průměr vrtáku pod závit (2,5 mm), proto šroub M3 v sestavě do desky zasahuje.",
+  "units": "mm",
+  "material": "hlinik",
+  "parameters": {"L": 40, "W": 30, "t": 6},
+  "features": [
+    {"id": "obrys", "name": "Obrys desky", "type": "sketch", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": "L", "height": "W"}]},
+    {"id": "deska", "name": "Deska", "type": "extrude", "sketch": "obrys", "distance": "t"},
+    {"id": "dira", "name": "Závit M3", "type": "hole", "kind": "tapped", "size": "M3",
+     "plane": "top", "positions": [[0, 0]], "through_all": true}
+  ]
+}

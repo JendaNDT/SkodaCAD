@@ -150,7 +150,7 @@ def test_b02_save_and_open_keeps_constraints_and_placements(box_project):
 
 
 @pytest.mark.parametrize(("change", "message"), [
-    (lambda d: d.update(version=31), "novější verze"),
+    (lambda d: d.update(version=32), "novější verze"),
     (lambda d: d.update(version=29), "až ve formátu verze 30"),
     (lambda d: d["constraints"][0].update(gap=1), "neznámý klíč „gap“"),
     (lambda d: d["constraints"][0].update(type="angle"), "neznámý druh „angle“"),
