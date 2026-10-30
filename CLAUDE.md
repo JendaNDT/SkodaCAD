@@ -27,7 +27,8 @@
   nevymýšlej třídy ani parametry (OCCT 7.x a 8.x se liší).
 - **Model je čitelný JSON „recept“** (parametry + seznam prvků), ne Python skript (bezpečnost,
   editace z GUI i AI) a ne binární formát. Popis formátu je v README.md.
-- **Okno: PySide6 6.11.2 + 3D prohlížeč Open CASCADE (V3d/AIS)**. Windows `.exe` staví
+- **Okno: PySide6 6.11.3 + 3D prohlížeč Open CASCADE (V3d/AIS)** (opravná aktualizace při P5.5).
+  Windows `.exe` staví
   PyInstaller v GitHub Actions (`.github/workflows/windows.yml`); z větve `main` se zveřejní
   jako vydání „nejnovejsi“ (odkaz ke stažení je v README). Repozitář je veřejný.
 - Podklady jsou v `docs/` (tři výzkumy; `VYZKUM_3D_CAD.md` a `zprava-hluboky-vyzkum.md` jsou
@@ -1240,6 +1241,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   nejde a uložení skončí chybou „jiném disku“ – odhalilo CI.
 - `QWidget.grab()` 3D prohlížeč nezachytí (černá plocha) – snímek okna přes
   `screen.grabWindow`, 3D zvlášť `viewer.dump`.
+- P5.5 na macOS 27.2 odhalilo pády v Cocoa přístupnosti při obnově stromu a zadávání
+  souboru. Zachovávat řádky a buňky při běžné obnově, nerozbalovat celý strom znovu;
+  regrese drží trvalý index vazby i sbalenou skupinu. PySide6 je zamčené na 6.11.3.
+  Dialogy souborů sestavy na Macu používají Qt (nativní panely při ovládání přes
+  přístupnost odmítaly platné JSON/CSV); Windows používá původní systémové dialogy.
 - Řešič vazeb: rovnice směrů se násobí ramenem (`scale`), krok je nejmenší normy (SVD)
   v měřítku mm s **jednotným** útlumem a na konci se vrátí volné pohyby (`_pull_back`).
   Marquardtův útlum podle sloupců zlevnil téměř volný pohyb (krabička ujela o 43 mm), bez
@@ -1293,7 +1299,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) sloučeny (PR #65); [P5.4 kontroly](docs/p5-4-kontroly-overeni.md) (K1–K12) v PR | ruční zkouška vazeb a kontrol, P5.5 přijetí |
+| P5 sestavy | P5.2 polohy, P5.3 vazby a P5.4 kontroly sloučeny (PR #63, #65, #68); [místní technické ověření Macu](docs/p5-5-overeni-macos-2026-10-30.md) a navazující opravy | ruční Windows, Excel, přijetí P5.5 autorem; otevřené meze v protokolu |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

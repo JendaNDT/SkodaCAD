@@ -41,11 +41,12 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | P5.1 schválen (S1–S12); [P5.2 polohy](p5-2-jadro-sestav.md) sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3](p5-3-navrh-vazeb.md) schválen (M1–M12), [vazby P5.3A/B](p5-3-vazby-overeni.md) sloučeny (PR #65); [návrh P5.4](p5-4-navrh-kontrol.md) schválen (K1–K12), [kontroly P5.4A/B](p5-4-kontroly-overeni.md) v PR | ruční zkouška vazeb a kontrol, P5.5 přijetí |
+| P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [místní technické ověření na Macu](p5-5-overeni-macos-2026-10-30.md) a navazující opravy | ruční Windows, Excel, přijetí P5.5 autorem; meze místního ověření v protokolu |
 | P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
-Formát modelu je verze **29** (načítá verze 1–29; 29 = soubor sestavy, díly zůstávají ve verzi 24–28). Výkon: průniky NDT bez zápisu do
+Nejnovější formát je **31** (načítá verze 1–31; sestavy 29–31 podle vazeb a kontrol,
+díly se ukládají ve verzi 24–28). Výkon: průniky NDT bez zápisu do
 vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
 Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
 
