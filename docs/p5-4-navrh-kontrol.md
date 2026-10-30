@@ -1,6 +1,8 @@
 # P5.4 — návrh kontrol sestavy: kolize, vůle, kusovník, export, vymezení NDT
 
-**Stav: návrh ke schválení (30. 10. 2026).** `src/` se tímto krokem nemění. Vychází z `main` /
+**Stav: schváleno autorem 30. 10. 2026** odpovědí **„K1–K12“** na žádost o schválení
+doporučených variant (návrhové [PR #67](https://github.com/JendaNDT/SkodaCAD/pull/67));
+opravňuje implementovat P5.4A a P5.4B. `src/` se tímto krokem nemění. Vychází z `main` /
 `65c3e21` (sloučené vazby P5.3, [PR #65](https://github.com/JendaNDT/SkodaCAD/pull/65)), z bodu
 P5.4 [roadmapy](roadmapa-vyvoje.md#p5--sestavy) („kolize a vůle, kusovníkový základ a export;
 vymezit působení NDT mezi komponentami, nepřenášet automaticky závěry z jednoho dílu na
