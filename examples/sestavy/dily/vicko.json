@@ -1,0 +1,72 @@
+{
+  "format": "skodacad",
+  "version": 24,
+  "name": "Víčko krabičky",
+  "description": "Víčko ke krabičce z ukázky krabicka.json, tištěné lemem nahoru. V ukázkové sestavě je otočené o 180° kolem osy X a lemem zapadá do krabičky. L × W = vnější rozměr, t = tloušťka desky, stena = stěna krabičky, vule = vůle lemu ke stěně, lem = výška lemu, s = šířka lemu.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {
+    "L": 80,
+    "W": 50,
+    "r": 6,
+    "t": 2,
+    "stena": 2,
+    "vule": 0.3,
+    "lem": 4,
+    "s": 1.5
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "name": "Obrys víčka",
+      "type": "sketch",
+      "plane": "XY",
+      "elements": [
+        {"shape": "rectangle", "width": "L", "height": "W", "corner_radius": "r"}
+      ]
+    },
+    {
+      "id": "deska",
+      "name": "Deska víčka",
+      "type": "extrude",
+      "sketch": "obrys",
+      "distance": "t"
+    },
+    {
+      "id": "lem_obrys",
+      "name": "Obrys lemu",
+      "type": "sketch",
+      "plane": "top",
+      "elements": [
+        {"shape": "rectangle", "width": "L - 2*(stena + vule)", "height": "W - 2*(stena + vule)",
+         "corner_radius": "r - stena - vule"}
+      ]
+    },
+    {
+      "id": "lem_plny",
+      "name": "Lem (plný)",
+      "type": "extrude",
+      "sketch": "lem_obrys",
+      "distance": "lem"
+    },
+    {
+      "id": "lem_vnitrek",
+      "name": "Vnitřek lemu",
+      "type": "sketch",
+      "plane": "top",
+      "elements": [
+        {"shape": "rectangle", "width": "L - 2*(stena + vule + s)",
+         "height": "W - 2*(stena + vule + s)", "corner_radius": "r - stena - vule - s"}
+      ]
+    },
+    {
+      "id": "lem_vybrani",
+      "name": "Vybrání lemu",
+      "type": "extrude",
+      "sketch": "lem_vnitrek",
+      "operation": "cut",
+      "direction": "reverse",
+      "distance": "lem"
+    }
+  ]
+}

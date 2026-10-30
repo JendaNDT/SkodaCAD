@@ -711,7 +711,12 @@ skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → prirub
 skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
 skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
 skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
+skodacad sestava examples/sestavy/krabicka_s_vickem.json   # komponenty, stav, objem, hmotnost
 ```
+
+`skodacad sestava` vypíše komponenty sestavy (✓ v pořádku, ✕ chybí nebo nejde postavit
+s českým důvodem), upozornění, objem, hmotnost a obálku. Když některá komponenta chybí,
+napíše „NEÚPLNÁ“ a skončí kódem 1. Díly se přitom nemění.
 
 `skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
 (úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
@@ -1163,6 +1168,41 @@ Po změně receptu dílu je studie zastaralá; pokud svar už nemá materiál, v
 Potvrzení ponechá zadané souřadnice, nepřesune cíl na jiné místo. Změna cíle odstraní
 starou mapu i ověření. Ověření objemu má navíc `verified.target`, otisk zadání cíle;
 při ruční změně cíle v JSON přestane platit i při stejném dílu.
+
+### Sestavy (`"kind": "assembly"`, verze 29)
+
+Sestava je **samostatný soubor**, který skládá díly (a jiné sestavy) do poloh. Na soubory
+dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–28); sestava má verzi 29.
+
+```json
+{
+  "format": "skodacad", "kind": "assembly", "version": 29,
+  "name": "Krabička s víčkem", "units": "mm", "parameters": {"H": 30},
+  "components": [
+    {"id": "krabicka", "source": {"path": "../krabicka.json"},
+     "placement": {"position": [0, 0, 0], "rotation": [0, 0, 0]}, "fixed": true},
+    {"id": "vicko", "name": "Víčko", "source": {"path": "dily/vicko.json"},
+     "placement": {"position": [0, 0, "H + 2"], "rotation": [180, 0, 0]}}
+  ]
+}
+```
+
+| Klíč komponenty | Význam |
+|---|---|
+| `id` | jedinečné v sestavě; vše se na komponentu odkazuje jím, nikdy pořadím |
+| `name` | nepovinný český název |
+| `source.path` | cesta k souboru dílu nebo podsestavy **vůči složce sestavy**, oddělovač `/`, `..` jen na začátku; bez písmene disku a `\` |
+| `source.fingerprint` | otisk receptu zdroje při posledním uložení (zapisuje aplikace); liší-li se, sestava upozorní „zdroj se změnil“ – nikdy neblokuje |
+| `placement.position` | posun [x, y, z] v mm (čísla nebo výrazy s `parameters` sestavy) |
+| `placement.rotation` | úhly [rx, ry, rz] ve stupních: otočení kolem **pevných os sestavy nejdřív X, pak Y, pak Z**; díl se točí kolem svého počátku |
+| `fixed` | `true` = pevná komponenta (nehne ji tažení ani budoucí vazby) |
+
+Bez měřítka a zrcadlení (zrcadlený díl = vlastní soubor s prvkem *Zrcadlení*). Neznámý klíč
+je chyba. Komponenta, jejíž soubor chybí, nejde přečíst, má chybu přepočtu nebo vede v kruhu
+zpět na sestavu, v sestavě zůstane se stavem a důvodem; součty pak platí jen pro nalezené
+díly a export je jen pro úplnou sestavu. Nejvýš 8 úrovní podsestav a 1 000 komponent.
+Kopie téhož dílu se počítají jednou. NDT studie, výkres a měření patří dílu, ne sestavě.
+Ukázka: `examples/sestavy/krabicka_s_vickem.json`.
 
 ### Materiály
 

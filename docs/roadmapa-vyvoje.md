@@ -41,11 +41,11 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) schválen 30. 10. 2026 (S1–S12) | P5.2 polohy |
+| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) schválen 30. 10. 2026 (S1–S12); [P5.2A jádro](p5-2-jadro-sestav.md), formát 29 | P5.2B okno |
 | P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
-Formát modelu je verze **28** (načítá verze 1–28). Výkon: průniky NDT bez zápisu do
+Formát modelu je verze **29** (načítá verze 1–29; 29 = soubor sestavy, díly zůstávají ve verzi 24–28). Výkon: průniky NDT bez zápisu do
 vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
 Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
 

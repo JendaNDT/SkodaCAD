@@ -1,6 +1,7 @@
 """Příkazová řádka: ``skodacad build model.json``, ``skodacad ai model.json "úprava"`` a
 ``skodacad paprsek model.json --z x,y,z --smer dx,dy,dz``, ``skodacad sonda model.json --bod
-x,y,z`` a ``skodacad audit model.json`` (předběžný NDT audit všech studií).
+x,y,z``, ``skodacad audit model.json`` (předběžný NDT audit všech studií) a ``skodacad
+sestava sestava.json`` (komponenty sestavy, jejich stav, objem a hmotnost).
 
 ``build`` postaví díl z modelu, vypíše strom prvků (✓ / ✕ / ·), vlastnosti dílu, uložená
 měření, mapu tloušťky stěny (je-li v modelu nastavená, nebo s ``--mapa``) a uloží exporty
@@ -265,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
     navrh.add_argument("--zpracovatel", default="", help="jméno do zprávy")
     navrh.add_argument("--ulozit-zadani", action="store_true",
                        help="výslovně zapiš zadání do původního JSON modelu")
+    sestava = commands.add_parser("sestava", help="sestava: komponenty, jejich stav, objem "
+                                  "a hmotnost (díly se nemění)")
+    sestava.add_argument("model", type=Path, help="soubor sestavy (.json)")
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -288,10 +292,50 @@ def main(argv: list[str] | None = None) -> int:
             return _audit(args)
         if args.command == "navrh":
             return _navrh(args)
+        if args.command == "sestava":
+            return _assembly(args)
         return _ai(args) if args.command == "ai" else _build(args)
     except (DocumentError, ExpressionError, ValueError, RuntimeError, AssistantError) as exc:
         print(f"Chyba: {exc}", file=sys.stderr)
         return 2
+
+
+def _assembly(args: argparse.Namespace) -> int:
+    """Vypíše sestavu; nenulový kód, když je neúplná (chybí nebo nejde postavit komponenta)."""
+    from skodacad.assembly import Assembly
+    from skodacad.assembly_build import LABELS, build
+
+    assembly = Assembly.load(args.model)
+    result = build(assembly, args.model)
+    print(f"Sestava: {assembly.name} ({args.model})")
+    for status in result.statuses:
+        icon = "✓" if status.state == "ok" else "✕"
+        kind = {"part": "díl", "assembly": "podsestava"}.get(status.kind, "")
+        notes = ", ".join(item for item in (kind, "pevná" if status.fixed else "") if item)
+        line = f"{'  ' * (status.depth + 1)}{icon} {status.label}  {status.source}"
+        line += f"  ({notes})" if notes else ""
+        if status.state != "ok":
+            line += f" – {LABELS[status.state]}: {status.reason}"
+        print(line)
+        for warning in status.warnings:
+            print(f"{'  ' * (status.depth + 2)}⚠ {warning}")
+    if result.error:
+        print(f"  ✕ {result.error}")
+    print(f"Komponent: {len(result.statuses)}, dílů v polohách: {len(result.instances)}")
+    mass = result.mass_kg
+    mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
+    print(f"Objem: {result.volume_mm3:.2f} mm³, hmotnost: {mass_text}")
+    bounds = result.bounds()
+    if bounds is not None:
+        low, high = bounds
+        print("Obálka: " + ", ".join(f"{axis} {a:.2f} … {b:.2f}"
+                                     for axis, a, b in zip("xyz", low, high, strict=True))
+              + " mm")
+    if not result.complete:
+        print("Sestava je NEÚPLNÁ – součty platí jen pro nalezené díly; export a kontroly "
+              "jen pro úplnou sestavu.")
+        return 1
+    return 0
 
 
 def _ray(args: argparse.Namespace) -> int:
