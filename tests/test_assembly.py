@@ -466,3 +466,21 @@ def test_a22_sample_and_its_parts_are_in_examples():
     assert assembly.components[0].fixed
     result = build(assembly, SAMPLE, Cache())
     assert result.complete and not result.warnings
+
+
+def test_deferred_cache_waits_for_background_parts(project):
+    """Okno staví díly v pomocném procesu: sestavení nejdřív jen ohlásí, co čeká."""
+    from skodacad.assembly_build import Built, build_part
+
+    cache = Cache(builder=None)
+    file = project / "sestava.json"
+    first = build(Assembly.load(file), file, cache)
+    assert [s.state for s in first.statuses] == ["pending", "pending"]
+    assert not first.complete and len(cache.waiting) == 1  # obě kopie = jeden díl
+    (source,) = cache.waiting.values()
+    cache.store(source, build_part(source.document))
+    assert not cache.waiting
+    done = build(Assembly.load(file), file, cache)
+    assert done.complete and done.volume_mm3 == pytest.approx(2 * 6000)
+    broken = Built.from_result(source.document, None)
+    assert broken.problem and broken.part is None

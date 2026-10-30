@@ -17,6 +17,8 @@ ROOT = Path(SPECPATH).parent  # noqa: F821 – SPECPATH dodává PyInstaller
 datas = [(str(path), "examples") for path in sorted((ROOT / "examples").glob("*.json"))]
 datas += [(str(path), path.parent.relative_to(ROOT).as_posix())  # i pomocné cílové objemy
           for path in sorted((ROOT / "examples" / "ndt").rglob("*.json"))]
+datas += [(str(path), path.parent.relative_to(ROOT).as_posix())  # ukázková sestava a její díly
+          for path in sorted((ROOT / "examples" / "sestavy").rglob("*.json"))]
 datas.append((str(ROOT / "README.md"), "."))  # popis formátu modelu pro AI asistenta
 binaries = []
 # AI asistent: knihovna anthropic načítá části API až při použití – přibalit všechny.

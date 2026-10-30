@@ -1,9 +1,9 @@
-# P5.2A — jádro sestav (formát 29)
+# P5.2 — polohy v sestavě: jádro formátu 29 a okno
 
 **Stav: implementováno podle schváleného návrhu [P5.1](p5-1-navrh-formatu-sestav.md)
-(S1–S12, autor 30. 10. 2026: „schvaluji S1–S12“).** Jde o jádro bez okna: soubor sestavy,
-sestavení, sezení se Zpět/Znovu a příkazová řádka. Okno (P5.2B) zbývá; ruční přijetí P5
-zůstává na autorovi.
+(S1–S12, autor 30. 10. 2026: „schvaluji S1–S12“).** P5.2A je jádro (soubor sestavy,
+sestavení, sezení se Zpět/Znovu, příkazová řádka), P5.2B okno sestavy. Ruční zkouška
+a přijetí P5 zůstávají na autorovi.
 
 ## Co přibylo
 
@@ -15,7 +15,11 @@ zůstává na autorovi.
 | `assembly_session.py` | `AssemblySession`: nová sestava (hned uložená), otevřít, uložit, *Uložit jako* (přepočítá cesty), vložit, smazat, přejmenovat, poloha, posun, otočení ±90°, pevná, *Najít soubor* s upozorněním, parametry, Zpět/Znovu |
 | `cli.py` | `skodacad sestava <soubor>` – výpis komponent se stavy, objem, hmotnost, obálka; neúplná sestava = kód 1 |
 | `examples/sestavy/` | ukázka *Krabička s víčkem*: `../krabicka.json`, víčko otočené o 180° kolem X (`dily/vicko.json`) a čtyři kopie nožičky (`dily/nozicka.json`) |
-| `README.md` | oddíl „Sestavy“ v popisu formátu (čte ho i AI asistent), příkaz `skodacad sestava` |
+| `README.md` | návod „Sestavy“, oddíl „Sestavy“ v popisu formátu (čte ho i AI asistent), příkaz `skodacad sestava` |
+| `gui/assembly_window.py` (P5.2B) | okno sestavy: strom komponent se stavy, formulář polohy (čísla i výrazy, tlačítka ±90°, *Pevná*), *Vložit díl*, *Smazat*, *Najít soubor…* (s otázkou u jiného receptu), *Otevřít díl* v hlavním okně, Zpět/Znovu, klik ve 3D vybere kopii, díly na pozadí v pomocném procesu |
+| `gui/main_window.py` | *Otevřít…* pozná sestavu podle `kind` a otevře okno sestavy; *Nová sestava…*; *Otevřít ukázku → Sestavy* (šablona – *Uložit* se zeptá kam) |
+| `gui/app.py`, `packaging/skodacad.spec` | self-test otevře ukázkovou sestavu se skutečným 3D; balíček přibalí `examples/sestavy/` |
+| `tests/p35_cross_os.py`, `p35-cross-os.yml` | na jednom systému vznikne sestava v podsložce s odkazy `../…`, na druhém se otevře úplná se stejnými otisky, objemem a obálkami |
 
 Díly se dál ukládají v nejnižší potřebné verzi (24–28); soubor sestavy má verzi 29.
 Starší aplikace ho odmítne hláškou „stáhni aktuální aplikaci“.
@@ -43,11 +47,18 @@ Testy jsou v `tests/test_assembly.py`. „Okno“ = část, která patří do P5
 | A15 | `test_a15_…` | *Najít soubor* s jiným receptem upozorní, je jeden krok Zpět, nečitelný soubor se nepřijme |
 | A16 | `test_a16_…` (2) | ukázka: objem = krabička + víčko (vzorec zaobleného obdélníku) + 4 × nožička (π r² h), hmotnost PETG, víčko z = 26…32; neúplná sestava = kód 1 a „NEÚPLNÁ“ |
 | A17 | `test_a17_…` | podsestava posunutá a otočená o 90° kolem Z: obálka (95, 5, 0)–(105, 15, 3) |
-| A18 | `test_a18_…` | složka projektu zkopírovaná jinam se otevře stejně (přenos mezi Windows a macOS ověří až CI P5.2B) |
+| A18 | `test_a18_…`, `p35_cross_os.py` | složka projektu zkopírovaná jinam se otevře stejně; v CI vytvořená na macOS / Windows a otevřená na druhém systému (místně ověřena kopie složky: 64 387,064 mm³) |
 | A19 | `test_a19_…` | jiná velikost písmen v cestě = najde se s upozorněním (na všech systémech stejně) |
 | A20 | `test_a20_…` | vložit, posunout, přejmenovat, smazat = každá změna jeden krok; nezměněná úprava žádný; Znovu |
 | A21 | `test_a21_…` | první komponenta pevná, tažení ji nepohne, číslem ve formuláři ano; nová sestava se hned uloží |
-| A22 | `test_a22_…` | ukázka je v `examples/sestavy/`, je úplná a bez upozornění (nabídka, self-test a balíček – okno) |
+| A22 | `test_a22_…`, okno, self-test | ukázka je v `examples/sestavy/`, úplná a bez upozornění; nabídka *Sestavy*, self-test „✓ Sestava: 31309 mm³“ a balíček |
+
+Okno (`tests/test_assembly_gui.py`, náhradní prohlížeč): strom a souhrn po otevření z hlavního
+okna, formulář = jeden krok Zpět i se jménem, chybný výraz, ±90° a *Pevná*, chybějící díl
+a *Najít soubor* s otázkou, vložení a smazání, klik ve 3D, *Otevřít díl*, nová sestava
+a všechny akce souboru, ukázka jako šablona (soubor ukázky beze změny), dotaz při zavření,
+výpočet dílů v pomocném procesu (stav „počítá se“, pak úplná sestava). Skutečné okno pod Xvfb:
+self-test `VÝSLEDEK: OK` včetně „✓ Sestava“ a snímek okna sestavy.
 
 Navíc: zpětný převod úhlů pro obecné úhly a ±90° kolem Y, vložení sestavy do sebe, podsestavy,
 která obsahuje tuto sestavu (cyklus), nečitelného souboru a souboru na jiném disku Windows;
@@ -55,11 +66,12 @@ která obsahuje tuto sestavu (cyklus), nečitelného souboru a souboru na jiném
 
 Jednorázové měření v cloudu: ukázka se sestaví za 0,6 s, podruhé ze mezipaměti za 5 ms.
 
-## Zbývá (P5.2B a dál)
+## Omezení a zbývá
 
-- Okno: *Nová sestava*, *Otevřít* pozná sestavu, strom komponent se stavy, formulář polohy
-  s tlačítky ±90°, *Pevná*, *Najít soubor…*, *Otevřít díl*, kreslení kopií ve 3D.
-- Přepočet dílů sestavy v pomocném procesu (S12), aby okno nestálo.
-- Ukázková sestava v nabídce, v self-testu a v balíčku; přenos sestavy mezi Windows a macOS
-  v CI (`p35-cross-os.yml`).
-- P5.3 vazby, P5.4 kolize, kusovník a export – každé s vlastním návrhem.
+- Ruční zkouška autora na Windows i Macu (založit sestavu, vložit díly, otočit, uložit,
+  přesunout složku, smazat díl a najít ho znovu).
+- Ukázka uložená jinam odkazuje na díly ukázek v instalaci aplikace; pro vlastní práci díly
+  zkopíruj do složky projektu (*Zabalit sestavu* je pozdější krok).
+- Tažení komponent myší zatím není (poloha jen číslem a ±90°); okno nemá barvy po
+  komponentách.
+- P5.3 vazby (nejdřív návrh řešiče a zápisu), P5.4 kolize, kusovník a export.

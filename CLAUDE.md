@@ -399,6 +399,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
+| `gui/assembly_window.py` | okno sestavy (P5.2B): strom komponent se stavy, formulář polohy (čísla i výrazy, ±90°, *Pevná*), *Vložit díl*, *Najít soubor*, *Otevřít díl* (hlavní okno), Zpět/Znovu, díly na pozadí (`Cache(builder=None)` + vlastní `BackgroundRebuilder`), klik ve 3D vybere kopii (`IsSame`), ukázka jako šablona |
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
@@ -1195,6 +1196,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   sestavení, staví se jen změněné. Díl s chybou přepočtu je stav `error` (pravidlo P1.4 E1).
 - Pevnou komponentu odmítne `move_by` (tažení), výslovná poloha `set_placement` projde (S8).
 - Uložení zapíše otisky zdrojů (S5) do souboru a aktuálního stavu, ne do historie Zpět.
+- Okno sestavy je samostatné okno; hlavní okno ho otevře z *Otevřít* podle `kind`
+  (`is_assembly_file`) a má pro sestavy vlastní `BackgroundRebuilder` – sdílený by se
+  s přepočtem dílu navzájem rušil (`submit` ukončí běžící výpočet). Id komponent ve stromu
+  jsou JSON text: Qt by n-tici v datech položky převedl na seznam.
+- `QWidget.grab()` 3D prohlížeč nezachytí (černá plocha) – snímek okna přes
+  `screen.grabWindow`, 3D zvlášť `viewer.dump`.
 - Testy, které procházejí `examples/` rekurzivně, soubory sestav vynechávají (`"kind":
   "assembly"`). Ukázka `examples/sestavy/krabicka_s_vickem.json` odkazuje i na
   `../krabicka.json`; díly víčka a nožičky jsou v `examples/sestavy/dily/`.
@@ -1221,7 +1228,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | [návrh P5.1](docs/p5-1-navrh-formatu-sestav.md) **schválen** 30. 10. (S1–S12), P5.2A jádro formátu 29 | P5.2B okno, P5.3 vazby, P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | [návrh P5.1](docs/p5-1-navrh-formatu-sestav.md) **schválen** 30. 10. (S1–S12), P5.2 polohy (jádro formátu 29 + okno) | ruční zkouška P5.2, P5.3 vazby (návrh), P5.4 kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1327,10 +1334,12 @@ nezpomaluje s počtem přiložení (PR #59, `d7b2963`); rychlejší ořez buněk
 "assembly"` ve verzi 29 s odkazy na soubory dílů vůči složce sestavy, poloha = posun
 + úhly kolem pevných os X→Y→Z, stavy chybějících komponent, cykly, díly se nikdy
 nepřepisují), [průzkum](docs/p5-1-pruzkum-sestav.py) a matice A01–A22 pro P5.2.
-P5.2 se implementuje podle S1–S12. **P5.2A jádro** (formát 29, `assembly.py`,
-`assembly_build.py`, `AssemblySession`, `skodacad sestava`, ukázka, testy A01–A22 bez okna
-v `tests/test_assembly.py`, [evidence](docs/p5-2-jadro-sestav.md)); **P5.2B okno** (nová
-sestava, vložit díl, strom komponent, formulář polohy, přepočet na pozadí, balíček) zbývá.
+P5.2 se implementuje podle S1–S12: **P5.2A jádro** (formát 29, `assembly.py`,
+`assembly_build.py`, `AssemblySession`, `skodacad sestava`, ukázka, testy A01–A22
+v `tests/test_assembly.py`) a **P5.2B okno** (`gui/assembly_window.py`, *Nová sestava*,
+*Otevřít* pozná sestavu, díly na pozadí, self-test, balíček, přenos sestavy v
+`p35-cross-os.yml`, `tests/test_assembly_gui.py`), [evidence](docs/p5-2-jadro-sestav.md).
+Ruční zkouška autora čeká; P5.3 vazby začínají návrhem řešiče a zápisu vazeb.
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

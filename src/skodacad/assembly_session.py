@@ -60,6 +60,7 @@ class AssemblySession:
         self.cache = cache or Cache()
         self._undo: list[Assembly] = []
         self._redo: list[Assembly] = []
+        self._group: int | None = None
 
     # --- soubor ---------------------------------------------------------------------
 
@@ -122,7 +123,10 @@ class AssemblySession:
         except ExpressionError as exc:
             raise AssemblyError(str(exc)) from None
         self._undo.append(current)
-        del self._undo[:max(0, len(self._undo) - _UNDO_LIMIT)]
+        overflow = max(0, len(self._undo) - _UNDO_LIMIT)
+        del self._undo[:overflow]
+        if self._group is not None:
+            self._group = max(0, self._group - overflow)
         self._redo.clear()
         self.assembly = candidate
         self.dirty = True
@@ -244,6 +248,15 @@ class AssemblySession:
         return self._change(mutate)
 
     # --- Zpět / Znovu ------------------------------------------------------------------
+
+    def begin_group(self) -> None:
+        """Další změny (až do ``end_group``) půjdou vrátit jedním krokem Zpět."""
+        self._group = len(self._undo)
+
+    def end_group(self) -> None:
+        mark, self._group = self._group, None
+        if mark is not None and len(self._undo) > mark + 1:
+            del self._undo[mark + 1:]  # zůstane jen stav před první změnou skupiny
 
     @property
     def can_undo(self) -> bool:

@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
+from skodacad.gui.assembly_window import AssemblyWindow, is_assembly_file
 from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.audit_panel import MARK as AUDIT_MARK
 from skodacad.gui.audit_panel import AuditPanel
@@ -159,6 +160,9 @@ class MainWindow(QMainWindow):
             from skodacad.gui.viewer import OccViewer
 
             viewer_factory = OccViewer
+        self._viewer_factory = viewer_factory
+        self.assembly_windows: list[AssemblyWindow] = []  # otevřené sestavy (P5.2B)
+        self._assembly_runner: BackgroundRebuilder | None = None
         self.viewer = viewer_factory()
         self.viewer.selection_changed.connect(self._selection_changed)
         self.viewer.context_menu_requested.connect(self._show_context_menu)
@@ -857,6 +861,7 @@ class MainWindow(QMainWindow):
         for action in (self.new_action, self.open_action):
             file_menu.addAction(action)
             toolbar.addAction(action)
+        file_menu.addAction(self._action("Nová sestava…", self.new_assembly_dialog))
         examples_menu = file_menu.addMenu("Otevřít ukázku")
         for path in sorted(self.examples_dir.glob("*.json")) if self.examples_dir else []:
             examples_menu.addAction(
@@ -873,6 +878,13 @@ class MainWindow(QMainWindow):
                     ndt_menu.addAction(
                         self._action(label, lambda p=path: self.open_model(p, template=True))
                     )
+        assemblies = (sorted((self.examples_dir / "sestavy").glob("*.json"))
+                      if self.examples_dir else [])
+        if assemblies:
+            assembly_menu = examples_menu.addMenu("Sestavy")
+            for path in assemblies:
+                assembly_menu.addAction(self._action(
+                    Path(path).stem, lambda p=path: self.open_assembly(p, template=True)))
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
         import_action = self._action("Importovat STEP…", self.import_step_dialog)
@@ -1005,6 +1017,8 @@ class MainWindow(QMainWindow):
         return True
 
     def open_model(self, path: str | Path, template: bool = False) -> bool:
+        if is_assembly_file(path):  # sestava má vlastní okno, otevřený díl zůstane
+            return self.open_assembly(path, template=template) is not None
         if not self._confirm_discard():
             return False
         try:
@@ -1018,6 +1032,45 @@ class MainWindow(QMainWindow):
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         return True
+
+    def _assembly_window(self) -> AssemblyWindow:
+        if self._runner is not None and self._assembly_runner is None:
+            from skodacad.worker import BackgroundRebuilder
+
+            self._assembly_runner = BackgroundRebuilder()  # vlastní – díl tu má svůj přepočet
+        window = AssemblyWindow(self._viewer_factory, runner=self._assembly_runner,
+                                user_dir=self.user_dir, open_part=self._open_part_of_assembly)
+        self.assembly_windows = [w for w in self.assembly_windows if w.isVisible()]
+        self.assembly_windows.append(window)
+        return window
+
+    def open_assembly(self, path: str | Path, template: bool = False) -> AssemblyWindow | None:
+        """Otevře sestavu ve vlastním okně (ukázku jako šablonu – Uložit se zeptá kam)."""
+        window = self._assembly_window()
+        if not window.open_assembly(path, template=template):
+            window.deleteLater()
+            self.assembly_windows.remove(window)
+            return None
+        log.info("Otevřena sestava %s", path)
+        window.show()
+        return window
+
+    def new_assembly_dialog(self) -> AssemblyWindow | None:
+        window = self._assembly_window()
+        window.new_dialog()
+        if window.session.assembly is None:  # uživatel výběr místa zrušil
+            window.deleteLater()
+            self.assembly_windows.remove(window)
+            return None
+        window.show()
+        return window
+
+    def _open_part_of_assembly(self, path: Path) -> None:
+        """*Otevřít díl* ze sestavy: díl se upravuje ve svém souboru v hlavním okně."""
+        if self.open_model(path):
+            self.show()
+            self.raise_()
+            self.activateWindow()
 
     def open_dialog(self) -> None:
         start = str(self.session.path.parent if self.session.path else self.user_dir)
@@ -2495,11 +2548,17 @@ class MainWindow(QMainWindow):
         return answer == QMessageBox.StandardButton.Discard
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        # Otevřené sestavy se zavřou s dílem (každá se zeptá na své neuložené změny).
+        if any(window.isVisible() and not window.close() for window in self.assembly_windows):
+            event.ignore()
+            return
         if self._confirm_discard():
             self.assistant_panel.shutdown()  # rozpracovaná odpověď AI se zastaví
             self._poll_timer.stop()
             if self._runner is not None:
                 self._runner.close()  # pomocné procesy přepočtu
+            if self._assembly_runner is not None:
+                self._assembly_runner.close()
             event.accept()
         else:
             event.ignore()

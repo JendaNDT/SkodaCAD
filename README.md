@@ -236,6 +236,31 @@ kontrola není úplná. Upozornění je i v exportovaném výkresu. Zatím chyb�
 druhy kót a toleranční značky uložení. Fyzický tisk a otevření DXF v jiné CAD
 aplikaci ještě nebyly ověřeny.
 
+### Sestavy
+
+Sestava skládá hotové díly do poloh – krabička, víčko, šrouby, deska elektroniky… Každý díl
+zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepíše**.
+
+- *Soubor → Nová sestava…* se nejdřív zeptá, kam sestavu uložit (cesty k dílům se počítají
+  od její složky – celou složku projektu pak jde přenést i mezi Windows a Macem).
+  *Soubor → Otevřít…* pozná sestavu sama a otevře ji ve **vlastním okně**.
+- *Vložit díl…* (Ctrl+I) přidá díl nebo jinou sestavu. První vložený díl je **pevný**.
+  Stejný díl jde vložit vícekrát (čtyři nožičky = jeden soubor, čtyři polohy).
+- Komponentu vyber ve stromu nebo kliknutím ve 3D. Vpravo zadáš **posun** v mm a **otočení**
+  ve stupních (kolem os sestavy nejdřív X, pak Y, pak Z; čísla i výrazy s parametry sestavy),
+  tlačítka **±90°** otočí díl kolem osy vedené jeho počátkem. *Použít* = jeden krok Zpět.
+- Chybějící nebo poškozený soubor dílu je ve stromu červeně „✕ chybí“ s důvodem; sestava se
+  přesto otevře a záznam nesmaže. *Najít soubor…* ho přesměruje (u dílu s jiným receptem se
+  nejdřív zeptá). Vpravo dole je počet komponent, objem a hmotnost; neúplná sestava to řekne.
+- *Otevřít díl* otevře soubor dílu v hlavním okně. Po uložení a návratu do okna sestavy se
+  změna projeví sama (nebo F5 *Načíst díly znovu*); když se díl od posledního uložení sestavy
+  změnil, sestava upozorní „zkontroluj polohy“.
+- Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
+  o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam – ukázka zůstane.
+
+Zatím bez vazeb mezi díly (souosost, dotyk), kolizí, kusovníku a exportu sestavy – přijdou
+v dalších krocích (P5.3, P5.4). Polohy ze vazeb se pak budou ukládat stejně jako dnes ručně.
+
 ### Mapa tloušťky stěny (NDT)
 
 Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tloušťky stěny** (klávesa

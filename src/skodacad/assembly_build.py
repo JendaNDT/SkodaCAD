@@ -27,7 +27,7 @@ from skodacad.document import ASSEMBLY_KIND, FORMAT, Document, DocumentError
 from skodacad.expressions import ExpressionError, evaluate, resolve_parameters
 
 LABELS = {"ok": "ok", "missing": "chybí", "unreadable": "nečitelná", "error": "chyba dílu",
-          "cycle": "cyklus"}
+          "cycle": "cyklus", "pending": "počítá se"}
 ANGLE_DIGITS = 9  # úhly z tlačítek se ukládají zaokrouhlené (90, ne 89,99999999999999)
 
 Matrix = tuple[tuple[float, float, float], tuple[float, float, float],
@@ -288,20 +288,27 @@ class Built:
     material: str = ""
     volume_mm3: float = 0.0
     mass_kg: float | None = None
+    pending: bool = False  # čeká na výpočet v pomocném procesu (okno)
+
+    @classmethod
+    def from_result(cls, document: Document, result: Any) -> Built:
+        """Z výsledku přepočtu dílu; použije se jen úplný díl (pravidlo P1.4 E1)."""
+        from skodacad.properties import compute
+        from skodacad.rebuild import part_problem
+
+        problem = part_problem(result)
+        if problem:
+            return cls(problem=problem)
+        properties = compute(result.part, document.material)
+        return cls(part=result.part, material=document.material,
+                   volume_mm3=properties.volume_mm3, mass_kg=properties.mass_kg)
 
 
 def build_part(document: Document) -> Built:
-    """Postaví díl; použije se jen úplný díl (stejné pravidlo jako export dílu, P1.4 E1)."""
-    from skodacad.properties import compute
-    from skodacad.rebuild import part_problem, rebuild
+    """Postaví díl hned (testy, příkazová řádka)."""
+    from skodacad.rebuild import rebuild
 
-    result = rebuild(document)
-    problem = part_problem(result)
-    if problem:
-        return Built(problem=problem)
-    properties = compute(result.part, document.material)
-    return Built(part=result.part, material=document.material,
-                 volume_mm3=properties.volume_mm3, mass_kg=properties.mass_kg)
+    return Built.from_result(document, rebuild(document))
 
 
 Builder = Callable[[Document], Built]
@@ -313,18 +320,33 @@ class Cache:
     Změněný soubor má jiný otisk bajtů, takže se postaví znovu; nezměněný jen jednou,
     ať je v sestavě kolikrát chce."""
 
-    def __init__(self, builder: Builder = build_part) -> None:
+    def __init__(self, builder: Builder | None = build_part) -> None:
+        """``builder=None``: díly se nestaví hned – čekají v ``waiting``, okno je spočítá
+        v pomocném procesu a uloží přes ``store`` (S12, okno nestojí)."""
         self.builder = builder
         self._parts: dict[tuple[str, str], Built] = {}
+        self.waiting: dict[tuple[str, str], Source] = {}
+
+    @staticmethod
+    def key(source: Source) -> tuple[str, str]:
+        return str(source.file), source.digest
 
     def part(self, source: Source) -> Built:
-        key = (str(source.file), source.digest)
+        key = self.key(source)
         if key not in self._parts:
-            # Staré verze téhož souboru už neplatí – drží jen paměť.
-            for old in [k for k in self._parts if k[0] == key[0]]:
-                del self._parts[old]
-            self._parts[key] = self.builder(source.document)
+            if self.builder is None:
+                self.waiting[key] = source
+                return Built(pending=True)
+            self.store(source, self.builder(source.document))
         return self._parts[key]
+
+    def store(self, source: Source, built: Built) -> None:
+        key = self.key(source)
+        # Staré verze téhož souboru už neplatí – drží jen paměť.
+        for old in [k for k in self._parts if k[0] == key[0] and k != key]:
+            del self._parts[old]
+        self._parts[key] = built
+        self.waiting.pop(key, None)
 
 
 def build(assembly: Assembly, file: str | Path, cache: Cache | None = None) -> AssemblyResult:
@@ -333,6 +355,7 @@ def build(assembly: Assembly, file: str | Path, cache: Cache | None = None) -> A
     Soubor nemusí obsahovat ``assembly`` (může jít o neuložené úpravy), slouží jako
     počátek cest a první článek řetězu, podle kterého se pozná cyklus."""
     cache = cache or Cache()
+    cache.waiting.clear()  # čeká jen to, co tato sestava opravdu potřebuje
     result = AssemblyResult()
     try:
         result.parameters = resolve_parameters(assembly.parameters)
@@ -404,6 +427,9 @@ def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...], pare
                          [*chain, status.file], result, cache, inner)
             continue
         built = cache.part(source)
+        if built.pending:
+            status.state, status.reason = "pending", "díl se počítá"
+            continue
         if built.problem:
             status.state, status.reason = "error", built.problem
             continue
