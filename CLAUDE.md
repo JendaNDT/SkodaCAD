@@ -291,6 +291,14 @@
   výsledek do `placement` (jeden krok Zpět); **formát 30** jen pro sestavy s vazbami.
   Sloučeno v PR #65 (`822e3e8`); ruční zkouška vazeb autorem čeká.
 
+- (30. 10. 2026, schváleno K1–K12) **Kontroly sestavy – P5.4** (`docs/p5-4-navrh-kontrol.md`):
+  kolize všech dvojic kopií (síto obálek, přesný nedestruktivní průnik, kolize nad 0,001 mm³,
+  nespočítaný průnik = „nelze ověřit“), vůle = nejmenší vzdálenost pod mezí (výchozí 0,5 mm),
+  dotyk není vada; přijatá kolize s poznámkou a objemem (znovu kolize při změně nad 1 %);
+  **formát 31** jen se `checks`; výpočet na tlačítko (v okně na pozadí); rozbalený kusovník
+  (řádek = soubor dílu, CSV jen z úplné sestavy); export STEP úplné sestavy se stromem
+  výrobek = soubor dílu / kopie = id, názvy bez diakritiky; v sestavě se NDT nepočítá.
+
 - (30. 10. 2026, rozhodnutí autora „Ok“) **Méně zdvojeného testování**: workflow
   „Windows aplikace“ a „macOS aplikace“ spouští `push` jen ve větvi `main` (vydání); pracovní
   větve kontroluje jen `pull_request` – dřív běželo každé nahrání dvakrát nad stejným kódem.
@@ -1268,7 +1276,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) sloučeny (PR #65) | ruční zkouška vazeb, P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) sloučeny (PR #65); [návrh P5.4 kontrol](docs/p5-4-navrh-kontrol.md) (K1–K12) schválen | ruční zkouška vazeb, P5.4A/B kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1390,6 +1398,12 @@ matice B01–B20. **Schváleno autorem 30. 10. 2026 („schvaluji M1–M12“, P
 **P5.3A/B sloučeno v PR #65 (`822e3e8`):** formát 30, `assembly_solve.py`, vazby
 v `AssemblySession`, `skodacad sestava`, ukázka `krabicka_s_vazbami.json`, okno (B20),
 self-test „✓ Vazby“, [evidence](docs/p5-3-vazby-overeni.md). Ruční zkouška autorem čeká.
+**P5.4 kontroly – návrh předán 30. 10. 2026:** [kontroly](docs/p5-4-navrh-kontrol.md) K1–K12
+(kolize přesným nedestruktivním průnikem nad 0,001 mm³, vůle = nejmenší vzdálenost pod
+mezí 0,5 mm, přijaté kolize s poznámkou a objemem, formát 31 jen s `checks`, výpočet na
+tlačítko v pomocném procesu, rozbalený kusovník s CSV, export STEP se stromem výrobek =
+soubor / kopie = id bez diakritiky, v sestavě žádné NDT), [průzkum](docs/p5-4-pruzkum-kontrol.py),
+matice C01–C20. **Schváleno autorem 30. 10. 2026 (odpověď „K1–K12“, PR #67).**
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
