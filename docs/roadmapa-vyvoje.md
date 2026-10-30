@@ -41,7 +41,7 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | P5.1 schválen (S1–S12); [P5.2 polohy](p5-2-jadro-sestav.md) sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3](p5-3-navrh-vazeb.md) schválen (M1–M12), [vazby P5.3A/B](p5-3-vazby-overeni.md) sloučeny (PR #65) | ruční zkouška vazeb, P5.4 kontroly |
+| P5 | P5.1 schválen (S1–S12); [P5.2 polohy](p5-2-jadro-sestav.md) sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3](p5-3-navrh-vazeb.md) schválen (M1–M12), [vazby P5.3A/B](p5-3-vazby-overeni.md) sloučeny (PR #65); [návrh P5.4](p5-4-navrh-kontrol.md) ke schválení | ruční zkouška vazeb, schválení K1–K12, P5.4A/B |
 | P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
@@ -260,6 +260,7 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
    Návrh M1–M12 s průzkumem a maticí B01–B20: [p5-3-navrh-vazeb.md](p5-3-navrh-vazeb.md).
 4. **P5.4 Kontroly**: kolize a vůle, kusovníkový základ a export; vymezit působení
    NDT mezi komponentami, nepřenášet automaticky závěry z jednoho dílu na sestavu.
+   Návrh K1–K12 s průzkumem a maticí C01–C20: [p5-4-navrh-kontrol.md](p5-4-navrh-kontrol.md).
 5. **P5.5 Přijetí**: analytické polohy dvou a více dílů, opakované instance, Zpět/Znovu,
    uložení/otevření a export na druhém OS. Výstup: sestava v dohodnutém rozsahu vazeb.
 
