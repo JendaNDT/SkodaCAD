@@ -313,7 +313,8 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
     assembly.close()
-    return _self_test_constraints(window, lines, folder) and ok
+    ok = _self_test_constraints(window, lines, folder) and ok
+    return _self_test_checks(window, lines, folder) and ok
 
 
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
@@ -345,6 +346,43 @@ def _self_test_constraints(window, lines: list[str], folder) -> bool:
         else:
             problems = "; ".join(result.problems) if result is not None else "bez výsledku"
             lines.append(f"✕ Vazby: {freedom}, víčko {lifted}; {problems}")
+    session.dirty = False
+    assembly.close()
+    return ok
+
+
+def _self_test_checks(window, lines: list[str], folder) -> bool:
+    """Zabalená aplikace: kontroly P5.4 – průnik jádrem, kusovník a export STEP (XCAF)."""
+    sample = folder / "sestavy" / "deska_se_sroubem.json"
+    if not sample.is_file():
+        lines.append("✕ Kontrola sestavy: chybí ukázka deska_se_sroubem.json")
+        return False
+    assembly = window.open_assembly(sample, template=True)
+    if assembly is None:
+        lines.append("✕ Kontrola sestavy: ukázku nejde otevřít")
+        return False
+    session = assembly.session
+    step = user_dir() / "self-test-sestava.step"
+    try:
+        assembly.run_check()  # bez pomocného procesu (jako ostatní části self-testu)
+        outcome = session.last_check()
+        rows = session.bill()
+        session.export_step(step)
+        written = step.read_text(errors="replace")
+    except Exception as exc:  # noqa: BLE001 – self-test hlásí, nepadá
+        lines.append(f"✕ Kontrola sestavy: {exc}")
+        ok = False
+    else:
+        kinds = [finding.kind for finding in outcome.findings] if outcome else []
+        volume = outcome.findings[0].volume if kinds else 0
+        ok = (kinds == ["accepted"] and abs(volume - 12.959) < 0.001 and len(rows) == 2
+              and written.startswith("ISO-10303-21") and "'sroub_1'" in written)
+        if ok:
+            lines.append(f"✓ Kontrola sestavy: přijatá kolize 12,959 mm³, kusovník 2 řádky, "
+                         f"STEP {step} ({step.stat().st_size} B)")
+        else:
+            lines.append(f"✕ Kontrola sestavy: nálezy {kinds}, objem {volume}, kusovník "
+                         f"{len(rows)} řádků, STEP {written[:20]!r}")
     session.dirty = False
     assembly.close()
     return ok

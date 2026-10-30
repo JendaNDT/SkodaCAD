@@ -395,3 +395,115 @@ def test_changed_part_moves_constrained_lid_and_window_says_so(constrained, proj
     assert constrained.session.assembly.component("vicko").position == [0, 0, 42]
     assert "po změně dílu přepočítaly" in constrained.summary.text()
     assert "*" in constrained.windowTitle()
+
+
+# --- P5.4B: kontrola sestavy v okně (C20) ----------------------------------------------
+
+
+@pytest.fixture
+def screwed(main_window, project):
+    window = main_window.open_assembly(project / "sestavy" / "deska_se_sroubem.json")
+    assert window is not None and window.session.result.complete
+    return window
+
+
+def found(window):
+    return [tuple(window.findings.item(row, column).text() for column in range(3))
+            for row in range(window.findings.rowCount())]
+
+
+def test_c20_check_accept_bill_and_step_in_window(screwed, dialogs, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QInputDialog
+
+    from skodacad.assembly_check import NDT_NOTE
+    from skodacad.gui.assembly_window import MARK
+
+    window = screwed
+    assert "neproběhla" in window.check_note.text() and NDT_NOTE in window.check_note.text()
+    assert window.clearance_edit.text() == "0,3" and window.findings.rowCount() == 0
+    press(window, "Zkontrolovat kolize a vůle")
+    assert found(window) == [("Přijatá kolize", "Deska × Šroub M3 × 10", "12,959 mm³")]
+    assert "Žádná nepřijatá kolize" in window.check_note.text()
+    # Klik na nález: obě kopie zvýrazněné, kulička v těžišti průniku (osa šroubu).
+    window.findings.selectRow(0)
+    assert window._finding["kind"] == "accepted" and window.viewer.highlighted
+    [center], [color] = window.viewer.points
+    assert center == pytest.approx((0, 0, 3), abs=1e-6) and color == MARK
+    assert window.unaccept_button.isEnabled() and not window.accept_button.isEnabled()
+    window.unaccept_button.click()  # přijetí zrušené = kolize, jeden krok Zpět
+    assert found(window)[0][0] == "Kolize" and len(window.session._undo) == 1
+    assert "K řešení: 1" in window.check_note.text() and window.accept_button.isEnabled()
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("závit M3", True))
+    window.accept_button.click()
+    assert found(window)[0][0] == "Přijatá kolize" and len(window.session._undo) == 2
+    assert window.session.assembly.checks.accepted[0].note == "závit M3"
+    # Mez vůle = krok Zpět; s jinou mezí výsledek neplatí, po Zpět zase ano (bez výpočtu).
+    window.clearance_edit.setText("0,5")
+    window.apply_clearance()
+    assert window.session.assembly.checks.clearance == 0.5
+    assert "po změně sestavy neplatí" in window.check_note.text() and not found(window)
+    press(window, "Zpět")
+    assert found(window)[0][0] == "Přijatá kolize"
+    # Výběr komponenty ve stromu zruší výběr nálezu i kuličku.
+    pick(window, "deska")
+    assert window._finding is None and window.viewer.points is None
+    # Kusovník a export STEP.
+    window.check_tabs.setCurrentIndex(1)
+    bill = [[window.bill_table.item(r, c).text() for c in (1, 3, 4)] for r in range(2)]
+    assert bill == [["Deska se závitem M3", "1", "hliník"], ["Šroub M3 × 10 ISO 4762", "1", "ocel"]]
+    assert "Řádků 2, kusů 2, hmotnost celkem 20,42 g" in window.bill_note.text()
+    dialogs["save"] = str(tmp_path / "kusovnik")
+    press(window, "Uložit kusovník CSV…")
+    assert "Deska se závitem M3" in (tmp_path / "kusovnik.csv").read_text(encoding="utf-8-sig")
+    dialogs["save"] = str(tmp_path / "sestava")
+    press(window, "Exportovat STEP…")
+    assert (tmp_path / "sestava.step").read_text(errors="replace").startswith("ISO-10303-21")
+
+
+def test_c20_incomplete_assembly_refuses_check_bill_and_export(opened, project, dialogs):
+    (project / "sestavy" / "dily" / "vicko.json").rename(project / "jinde.json")
+    press(opened, "Načíst díly znovu")
+    assert not opened.check_button.isEnabled() and not opened.export_action.isEnabled()
+    assert not opened.bill_button.isEnabled() and "NEÚPLNÁ" in opened.bill_note.text()
+    assert opened.bill_table.rowCount() == 2  # krabička a nožičky; víčko chybí
+    for action in (opened.run_check, opened.save_bill_dialog, opened.export_dialog):
+        action()
+        assert "jen u úplné sestavy" in dialogs["shown"][-1][1] \
+            or "jen z úplné sestavy" in dialogs["shown"][-1][1]
+
+
+def test_c20_check_runs_in_background_and_change_meanwhile_discards_it(app, project, dialogs):
+    from PySide6.QtTest import QTest
+
+    from skodacad.worker import BackgroundRebuilder
+
+    def wait(condition):
+        for _ in range(1200):
+            if condition():
+                return
+            QTest.qWait(100)
+        raise AssertionError("výpočet na pozadí nedoběhl")
+
+    runner = BackgroundRebuilder()
+    window = AssemblyWindow(FakeViewer, runner=runner)
+    try:
+        assert window.open_assembly(project / "sestavy" / "deska_se_sroubem.json")
+        wait(lambda: not window.computing)
+        window.run_check()
+        assert window.checking and window.stop_check_button.isVisibleTo(window)
+        assert "na pozadí" in window.check_note.text() and not window.check_button.isEnabled()
+        pick(window, "sroub_1")
+        window.turn("z", 90)  # změna během kontroly – výsledek nesmí platit
+        wait(lambda: not window.checking)
+        assert "během kontroly změnila" in window.statusBar().currentMessage()
+        assert window.findings.rowCount() == 0
+        window.run_check()
+        wait(lambda: not window.checking)
+        assert found(window) == [("Přijatá kolize", "Deska × Šroub M3 × 10", "12,959 mm³")]
+        window.run_check()
+        window.stop_check()  # Zastavit: nic se nepřevezme, okno jde dál
+        assert not window.checking and "Zastavena" not in window.check_note.text()
+    finally:
+        window.session.dirty = False
+        window.close()
+        runner.close()

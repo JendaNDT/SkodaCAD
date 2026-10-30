@@ -269,6 +269,14 @@ def main(argv: list[str] | None = None) -> int:
     sestava = commands.add_parser("sestava", help="sestava: komponenty, jejich stav, objem "
                                   "a hmotnost (díly se nemění)")
     sestava.add_argument("model", type=Path, help="soubor sestavy (.json)")
+    sestava.add_argument("--kontrola", action="store_true",
+                         help="kolize a vůle mezi díly (kód 1 při nepřijaté kolizi)")
+    sestava.add_argument("--vule", type=str, default=None,
+                         help="mez vůle v mm pro --kontrola (jinak ze sestavy, výchozí 0,5)")
+    sestava.add_argument("--kusovnik", type=Path, default=None,
+                         help="uložit kusovník do CSV (jen úplná sestava)")
+    sestava.add_argument("--export", type=Path, default=None,
+                         help="uložit celou sestavu do STEP se stromem dílů")
     args = parser.parse_args(_glue_negative(sys.argv[1:] if argv is None else argv))
 
     try:
@@ -355,7 +363,40 @@ def _assembly(args: argparse.Namespace) -> int:
         print("Sestava je NEÚPLNÁ – součty platí jen pro nalezené díly a splněné vazby; "
               "export a kontroly jen pro úplnou sestavu.")
         return 1
-    return 0
+    return _assembly_checks(args, assembly, result)
+
+
+def _assembly_checks(args: argparse.Namespace, assembly: Any, result: Any) -> int:
+    """Kontrola kolizí a vůlí, kusovník a export STEP úplné sestavy (P5.4)."""
+    from dataclasses import replace
+
+    from skodacad.assembly_build import _plural
+    from skodacad.assembly_check import NDT_NOTE, bill, check, export_step, write_bill
+
+    code = 0
+    if args.kontrola:
+        checks = assembly.checks
+        if args.vule is not None:
+            limit = float(args.vule.replace(",", "."))
+            if not limit > 0:
+                raise ValueError("Mez vůle --vule musí být kladné číslo v mm.")
+            checks = replace(checks, clearance=limit)
+        outcome = check(result, checks)
+        print("Kontrola kolizí a vůlí:")
+        for line in outcome.summary():
+            print(f"  {line}")
+        code = 0 if outcome.clean else 1
+    if args.kusovnik is not None:
+        rows = bill(result, args.model)
+        write_bill(rows, args.kusovnik, assembly.name)
+        pieces = sum(row.count for row in rows)
+        print(f"Kusovník ({len(rows)} {_plural(len(rows), 'řádek', 'řádky', 'řádků')}, "
+              f"{pieces} {_plural(pieces, 'kus', 'kusy', 'kusů')}) uložen do {args.kusovnik}. "
+              f"{NDT_NOTE}")
+    if args.export is not None:
+        export_step(result, args.export, assembly.name)
+        print(f"Sestava uložena do {args.export} (STEP, strom dílů, mm).")
+    return code
 
 
 def _ray(args: argparse.Namespace) -> int:

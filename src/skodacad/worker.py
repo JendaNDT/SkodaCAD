@@ -110,7 +110,7 @@ def _worker_main(conn: Any, step_phase: Any) -> None:
         except (EOFError, OSError):
             return  # okno skončilo
         if message[0] not in ("rebuild", "coverage", "access", "plan", "pt", "mt", "rt",
-                              "audit", "design"):
+                              "audit", "design", "assembly_check"):
             return
         kind, job, data, *options = message
         try:
@@ -223,6 +223,18 @@ def _worker_main(conn: Any, step_phase: Any) -> None:
                 audit = session.compute_ndt_audit(include, access, operator, progress=step,
                                                   on_entry=entry)
                 reply = ("audit", job, len(audit.entries))  # studie už odešly po jedné
+            elif kind == "assembly_check":
+                from skodacad.assembly import Assembly
+                from skodacad.assembly_build import build
+                from skodacad.assembly_check import check
+
+                assembly = Assembly.from_dict(data)
+
+                def counted_pairs(done: int, total: int, job: int = job) -> None:
+                    conn.send(("progress", job, (done, total)))
+
+                reply = ("assembly_check", job, check(build(assembly, options[0]),
+                                                      assembly.checks, progress=counted_pairs))
             elif kind == "coverage":
                 from skodacad.session import ModelSession
 
@@ -315,6 +327,7 @@ class Finished:
     rt: Any = None  # mapa geometrického promítnutí oblasti RT (etapa 13)
     audit: Any = None  # předběžný NDT audit doběhl (etapa 14; studie chodí v ``update``)
     design: Any = None  # konstrukční návrhy (etapa 15; varianty chodí v ``update``)
+    assembly_check: Any = None  # kolize a vůle sestavy (P5.4; průběh chodí v ``update``)
     update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
 
@@ -388,6 +401,11 @@ class BackgroundRebuilder:
         """Konstrukční návrhy, s průběžným předáváním hotových variant."""
         return self._submit(("design", document, settings, path, operator))
 
+    def submit_assembly_check(self, assembly: dict[str, Any], path: str) -> int:
+        """Kolize a vůle sestavy (slovník z ``Assembly.to_dict``, soubor sestavy pro cesty
+        k dílům); průběh (hotovo, celkem dvojic) chodí průběžně (``Finished.update``)."""
+        return self._submit(("assembly_check", assembly, path))
+
     def _submit(self, message: tuple) -> int:
         self.cancel()
         worker = self._idle.pop(0) if self._idle else self._spawn()
@@ -455,6 +473,8 @@ class BackgroundRebuilder:
                     return Finished(job, audit=payload)
                 if kind == "design":
                     return Finished(job, design=payload)
+                if kind == "assembly_check":
+                    return Finished(job, assembly_check=payload)
                 return Finished(job, error=payload)
         except (EOFError, OSError):
             pass

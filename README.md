@@ -281,8 +281,32 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   se dotýkají dna. Přepiš u vazby *Víčko na okraji* vzdálenost `mezera` třeba na 15 a víčko
   se nadzvedne.
 
-Zatím bez úhlových a tečných vazeb, tažení vázaných dílů myší, kolizí, kusovníku a exportu
-sestavy (P5.4).
+**Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*):
+
+- *Zkontrolovat kolize a vůle* (F7, i v nabídce *Kontrola*) projde každou dvojici kopií dílů
+  (i v podsestavách) a počítá na pozadí – okno mezitím jde používat, *Zastavit* výpočet
+  ukončí. **Kolize** = díly se prostupují víc než 0,001 mm³ (tabulka ukáže objem průniku),
+  **malá vůle** = díly jsou k sobě blíž než *Mez vůle* (výchozí 0,5 mm), ale nedotýkají se.
+  Dotyk (víčko na krabičce) není vada. Když jádro průnik nespočítá, nález je „nelze ověřit“ –
+  nikdy „bez kolize“.
+- Klik na nález zvýrazní obě kopie a červenou kuličkou ukáže střed průniku.
+- **Přijmout kolizi…** zapíše kolizi, která je v pořádku (šroub v díře pod závit, nalisovaný
+  čep), s poznámkou proč – jeden krok Zpět. Přijatá kolize se po změně dílu, která její
+  objem změní o víc než 1 %, ukáže znovu jako kolize. *Zrušit přijetí* záznam smaže.
+- Výsledek kontroly je jen pohled: po změně sestavy (poloha, díl, mez vůle) neplatí a je
+  třeba ji pustit znovu.
+- Záložka **Kusovník** je rozbalený (i díly z podsestav), jeden řádek = jeden soubor dílu
+  s počtem kusů, materiálem, hmotností a id komponent; *Uložit kusovník CSV…* (středník,
+  česky čitelné v Excelu).
+- *Soubor → Exportovat STEP…* uloží sestavu do STEP se stromem: díl jednou, jeho kopie
+  s polohami a jmény podle id (bez diakritiky – jiné CADy češtinu často rozbijí).
+- Kusovník do souboru a export STEP jdou jen z **úplné** sestavy.
+- V sestavě se **nepočítá NDT** – studie dílu platí jen pro samotný díl (sousední díl může
+  sondě, jhu nebo zdroji zavazet); kusovník jen ukáže, kolik studií díl má.
+- Ukázka: *Otevřít ukázku → Sestavy → deska_se_sroubem* – šroub M3 × 10 v díře pod závit
+  (vrták 2,5 mm) prostupuje deskou 12,959 mm³; kolize je přijatá s poznámkou „závit M3“.
+
+Zatím bez úhlových a tečných vazeb a tažení vázaných dílů myší.
 
 ### Mapa tloušťky stěny (NDT)
 
@@ -761,6 +785,7 @@ skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: př
 skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
 skodacad sestava examples/sestavy/krabicka_s_vickem.json   # komponenty, stav, objem, hmotnost
 skodacad sestava examples/sestavy/krabicka_s_vazbami.json  # … i vazby a volnost komponent
+skodacad sestava examples/sestavy/deska_se_sroubem.json --kontrola --kusovnik k.csv --export s.step
 ```
 
 `skodacad sestava` vypíše komponenty sestavy (✓ v pořádku, ✕ chybí nebo nejde postavit
@@ -768,6 +793,9 @@ s českým důvodem) s volností podle vazeb (*plně určená*, *volná: 2 posun
 vazby se stavem, upozornění, objem, hmotnost a obálku. Když některá komponenta chybí nebo
 jsou vazby ve sporu, napíše „NEÚPLNÁ“ a skončí kódem 1. Když vazby dají jiné polohy, než jsou
 v souboru (změnil se díl), vypíše je – soubor sestavy ani díly se přitom nemění.
+`--kontrola` přidá kolize a vůle (s `--vule 0,2` jinou mez vůle) a skončí kódem 1 při
+nepřijaté kolizi nebo místu, které nejde ověřit; `--kusovnik soubor.csv` uloží kusovník
+a `--export soubor.step` sestavu do STEP (obojí jen z úplné sestavy).
 
 `skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
 (úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
@@ -1220,10 +1248,10 @@ Potvrzení ponechá zadané souřadnice, nepřesune cíl na jiné místo. Změna
 starou mapu i ověření. Ověření objemu má navíc `verified.target`, otisk zadání cíle;
 při ruční změně cíle v JSON přestane platit i při stejném dílu.
 
-### Sestavy (`"kind": "assembly"`, verze 29 a 30)
+### Sestavy (`"kind": "assembly"`, verze 29–31)
 
 Sestava je **samostatný soubor**, který skládá díly (a jiné sestavy) do poloh. Na soubory
-dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–28); sestava má verzi 29.
+dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–28); sestava má verzi 29 (s vazbami 30, s kontrolami 31).
 
 ```json
 {
@@ -1295,6 +1323,32 @@ Vazby, které si odporují (zbytek nad 0,000001 mm), aplikace **nepřijme**; kdy
 změnou souboru dílu, polohy zůstanou uložené, vazby jsou „ve sporu“ a sestava je neúplná.
 Stav komponenty: *pevná*, *plně určená*, *volná: 2 posuny, 1 otočení*, *ve sporu*.
 Ukázka: `examples/sestavy/krabicka_s_vazbami.json`.
+
+#### Kontroly sestavy (`checks`, verze 31)
+
+Mez vůle a přijaté kolize. Sestava bez `checks` zůstává ve verzi 29 nebo 30; s `checks` se
+ukládá ve verzi 31 (starší aplikace ji odmítne, místo aby přijaté kolize tiše zahodila).
+Výsledek kontroly se neukládá – je to jen pohled.
+
+```json
+"checks": {
+  "clearance": 0.3,
+  "accepted": [
+    {"a": ["deska"], "b": ["sroub_1"], "volume": 12.959,
+     "note": "závit M3 – díra je jen vrták pod závit (2,5 mm)"}
+  ]
+}
+```
+
+| Klíč | Význam |
+|---|---|
+| `clearance` | mez vůle v mm (kladné číslo, výchozí 0,5); hlásí se dvojice blíž než mez, které se nedotýkají |
+| `accepted[].a`, `.b` | dvě různé komponenty jako **cesta id** od kořene sestavy (kopie v podsestavě: `["pod", "sroub_1"]`); pořadí `a`/`b` nehraje roli |
+| `accepted[].volume` | objem průniku v mm³ při přijetí; liší-li se nový objem o víc než 1 % (nejméně 0,01 mm³), je to znovu kolize |
+| `accepted[].note` | nepovinná poznámka, proč je kolize v pořádku |
+
+Neznámý klíč je chyba, stejná dvojice smí být přijatá jen jednou; smazání komponenty smaže
+i přijaté kolize, kterých se týká. Ukázka: `examples/sestavy/deska_se_sroubem.json`.
 
 ### Materiály
 
