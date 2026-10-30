@@ -53,6 +53,9 @@ Testy: `tests/test_assembly_checks.py` (C01–C19), `tests/test_assembly_gui.py`
 Skutečné okno pod Xvfb: self-test `VÝSLEDEK: OK` včetně „✓ Kontrola sestavy: přijatá kolize
 12,959 mm³, kusovník 2 řádky, STEP … (53 521 B)“; snímky okna s vybranou kolizí a s kusovníkem.
 
+V cloudu (změna `worker.py` = společné jádro podle pravidla 6): úplná sada **1 941 testů**
+prošla (22:43 min), `ruff check src tests` bez chyb.
+
 ## Co se při implementaci ukázalo (a je opravené)
 
 - `build123d.export_step` u kopií sdílejících tvar zapsal všem stejné jméno a češtinu
