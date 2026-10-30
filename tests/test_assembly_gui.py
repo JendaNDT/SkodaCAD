@@ -276,3 +276,122 @@ def test_background_runner_computes_parts_without_blocking(app, project, dialogs
         window.session.dirty = False
         window.close()
         runner.close()
+
+
+# --- P5.3B: vazby v okně (B20) ---------------------------------------------------------
+
+
+@pytest.fixture
+def constrained(main_window, project):
+    window = main_window.open_assembly(project / "sestavy" / "krabicka_s_vazbami.json")
+    assert window is not None and window.session.result.complete
+    return window
+
+
+def pick_constraint(window, constraint_id):
+    for index in range(window.tree.topLevelItemCount()):
+        group = window.tree.topLevelItem(index)
+        for child in range(group.childCount()):
+            item = group.child(child)
+            if item.data(0, 256) == json.dumps({"constraint": constraint_id}):
+                window.tree.setCurrentItem(item)
+                return
+    raise AssertionError(constraint_id)
+
+
+def plane_face(window, component, normal_z, z):
+    instance = next(i for i in window.session.result.instances if i.ids == (component,))
+    return next(f for f in instance.part.faces() if f.geom_type.name == "PLANE"
+                and abs(f.normal_at().Z - normal_z) < 1e-9 and abs(f.center().Z - z) < 1e-9)
+
+
+def click(window, face, point, add=False):
+    """Klik (s Ctrl ``add``) ve 3D jako skutečný prohlížeč: místo kliknutí + výběr."""
+    window.viewer.picked_point = point
+    shapes = [shape for shape, _at in window._picks] if add else []
+    window.viewer.selection_changed.emit([*shapes, face.wrapped])
+
+
+def test_b20_constraints_in_tree_add_by_two_clicks_edit_and_delete(constrained, dialogs,
+                                                                   monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    window = constrained
+    rows = items(window)
+    assert ("Víčko", "✓ plně určená") in rows
+    assert ("Nožička 1", "✓ volná: 2 posuny, 1 otočení") in rows
+    assert ("Vazby (7)", "") in rows and ("  Víčko na okraji", "✓") in rows
+    assert "Vazby: 7, splněné 7" in window.summary.text()
+    # Smazat vazbu: výběr ve stromu, Delete = jeden krok Zpět.
+    pick_constraint(window, "v4")
+    assert window.constraint_box.isVisibleTo(window) and window.viewer.highlighted
+    assert "Dotyk: Krabička ↔ Nožička 1" in window.constraint_note.text()
+    press(window, "Smazat vazbu")
+    assert "v4" not in [c.id for c in window.session.assembly.constraints]
+    assert ("Nožička 1", "✓") in items(window) and len(window.session._undo) == 1
+    # Přidat vazbu: klik na dno krabičky, Ctrl+klik na horní plochu nožičky.
+    asked = {}
+    monkeypatch.setattr(QInputDialog, "getItem",
+                        lambda *a, **k: asked.setdefault("item", a[3]) and ("vzdálenost", True))
+    monkeypatch.setattr(QInputDialog, "getText",
+                        lambda *a, **k: asked.setdefault("text", a[4]) and ("2", True))
+    assert not window.constraint_action.isEnabled()
+    click(window, plane_face(window, "krabicka", -1, 0), (-32, -17, 0))
+    click(window, plane_face(window, "nozicka_1", 1, 0), (-32, -17, 0), add=True)
+    assert window.constraint_action.isEnabled() and "Vybrané plochy: 2" in window.pick_note.text()
+    press(window, "Přidat vazbu…")
+    assert asked == {"item": ["dotyk", "zarovnání", "vzdálenost"], "text": "0"}
+    new = window.session.assembly.constraints[-1]
+    assert new.type == "distance" and new.value == 2 and window._constraint == new.id
+    assert new.a == {"component": "krabicka", "face": {
+        "at": [-32, -17, 0], "normal": [0, 0, -1], "type": "plane"}}
+    assert new.b == {"component": "nozicka_1", "face": {
+        "at": [0, 0, 3], "normal": [0, 0, 1], "type": "plane"}}
+    assert window.session.assembly.component("nozicka_1").position == [-32, -17, -5]
+    assert ("Nožička 1", "✓ volná: 2 posuny, 1 otočení") in items(window)
+    assert len(window.session._undo) == 2
+    # Upravit vzdálenost ve formuláři vazby = jeden krok Zpět.
+    window.constraint_value.setText("1,5")
+    window.constraint_name.setText("Nožička pod dnem")
+    window.constraint_apply.click()
+    assert window.session.assembly.component("nozicka_1").position == [-32, -17, -4.5]
+    assert ("  Nožička pod dnem", "✓") in items(window) and len(window.session._undo) == 3
+    for _ in range(3):
+        press(window, "Zpět")
+    assert len(window.session.assembly.constraints) == 7 and not window.session.can_undo
+
+
+def test_constraint_errors_in_window_are_czech_dialogs(constrained, dialogs):
+    window = constrained
+    press(window, "Přidat vazbu…")  # bez výběru: tlačítko je vypnuté, akce nic neudělá
+    window.add_constraint_dialog()
+    assert dialogs["shown"][-1][0] == "Přidat vazbu"
+    box = plane_face(window, "krabicka", -1, 0)
+    click(window, box, (0, 0, 0))
+    click(window, plane_face(window, "krabicka", 1, 2), (0, 0, 2), add=True)  # dno uvnitř
+    window.add_constraint_dialog()
+    assert dialogs["shown"][-1] == ("Vazbu nejde přidat", "Obě plochy patří ke stejné "
+                                    "komponentě – druhou plochu vyber na jiné komponentě.")
+    foot = next(i for i in window.session.result.instances if i.ids == ("nozicka_2",))
+    side = next(f for f in foot.part.faces() if f.geom_type.name == "CYLINDER")
+    click(window, box, (0, 0, 0))
+    click(window, side, (37, -17, -1.5), add=True)
+    window.add_constraint_dialog()
+    assert "dvě rovinné plochy" in dialogs["shown"][-1][1]
+    rim = {"component": "krabicka",
+           "face": {"at": [0, 24, 30], "normal": [0, 0, 1], "type": "plane"}}
+    ring = {"component": "vicko", "face": {"at": [0, 24, 2], "normal": [0, 0, 1],
+                                           "type": "plane"}}
+    assert window.add_constraint("distance", rim, ring, 5) is None
+    assert dialogs["shown"][-1][0] == "Vazbu nejde přidat"
+    assert "si odporují" in dialogs["shown"][-1][1] and not window.session.can_undo
+
+
+def test_changed_part_moves_constrained_lid_and_window_says_so(constrained, project):
+    box = json.loads((project / "krabicka.json").read_text(encoding="utf-8"))
+    box["parameters"]["H"] = 40
+    (project / "krabicka.json").write_text(json.dumps(box), encoding="utf-8")
+    press(constrained, "Načíst díly znovu")
+    assert constrained.session.assembly.component("vicko").position == [0, 0, 42]
+    assert "po změně dílu přepočítaly" in constrained.summary.text()
+    assert "*" in constrained.windowTitle()

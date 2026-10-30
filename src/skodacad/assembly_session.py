@@ -1,9 +1,13 @@
-"""Otevřená sestava bez okna: úpravy komponent, Zpět/Znovu, uložení (P5.2).
+"""Otevřená sestava bez okna: úpravy komponent a vazeb, Zpět/Znovu, uložení (P5.2, P5.3).
 
 Jako ``ModelSession`` u dílu: každá úprava jde přes ``_change`` (kopie → kontrola → přijetí),
 nezměněná úprava není krok Zpět. Sestava nikdy nezapisuje do souborů dílů (S11) – uloží
 jen svůj soubor. Nová sestava se hned uloží, protože cesty komponent se počítají vůči
 její složce (S4).
+
+Vazby (M7, M9, M11): polohy, které dopočítá řešič, se zapíšou do ``placement`` v téže
+změně (jeden krok Zpět). Úprava, po které by vazby byly ve sporu, se nepřijme. Když se
+polohy změní při sestavení (změněný soubor dílu), sestava je neuložená a ``notice`` to řekne.
 """
 
 from __future__ import annotations
@@ -16,18 +20,28 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from skodacad.assembly import Assembly, AssemblyError, Component, check_path
+from skodacad.assembly import (
+    Assembly,
+    AssemblyError,
+    Component,
+    Constraint,
+    check_path,
+    reference_shape,
+)
 from skodacad.assembly_build import (
     AssemblyResult,
     Cache,
     axis_matrix,
     build,
+    feature_of,
     locate,
     reachable,
     read_source,
+    rotation_matrix,
+    tidy,
     turned,
 )
-from skodacad.expressions import ExpressionError, resolve_parameters
+from skodacad.expressions import ExpressionError, evaluate, resolve_parameters
 
 _UNDO_LIMIT = 100
 
@@ -59,6 +73,7 @@ class AssemblySession:
         self.result: AssemblyResult | None = None
         self.dirty = False
         self.cache = cache or Cache()
+        self.notice = ""  # polohy podle vazeb se při sestavení změnily (okno ukáže a smaže)
         self._undo: list[Assembly] = []
         self._redo: list[Assembly] = []
         self._group: int | None = None
@@ -113,13 +128,28 @@ class AssemblySession:
     # --- sestavení ------------------------------------------------------------------
 
     def rebuild(self) -> AssemblyResult:
-        """Sestaví znovu – soubory dílů se čtou vždy, staví se jen ty změněné."""
-        self.result = build(self._require(), self._require_path(), self.cache)
-        return self.result
+        """Sestaví znovu – soubory dílů se čtou vždy, staví se jen ty změněné.
+
+        Když vazby po změně dílu daly jiné polohy, zapíšou se do sestavy (bez kroku Zpět,
+        není to úprava uživatele), sestava je neuložená a ``notice`` řekne, které (M11)."""
+        assembly = self._require()
+        result = build(assembly, self._require_path(), self.cache)
+        moved = _apply_solved(assembly, result)
+        if moved:
+            self.dirty = True
+            self.notice = ("Polohy podle vazeb se po změně dílu přepočítaly: "
+                           + ", ".join(moved) + ". Zkontroluj je a ulož sestavu.")
+        self.result = result
+        return result
 
     # --- úpravy ---------------------------------------------------------------------
 
-    def _change(self, mutate: Callable[[Assembly], None]) -> AssemblyResult:
+    def _change(self, mutate: Callable[[Assembly], None],
+                require: Sequence[str] = ()) -> AssemblyResult:
+        """Úprava = kopie, kontrola, sestavení s vazbami, přijetí (jeden krok Zpět).
+
+        Nepřijme se úprava, po které by nějaká vazba byla ve sporu, jež předtím nebyla
+        (M7), ani nová či změněná vazba ``require``, která nejde použít."""
         current = self._require()
         candidate = copy.deepcopy(current)
         mutate(candidate)
@@ -130,15 +160,34 @@ class AssemblySession:
             resolve_parameters(candidate.parameters)
         except ExpressionError as exc:
             raise AssemblyError(str(exc)) from None
+        result = build(candidate, self._require_path(), self.cache)
+        self._check_constraints(result, require)
+        _apply_solved(candidate, result)
+        if candidate == current:  # vazby komponentu vrátily (plně určená)
+            self.result = result
+            return result
         self._undo.append(current)
         overflow = max(0, len(self._undo) - _UNDO_LIMIT)
         del self._undo[:overflow]
         if self._group is not None:
             self._group = max(0, self._group - overflow)
         self._redo.clear()
-        self.assembly = candidate
-        self.dirty = True
-        return self.rebuild()
+        self.assembly, self.result, self.dirty = candidate, result, True
+        return result
+
+    def _check_constraints(self, result: AssemblyResult, require: Sequence[str]) -> None:
+        before = ({status.ids for status in self.result.constraints
+                   if status.state == "conflict"} if self.result is not None else set())
+        new = [status for status in result.constraints
+               if status.state == "conflict" and status.ids not in before]
+        for constraint_id in require:
+            status = result.constraint(constraint_id)
+            if status.state not in ("ok", "conflict"):
+                raise AssemblyError(f"Vazbu „{status.label}“ nejde použít: {status.reason}.")
+        if new:
+            names = ", ".join(f"„{status.label}“" for status in new)
+            raise AssemblyError(f"Vazby si odporují ({names}): {new[0].reason}. Úprava se "
+                                "nepřijala, sestava zůstala beze změny.")
 
     def insert(self, file: str | Path, position: Sequence[Any] = (0, 0, 0),
                rotation: Sequence[Any] = (0, 0, 0), name: str = "") -> str:
@@ -171,8 +220,160 @@ class AssemblySession:
         return component_id
 
     def remove(self, component_id: str) -> AssemblyResult:
+        """Smaže komponentu i vazby, které na ni vedou (M10) – jeden krok Zpět."""
         self._require().component(component_id)
-        return self._change(lambda a: a.components.remove(a.component(component_id)))
+
+        def mutate(a: Assembly) -> None:
+            a.components.remove(a.component(component_id))
+            a.constraints = [c for c in a.constraints if component_id not in c.components]
+
+        return self._change(mutate)
+
+    # --- vazby (P5.3) -----------------------------------------------------------------
+
+    def add_constraint(self, kind: str, a: dict[str, Any], b: dict[str, Any],
+                       value: Any = None, name: str = "") -> str:
+        """Přidá vazbu; vrátí její id. Vazba, která nejde použít nebo vede ke sporu, se
+        nepřijme (česká chyba, sestava beze změny, žádný krok Zpět)."""
+        assembly = self._require()
+        for side in (a, b):
+            if isinstance(side, dict) and isinstance(side.get("component"), str):
+                assembly.component(side["component"])
+        numbers = [int(match.group(1)) for c in assembly.constraints
+                   if (match := re.fullmatch(r"v(\d+)", c.id))]
+        data: dict[str, Any] = {"id": f"v{max(numbers, default=0) + 1}", "type": kind,
+                                "a": a, "b": b}
+        if name.strip():
+            data["name"] = name.strip()
+        if kind == "distance" or value is not None:
+            data["value"] = value
+        constraint = Constraint.from_dict(data, len(assembly.constraints) + 1)
+        self._change(lambda x: x.constraints.append(constraint), require=[constraint.id])
+        return constraint.id
+
+    def remove_constraint(self, constraint_id: str) -> AssemblyResult:
+        self._require().constraint(constraint_id)
+        return self._change(
+            lambda a: a.constraints.remove(a.constraint(constraint_id)))
+
+    def set_constraint(self, constraint_id: str, value: Any = None,
+                       name: str | None = None) -> AssemblyResult:
+        """Nová hodnota vzdálenosti (číslo nebo výraz) nebo název vazby."""
+        constraint = self._require().constraint(constraint_id)
+        if value is not None and constraint.type != "distance":
+            raise AssemblyError(f"Vazba „{constraint.label}“ nemá hodnotu – hodnotu má jen "
+                                "vzdálenost.")
+
+        def mutate(a: Assembly) -> None:
+            target = a.constraint(constraint_id)
+            if value is not None:
+                target.value = value
+            if name is not None:
+                target.name = name.strip()
+
+        return self._change(mutate, require=[constraint_id] if value is not None else [])
+
+    def reference_at(self, face: Any, point: Sequence[float] | None = None) -> dict[str, Any]:
+        """Kliknutá plocha kopie ve 3D → odkaz vazby v souřadnicích dílu její komponenty
+        (M2): bod, směr a druh plochy, bez poloměru – najde se i po změně rozměru."""
+        from skodacad.measure import face_reference
+        from skodacad.picking import split_shapes
+        from skodacad.selectors import SelectionError, find_face
+
+        faces, _edges = split_shapes([face])  # kliknutí z okna je tvar OCCT
+        if not faces:
+            raise AssemblyError("Vazba se zadává na plochách – klikni na plochu, ne na hranu.")
+        face = faces[0]
+        result = self.result if self.result is not None else self.rebuild()
+        instance = next((item for item in result.instances
+                         if any(face.is_same(known) for known in item.part.faces())), None)
+        if instance is None:
+            raise AssemblyError("Kliknutá plocha nepatří k žádné komponentě – vyber ji znovu.")
+        component_id = instance.ids[0]
+        shape = result.local_shapes.get(component_id)
+        if shape is None:
+            raise AssemblyError("Komponenta se ještě počítá – zkus to za chvíli.")
+        world = face_reference(face, point)["face"]
+        kind = world.get("type")
+        if kind not in ("plane", "cylinder"):
+            raise AssemblyError("Vazby umí jen rovinné a válcové plochy – vyber jinou plochu.")
+        rotation, position = self._pose(component_id)
+        spec = {"at": _local(world["at"], rotation, position),
+                "normal": _local(world["normal"], rotation, None), "type": kind}
+        try:
+            found, on_face = find_face(shape, spec)
+        except SelectionError as exc:
+            raise AssemblyError(str(exc)) from None
+        if (on_face - type(on_face)(*spec["at"])).length > 1e-3:
+            raise AssemblyError("Tuhle plochu nejde pro vazbu jednoznačně určit – klikni na ni "
+                                "kousek dál od hrany.")
+        return {"component": component_id, "face": spec}
+
+    def gap(self, a: dict[str, Any], b: dict[str, Any]) -> float:
+        """Dnešní vzdálenost rovin dvou odkazů ve směru normály „a“ (výchozí hodnota
+        vzdálenosti, aby nová vazba díly neposunula)."""
+        import numpy as np
+
+        from skodacad.selectors import SelectionError
+
+        result = self.result if self.result is not None else self.rebuild()
+        ends = []
+        for side in (a, b):
+            shape = result.local_shapes.get(side["component"])
+            if shape is None:
+                raise AssemblyError(f"Komponenta „{side['component']}“ se nesestavila.")
+            try:
+                point, normal = feature_of(shape, side)
+            except SelectionError as exc:
+                raise AssemblyError(str(exc)) from None
+            rotation, position = self._pose(side["component"])
+            ends.append((rotation @ point + position, rotation @ normal))
+        (pa, na), (pb, _nb) = ends
+        return tidy(round(float(np.dot(pb - pa, na / np.linalg.norm(na))), 6))
+
+    def constraint_faces(self, constraint_id: str) -> list[Any]:
+        """Plochy vazby v poloze v sestavě (zvýraznění v okně); co nejde najít, vynechá."""
+        from skodacad.assembly_build import location
+        from skodacad.selectors import SelectionError, find_face
+
+        constraint = self._require().constraint(constraint_id)
+        result = self.result if self.result is not None else self.rebuild()
+        faces = []
+        for side in (constraint.a, constraint.b):
+            shape = result.local_shapes.get(side["component"])
+            if shape is None or "face" not in side:
+                continue
+            try:
+                face, _point = find_face(shape, side["face"])
+                rotation, position = self._pose(side["component"])
+            except (SelectionError, AssemblyError):
+                continue
+            component = self._require().component(side["component"])
+            angles = [evaluate(v, result.parameters) for v in component.rotation]
+            faces.append(face.moved(location(list(position), angles)).wrapped)
+        return faces
+
+    @staticmethod
+    def constraint_kinds(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
+        """Druhy vazeb, které se pro dva odkazy hodí (M12)."""
+        shapes = {reference_shape(a), reference_shape(b)}
+        if shapes == {"plane"}:
+            return ["mate", "flush", "distance"]
+        if shapes == {"axis"}:
+            return ["coaxial"]
+        return []
+
+    def _pose(self, component_id: str) -> tuple[Any, Any]:
+        import numpy as np
+
+        component = self._require().component(component_id)
+        parameters = self.result.parameters if self.result is not None else {}
+        try:
+            position = [evaluate(v, parameters) for v in component.position]
+            angles = [evaluate(v, parameters) for v in component.rotation]
+        except ExpressionError as exc:
+            raise AssemblyError(f"Poloha „{component.label}“: {exc}") from None
+        return np.array(rotation_matrix(angles), dtype=float), np.array(position, dtype=float)
 
     def rename(self, component_id: str, name: str) -> AssemblyResult:
         def mutate(a: Assembly) -> None:
@@ -207,7 +408,7 @@ class AssemblySession:
         values = self._numbers(component.position, component, "posun")
         if len(delta) != 3:
             raise AssemblyError("Posun musí být trojice [x, y, z].")
-        moved = [_tidy(v + float(d)) for v, d in zip(values, delta, strict=True)]
+        moved = [tidy(v + float(d)) for v, d in zip(values, delta, strict=True)]
         return self.set_placement(component_id, position=moved)
 
     def turn(self, component_id: str, axis: str, degrees: float) -> AssemblyResult:
@@ -334,6 +535,25 @@ def _copy_part(file: Path, target: Path, copied: dict[Path, str]) -> str:
     return copied[file]
 
 
-def _tidy(value: float) -> float:
-    value = round(value, 9) + 0.0
-    return int(value) if value.is_integer() else value
+def _apply_solved(assembly: Assembly, result: AssemblyResult) -> list[str]:
+    """Zapíše polohy podle vazeb do komponent nejvyšší úrovně (M9); vrátí jejich názvy."""
+    moved = []
+    for ids, (position, rotation) in result.solved.items():
+        if len(ids) != 1:
+            continue
+        component = assembly.component(ids[0])
+        if component.position != position or component.rotation != rotation:
+            component.position, component.rotation = list(position), list(rotation)
+            moved.append(f"„{component.label}“")
+    return moved
+
+
+def _local(vector: Sequence[float], rotation: Any, position: Any) -> list[float]:
+    """Bod (s posunem) nebo směr (bez) ze souřadnic sestavy do souřadnic komponenty."""
+    import numpy as np
+
+    value = np.array(vector, dtype=float)
+    if position is not None:
+        value = value - position
+    local = rotation.T @ value
+    return [tidy(round(float(v), 4)) for v in local]

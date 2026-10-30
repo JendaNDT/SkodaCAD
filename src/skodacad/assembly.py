@@ -16,6 +16,13 @@ Příklad::
 Komponenty na soubory dílů jen odkazují – cestou vůči složce souboru sestavy – a sestava
 je nikdy nepřepisuje. Poloha je posun v mm a úhly ve stupních kolem pevných os sestavy:
 nejdřív X, pak Y, pak Z. Rozhodnutí S1–S12: ``docs/p5-1-navrh-formatu-sestav.md``.
+
+Vazby (formát 30, rozhodnutí M1–M12 v ``docs/p5-3-navrh-vazeb.md``) spojují plochy dvou
+komponent: dotyk (``mate``), zarovnání (``flush``), vzdálenost (``distance``, hodnota v mm)
+a souosost (``coaxial``). Odkaz je plocha významem v souřadnicích dílu komponenty
+(``{"component": "vicko", "face": {"at": [...], "normal": [...], "type": "plane"}}``) nebo
+základní rovina či osa dílu (``{"component": "noha", "plane": "XY"}``, ``"axis": "Z"``).
+Sestava bez vazeb se ukládá ve verzi 29, s vazbami ve verzi 30.
 """
 
 from __future__ import annotations
@@ -31,16 +38,28 @@ from typing import Any
 
 from skodacad.document import ASSEMBLY_KIND, FORMAT, DocumentError, write_json
 
-VERSION = 29  # první verze formátu, která zná sestavy
+FIRST_VERSION = 29  # první verze formátu, která zná sestavy
+VERSION = 30  # vazby (constraints)
 MAX_DEPTH = 8  # úrovní podsestav (S10, zvoleno)
 MAX_COMPONENTS = 1000  # komponent po rozbalení podsestav (S10, zvoleno)
 
 _TOP_KEYS = {"format", "kind", "version", "name", "description", "units", "parameters",
-             "components"}
+             "components", "constraints"}
 _COMPONENT_KEYS = {"id", "name", "source", "placement", "fixed"}
 _SOURCE_KEYS = {"path", "fingerprint"}
 _PLACEMENT_KEYS = {"position", "rotation"}
 _FINGERPRINT = re.compile(r"[0-9a-f]{16}")
+
+CONSTRAINT_TYPES = {"mate": "dotyk", "flush": "zarovnání", "distance": "vzdálenost",
+                    "coaxial": "souosost"}
+PLANAR_TYPES = ("mate", "flush", "distance")  # vážou dvě roviny
+BASE_PLANES = {"XY": ((0, 0, 0), (0, 0, 1)), "XZ": ((0, 0, 0), (0, -1, 0)),
+               "YZ": ((0, 0, 0), (1, 0, 0))}  # normály jako u skic (XZ míří do −Y)
+BASE_AXES = {"X": ((0, 0, 0), (1, 0, 0)), "Y": ((0, 0, 0), (0, 1, 0)),
+             "Z": ((0, 0, 0), (0, 0, 1))}
+_CONSTRAINT_KEYS = {"id", "type", "name", "a", "b", "value"}
+_REFERENCE_KEYS = {"component", "face", "plane", "axis"}
+_FACE_KEYS = {"at", "normal", "type"}
 
 
 class AssemblyError(DocumentError):
@@ -91,6 +110,123 @@ def _unknown(data: dict[str, Any], allowed: set[str], where: str) -> None:
     if extra:
         raise AssemblyError(f"{where}: neznámý klíč {', '.join(f'„{k}“' for k in extra)} "
                             "(překlep, nebo soubor z novější verze ŠkodaCAD).")
+
+
+def _vector(value: Any, where: str) -> list[float]:
+    if (not isinstance(value, list) or len(value) != 3
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in value)
+            or not all(math.isfinite(v) for v in value)):
+        raise AssemblyError(f"{where} musí být trojice čísel [x, y, z].")
+    return list(value)
+
+
+def check_reference(data: Any, where: str) -> dict[str, Any]:
+    """Odkaz vazby (M2): komponenta a právě jedno z plocha / rovina dílu / osa dílu."""
+    if not isinstance(data, dict):
+        raise AssemblyError(f"{where} musí být objekt s „component“ a plochou, rovinou "
+                            "nebo osou.")
+    _unknown(data, _REFERENCE_KEYS, where)
+    component = data.get("component")
+    if not isinstance(component, str) or not component:
+        raise AssemblyError(f"{where}: chybí textové „component“ (id komponenty).")
+    kinds = [key for key in ("face", "plane", "axis") if key in data]
+    if len(kinds) != 1:
+        raise AssemblyError(f"{where}: uveď právě jedno z „face“, „plane“ nebo „axis“.")
+    if "face" in data:
+        face = data["face"]
+        if not isinstance(face, dict):
+            raise AssemblyError(f"{where}: „face“ musí být objekt s „at“, „normal“ a „type“.")
+        _unknown(face, _FACE_KEYS, f"{where}, plocha")
+        for key in _FACE_KEYS:
+            if key not in face:
+                raise AssemblyError(f"{where}: plocha potřebuje „at“, „normal“ i „type“.")
+        _vector(face["at"], f"{where}: „at“")
+        if not any(_vector(face["normal"], f"{where}: „normal“")):
+            raise AssemblyError(f"{where}: „normal“ nesmí být nulový směr.")
+        if face["type"] not in ("plane", "cylinder"):
+            raise AssemblyError(f"{where}: vazby umí jen plochy „plane“ (rovinné) a "
+                                "„cylinder“ (válcové).")
+    elif "plane" in data:
+        if data["plane"] not in tuple(BASE_PLANES):
+            raise AssemblyError(f"{where}: rovina dílu musí být jedna z "
+                                f"{', '.join(BASE_PLANES)}.")
+    elif data["axis"] not in tuple(BASE_AXES):
+        raise AssemblyError(f"{where}: osa dílu musí být jedna z {', '.join(BASE_AXES)}.")
+    return copy.deepcopy(data)
+
+
+def reference_shape(data: dict[str, Any]) -> str:
+    """Co odkaz určuje: „plane“ (rovina) nebo „axis“ (osa)."""
+    if "face" in data:
+        return "plane" if data["face"]["type"] == "plane" else "axis"
+    return "plane" if "plane" in data else "axis"
+
+
+@dataclass
+class Constraint:
+    """Vazba mezi plochami dvou komponent (M1, M10)."""
+
+    id: str
+    type: str
+    a: dict[str, Any]
+    b: dict[str, Any]
+    value: Any = None  # jen u vzdálenosti: mm, číslo nebo výraz s parametry sestavy
+    name: str = ""
+
+    @property
+    def label(self) -> str:
+        return self.name or f"{self.id} ({CONSTRAINT_TYPES[self.type]})"
+
+    @property
+    def components(self) -> tuple[str, str]:
+        return self.a["component"], self.b["component"]
+
+    @classmethod
+    def from_dict(cls, data: Any, index: int) -> Constraint:
+        if not isinstance(data, dict):
+            raise AssemblyError(f"Vazba č. {index} musí být objekt.")
+        constraint_id = data.get("id")
+        if not isinstance(constraint_id, str) or not constraint_id:
+            raise AssemblyError(f"Vazba č. {index} nemá textové „id“.")
+        where = f"Vazba „{constraint_id}“"
+        _unknown(data, _CONSTRAINT_KEYS, where)
+        kind = data.get("type")
+        if kind not in tuple(CONSTRAINT_TYPES):
+            raise AssemblyError(f"{where}: neznámý druh „{kind}“, povolené: "
+                                + ", ".join(f"{k} ({v})" for k, v in CONSTRAINT_TYPES.items())
+                                + ".")
+        name = data.get("name", "")
+        if not isinstance(name, str):
+            raise AssemblyError(f"{where}: „name“ musí být text.")
+        a = check_reference(data.get("a"), f"{where}, „a“")
+        b = check_reference(data.get("b"), f"{where}, „b“")
+        if a["component"] == b["component"]:
+            raise AssemblyError(f"{where}: vazba musí spojovat dvě různé komponenty.")
+        wanted = "plane" if kind in PLANAR_TYPES else "axis"
+        for side in (a, b):
+            if reference_shape(side) != wanted:
+                raise AssemblyError(
+                    f"{where} ({CONSTRAINT_TYPES[kind]}) potřebuje "
+                    + ("dvě rovinné plochy nebo roviny dílu." if wanted == "plane"
+                       else "dvě válcové plochy nebo osy dílu."))
+        value = None
+        if kind == "distance":
+            if "value" not in data:
+                raise AssemblyError(f"{where}: vzdálenost potřebuje hodnotu „value“ v mm.")
+            value = _value(data["value"], f"{where}, hodnota")
+        elif "value" in data:
+            raise AssemblyError(f"{where}: hodnotu „value“ má jen vzdálenost.")
+        return cls(id=constraint_id, type=kind, a=a, b=b, value=value, name=name)
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"id": self.id, "type": self.type}
+        if self.name:
+            data["name"] = self.name
+        if self.type == "distance":
+            data["value"] = copy.deepcopy(self.value)
+        data["a"] = copy.deepcopy(self.a)
+        data["b"] = copy.deepcopy(self.b)
+        return data
 
 
 @dataclass
@@ -174,6 +310,7 @@ class Assembly:
     units: str = "mm"
     parameters: dict[str, Any] = field(default_factory=dict)
     components: list[Component] = field(default_factory=list)
+    constraints: list[Constraint] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Any) -> Assembly:
@@ -187,10 +324,13 @@ class Assembly:
         if isinstance(version, bool) or not isinstance(version, int) or version > VERSION:
             raise AssemblyError(f"Nepodporovaná verze sestavy {version!r} – soubor je nejspíš "
                                 "z novější verze ŠkodaCAD, stáhni aktuální aplikaci.")
-        if version < VERSION:
-            raise AssemblyError(f"Sestavy existují až od formátu verze {VERSION}, soubor "
+        if version < FIRST_VERSION:
+            raise AssemblyError(f"Sestavy existují až od formátu verze {FIRST_VERSION}, soubor "
                                 f"uvádí verzi {version}.")
         _unknown(data, _TOP_KEYS, "Sestava")
+        if "constraints" in data and version < 30:
+            raise AssemblyError(f"Vazby jsou až ve formátu verze 30, soubor uvádí verzi "
+                                f"{version}.")
         if data.get("units", "mm") != "mm":
             raise AssemblyError(f"Jednotky „{data.get('units')}“ nejsou podporované, "
                                 "sestava musí být v mm.")
@@ -212,24 +352,44 @@ class Assembly:
         if len(components) > MAX_COMPONENTS:
             raise AssemblyError(f"Sestava má {len(components)} komponent, nejvýš "
                                 f"{MAX_COMPONENTS}.")
+        raw = data.get("constraints", [])
+        if not isinstance(raw, list):
+            raise AssemblyError("„constraints“ musí být seznam vazeb.")
+        constraints = [Constraint.from_dict(item, index) for index, item in enumerate(raw, 1)]
+        seen = set()
+        for constraint in constraints:
+            if constraint.id in seen:
+                raise AssemblyError(f"Id vazby „{constraint.id}“ je v sestavě dvakrát, musí "
+                                    "být jedinečné.")
+            seen.add(constraint.id)
         for key in ("name", "description"):
             if not isinstance(data.get(key, ""), str):
                 raise AssemblyError(f"„{key}“ sestavy musí být text.")
         return cls(name=data.get("name", "Nová sestava"),
                    description=data.get("description", ""),
-                   parameters=copy.deepcopy(parameters), components=components)
+                   parameters=copy.deepcopy(parameters), components=components,
+                   constraints=constraints)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "format": FORMAT,
             "kind": ASSEMBLY_KIND,
-            "version": VERSION,
+            "version": VERSION if self.constraints else FIRST_VERSION,
             "name": self.name,
             "description": self.description,
             "units": self.units,
             "parameters": copy.deepcopy(self.parameters),
             "components": [component.to_dict() for component in self.components],
         }
+        if self.constraints:
+            data["constraints"] = [constraint.to_dict() for constraint in self.constraints]
+        return data
+
+    def constraint(self, constraint_id: str) -> Constraint:
+        for constraint in self.constraints:
+            if constraint.id == constraint_id:
+                return constraint
+        raise AssemblyError(f"Sestava nemá vazbu „{constraint_id}“.")
 
     def component(self, component_id: str) -> Component:
         for component in self.components:
@@ -269,5 +429,9 @@ def fingerprint(assembly: Assembly) -> str:
                                    "rotation": c.rotation})
                        for c in assembly.components],
     }
+    if assembly.constraints:  # bez vazeb zůstane otisk jako ve verzi 29
+        recipe["constraints"] = [_canonical({k: v for k, v in c.to_dict().items()
+                                             if k != "name"})
+                                 for c in assembly.constraints]
     text = json.dumps(recipe, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

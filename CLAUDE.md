@@ -367,10 +367,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `drawing_sheet.py`, `drawing_section_mark.py` | rozvržení pohledů na listu A4/A3 v měřítku (evropské promítání), označení roviny řezu A–A |
 | `drawing_annotations.py`, `drawing_collisions.py` | kóty v pohledech (umístění, odchylky, náhradní pohled za skrytý), odhad možného překrytí kót |
 | `drawing_export.py` | export jednostránkového pracovního výkresu do PDF/DXF (kontrolní úsečka 50 mm, popisové pole; při chybě zůstane starý soubor) |
-| `assembly.py` | sestava (P5, formát 29): `Assembly`, `Component` (kontrola struktury, neznámý klíč = chyba, `check_path` podle S4), načtení a uložení přes `document.write_json`, `fingerprint` receptu podsestavy |
-| `assembly_build.py` | sestavení sestavy: `locate` (přesná velikost písmen, jinak upozornění), `read_source` (díl / podsestava), stavy `ComponentStatus` (ok / missing / unreadable / error / cycle), otočení kolem pevných os X→Y→Z (`rotation_matrix`, `angles_of`, `turned`, `location`), `Cache` dílů podle souboru a SHA-256 bajtů, `build` → `AssemblyResult` (kopie `Instance`, objem, hmotnost, obálka, `complete`), `reachable` (kontrola cyklu) |
-| `assembly_session.py` | `AssemblySession` – sestava bez okna: nová (hned uložená), otevřít, uložit (otisky zdrojů; *Uložit jako* přepočítá cesty), vložit díl/podsestavu, smazat, přejmenovat, poloha, posun, otočení ±90°, pevná, *Najít soubor* s upozorněním na jiný recept, parametry, Zpět/Znovu |
-| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT), `radiografie` (geometrie projekce RT), `audit` (předběžný NDT audit) a `sestava` (komponenty, stav, objem, hmotnost) |
+| `assembly.py` | sestava (P5, formát 29, s vazbami 30): `Assembly`, `Component`, `Constraint` (dotyk / zarovnání / vzdálenost / souosost, `check_reference`: plocha `plane`/`cylinder` bez poloměru, rovina `XY`/`XZ`/`YZ`, osa), kontrola struktury (neznámý klíč = chyba, `check_path` podle S4), načtení a uložení přes `document.write_json`, `fingerprint` receptu podsestavy (vazby jen když jsou) |
+| `assembly_solve.py` | řešič vazeb (P5.3): tuhá tělesa nad numpy, `groups` (skupiny propojených komponent, kotva bez pevné), LM s krokem nejmenší normy v měřítku mm a návratem volných pohybů (`_pull_back`), obrácení o 180° (`_with_flips`), `Freedom` z jádra Jacobiho matice, `SATISFIED` 1e-6 mm |
+| `assembly_build.py` | sestavení sestavy: `locate` (přesná velikost písmen, jinak upozornění), `read_source` (díl / podsestava), stavy `ComponentStatus` (ok / missing / unreadable / error / cycle), otočení kolem pevných os X→Y→Z (`rotation_matrix`, `angles_of`, `turned`, `location`), `Cache` dílů podle souboru a SHA-256 bajtů, `build` → `AssemblyResult` (kopie `Instance`, objem, hmotnost, obálka, `complete`, stavy vazeb `ConstraintStatus`, nové polohy `solved`, tvary komponent `local_shapes`), po úrovních nejdřív díly ve vlastních souřadnicích, pak `_solve_level`, pak umístění; `feature_of` (bod a směr odkazu), `reachable` (kontrola cyklu) |
+| `assembly_session.py` | `AssemblySession` – sestava bez okna: nová (hned uložená), otevřít, uložit (otisky zdrojů; *Uložit jako* přepočítá cesty), vložit díl/podsestavu, smazat, přejmenovat, poloha, posun, otočení ±90°, pevná, *Najít soubor* s upozorněním na jiný recept, parametry, Zpět/Znovu; vazby `add_constraint` / `set_constraint` / `remove_constraint` (spor = nepřijato), polohy z řešiče v téže změně, `notice` po změně dílu, `reference_at` (kliknutá plocha → odkaz v souřadnicích dílu), `gap`, `constraint_kinds`, `constraint_faces` |
+| `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT), `radiografie` (geometrie projekce RT), `audit` (předběžný NDT audit) a `sestava` (komponenty, stav, volnost, vazby, objem, hmotnost) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
 | `worker.py` | přepočet v pomocném procesu (`BackgroundRebuilder`), přenos výsledku přes BinTools; mapa pokrytí, návrh poloh, plán dráhy (`submit_plan`), mapa PT (`submit_pt`), mapa MT (`submit_mt`) a mapa RT (`submit_rt`), průběžné zprávy `Finished.update` |
@@ -407,7 +408,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
-| `gui/assembly_window.py` | okno sestavy (P5.2B): strom komponent se stavy, formulář polohy (čísla i výrazy, ±90°, *Pevná*), *Vložit díl*, *Najít soubor*, *Otevřít díl* (hlavní okno), Zpět/Znovu, díly na pozadí (`Cache(builder=None)` + vlastní `BackgroundRebuilder`), klik ve 3D vybere kopii (`IsSame`), ukázka jako šablona |
+| `gui/assembly_window.py` | okno sestavy (P5.2B, P5.3B): strom komponent se stavy a volností, vazby ve stromu (výběr, *Přidat vazbu…* klikem a Ctrl+klikem na dvě plochy, panel *Vazba*: název, vzdálenost, smazat), hláška o přepočtu poloh, formulář polohy (čísla i výrazy, ±90°, *Pevná*), *Vložit díl*, *Najít soubor*, *Otevřít díl* (hlavní okno), Zpět/Znovu, díly na pozadí (`Cache(builder=None)` + vlastní `BackgroundRebuilder`), klik ve 3D vybere kopii (`IsSame`), ukázka jako šablona |
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
@@ -1214,6 +1215,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   nejde a uložení skončí chybou „jiném disku“ – odhalilo CI.
 - `QWidget.grab()` 3D prohlížeč nezachytí (černá plocha) – snímek okna přes
   `screen.grabWindow`, 3D zvlášť `viewer.dump`.
+- Řešič vazeb: rovnice směrů se násobí ramenem (`scale`), krok je nejmenší normy (SVD)
+  v měřítku mm s **jednotným** útlumem a na konci se vrátí volné pohyby (`_pull_back`).
+  Marquardtův útlum podle sloupců zlevnil téměř volný pohyb (krabička ujela o 43 mm), bez
+  SVD numerický šum o 536 mm. Volné otočení se při narovnání nakloněného dílu změní o zlomek
+  stupně (nožička 4°/3° → 0,1° kolem Z) – je to opravdu nejmenší otočení, ne chyba.
+- Polohy z řešiče se porovnávají maticí, ne čísly úhlů: [0, 0, 270] a [0, 0, −90] je táž
+  poloha a zapsat se nesmí (sestava by po každém otevření byla „neuložená“). Vazby splněné
+  už v uložené poloze (zbytek do 1e-7) se neřeší vůbec.
+- Spor se posuzuje jen u vazeb, které **předtím ve sporu nebyly** – jinak by spor po změně
+  dílu zablokoval každou další úpravu. Vazba na komponentu, jejíž díl se počítá, je
+  „počítá se“ a přidat ji nejde.
 - Testy, které procházejí `examples/` rekurzivně, soubory sestav vynechávají (`"kind":
   "assembly"`). Ukázka `examples/sestavy/krabicka_s_vickem.json` odkazuje i na
   `../krabicka.json`; díly víčka a nožičky jsou v `examples/sestavy/dily/`.
@@ -1240,7 +1252,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3 vazeb](docs/p5-3-navrh-vazeb.md) **schválen** (M1–M12) | P5.3A/B vazby, P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) implementovány | ruční zkouška vazeb, P5.4 kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1358,6 +1370,9 @@ díl*). **P5.3 vazby – návrh předán 30. 10. 2026:** [vazby](docs/p5-3-navrh
 dílu; vlastní řešič tuhých těles nad numpy po skupinách, nejmenší posun, obrácení o 180°,
 spor = úprava se nepřijme; formát 30 jen se vazbami), [průzkum](docs/p5-3-pruzkum-vazeb.py),
 matice B01–B20. **Schváleno autorem 30. 10. 2026 („schvaluji M1–M12“, PR #64).**
+**P5.3A/B implementováno:** formát 30, `assembly_solve.py`, vazby v `AssemblySession`,
+`skodacad sestava`, ukázka `krabicka_s_vazbami.json`, okno (B20), self-test „✓ Vazby“,
+[evidence](docs/p5-3-vazby-overeni.md).
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

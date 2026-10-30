@@ -1,8 +1,12 @@
-"""Okno sestavy (P5.2B): strom komponent, poloha, kopie dílů ve 3D.
+"""Okno sestavy (P5.2B, P5.3B): strom komponent a vazeb, poloha, kopie dílů ve 3D.
 
 Okno nemodeluje – všechno jde přes ``AssemblySession`` (pravidlo 8 a 10), takže funguje
 Zpět/Znovu a soubory dílů se nikdy nemění. S ``runner`` (pomocný proces jako u dílu) se
 díly sestavy počítají na pozadí a okno nestojí; bez něj (testy) hned.
+
+Vazba (M12): klik na plochu první komponenty, Ctrl+klik na plochu druhé, *Přidat vazbu…*
+nabídne jen vhodné druhy. Vazby jsou ve stromu pod komponentami se stavem; vybraná vazba
+jde přejmenovat, u vzdálenosti změnit hodnota, a smazat.
 """
 
 from __future__ import annotations
@@ -22,7 +26,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -34,8 +40,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from skodacad.assembly import AssemblyError
-from skodacad.assembly_build import LABELS, AssemblyResult, Built, Cache, build_part
+from skodacad.assembly import CONSTRAINT_TYPES, AssemblyError
+from skodacad.assembly_build import (
+    CONSTRAINT_LABELS,
+    LABELS,
+    AssemblyResult,
+    Built,
+    Cache,
+    build_part,
+)
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 
@@ -81,6 +94,8 @@ class AssemblyWindow(QMainWindow):
         self.user_dir = user_dir or Path.home()
         self.open_part = open_part  # hlavní okno otevře soubor dílu
         self._selected: tuple[str, ...] | None = None
+        self._constraint: str | None = None  # vybraná vazba (místo komponenty)
+        self._picks: list[tuple[Any, Any]] = []  # vybrané tvary ve 3D a místo kliknutí
         self._job_source: Any = None
         self._timer = QTimer(self)
         self._timer.setInterval(100)
@@ -113,9 +128,9 @@ class AssemblyWindow(QMainWindow):
     def _build_tree(self) -> None:
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Komponenta", "Soubor", "Stav"])
-        self.tree.setColumnWidth(0, 150)
-        self.tree.setColumnWidth(1, 130)
-        self.tree.setMinimumWidth(360)
+        self.tree.setColumnWidth(0, 140)
+        self.tree.setColumnWidth(1, 110)
+        self.tree.setMinimumWidth(440)  # stav „✓ volná: 2 posuny, 1 otočení“ se vejde
         self.tree.itemSelectionChanged.connect(self._tree_selected)
         dock = QDockWidget("Komponenty", self)
         dock.setObjectName("assembly_components")
@@ -165,6 +180,10 @@ class AssemblyWindow(QMainWindow):
         buttons.addWidget(self.relink_button)
         buttons.addWidget(self.open_part_button)
         layout.addLayout(buttons)
+        self.pick_note = QLabel()
+        self.pick_note.setWordWrap(True)
+        layout.addWidget(self.pick_note)
+        layout.addWidget(self._build_constraint_box())
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -176,6 +195,30 @@ class AssemblyWindow(QMainWindow):
         dock.setWidget(panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
+    def _build_constraint_box(self) -> QGroupBox:
+        self.constraint_box = QGroupBox("Vazba")
+        layout = QVBoxLayout(self.constraint_box)
+        self.constraint_note = QLabel()
+        self.constraint_note.setWordWrap(True)
+        layout.addWidget(self.constraint_note)
+        form = QFormLayout()
+        self.constraint_name = QLineEdit()
+        form.addRow("Název", self.constraint_name)
+        self.constraint_value = QLineEdit()
+        self.constraint_value.returnPressed.connect(self.apply_constraint)
+        form.addRow("Vzdálenost [mm]", self.constraint_value)
+        layout.addLayout(form)
+        buttons = QHBoxLayout()
+        self.constraint_apply = QPushButton("Použít vazbu")
+        self.constraint_apply.clicked.connect(self.apply_constraint)
+        self.constraint_remove = QPushButton("Smazat vazbu")
+        self.constraint_remove.clicked.connect(self.remove_selected)
+        buttons.addWidget(self.constraint_apply)
+        buttons.addWidget(self.constraint_remove)
+        layout.addLayout(buttons)
+        self.constraint_box.setVisible(False)
+        return self.constraint_box
+
     def _create_actions(self) -> None:
         self.new_action = self._action("Nová sestava…", self.new_dialog)
         self.open_action = self._action("Otevřít sestavu…", self.open_dialog)
@@ -185,6 +228,8 @@ class AssemblyWindow(QMainWindow):
         self.redo_action = self._action("Znovu", self.redo, "Ctrl+Y")
         self.insert_action = self._action("Vložit díl…", self.insert_dialog, "Ctrl+I")
         self.remove_action = self._action("Smazat komponentu", self.remove_selected, "Delete")
+        self.constraint_action = self._action("Přidat vazbu…", self.add_constraint_dialog,
+                                              "Ctrl+L")
         self.reload_action = self._action("Načíst díly znovu", self.reload, "F5")
 
     def _build_menus(self) -> None:
@@ -197,13 +242,13 @@ class AssemblyWindow(QMainWindow):
         file_menu.addAction(self._action("Zavřít sestavu", self.close, "Ctrl+W"))
         edit_menu = bar.addMenu("Ú&pravy")
         for action in (self.undo_action, self.redo_action, self.insert_action,
-                       self.remove_action, self.reload_action):
+                       self.remove_action, self.constraint_action, self.reload_action):
             edit_menu.addAction(action)
         toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
         for action in (self.open_action, self.save_action, self.insert_action,
-                       self.undo_action, self.redo_action):
+                       self.constraint_action, self.undo_action, self.redo_action):
             toolbar.addAction(action)
 
     # --- soubor -------------------------------------------------------------------------
@@ -290,10 +335,94 @@ class AssemblyWindow(QMainWindow):
         return None
 
     def remove_selected(self) -> None:
+        """Smaže vybranou vazbu, jinak vybranou komponentu (i s jejími vazbami)."""
+        if self._constraint is not None:
+            constraint, self._constraint = self._constraint, None
+            self._run("Vazbu nejde smazat",
+                      lambda: self.session.remove_constraint(constraint))
+            return
         component = self._editable()
         if component is not None:
             self._selected = None
             self._run("Komponentu nejde smazat", lambda: self.session.remove(component))
+
+    # --- vazby (P5.3B) ------------------------------------------------------------------
+
+    def add_constraint_dialog(self) -> None:
+        """Vazba mezi dvěma naposledy vybranými plochami (klik, Ctrl+klik)."""
+        if self.session.assembly is None:
+            return
+        if len(self._picks) < 2:
+            self._error("Přidat vazbu", "Klikni na plochu první komponenty a s Ctrl na plochu "
+                        "druhé komponenty, potom Přidat vazbu….")
+            return
+        (first, first_at), (second, second_at) = self._picks[-2:]
+        try:
+            a = self.session.reference_at(first, first_at)
+            b = self.session.reference_at(second, second_at)
+            if a["component"] == b["component"]:
+                raise AssemblyError("Obě plochy patří ke stejné komponentě – druhou plochu "
+                                    "vyber na jiné komponentě.")
+            kinds = self.session.constraint_kinds(a, b)
+            if not kinds:
+                raise AssemblyError("Vazba potřebuje dvě rovinné plochy (dotyk, zarovnání, "
+                                    "vzdálenost), nebo dvě válcové plochy (souosost).")
+            default = self.session.gap(a, b) if "distance" in kinds else 0
+        except (AssemblyError, DocumentError) as exc:
+            self._error("Vazbu nejde přidat", str(exc))
+            return
+        kind = kinds[0]
+        if len(kinds) > 1:
+            labels = [CONSTRAINT_TYPES[k] for k in kinds]
+            label, ok = QInputDialog.getItem(self, "Přidat vazbu", "Druh vazby:", labels, 0,
+                                             False)
+            if not ok:
+                return
+            kind = kinds[labels.index(label)]
+        value = None
+        if kind == "distance":
+            text, ok = QInputDialog.getText(
+                self, "Vzdálenost", "Vzdálenost v mm (číslo nebo výraz s parametry sestavy):",
+                QLineEdit.EchoMode.Normal, show_value(default))
+            if not ok:
+                return
+            try:
+                value = parse_value(text)
+            except AssemblyError as exc:
+                self._error("Vazbu nejde přidat", str(exc))
+                return
+        self.add_constraint(kind, a, b, value)
+
+    def add_constraint(self, kind: str, a: dict, b: dict, value: Any = None,
+                       name: str = "") -> str | None:
+        created: list[str] = []
+        if self._run("Vazbu nejde přidat",
+                     lambda: created.append(self.session.add_constraint(kind, a, b, value, name))):
+            self._picks = []
+            self.select_constraint(created[0])
+            return created[0]
+        return None
+
+    def apply_constraint(self) -> None:
+        constraint_id = self._constraint
+        if constraint_id is None or self.session.assembly is None:
+            return
+        constraint = self.session.assembly.constraint(constraint_id)
+
+        def work() -> None:
+            value = (parse_value(self.constraint_value.text())
+                     if constraint.type == "distance" else None)
+            self.session.set_constraint(constraint_id, value=value,
+                                        name=self.constraint_name.text())
+
+        self._run("Vazbu nejde změnit", work)
+
+    def select_constraint(self, constraint_id: str | None) -> None:
+        self._constraint = constraint_id
+        if constraint_id is not None:
+            self._selected = None
+        self._fill_tree(self.session.result)
+        self._refresh_selection()
 
     def apply_form(self) -> None:
         component = self._editable()
@@ -374,18 +503,30 @@ class AssemblyWindow(QMainWindow):
 
     def select(self, ids: tuple[str, ...] | None) -> None:
         self._selected = ids
+        if ids is not None:
+            self._constraint = None
         self._refresh_selection()
 
     def _tree_selected(self) -> None:
         items = self.tree.selectedItems()
         # Id jako JSON text: Qt by n-tici v datech položky převedl na seznam.
-        ids = tuple(json.loads(items[0].data(0, Qt.ItemDataRole.UserRole))) if items else None
-        if ids != self._selected:
-            self._selected = ids
+        data = json.loads(items[0].data(0, Qt.ItemDataRole.UserRole)) if items else None
+        constraint = data.get("constraint") if isinstance(data, dict) else None
+        ids = tuple(data) if isinstance(data, list) else None
+        if ids != self._selected or constraint != self._constraint:
+            self._selected, self._constraint = ids, constraint
             self._refresh_selection()
 
     def _picked(self, shapes: list) -> None:
-        """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří."""
+        """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří; vybrané
+        plochy (s místem kliknutí) si okno pamatuje pro *Přidat vazbu…*."""
+        known = self._picks
+        self._picks = []
+        for shape in shapes:
+            previous = next((at for old, at in known if old.IsSame(shape)), None)
+            self._picks.append((shape, previous if previous is not None
+                                else getattr(self.viewer, "picked_point", None)))
+        self._refresh_pick_note()
         result = self.session.result
         if not shapes or result is None:
             return
@@ -394,6 +535,14 @@ class AssemblyWindow(QMainWindow):
             if any(piece.wrapped.IsSame(shapes[0]) for piece in pieces):
                 self.select(instance.ids)
                 return
+
+    def _refresh_pick_note(self) -> None:
+        count = len(self._picks)
+        self.constraint_action.setEnabled(self.session.assembly is not None and count >= 2)
+        self.pick_note.setText(
+            "Vazba: klikni na plochu první komponenty, s Ctrl na plochu druhé a dej "
+            "Přidat vazbu… (Ctrl+L)." if count < 2
+            else f"Vybrané plochy: {count} – Přidat vazbu… (Ctrl+L) spojí poslední dvě.")
 
     def _editable(self) -> str | None:
         """Vybraná komponenta, kterou jde upravit (nejvyšší úroveň); jinak None."""
@@ -441,6 +590,7 @@ class AssemblyWindow(QMainWindow):
 
     def _run(self, title: str, work: Callable[[], object], fit: bool = False) -> bool:
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.session.notice = ""  # hláška o přepočtu poloh platí jen do další úpravy
         try:
             work()
         except (AssemblyError, DocumentError, OSError) as exc:
@@ -467,6 +617,9 @@ class AssemblyWindow(QMainWindow):
         for action in (self.save_action, self.save_as_action, self.insert_action,
                        self.reload_action):
             action.setEnabled(has)
+        self._refresh_pick_note()
+        if self.session.notice:
+            self.statusBar().showMessage(self.session.notice, 20000)
         self.undo_action.setEnabled(self.session.can_undo)
         self.redo_action.setEnabled(self.session.can_redo)
         title = "Sestava – ŠkodaCAD"
@@ -486,6 +639,8 @@ class AssemblyWindow(QMainWindow):
                 state = "… počítá se"
             if status.warnings:
                 state += " ⚠"
+            if status.freedom_text and status.freedom_text != "pevná":
+                state += f" {status.freedom_text}"
             name = status.label + (" (pevná)" if status.fixed else "")
             item = QTreeWidgetItem([name, status.source, state])
             tip = "\n".join([status.reason, *status.warnings]).strip()
@@ -497,12 +652,34 @@ class AssemblyWindow(QMainWindow):
             else:
                 parent.addChild(item)
             items[status.ids] = item
+        constraints = [c for c in result.constraints if c.depth == 0] if result else []
+        chosen = None
+        if constraints:
+            group = QTreeWidgetItem([f"Vazby ({len(constraints)})", "", ""])
+            group.setData(0, Qt.ItemDataRole.UserRole, json.dumps(None))
+            self.tree.addTopLevelItem(group)
+            for constraint in constraints:
+                state = ("✓" if constraint.state == "ok"
+                         else f"✕ {CONSTRAINT_LABELS[constraint.state]}")
+                item = QTreeWidgetItem([constraint.label, f"{constraint.type_label}: "
+                                        + " ↔ ".join(constraint.components), state])
+                for column in range(3):
+                    item.setToolTip(column, constraint.reason)
+                key = constraint.ids[-1]
+                item.setData(0, Qt.ItemDataRole.UserRole, json.dumps({"constraint": key}))
+                group.addChild(item)
+                if key == self._constraint:
+                    chosen = item
         self.tree.expandAll()
         selected = items.get(self._selected) if self._selected else None
         if selected is not None:
             selected.setSelected(True)
         else:
             self._selected = None
+        if chosen is not None:
+            chosen.setSelected(True)
+        else:
+            self._constraint = None
         self.tree.blockSignals(False)
 
     def _refresh_selection(self) -> None:
@@ -512,10 +689,14 @@ class AssemblyWindow(QMainWindow):
                   if component is not None else None)
         widgets = [self.name_edit, *self.position_edits, *self.rotation_edits,
                    self.fixed_box, self.apply_button, *self.turn_buttons,
-                   self.relink_button, self.remove_action]
+                   self.relink_button]
         for widget in widgets:
             widget.setEnabled(record is not None)
+        self.remove_action.setEnabled(record is not None or self._constraint is not None)
+        self.remove_action.setText("Smazat vazbu" if self._constraint is not None
+                                   else "Smazat komponentu")
         self.open_part_button.setEnabled(self._selected is not None)
+        self._refresh_constraint_box()
         self.fixed_box.blockSignals(True)
         if record is not None:
             self.name_edit.setText(record.name)
@@ -524,21 +705,54 @@ class AssemblyWindow(QMainWindow):
             for edit, value in zip(self.rotation_edits, record.rotation, strict=True):
                 edit.setText(show_value(value))
             self.fixed_box.setChecked(record.fixed)
-            self.form_note.setText(f"Komponenta „{record.label}“ – soubor {record.path}")
+            note = f"Komponenta „{record.label}“ – soubor {record.path}"
+            try:
+                freedom = result.status(component).freedom_text if result else ""
+            except AssemblyError:
+                freedom = ""
+            if freedom:
+                note += f"\nVazby: {freedom}"
+            self.form_note.setText(note)
         else:
             for edit in (self.name_edit, *self.position_edits, *self.rotation_edits):
                 edit.clear()
             self.fixed_box.setChecked(False)
             self.form_note.setText(
                 "Komponenta podsestavy – uprav ji v souboru podsestavy." if self._selected
+                else "Vybraná vazba – uprav ji níž." if self._constraint
                 else "Vyber komponentu ve stromu nebo ve 3D.")
         self.fixed_box.blockSignals(False)
         shapes = []
-        if result is not None and self._selected is not None:
+        if self._constraint is not None and self.session.assembly is not None:
+            shapes = self.session.constraint_faces(self._constraint)
+        elif result is not None and self._selected is not None:
             for instance in result.instances:
                 if instance.ids[:len(self._selected)] == self._selected:
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         self.viewer.highlight(shapes)
+
+    def _refresh_constraint_box(self) -> None:
+        constraint_id = self._constraint
+        if constraint_id is None or self.session.assembly is None:
+            self.constraint_box.setVisible(False)
+            return
+        constraint = self.session.assembly.constraint(constraint_id)
+        self.constraint_box.setVisible(True)
+        self.constraint_name.setText(constraint.name)
+        distance = constraint.type == "distance"
+        self.constraint_value.setEnabled(distance)
+        self.constraint_value.setText(show_value(constraint.value) if distance else "")
+        try:
+            status = self.session.result.constraint(constraint_id)
+            state = (CONSTRAINT_LABELS[status.state]
+                     + (f" – {status.reason}" if status.reason else ""))
+        except (AssemblyError, AttributeError):
+            state = ""
+        labels = [self.session.assembly.component(c).label
+                  if any(x.id == c for x in self.session.assembly.components) else c
+                  for c in constraint.components]
+        self.constraint_note.setText(f"{CONSTRAINT_TYPES[constraint.type].capitalize()}: "
+                                     f"{labels[0]} ↔ {labels[1]}\nStav: {state}")
 
     def _refresh_summary(self, result: AssemblyResult | None) -> None:
         if result is None:
@@ -550,10 +764,16 @@ class AssemblyWindow(QMainWindow):
         mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
         lines.append(f"Objem: {result.volume_mm3:.2f} mm³, hmotnost: {mass_text}"
                      .replace(".", ","))
+        if result.constraints:
+            done = sum(1 for c in result.constraints if c.state == "ok")
+            lines.append(f"Vazby: {len(result.constraints)}, splněné {done}")
+        if self.session.notice:
+            lines.append(f"ℹ {self.session.notice}")
         if self.computing:
             lines.append("Počítám díly sestavy na pozadí…")
         elif not result.complete:
-            lines.append("NEÚPLNÁ sestava – součty platí jen pro nalezené díly.")
+            lines.append("NEÚPLNÁ sestava – součty platí jen pro nalezené díly a splněné "
+                         "vazby.")
         lines.extend(f"✕ {problem}" for problem in result.problems
                      if "díl se počítá" not in problem)
         lines.extend(f"⚠ {warning}" for warning in result.warnings)
@@ -600,5 +820,7 @@ def _signature(result: AssemblyResult | None) -> tuple:
     """Co je ze sestavy vidět (stavy a otisky zdrojů) – bez porovnávání tvarů."""
     if result is None:
         return ()
-    return tuple((s.ids, s.state, s.reason, s.fingerprint, tuple(s.warnings))
-                 for s in result.statuses)
+    return (tuple((s.ids, s.state, s.reason, s.fingerprint, tuple(s.warnings))
+                  for s in result.statuses)
+            + tuple((c.ids, c.state, c.reason) for c in result.constraints)
+            + tuple(sorted(result.solved)))

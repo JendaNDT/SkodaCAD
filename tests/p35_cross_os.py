@@ -62,12 +62,17 @@ def create_assembly(folder: Path) -> None:
     assembly = AssemblySession()
     assembly.new(folder / "sestavy" / "sestava.json", "Přenos sestavy")
     first = folder / "01-jedno-teleso.step.json"
-    assembly.insert(first)
-    assembly.insert(first, position=(100, 0, 0), rotation=(0, 0, 90))
+    one = assembly.insert(first)
+    two = assembly.insert(first, position=(100, 0, 0), rotation=(0, 0, 90))
     assembly.insert(folder / "04-palce.step.json", position=(0, 0, 50), rotation=(90, 0, 30))
+    # Vazba (formát 30) na základní roviny – splněná, nic se neposune (P5.3).
+    assembly.add_constraint("flush", {"component": one, "plane": "XY"},
+                            {"component": two, "plane": "XY"})
     assembly.save()
     result = assembly.result
     assert result.complete and not result.warnings, result.problems
+    saved = json.loads((folder / "sestavy" / "sestava.json").read_text(encoding="utf-8"))
+    assert saved["version"] == 30 and len(saved["constraints"]) == 1
     expected = {"volume": result.volume_mm3,
                 "bounds": [list(instance.part.bounding_box().min)
                            + list(instance.part.bounding_box().max)
@@ -115,6 +120,7 @@ def check_assembly(folder: Path) -> None:
     result = assembly.open(folder / "sestavy" / "sestava.json")
     assert result.complete, result.problems
     assert not result.warnings, result.warnings  # otisky zdrojů stejné na obou systémech
+    assert [c.state for c in result.constraints] == ["ok"] and not assembly.dirty
     assert [c.path for c in assembly.assembly.components] == [
         "../01-jedno-teleso.step.json", "../01-jedno-teleso.step.json", "../04-palce.step.json"]
     assert abs(result.volume_mm3 - expected["volume"]) <= 1e-5

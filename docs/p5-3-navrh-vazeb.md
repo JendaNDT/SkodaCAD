@@ -2,7 +2,7 @@
 
 **Stav: schváleno autorem 30. 10. 2026** slovy **„schvaluji M1–M12“** (návrhové
 [PR #64](https://github.com/JendaNDT/SkodaCAD/pull/64)); opravňuje implementovat P5.3A a P5.3B.
-`src/` se tímto krokem nemění, formát zůstává ve verzi 29 až do implementace. Vychází z `main` / `91f8a70` (sloučené
+Implementace a ověření: [p5-3-vazby-overeni.md](p5-3-vazby-overeni.md) (formát 30). Vychází z `main` / `91f8a70` (sloučené
 [PR #63](https://github.com/JendaNDT/SkodaCAD/pull/63), P5.2 polohy; autor k vydání napsal
 „Ok, funguje to“) a z bodu P5.3 [roadmapy](roadmapa-vyvoje.md#p5--sestavy): po odsouhlasení
 řešiče souosost, dotyk a vzdálenost, stavy nedourčeno/přeurčeno, spolehlivé odmítnutí sporu.

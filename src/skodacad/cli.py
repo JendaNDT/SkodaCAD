@@ -303,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
 def _assembly(args: argparse.Namespace) -> int:
     """Vypíše sestavu; nenulový kód, když je neúplná (chybí nebo nejde postavit komponenta)."""
     from skodacad.assembly import Assembly
-    from skodacad.assembly_build import LABELS, build
+    from skodacad.assembly_build import CONSTRAINT_LABELS, LABELS, build
 
     assembly = Assembly.load(args.model)
     result = build(assembly, args.model)
@@ -311,7 +311,9 @@ def _assembly(args: argparse.Namespace) -> int:
     for status in result.statuses:
         icon = "✓" if status.state == "ok" else "✕"
         kind = {"part": "díl", "assembly": "podsestava"}.get(status.kind, "")
-        notes = ", ".join(item for item in (kind, "pevná" if status.fixed else "") if item)
+        freedom = status.freedom_text
+        notes = ", ".join(item for item in (kind, "pevná" if status.fixed else "",
+                                            "" if freedom == "pevná" else freedom) if item)
         line = f"{'  ' * (status.depth + 1)}{icon} {status.label}  {status.source}"
         line += f"  ({notes})" if notes else ""
         if status.state != "ok":
@@ -321,6 +323,24 @@ def _assembly(args: argparse.Namespace) -> int:
             print(f"{'  ' * (status.depth + 2)}⚠ {warning}")
     if result.error:
         print(f"  ✕ {result.error}")
+    if result.constraints:
+        print(f"Vazby ({len(result.constraints)}):")
+    for constraint in result.constraints:
+        icon = "✓" if constraint.state == "ok" else "✕"
+        where = " / ".join(constraint.ids[:-1])
+        line = (f"{'  ' * (constraint.depth + 1)}{icon} {constraint.label}  "
+                f"{constraint.type_label}: {' ↔ '.join(constraint.components)}")
+        line += f"  (v podsestavě {where})" if where else ""
+        if constraint.state != "ok":
+            line += f" – {CONSTRAINT_LABELS[constraint.state]}: {constraint.reason}"
+        print(line)
+    moved = [(ids[0], placement) for ids, placement in result.solved.items() if len(ids) == 1]
+    if moved:
+        print("⚠ Polohy podle vazeb se liší od zapsaných v souboru (soubor se nemění – "
+              "otevři sestavu v okně a ulož ji):")
+        for component_id, (position, rotation) in moved:
+            print(f"    {assembly.component(component_id).label}: posun {position}, "
+                  f"otočení {rotation}")
     print(f"Komponent: {len(result.statuses)}, dílů v polohách: {len(result.instances)}")
     mass = result.mass_kg
     mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
@@ -332,8 +352,8 @@ def _assembly(args: argparse.Namespace) -> int:
                                      for axis, a, b in zip("xyz", low, high, strict=True))
               + " mm")
     if not result.complete:
-        print("Sestava je NEÚPLNÁ – součty platí jen pro nalezené díly; export a kontroly "
-              "jen pro úplnou sestavu.")
+        print("Sestava je NEÚPLNÁ – součty platí jen pro nalezené díly a splněné vazby; "
+              "export a kontroly jen pro úplnou sestavu.")
         return 1
     return 0
 
