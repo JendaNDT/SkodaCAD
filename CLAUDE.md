@@ -1232,7 +1232,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | [návrh P5.1](docs/p5-1-navrh-formatu-sestav.md) **schválen** 30. 10. (S1–S12), P5.2 polohy (jádro formátu 29 + okno) | ruční zkouška P5.2, P5.3 vazby (návrh), P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3 vazeb](docs/p5-3-navrh-vazeb.md) předán | schválení M1–M12, P5.3A/B vazby, P5.4 kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1343,7 +1343,13 @@ P5.2 se implementuje podle S1–S12: **P5.2A jádro** (formát 29, `assembly.py`
 v `tests/test_assembly.py`) a **P5.2B okno** (`gui/assembly_window.py`, *Nová sestava*,
 *Otevřít* pozná sestavu, díly na pozadí, self-test, balíček, přenos sestavy v
 `p35-cross-os.yml`, `tests/test_assembly_gui.py`), [evidence](docs/p5-2-jadro-sestav.md).
-Ruční zkouška autora čeká; P5.3 vazby začínají návrhem řešiče a zápisu vazeb.
+Sloučeno v PR #63 (`91f8a70`); autor 30. 10. 2026 k vydání z `91f8a70` napsal
+„Ok, funguje to“ (průchod ukázkou: otočení, poloha, uložení s díly, chybějící díl, *Otevřít
+díl*). **P5.3 vazby – návrh předán 30. 10. 2026:** [vazby](docs/p5-3-navrh-vazeb.md) M1–M12
+(dotyk, zarovnání, vzdálenost, souosost; odkazy na plochy významem a základní roviny/osy
+dílu; vlastní řešič tuhých těles nad numpy po skupinách, nejmenší posun, obrácení o 180°,
+spor = úprava se nepřijme; formát 30 jen se vazbami), [průzkum](docs/p5-3-pruzkum-vazeb.py),
+matice B01–B20. Implementaci zahájit až po schválení M1–M12.
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

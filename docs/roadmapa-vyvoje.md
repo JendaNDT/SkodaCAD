@@ -41,7 +41,7 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) schválen 30. 10. 2026 (S1–S12); [P5.2 polohy](p5-2-jadro-sestav.md) – jádro formátu 29 a okno | ruční zkouška P5.2, P5.3 vazby (návrh) |
+| P5 | P5.1 schválen (S1–S12); [P5.2 polohy](p5-2-jadro-sestav.md) sloučeny (PR #63), autor: „Ok, funguje to“; [návrh P5.3](p5-3-navrh-vazeb.md) předán | schválení M1–M12, P5.3 vazby |
 | P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
@@ -257,6 +257,7 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
    změna instance nesmí měnit zdrojový díl ani jinou instanci.
 3. **P5.3 Základní vazby**: po odsouhlasení řešiče souosost, dotyk a vzdálenost,
    stavy nedourčeno/přeurčeno, spolehlivé odmítnutí konfliktu.
+   Návrh M1–M12 s průzkumem a maticí B01–B20: [p5-3-navrh-vazeb.md](p5-3-navrh-vazeb.md).
 4. **P5.4 Kontroly**: kolize a vůle, kusovníkový základ a export; vymezit působení
    NDT mezi komponentami, nepřenášet automaticky závěry z jednoho dílu na sestavu.
 5. **P5.5 Přijetí**: analytické polohy dvou a více dílů, opakované instance, Zpět/Znovu,

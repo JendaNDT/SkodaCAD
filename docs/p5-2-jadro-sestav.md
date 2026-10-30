@@ -66,10 +66,16 @@ která obsahuje tuto sestavu (cyklus), nečitelného souboru a souboru na jiném
 
 Jednorázové měření v cloudu: ukázka se sestaví za 0,6 s, podruhé ze mezipaměti za 5 ms.
 
+## Sloučení a ruční zkouška
+
+Sloučeno v [PR #63](https://github.com/JendaNDT/SkodaCAD/pull/63) jako `91f8a70`; obě workflow
+z main (Windows i macOS) včetně kontroly staženého balíčku prošla. Autor 30. 10. 2026 prošel
+vydání podle šesti kroků (ukázka, výběr kliknutím, ±90° a Zpět, posun číslem, uložení
+s díly do vlastní složky, chybějící díl a *Najít soubor*, *Otevřít díl*) a napsal
+**„Ok, funguje to“**. Není to přijetí celé etapy P5 (P5.5).
+
 ## Omezení a zbývá
 
-- Ruční zkouška autora na Windows i Macu (založit sestavu, vložit díly, otočit, uložit,
-  přesunout složku, smazat díl a najít ho znovu).
 - *Uložit* ukázky zkopíruje její díly do `dily/` vedle sestavy (CI na Windows ukázalo, že
   ukázky na disku D: a uživatelská složka na C: relativní cestu nedovolí). Obecné *Zabalit
   sestavu* (i s podsestavami) je pozdější krok.
