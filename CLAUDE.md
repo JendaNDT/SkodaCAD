@@ -13,6 +13,9 @@
   Související kroky spojuj; v průběhu spouštěj cílené testy, úplnou sadu a kontroly
   obou systémů před sloučením (kde běží úplná sada, říká pravidlo 6 – rozhodnutí autora
   z 30. 10. 2026). Výsledky, omezení a další doporučený krok sděluj autorovi.
+- **Pokyn autora z 30. 10. 2026:** na doporučení ruční přejímky P5 ve Windows
+  a Excelu odpověděl „to přeskočíme“. Tyto zkoušky zůstávají neprovedené a další
+  vývoj P6 neblokují; neoznačovat je za úspěšně ověřené.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -1299,8 +1302,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.2 polohy, P5.3 vazby a P5.4 kontroly sloučeny (PR #63, #65, #68); [místní technické ověření Macu](docs/p5-5-overeni-macos-2026-10-30.md) a navazující opravy | ruční Windows, Excel, přijetí P5.5 autorem; otevřené meze v protokolu |
-| P6–P8 | nezahájeno | – |
+| P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
+| P6 pokročilé modelování | [Pracovní výběr a omezený průzkum](docs/p6-1-vyber-operaci.md), šest místních případů; první doporučené rozšíření proměnné zaoblení | ověření průběhu/tečnosti, návrh zápisu a směru, implementace |
+| P7–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
@@ -1431,7 +1435,15 @@ matice C01–C20. **Schváleno autorem 30. 10. 2026 (odpověď „K1–K12“, P
 úloha pomocného procesu, `skodacad sestava --kontrola/--kusovnik/--export`, ukázka
 `deska_se_sroubem.json`, panel *Kontrola sestavy* (C20), self-test „✓ Kontrola sestavy“,
 [evidence](docs/p5-4-kontroly-overeni.md). Ruční zkouška autorem čeká.
-**P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P5.5 — technické ověření a opravy sloučeny v PR #69 (`c8e4746`):**
+[místní Mac M4](docs/p5-5-overeni-macos-2026-10-30.md), stabilní obnova položek okna
+a PySide6 6.11.3; 1 942 testů na každém systému, oba self-testy balíčků a STEP přenos
+prošly. Autor na navazující ruční Windows/Excel odpověděl „to přeskočíme“; tyto
+zkoušky nejsou provedené a pokračování neblokují.
+**P6.1/P6.2 — zahájena příprava:** [výběr a průzkum](docs/p6-1-vyber-operaci.md)
+proměnného zaoblení: šest případů v OCCT na Macu, včetně geometrie konců a orientace.
+Bez změny produkce/formátu; vnitřní průběh a tečnost zbývá ověřit před P6.3.
+**P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,

@@ -34,6 +34,10 @@ staženého balíčku) nevyžadují další souhlas. Má přednost před starš�
 jednotlivá schválení v tomto dokumentu. Ruční přijetí etap a odborná validace NDT
 zůstávají na autorovi.
 
+**Pokyn autora z 30. 10. 2026:** zbývající ruční přejímku P5 ve Windows a Excelu
+přeskočit („to přeskočíme“). Zůstává neprovedená a neblokuje navazující P6;
+technické výsledky a známé meze P5 zůstávají v protokolu.
+
 | Etapa | Stav | Co zbývá |
 |---|---|---|
 | P0 | sloučeno (PR #30) | – |
@@ -41,8 +45,9 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [místní technické ověření na Macu](p5-5-overeni-macos-2026-10-30.md) a navazující opravy | ruční Windows, Excel, přijetí P5.5 autorem; meze místního ověření v protokolu |
-| P6–P8 | nezahájeno | – |
+| P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
+| P6 | [Pracovní výběr operací a šest místních pokusů](p6-1-vyber-operaci.md); první doporučené rozšíření je proměnné zaoblení | doplnit ověření průběhu a tečnosti, návrh zápisu/směru, implementace |
+| P7–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
 Nejnovější formát je **31** (načítá verze 1–31; sestavy 29–31 podle vazeb a kontrol,
@@ -266,6 +271,12 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
    uložení/otevření a export na druhém OS. Výstup: sestava v dohodnutém rozsahu vazeb.
 
 ## P6 — pokročilé modelování
+
+**Zahájena příprava P6.1/P6.2:** [výběr operací](p6-1-vyber-operaci.md) a
+[omezený průzkum proměnného zaoblení](p6-1-pruzkum-zaobleni.py). Šest případů na Macu
+ověřuje analytický konstantní případ, dva koncové poloměry, obrácený směr a topologii,
+vzdálený otvor a odmítnutí příliš velkého poloměru. Produkční implementace ani
+formát se nemění; nejde o úplnou přejímku nové operace.
 
 1. **P6.1 Výběr operací** (P1–P5): sestavit priority podle skutečných dílů autora,
    např. proměnné zaoblení, robustnější skořepina, vodicí křivky loftu, další křivky/plochy.

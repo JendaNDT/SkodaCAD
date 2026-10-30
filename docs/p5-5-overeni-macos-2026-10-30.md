@@ -107,7 +107,13 @@ Místní evidence je v ignorované složce `out/p5-5-macos-2026-10-30/`:
 `pytest-final.xml`, `self-test-final.txt`, STEP, CSV a dokumenty FreeCADu.
 Zkušební data nejsou uživatelské modely.
 
-Tento průchod **není přijetím celé P5 autorem**. Zbývá ruční průchod Windows,
-ověření CSV v Excelu, přijetí autorem a sledování známých omezení P5.4
+Tento průchod **není přijetím celé P5 autorem**. Nadále platí známá omezení P5.4
 (místní vůle u dotýkajících se dvojic, výkon velkých sestav, NDT mezi díly).
-Úplné testy a kontrolu balíčků obou systémů zajišťují workflow navazujícího PR.
+[PR #69](https://github.com/JendaNDT/SkodaCAD/pull/69), sloučené jako `c8e4746`,
+prošlo úplnou sadou **1 942 testů na každém systému**, oběma self-testy stažených
+balíčků a kontrolou STEP přenosu mezi systémy.
+
+**Následný pokyn autora 30. 10. 2026:** na doporučení dokončit ruční přejímku P5
+ve Windows a Excelu odpověděl **„to přeskočíme“**. Tyto zkoušky zůstávají
+neprovedené; další vývoj podle roadmapy neblokují. Pokyn není potvrzením jejich
+výsledku ani odbornou validací NDT. Navazuje [příprava P6](p6-1-vyber-operaci.md).
