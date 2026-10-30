@@ -41,7 +41,7 @@ zůstávají na autorovi.
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
-| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) předán autorovi 30. 10. 2026 | schválení S1–S12, pak P5.2 |
+| P5 | [návrh P5.1](p5-1-navrh-formatu-sestav.md) schválen 30. 10. 2026 (S1–S12) | P5.2 polohy |
 | P6–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 

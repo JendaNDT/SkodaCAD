@@ -1,7 +1,9 @@
 # P5.1 — návrh datového formátu sestav
 
-**Stav: návrh předaný autorovi ke schválení, bez implementace.** `src/` se tímto krokem
-nemění, formát modelu zůstává ve verzi 28. Vychází z `main` / `1ac9b12` (po sloučení
+**Stav: schváleno autorem 30. 10. 2026** slovy **„schvaluji S1–S12“** (návrhové
+[PR #62](https://github.com/JendaNDT/SkodaCAD/pull/62)). Schválení opravňuje zahájit P5.2
+podle tohoto zápisu. `src/` se tímto krokem
+nemění, formát modelu zůstává ve verzi 28 až do implementace P5.2. Vychází z `main` / `1ac9b12` (po sloučení
 [PR #61](https://github.com/JendaNDT/SkodaCAD/pull/61)) a z bodu P5.1 schválené
 [roadmapy](roadmapa-vyvoje.md#p5--sestavy): oddělit díl, instanci a sestavu; identity,
 relativní cesty, cyklické odkazy, chybějící komponenty a verze. Formát se podle roadmapy
