@@ -107,6 +107,7 @@ def test_all_recursive_examples_keep_baseline_geometry_and_round_trip(name, tmp_
 
 def test_native_input_audit_examples_cover_legacy_builders():
     exercised = {feature["type"] for path in EXAMPLES.rglob("*.json")
+                 if '"kind": "assembly"' not in path.read_text(encoding="utf-8")
                  for feature in Document.load(path).features}
     assert exercised == set(FEATURE_TYPES) - {"step_import"}
 

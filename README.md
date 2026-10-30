@@ -236,6 +236,32 @@ kontrola není úplná. Upozornění je i v exportovaném výkresu. Zatím chyb�
 druhy kót a toleranční značky uložení. Fyzický tisk a otevření DXF v jiné CAD
 aplikaci ještě nebyly ověřeny.
 
+### Sestavy
+
+Sestava skládá hotové díly do poloh – krabička, víčko, šrouby, deska elektroniky… Každý díl
+zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepíše**.
+
+- *Soubor → Nová sestava…* se nejdřív zeptá, kam sestavu uložit (cesty k dílům se počítají
+  od její složky – celou složku projektu pak jde přenést i mezi Windows a Macem).
+  *Soubor → Otevřít…* pozná sestavu sama a otevře ji ve **vlastním okně**.
+- *Vložit díl…* (Ctrl+I) přidá díl nebo jinou sestavu. První vložený díl je **pevný**.
+  Stejný díl jde vložit vícekrát (čtyři nožičky = jeden soubor, čtyři polohy).
+- Komponentu vyber ve stromu nebo kliknutím ve 3D. Vpravo zadáš **posun** v mm a **otočení**
+  ve stupních (kolem os sestavy nejdřív X, pak Y, pak Z; čísla i výrazy s parametry sestavy),
+  tlačítka **±90°** otočí díl kolem osy vedené jeho počátkem. *Použít* = jeden krok Zpět.
+- Chybějící nebo poškozený soubor dílu je ve stromu červeně „✕ chybí“ s důvodem; sestava se
+  přesto otevře a záznam nesmaže. *Najít soubor…* ho přesměruje (u dílu s jiným receptem se
+  nejdřív zeptá). Vpravo dole je počet komponent, objem a hmotnost; neúplná sestava to řekne.
+- *Otevřít díl* otevře soubor dílu v hlavním okně. Po uložení a návratu do okna sestavy se
+  změna projeví sama (nebo F5 *Načíst díly znovu*); když se díl od posledního uložení sestavy
+  změnil, sestava upozorní „zkontroluj polohy“.
+- Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
+  o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
+  i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.
+
+Zatím bez vazeb mezi díly (souosost, dotyk), kolizí, kusovníku a exportu sestavy – přijdou
+v dalších krocích (P5.3, P5.4). Polohy ze vazeb se pak budou ukládat stejně jako dnes ručně.
+
 ### Mapa tloušťky stěny (NDT)
 
 Ukázka: *Soubor → Otevřít ukázku → trubka* a pak **Model → Mapa tloušťky stěny** (klávesa
@@ -711,7 +737,12 @@ skodacad ai examples/priruba.json "zvětši D na 200"   # AI asistent → prirub
 skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl (soubor neexistuje)
 skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
 skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
+skodacad sestava examples/sestavy/krabicka_s_vickem.json   # komponenty, stav, objem, hmotnost
 ```
+
+`skodacad sestava` vypíše komponenty sestavy (✓ v pořádku, ✕ chybí nebo nejde postavit
+s českým důvodem), upozornění, objem, hmotnost a obálku. Když některá komponenta chybí,
+napíše „NEÚPLNÁ“ a skončí kódem 1. Díly se přitom nemění.
 
 `skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
 (úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
@@ -1163,6 +1194,41 @@ Po změně receptu dílu je studie zastaralá; pokud svar už nemá materiál, v
 Potvrzení ponechá zadané souřadnice, nepřesune cíl na jiné místo. Změna cíle odstraní
 starou mapu i ověření. Ověření objemu má navíc `verified.target`, otisk zadání cíle;
 při ruční změně cíle v JSON přestane platit i při stejném dílu.
+
+### Sestavy (`"kind": "assembly"`, verze 29)
+
+Sestava je **samostatný soubor**, který skládá díly (a jiné sestavy) do poloh. Na soubory
+dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–28); sestava má verzi 29.
+
+```json
+{
+  "format": "skodacad", "kind": "assembly", "version": 29,
+  "name": "Krabička s víčkem", "units": "mm", "parameters": {"H": 30},
+  "components": [
+    {"id": "krabicka", "source": {"path": "../krabicka.json"},
+     "placement": {"position": [0, 0, 0], "rotation": [0, 0, 0]}, "fixed": true},
+    {"id": "vicko", "name": "Víčko", "source": {"path": "dily/vicko.json"},
+     "placement": {"position": [0, 0, "H + 2"], "rotation": [180, 0, 0]}}
+  ]
+}
+```
+
+| Klíč komponenty | Význam |
+|---|---|
+| `id` | jedinečné v sestavě; vše se na komponentu odkazuje jím, nikdy pořadím |
+| `name` | nepovinný český název |
+| `source.path` | cesta k souboru dílu nebo podsestavy **vůči složce sestavy**, oddělovač `/`, `..` jen na začátku; bez písmene disku a `\` |
+| `source.fingerprint` | otisk receptu zdroje při posledním uložení (zapisuje aplikace); liší-li se, sestava upozorní „zdroj se změnil“ – nikdy neblokuje |
+| `placement.position` | posun [x, y, z] v mm (čísla nebo výrazy s `parameters` sestavy) |
+| `placement.rotation` | úhly [rx, ry, rz] ve stupních: otočení kolem **pevných os sestavy nejdřív X, pak Y, pak Z**; díl se točí kolem svého počátku |
+| `fixed` | `true` = pevná komponenta (nehne ji tažení ani budoucí vazby) |
+
+Bez měřítka a zrcadlení (zrcadlený díl = vlastní soubor s prvkem *Zrcadlení*). Neznámý klíč
+je chyba. Komponenta, jejíž soubor chybí, nejde přečíst, má chybu přepočtu nebo vede v kruhu
+zpět na sestavu, v sestavě zůstane se stavem a důvodem; součty pak platí jen pro nalezené
+díly a export je jen pro úplnou sestavu. Nejvýš 8 úrovní podsestav a 1 000 komponent.
+Kopie téhož dílu se počítají jednou. NDT studie, výkres a měření patří dílu, ne sestavě.
+Ukázka: `examples/sestavy/krabicka_s_vickem.json`.
 
 ### Materiály
 

@@ -57,9 +57,33 @@ FORMAT = "skodacad"
 # Verze 26: výslovné tolerance kót; starší aplikace je nesmí přehlédnout.
 # Verze 27: údaje popisového pole, které starší export nesmí vynechat.
 # Verze 28: skryté pohledy výkresu („views“), které by starší aplikace tiše ukázala.
-VERSION = 28
+# Verze 29: sestavy – samostatný soubor s „kind“: „assembly“ (assembly.py, návrh
+# docs/p5-1-navrh-formatu-sestav.md). Díly se dál ukládají v nejnižší potřebné verzi.
+VERSION = 29
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29)
+ASSEMBLY_KIND = "assembly"
+
+
+def write_json(path: str | Path, data: dict[str, Any]) -> None:
+    """Zapíše JSON přes dočasný soubor ve stejné složce a jedinou výměnou – při chybě
+    zápisu zůstane původní soubor celý."""
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    target = Path(path).resolve()
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
+                                         dir=target.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if target.exists():
+            os.chmod(temporary, stat.S_IMODE(target.stat().st_mode))
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 class DocumentError(ValueError):
@@ -85,6 +109,14 @@ class Document:
             raise DocumentError("Model musí být JSON objekt.")
         if data.get("format") != FORMAT:
             raise DocumentError(f"Soubor není model ŠkodaCAD (chybí \"format\": \"{FORMAT}\").")
+        kind = data.get("kind")
+        if kind == ASSEMBLY_KIND:
+            # Bez této kontroly by se sestava otevřela jako prázdný díl a uložením přepsala.
+            raise DocumentError("Tento soubor je sestava, ne díl – otevři ho jako sestavu "
+                                "(v okně Soubor → Otevřít, v příkazové řádce skodacad sestava).")
+        if kind is not None:
+            raise DocumentError(f"Neznámý druh souboru „{kind}“ – soubor je nejspíš z novější "
+                                "verze ŠkodaCAD, stáhni aktuální aplikaci.")
         version = data.get("version")
         if version not in SUPPORTED_VERSIONS:
             raise DocumentError(
@@ -237,23 +269,7 @@ class Document:
         return cls.from_dict(data)
 
     def save(self, path: str | Path) -> None:
-        text = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-        target = Path(path).resolve()
-        temporary = None
-        try:
-            # Soubor ve stejné složce lze nahradit jedinou operací až po úspěšném zápisu.
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
-                                             dir=target.parent, delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(text + "\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            if target.exists():
-                os.chmod(temporary, stat.S_IMODE(target.stat().st_mode))
-            os.replace(temporary, target)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        write_json(path, self.to_dict())
 
     def with_parameters(self, overrides: dict[str, Any]) -> Document:
         """Kopie dokumentu se změněnými hodnotami parametrů."""

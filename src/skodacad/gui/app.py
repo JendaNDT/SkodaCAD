@@ -278,8 +278,41 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_ndt(window, lines) and ok
     ok = _self_test_audit(window, lines) and ok
     ok = _self_test_design(window, lines) and ok
+    ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
+    return ok
+
+
+def _self_test_assembly(window, lines: list[str]) -> bool:
+    """Zabalená aplikace: ukázková sestava v okně sestavy se skutečným 3D prohlížečem
+    (díly se počítají synchronně – pomocné procesy prověřuje samostatná část)."""
+    folder = examples_dir()
+    sample = folder / "sestavy" / "krabicka_s_vickem.json" if folder is not None else None
+    if sample is None or not sample.is_file():
+        lines.append("✕ Sestava: chybí ukázka sestavy (examples/sestavy)")
+        return False
+    app = QApplication.instance()
+    assembly = window.open_assembly(sample, template=True)
+    if assembly is None:
+        lines.append("✕ Sestava: ukázku nejde otevřít")
+        return False
+    for _ in range(10):
+        app.processEvents()
+    result = assembly.session.result
+    ok = (result is not None and result.complete and len(result.instances) == 6
+          and abs(result.volume_mm3 - 31309.287) < 0.01)
+    drawn = ""
+    if ok and assembly.viewer.ready:
+        image = user_dir() / "self-test-sestava.png"
+        drawn = f", 3D snímek {image}: {assembly.viewer.dump(str(image))}"
+    if ok:
+        lines.append(f"✓ Sestava: {result.volume_mm3:.0f} mm³, 6 komponent, víčko z = 26…32"
+                     f"{drawn}")
+    else:
+        lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
+    assembly.session.dirty = False
+    assembly.close()
     return ok
 
 

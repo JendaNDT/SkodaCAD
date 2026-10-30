@@ -1,0 +1,25 @@
+{
+  "format": "skodacad",
+  "version": 24,
+  "name": "Nožička",
+  "description": "Kulatá nožička pod krabičku. V ukázkové sestavě je čtyřikrát – stejný soubor, čtyři polohy. D = průměr, h = výška.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"D": 10, "h": 3},
+  "features": [
+    {
+      "id": "obrys",
+      "name": "Obrys nožičky",
+      "type": "sketch",
+      "plane": "XY",
+      "elements": [{"shape": "circle", "diameter": "D"}]
+    },
+    {
+      "id": "telo",
+      "name": "Tělo nožičky",
+      "type": "extrude",
+      "sketch": "obrys",
+      "distance": "h"
+    }
+  ]
+}

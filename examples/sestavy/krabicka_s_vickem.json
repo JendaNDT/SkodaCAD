@@ -1,0 +1,23 @@
+{
+  "format": "skodacad",
+  "kind": "assembly",
+  "version": 29,
+  "name": "Krabička s víčkem",
+  "description": "Ukázková sestava: krabička z ukázky krabicka.json, víčko otočené o 180° kolem osy X (lemem dolů do krabičky) a čtyři stejné nožičky. Díly jsou samostatné soubory, sestava na ně jen odkazuje. H = výška krabičky, t = tloušťka víčka, h = výška nožičky, x0 a y0 = poloha nožiček od středu.",
+  "units": "mm",
+  "parameters": {"H": 30, "t": 2, "h": 3, "x0": 32, "y0": 17},
+  "components": [
+    {"id": "krabicka", "name": "Krabička", "source": {"path": "../krabicka.json"},
+     "placement": {"position": [0, 0, 0], "rotation": [0, 0, 0]}, "fixed": true},
+    {"id": "vicko", "name": "Víčko", "source": {"path": "dily/vicko.json"},
+     "placement": {"position": [0, 0, "H + t"], "rotation": [180, 0, 0]}},
+    {"id": "nozicka_1", "name": "Nožička 1", "source": {"path": "dily/nozicka.json"},
+     "placement": {"position": ["-x0", "-y0", "-h"], "rotation": [0, 0, 0]}},
+    {"id": "nozicka_2", "name": "Nožička 2", "source": {"path": "dily/nozicka.json"},
+     "placement": {"position": ["x0", "-y0", "-h"], "rotation": [0, 0, 0]}},
+    {"id": "nozicka_3", "name": "Nožička 3", "source": {"path": "dily/nozicka.json"},
+     "placement": {"position": ["x0", "y0", "-h"], "rotation": [0, 0, 0]}},
+    {"id": "nozicka_4", "name": "Nožička 4", "source": {"path": "dily/nozicka.json"},
+     "placement": {"position": ["-x0", "y0", "-h"], "rotation": [0, 0, 0]}}
+  ]
+}

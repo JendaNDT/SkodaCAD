@@ -11,7 +11,9 @@ from skodacad.session import ModelSession
 from skodacad.worker import decode_result, encode_result
 
 # Rekurzivně: i cílové objemy v podsložce a zadání konstrukčních variant verze 22.
-EXAMPLE_PATHS = sorted(EXAMPLES.rglob("*.json"))
+# Soubory sestav (formát 29) díly nejsou – mají vlastní testy v test_assembly.py.
+EXAMPLE_PATHS = sorted(path for path in EXAMPLES.rglob("*.json")
+                       if '"kind": "assembly"' not in path.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("path", EXAMPLE_PATHS,

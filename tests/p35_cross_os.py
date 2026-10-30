@@ -1,13 +1,19 @@
 """Vytvoření a kontrola přenositelných modelů pro CI na dvou operačních systémech.
 
 Spuštění: python tests/p35_cross_os.py fetch-onshape|create|check SLOŽKA
+
+Kromě modelů s vloženým STEP vznikne i sestava v podsložce (P5.2, A18): odkazuje na
+modely o úroveň výš (``../…``), na druhém systému se musí otevřít úplná, se stejnými
+otisky zdrojů, objemem a obálkami kopií.
 """
 import argparse
 import hashlib
+import json
 import time
 import urllib.request
 from pathlib import Path
 
+from skodacad.assembly_session import AssemblySession
 from skodacad.session import ModelSession
 from skodacad.step_source import source_bytes
 from skodacad.step_task import StepTask
@@ -48,6 +54,26 @@ def create(folder: Path) -> None:
         assert session.result.ok, session.result.first_error
         session.save(folder / (name + ".json"))
         print(f"Created model with embedded source {name}.")
+    create_assembly(folder)
+
+
+def create_assembly(folder: Path) -> None:
+    (folder / "sestavy").mkdir(exist_ok=True)
+    assembly = AssemblySession()
+    assembly.new(folder / "sestavy" / "sestava.json", "Přenos sestavy")
+    first = folder / "01-jedno-teleso.step.json"
+    assembly.insert(first)
+    assembly.insert(first, position=(100, 0, 0), rotation=(0, 0, 90))
+    assembly.insert(folder / "04-palce.step.json", position=(0, 0, 50), rotation=(90, 0, 30))
+    assembly.save()
+    result = assembly.result
+    assert result.complete and not result.warnings, result.problems
+    expected = {"volume": result.volume_mm3,
+                "bounds": [list(instance.part.bounding_box().min)
+                           + list(instance.part.bounding_box().max)
+                           for instance in result.instances]}
+    (folder / "sestavy" / "ocekavani.json").write_text(json.dumps(expected), encoding="utf-8")
+    print(f"Created assembly with {len(result.instances)} components.")
 
 
 def check(folder: Path) -> None:
@@ -80,6 +106,23 @@ def check(folder: Path) -> None:
         finally:
             task.cancel()
         print(f"Opened and exported {name}: {tuple(size)} mm, {part.volume:.6f} mm^3.")
+    check_assembly(folder)
+
+
+def check_assembly(folder: Path) -> None:
+    expected = json.loads((folder / "sestavy" / "ocekavani.json").read_text(encoding="utf-8"))
+    assembly = AssemblySession()
+    result = assembly.open(folder / "sestavy" / "sestava.json")
+    assert result.complete, result.problems
+    assert not result.warnings, result.warnings  # otisky zdrojů stejné na obou systémech
+    assert [c.path for c in assembly.assembly.components] == [
+        "../01-jedno-teleso.step.json", "../01-jedno-teleso.step.json", "../04-palce.step.json"]
+    assert abs(result.volume_mm3 - expected["volume"]) <= 1e-5
+    for instance, bounds in zip(result.instances, expected["bounds"], strict=True):
+        box = instance.part.bounding_box()
+        assert all(abs(a - b) <= 1e-6
+                   for a, b in zip([*box.min, *box.max], bounds, strict=True))
+    print(f"Opened assembly: {len(result.instances)} components, {result.volume_mm3:.6f} mm^3.")
 
 
 def main() -> None:
