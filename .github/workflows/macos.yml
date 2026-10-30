@@ -6,7 +6,10 @@
 name: macOS aplikace
 
 on:
+  # Pracovní větve kontroluje jen „pull_request“ – „push“ do nich by spustil táž
+  # sestavení podruhé nad stejným kódem (rozhodnutí autora 30. 10. 2026).
   push:
+    branches: [main]
     paths:
       - "src/**"
       - "tests/**"
