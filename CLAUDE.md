@@ -254,6 +254,18 @@
   `BRepOffset_MakeOffset` + `SetOffsetOnFace`). Odkaz `face` podle P1.3 bez pevného poloměru,
   povinný `origin` = pojistka původu plochy. Formát verze 23. V okně jen zobrazení a změna
   čísla; P2.4 doplňuje výběr ve 3D, náhled a návrhový nástroj AI s potvrzením uživatele.
+- (28. 10. 2026, autor schválil sloučení PR #46 a #47) **Import STEP – P3** (návrh
+  `docs/p3-2-navrh-ulozeni-step.md`): prvek `step_import` s vloženým zdrojem (bajty STEP
+  + SHA-256, obnova jen totožných bajtů), jeden platný uzavřený díl v mm, m nebo palcích;
+  kontrola v izolovaném pomocném procesu s dohledem času a paměti (soubor nejvýš 16 MiB).
+  Sestavy, více těles, neznámé jednotky a ohlášené opravy jádra se odmítají. **Formát 24.**
+- (28. 10. 2026, V1–V9 schválené autorem, další kroky podle pokynu z 28. 10.) **Pracovní
+  výkres – P4** (`docs/p4-1-navrh-vykresu.md` až `p4-6-…`): pohledy zepředu, shora a zprava
+  (evropské promítání) a jeden osový řez A–A se šrafami; kóty vázané na model (celkový
+  rozměr, vzdálenost dvou rovnoběžných ploch, průměr či poloměr otvoru) s umístěním
+  a odchylkami; popisové pole, list A4/A3 a měřítko; export PDF/DXF s kontrolní úsečkou
+  50 mm; upozornění na možné překrytí kót. Uloženo v `drawing`: **formát 25** kóty,
+  **26** tolerance, **27** popisové pole. Není to výrobní výkres ani doklad shody s normou.
 - (29. 10. 2026, zadání autora „udělej skrývání pohledů“, podle pokynu z 28. 10.)
   **Skryté pohledy výkresu** – `drawing.views` (neprázdný seznam z front/top/right v pořadí
   na listu; bez klíče všechny tři), **formát 28**. Starší aplikace by skrytý pohled tiše
@@ -331,6 +343,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
 | `export.py` | STEP, STL, 3MF, GLB, SVG náhled |
+| `step_probe.py`, `step_task.py`, `step_source.py` | import STEP (P3): kontrola souboru (jednotky, počet těles, platnost, ohlášené opravy; nejvýš 16 MiB), zrušitelný izolovaný pomocný proces s dohledem času a paměti (`StepTask`), vložené bajty se SHA-256 a obnova zdroje; prvek `step_import` je ve `features.py` |
+| `drawing_data.py` | kontrola uložených dat výkresu (`drawing`: list, měřítko, pohledy, řez, popisové pole, kóty s umístěním a tolerancí) |
+| `drawing_geometry.py` | pohledy zepředu, shora a zprava a osový řez se šrafami; skrývání čar OCCT na kopii se zapsanou plynulostí hran |
+| `drawing_dimensions.py` | vazby kót na model (celkový rozměr, vzdálenost rovnoběžných ploch, průměr/poloměr otvoru) s pojistkou původu a receptu |
+| `drawing_sheet.py`, `drawing_section_mark.py` | rozvržení pohledů na listu A4/A3 v měřítku (evropské promítání), označení roviny řezu A–A |
+| `drawing_annotations.py`, `drawing_collisions.py` | kóty v pohledech (umístění, odchylky, náhradní pohled za skrytý), odhad možného překrytí kót |
+| `drawing_export.py` | export jednostránkového pracovního výkresu do PDF/DXF (kontrolní úsečka 50 mm, popisové pole; při chybě zůstane starý soubor) |
 | `cli.py` | příkazová řádka `skodacad build`, `ai`, `paprsek`, `sonda`, `pokryti`, `polohy` (návrh poloh UT sondy), `draha` (plán dráhy UT sondy), `kapilarni` (mapa PT), `magneticka` (mapa MT), `radiografie` (geometrie projekce RT) a `audit` (předběžný NDT audit) |
 | `assistant.py` | AI asistent: nastavení a klíč, nástroje nad `ModelSession` (`ModelTools`), souhrn přepočtu pro AI, systémový pokyn (README „Formát modelu“ + schéma + ukázky), rozhovor s Claude (`Assistant.ask`), cena, `offline_client` (přehrané odpovědi bez sítě) |
 | `session.py` | `ModelSession` – otevřený model: úpravy prvků a parametrů, Zpět/Znovu, uložení, export (bez Qt); s `runner` přepočet na pozadí (`poll`, `wait`, `cancel`) |
@@ -368,6 +387,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/probe_dialog.py` | dialog *Sonda…* (etapy 03, 04, 08): profil z knihovny, původ hodnot, *změřeno*, materiál úhlu, informativní frekvence/měnič, zdroj, úhel ze Snellova zákona, *Uložit do Mých sond*; nezměněné OK = totožný záznam |
 | `gui/target_dialog.py` | editor cílového objemu NDT studie (svar V, koutový, hranol): pole, nákres průřezu, objem ze vzorce, kontrola v dílu |
 | `gui/assistant_panel.py` | panel AI asistenta: rozhovor v pomocném vlákně, kroky s modelem v hlavním vlákně, dialog Nastavení AI |
+| `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
+| `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
+| `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/viewer_views.py` | názvy a klávesové zkratky standardních pohledů 3D (bez OCCT) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch); plán dráhy `show_plan` (čáry po barvách, začátek, zóny) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
 | `.github/workflows/` | `windows.yml` (vydání „nejnovejsi“) a samostatný `macos.yml` (Apple Silicon, předběžné vydání „nejnovejsi-mac“) |
@@ -1077,6 +1100,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   30 min (celá úloha 55 min). Na Windows běží testy zhruba stejně dlouho jako v cloudu na
   Linuxu (cloud 17–18 min). Nové pomalé testy drž krátké: hrubý krok, málo směrů, jedna
   kontaktní plocha, sdílené fixtures.
+- 29. 10. 2026 trvaly testy na Windows už 26:55 z 30 min (cloud 25:42). Po opravě průniků
+  NDT a zrychlení dvou testů (PR #59, #60) Windows 14:53, macOS 19:30, cloud 18:56.
+  Nejdelší testy jsou teď konstrukční návrhy, audit a návrh poloh (20–35 s, poctivý
+  výpočet paprsků a kolizí).
 
 ## Známé pasti (macOS)
 
@@ -1154,8 +1181,24 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Aktuální pokračování (25. 10. 2026):** [schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md).
-P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
+**Stav k 30. 10. 2026** ([schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md)):
+
+| Etapa | Stav | Co zbývá |
+|---|---|---|
+| P0 stabilizace | sloučeno (PR #30) | – |
+| P1 bezpečná geometrie | **přijato autorem** 25. 10. | R03, R04/P16, R12, historická identita |
+| P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
+| P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
+| P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
+| P5–P8 | nezahájeno | P5.1 datový návrh sestav (nový formát → nejdřív návrh) |
+| NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
+
+Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
+a obě workflow včetně kontroly staženého balíčku); výsledek a další krok vždy sdělit autorovi.
+Ruční přijetí etap (P2, P3, P4.5) a odbornou validaci NDT nikdy neprohlašovat za hotové
+bez autora.
+
+Podrobná historie: P0 je sloučené v PR #30 (`e58d628`). Autor 20. 10. 2026 schválil P1.1:
 [smlouvu geometrických operací](docs/p1-1-navrh-smlouvy-geometrickych-operaci.md), rozhodnutí **D1–D7 a matici testů**.
 P1.1 je tím dokončeno; dokumentace je sloučená v PR #31 (`6e38d06`).
 Autor 20. 10. 2026 schválil [konkrétní rozsah P1.2A](docs/p1-2a-navrh-spolecne-kontroly-geometrie.md):
@@ -1219,25 +1262,38 @@ P2.3 výpočet, P2.4 okno a P2.5 přijetí mají každý vlastní schválení.
 `face_diameter`, pole `origin` = pojistka původu plochy, formát 23, oprava R12), W01–W16
 a [průzkum pojistky](docs/p2-2-pruzkum-puvodu.py), PR #43. P2.3 (výpočet) se smí
 implementovat podle G1–G8 a H1–H8; P2.4 okno a P2.5 přijetí dál vyžadují schválení.
-**P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, formát 23, README, testy
+**P2.3 — sloučeno v PR #44 (`e1cb3bc`):** `direct_edit.py`, formát 23, README, testy
 Q01–Q23 a W01–W16 (`tests/test_direct_edit.py`), [evidence](docs/p2-3-overeni.md).
-Do main jen s výslovným souhlasem autora.
-**P3.3–P3.5 — sloučeno v PR #46 a #47:** autor schválil sloučení.
-Návrh [P3.2](docs/p3-2-navrh-ulozeni-step.md), omezený import jednoho tělesa
-s vloženým STEP, náhledem a formátem 24; [evidence](docs/p3-3-5-overeni.md).
-Sestavy a ohlášené opravy se odmítají; paměťový dohled je vzorkovaný, ne pevný
-limit OS. Autor následně zadal doplnění metrů a ověření na Macu a Windows;
-podrobnosti jsou v [evidenci](docs/p3-step-metry.md). Nové změny slučovat jen
-s výslovným souhlasem autora.
-**P2.4 — zadáno autorem 27. 10. 2026:** ovládání přímých úprav ve 3D, náhled a
-potvrzení v okně i pro návrhy AI. P2.5 přijetí je samostatný krok.
-NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
-**P4.1 — autor schválil V1–V9 slovy „schvaluji vše“:**
-[návrh výkresu](docs/p4-1-navrh-vykresu.md). P4.2 připravuje výpočetní
-[geometrii pohledů a řezu](docs/p4-2-geometrie-pohledu.md); P4.3 musí předem
-samostatně navrhnout ukládání a vazby kót. Schválení nenahrazuje souhlas se
-sloučením do main.
-Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P0–P8.
+**P2.4–P2.5 — sloučeno v PR #45 (`5cbab6f`):** výběr plochy ve 3D, zadání hodnoty,
+náhled na kopii, potvrzení či zrušení; nástroj AI jen s dialogem uživatele
+([evidence P2.4](docs/p2-4-overeni.md), [přejímka P2.5](docs/p2-5-overeni.md)).
+Otevřené: ruční zkouška a výslovné přijetí P2 autorem, živé volání AI, zbytkové riziko
+W12 (kopie stejného pole), náhled počítaný v hlavním vlákně (u složitého dílu okno chvíli stojí).
+**P3 — sloučeno v PR #46–48:** [sada vstupů P3.1](docs/p3-1-step-vstupy.md) (PR #46),
+návrh [P3.2](docs/p3-2-navrh-ulozeni-step.md), omezený import jednoho tělesa s vloženým
+STEP, náhledem a formátem 24 (PR #47, `59cfb8c`, [evidence](docs/p3-3-5-overeni.md)),
+jednotky metry (PR #48, `731d0c2`, [evidence](docs/p3-step-metry.md)). Sestavy, více těles
+a ohlášené opravy se odmítají; paměťový dohled je vzorkovaný, ne pevný limit OS. Přenos
+modelu mezi Windows a macOS hlídá workflow `p35-cross-os.yml`. Otevřené: přijetí autorem
+a skutečné soubory z jiných CADů.
+**P4 — pracovní výkres sloučen v PR #49–58, chybí přejímka P4.5:** autor schválil
+[návrh P4.1](docs/p4-1-navrh-vykresu.md) (V1–V9, „schvaluji vše“).
+[P4.2 geometrie pohledů a řezu](docs/p4-2-geometrie-pohledu.md) (PR #49, `067860c`);
+[kóty s vazbami a náhled listu](docs/p4-3-vazby-kot.md), formát 25 (PR #50, #51,
+[kóty na listu](docs/p4-4-koty-na-listu.md)); [řez A–A a export PDF/DXF](docs/p4-5-rez-export.md)
+(PR #52); [upozornění na překrytí kót](docs/p4-6-kontrola-prekryti.md) (PR #53); odchylky
+kót, formát 26 (PR #54); popisové pole, formát 27 (PR #55); šev válce se nekreslí jako hrana
+(PR #56); list a měřítko se ukládají (PR #57); skryté pohledy, formát 28 (PR #58, `cb2f7d5`).
+Otevřené (P4.5): fyzický tisk a změření kontrolní úsečky, kót a měřítka; otevření DXF
+v jiném CADu; ruční průchod na Windows i macOS. Mimo první verzi: kóty hran a dalších typů
+prvků, drsnost, geometrické tolerance, značky svarů a závitů, více listů.
+**Výkon (29.–30. 10. 2026):** průniky NDT bez zápisu do vstupů – kolize se už
+nezpomaluje s počtem přiložení (PR #59, `d7b2963`); rychlejší ořez buněk objemu
+(PR #60, `7e138d6`). Výsledky NDT beze změny; testy na Windows 26:55 → 14:53 min.
+**P5–P8 a NDT-17 — nezahájeno.** Další v pořadí je P5 sestavy: P5.1 datový návrh (díl,
+instance, sestava, relativní cesty, chybějící komponenty) přináší nový formát – nejdřív
+návrh autorovi. NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
   zaoblení, sražení, skořepina, exporty, testy.
@@ -1256,8 +1312,8 @@ Do main neslučovat bez souhlasu autora. Historické fáze níže nejsou etapy P
   měření; formát verze 9), [x] NDT – mapa tloušťky stěny (formát verze 10), [x] řez modelem
   (jen pohled, export DXF/SVG), [x] tažení a přechod (formát verze 11),
   [x] normalizované díly (formát verze 12).
-- [ ] **Fáze 4** – [x] AI asistent upravující model (Claude API, panel v okně, `skodacad ai`),
-  [ ] omezené přímé úpravy ploch.
+- [x] **Fáze 4** – [x] AI asistent upravující model (Claude API, panel v okně, `skodacad ai`),
+  [x] omezené přímé úpravy ploch (P2, sloučeno; přijetí autorem čeká).
 - [ ] **NDT modul** (plán `docs/ndt/03-implementacni-plan.md`) – [x] etapa 00 referenční díly,
   [x] etapa 01 NDT studie v modelu (formát v13, panel), [x] etapa 02 společné geometrické jádro,
   [x] 03 virtuální sonda a její přiložení (formát v14), [x] sladění se závazným vymezením UT,
