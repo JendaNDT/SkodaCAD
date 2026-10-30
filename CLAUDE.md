@@ -1200,6 +1200,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`is_assembly_file`) a má pro sestavy vlastní `BackgroundRebuilder` – sdílený by se
   s přepočtem dílu navzájem rušil (`submit` ukončí běžící výpočet). Id komponent ve stromu
   jsou JSON text: Qt by n-tici v datech položky převedl na seznam.
+- Ukázka sestavy je šablona: *Uložit* ji uloží jinam s `copy_parts=True` – díly se zkopírují
+  do `dily/` vedle sestavy (stejné bajty se použijí, cizí soubor se nepřepíše, kopie dostane
+  číslo). Bez toho na Windows (ukázky na D:, dočasná/uživatelská složka na C:) relativní cesta
+  nejde a uložení skončí chybou „jiném disku“ – odhalilo CI.
 - `QWidget.grab()` 3D prohlížeč nezachytí (černá plocha) – snímek okna přes
   `screen.grabWindow`, 3D zvlášť `viewer.dump`.
 - Testy, které procházejí `examples/` rekurzivně, soubory sestav vynechávají (`"kind":

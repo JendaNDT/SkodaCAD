@@ -256,7 +256,8 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   změna projeví sama (nebo F5 *Načíst díly znovu*); když se díl od posledního uložení sestavy
   změnil, sestava upozorní „zkontroluj polohy“.
 - Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
-  o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam – ukázka zůstane.
+  o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
+  i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.
 
 Zatím bez vazeb mezi díly (souosost, dotyk), kolizí, kusovníku a exportu sestavy – přijdou
 v dalších krocích (P5.3, P5.4). Polohy ze vazeb se pak budou ukládat stejně jako dnes ručně.

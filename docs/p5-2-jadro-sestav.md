@@ -56,7 +56,7 @@ Testy jsou v `tests/test_assembly.py`. „Okno“ = část, která patří do P5
 Okno (`tests/test_assembly_gui.py`, náhradní prohlížeč): strom a souhrn po otevření z hlavního
 okna, formulář = jeden krok Zpět i se jménem, chybný výraz, ±90° a *Pevná*, chybějící díl
 a *Najít soubor* s otázkou, vložení a smazání, klik ve 3D, *Otevřít díl*, nová sestava
-a všechny akce souboru, ukázka jako šablona (soubor ukázky beze změny), dotaz při zavření,
+a všechny akce souboru, ukázka jako šablona (díly zkopírované do `dily/`, soubor ukázky beze změny), dotaz při zavření,
 výpočet dílů v pomocném procesu (stav „počítá se“, pak úplná sestava). Skutečné okno pod Xvfb:
 self-test `VÝSLEDEK: OK` včetně „✓ Sestava“ a snímek okna sestavy.
 
@@ -70,8 +70,9 @@ Jednorázové měření v cloudu: ukázka se sestaví za 0,6 s, podruhé ze mezi
 
 - Ruční zkouška autora na Windows i Macu (založit sestavu, vložit díly, otočit, uložit,
   přesunout složku, smazat díl a najít ho znovu).
-- Ukázka uložená jinam odkazuje na díly ukázek v instalaci aplikace; pro vlastní práci díly
-  zkopíruj do složky projektu (*Zabalit sestavu* je pozdější krok).
+- *Uložit* ukázky zkopíruje její díly do `dily/` vedle sestavy (CI na Windows ukázalo, že
+  ukázky na disku D: a uživatelská složka na C: relativní cestu nedovolí). Obecné *Zabalit
+  sestavu* (i s podsestavami) je pozdější krok.
 - Tažení komponent myší zatím není (poloha jen číslem a ±90°); okno nemá barvy po
   komponentách.
 - P5.3 vazby (nejdřív návrh řešiče a zápisu), P5.4 kolize, kusovník a export.

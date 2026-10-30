@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import os
 import re
+import shutil
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -80,15 +81,18 @@ class AssemblySession:
         self.dirty = False
         return self.rebuild()
 
-    def save(self, path: str | Path | None = None) -> None:
+    def save(self, path: str | Path | None = None, copy_parts: bool = False) -> None:
         """Uloží sestavu; otisky zdrojů v pořádku se zapíšou podle souborů (S5).
 
         Uložení do jiné složky (Uložit jako) cesty přepočítá, aby dál vedly na tytéž
-        soubory; soubor, který se nenašel, nechá tak, jak byl zapsaný."""
+        soubory; soubor, který se nenašel, nechá tak, jak byl zapsaný. ``copy_parts``
+        (uložení ukázky) zkopíruje soubory dílů do složky ``dily/`` vedle sestavy – vznikne
+        samostatný projekt, který nezávisí na složce ukázek ani na disku aplikace."""
         assembly = self._require()
         target = Path(path).resolve() if path is not None else self._require_path()
         current = self.result if self.result is not None else self.rebuild()
         saved = copy.deepcopy(assembly)
+        copied: dict[Path, str] = {}
         for component in saved.components:
             try:
                 status = current.status(component.id)
@@ -96,7 +100,11 @@ class AssemblySession:
                 continue
             if status.fingerprint:  # zdroj se přečetl; chybějící nechá uložený otisk
                 component.fingerprint = status.fingerprint
-            if status.file is not None and target != self.path:
+            if status.file is None:
+                continue
+            if copy_parts and status.kind == "part":
+                component.path = _copy_part(status.file, target, copied)
+            elif target != self.path:
                 component.path = relative_path(status.file, target)
         saved.save(target)
         self.assembly, self.path, self.dirty = saved, target, False
@@ -304,6 +312,26 @@ class AssemblySession:
         component = self._require().component(component_id)
         file, _warning = locate(self._require_path().parent, component.path)
         return file
+
+
+def _copy_part(file: Path, target: Path, copied: dict[Path, str]) -> str:
+    """Zkopíruje soubor dílu do ``dily/`` vedle sestavy ``target``; vrátí cestu podle S4.
+
+    Stejný zdroj se kopíruje jednou. Existující soubor se stejnými bajty se použije,
+    jiný se nepřepíše – kopie dostane číslo (``vicko_2.json``)."""
+    if file in copied:
+        return copied[file]
+    folder = target.parent / "dily"
+    folder.mkdir(exist_ok=True)
+    raw = file.read_bytes()
+    candidate, number = folder / file.name, 2
+    while candidate.exists() and candidate.read_bytes() != raw:
+        candidate = folder / f"{file.stem}_{number}{file.suffix}"
+        number += 1
+    if not candidate.exists():
+        shutil.copyfile(file, candidate)
+    copied[file] = f"dily/{candidate.name}"
+    return copied[file]
 
 
 def _tidy(value: float) -> float:

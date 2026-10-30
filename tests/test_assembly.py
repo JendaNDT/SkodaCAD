@@ -484,3 +484,22 @@ def test_deferred_cache_waits_for_background_parts(project):
     assert done.complete and done.volume_mm3 == pytest.approx(2 * 6000)
     broken = Built.from_result(source.document, None)
     assert broken.problem and broken.part is None
+
+
+def test_save_with_copied_parts_makes_a_standalone_project(project, tmp_path_factory):
+    """Uložení ukázky: díly se zkopírují do dily/ vedle sestavy, cizí soubor se nepřepíše."""
+    session = AssemblySession()
+    session.open(project / "sestava.json")
+    write(project / "jiny" / "kvadr.json", part_data(width=5))
+    session.insert(project / "jiny" / "kvadr.json", position=(0, 80, 0))
+    elsewhere = tmp_path_factory.mktemp("projekt")
+    write(elsewhere / "dily" / "kvadr.json", part_data(width=7))  # cizí soubor stejného jména
+    session.save(elsewhere / "kopie.json", copy_parts=True)
+    data = json.loads((elsewhere / "kopie.json").read_text(encoding="utf-8"))
+    paths = [c["source"]["path"] for c in data["components"]]
+    assert paths == ["dily/kvadr_2.json", "dily/kvadr_2.json", "dily/kvadr_3.json"]
+    assert json.loads((elsewhere / "dily" / "kvadr.json").read_text())["features"][0][
+        "elements"][0]["width"] == 7  # cizí soubor zůstal
+    assert session.result.complete and session.result.volume_mm3 == pytest.approx(
+        2 * 6000 + 5 * 20 * 10)
+    assert session.path == (elsewhere / "kopie.json").resolve()

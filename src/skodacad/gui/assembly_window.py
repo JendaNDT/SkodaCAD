@@ -259,7 +259,9 @@ class AssemblyWindow(QMainWindow):
         if not path:
             return False
         path = path if path.lower().endswith(".json") else path + ".json"
-        if not self._run("Uložení se nepodařilo", lambda: self.session.save(path)):
+        copy_parts = self.template  # ukázka: díly se zkopírují k sestavě (samostatný projekt)
+        if not self._run("Uložení se nepodařilo",
+                         lambda: self.session.save(path, copy_parts=copy_parts)):
             return False
         self.template = False
         return True

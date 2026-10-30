@@ -228,8 +228,14 @@ def test_example_assembly_is_a_template_and_example_stays_untouched(main_window,
     assert sample.read_bytes() == original
     saved = json.loads((tmp_path / "moje_krabicka.json").read_text(encoding="utf-8"))
     assert saved["components"][1]["placement"]["position"][2] == 40
+    # Díly ukázky se zkopírovaly k sestavě – projekt nezávisí na složce ukázek ani disku
+    # (na Windows jsou ukázky na jiném disku než uživatelská složka).
+    assert [c["source"]["path"] for c in saved["components"]] == [
+        "dily/krabicka.json", "dily/vicko.json", *["dily/nozicka.json"] * 4]
+    assert (tmp_path / "dily" / "vicko.json").read_bytes() == \
+        (examples_dir / "sestavy" / "dily" / "vicko.json").read_bytes()
     reopened = main_window.open_assembly(tmp_path / "moje_krabicka.json")
-    assert reopened.session.result.complete  # cesty vedou na díly ukázky
+    assert reopened.session.result.complete and not reopened.session.result.warnings
 
 
 def test_closing_with_unsaved_changes_asks(opened, dialogs):
