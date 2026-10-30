@@ -26,6 +26,28 @@ Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
 `main` ani automatické slučování bez souhlasu autora.
 
+## Stav k 30. 10. 2026
+
+**Pokyn autora z 28. 10. 2026:** pokračovat v roadmapě samostatně; běžná rozhodnutí
+a sloučení po úspěšných kontrolách (úplná sada testů, obě workflow včetně kontroly
+staženého balíčku) nevyžadují další souhlas. Má přednost před staršími požadavky na
+jednotlivá schválení v tomto dokumentu. Ruční přijetí etap a odborná validace NDT
+zůstávají na autorovi.
+
+| Etapa | Stav | Co zbývá |
+|---|---|---|
+| P0 | sloučeno (PR #30) | – |
+| P1 | přijato autorem 25. 10. 2026 | R03, R04/P16, R12, historická identita |
+| P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
+| P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
+| P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
+| P5–P8 | nezahájeno | P5.1 datový návrh sestav předložit autorovi |
+| NDT-17 | nezahájeno | – |
+
+Formát modelu je verze **28** (načítá verze 1–28). Výkon: průniky NDT bez zápisu do
+vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
+Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
+
 ## Výchozí stav a pravidla předávání
 
 - Python ≥ 3.11, build123d 0.13.0 / OCCT, slvs 3.2, PySide6 6.11.2.
@@ -152,7 +174,7 @@ vyžadují samostatný návrh.
    Zpět/Znovu, pracovní proces, Windows/macOS. Hotovo až při absenci tichého přijetí
    chybné geometrie v dohodnuté sadě; zachování starých modelů doložené testy.
 
-## P2 — přímé modelování (čeká na schválení implementace)
+## P2 — přímé modelování (sloučeno, čeká na přijetí autorem)
 
 **P2.1 — schváleno autorem 25. 10. 2026** slovy „schvaluji G1–G8“:
 [rozsah přímého modelování](p2-1-navrh-rozsahu-primeho-modelovani.md), rozhodnutí
@@ -165,10 +187,13 @@ Schválení P2.1 nespouští P2.2–P2.5 ani formát 23; každý krok má vlastn
 W01–W16, s [průzkumem pojistky](p2-2-pruzkum-puvodu.py). Návrh je v PR #43;
 schválení opravňuje implementaci P2.3 podle tohoto zápisu (bez sloučení do main).
 
-**P2.3 — implementace předaná ke kontrole:** `direct_edit.py`, prvky `move_face`
+**P2.3 — sloučeno v PR #44 (`e1cb3bc`):** `direct_edit.py`, prvky `move_face`
 a `face_diameter`, formát 23, README pro AI (R12), testy Q01–Q23 a W01–W16;
-[evidence](p2-3-overeni.md). P2.4 (výběr ve 3D, náhled a AI) autor zadal k implementaci;
-P2.5 (přejímka) zůstává samostatnou etapou.
+[evidence](p2-3-overeni.md).
+
+**P2.4–P2.5 — sloučeno v PR #45 (`5cbab6f`):** výběr plochy ve 3D, náhled na kopii,
+potvrzení, nástroj AI jen s dialogem; [evidence P2.4](p2-4-overeni.md),
+[přejímka P2.5](p2-5-overeni.md). Ruční zkouška a výslovné přijetí P2 autorem čekají.
 
 1. **P2.1 Omezený rozsah** (P1): vybrat první podporované typy ploch a úprav; navržený
    začátek je posun rovinné plochy a změna válcového otvoru. Sepsat nepodporované případy.
@@ -184,6 +209,10 @@ P2.5 (přejímka) zůstává samostatnou etapou.
 
 ## P3 — STEP import
 
+**Stav:** P3.1–P3.5 sloučeno v PR #46 a #47 (`59cfb8c`), jednotky metry v PR #48
+(`731d0c2`), formát 24; [evidence](p3-3-5-overeni.md), [metry](p3-step-metry.md).
+Přijetí autorem a zkouška se soubory z jiných CADů čekají.
+
 1. **P3.1 Sada vstupů** (P1): jeden solid, několik solidů, sestava, jiné jednotky,
    otevřený povrch a poškozený soubor; u každého původ a očekávané rozměry.
    [Připravená sada a její omezení](p3-1-step-vstupy.md).
@@ -198,6 +227,13 @@ P2.5 (přejímka) zůstává samostatnou etapou.
    Výstup: ověřená podmnožina STEP, seznam omezení a ukázky.
 
 ## P4 — technické výkresy
+
+**Stav:** P4.1 schváleno (V1–V9); pracovní výkres sloučen v PR #49–58 – pohledy a řez
+([P4.2](p4-2-geometrie-pohledu.md)), kóty s vazbami a odchylkami, popisové pole, list
+a měřítko, skryté pohledy ([P4.3](p4-3-vazby-kot.md), [P4.4](p4-4-koty-na-listu.md)),
+export PDF/DXF ([P4.5 řez a export](p4-5-rez-export.md)), upozornění na překrytí
+([P4.6](p4-6-kontrola-prekryti.md)); formáty 25–28. Zbývá přejímka (bod 5 níže): fyzický
+tisk, DXF v jiném CADu a ruční průchod na obou OS.
 
 1. **P4.1 Rozsah výkresu** (P1, případně P3): dohodnout list, měřítko, jednotky,
    základní pohledy a řez; odlišit již existující export obrysu řezu.
