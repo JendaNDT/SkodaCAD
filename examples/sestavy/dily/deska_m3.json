@@ -4,7 +4,7 @@
   "name": "Deska se závitem M3",
   "description": "Deska 40 × 30 × 6 mm se závitovou dírou M3 uprostřed. Závit je jen vyznačený – díra má průměr vrtáku pod závit (2,5 mm), proto šroub M3 v sestavě do desky zasahuje.",
   "units": "mm",
-  "material": "hlinik",
+  "material": "hliník",
   "parameters": {"L": 40, "W": 30, "t": 6},
   "features": [
     {"id": "obrys", "name": "Obrys desky", "type": "sketch", "plane": "XY",

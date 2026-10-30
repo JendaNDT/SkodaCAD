@@ -65,18 +65,23 @@ def create_assembly(folder: Path) -> None:
     one = assembly.insert(first)
     two = assembly.insert(first, position=(100, 0, 0), rotation=(0, 0, 90))
     assembly.insert(folder / "04-palce.step.json", position=(0, 0, 50), rotation=(90, 0, 30))
+    assembly.insert(first, position=(5, 0, 0))  # překryv s první kopií = kolize (P5.4)
     # Vazba (formát 30) na základní roviny – splněná, nic se neposune (P5.3).
     assembly.add_constraint("flush", {"component": one, "plane": "XY"},
                             {"component": two, "plane": "XY"})
+    assembly.set_clearance(0.2)  # kontroly (formát 31) – stejné nálezy na obou systémech
     assembly.save()
     result = assembly.result
     assert result.complete and not result.warnings, result.problems
     saved = json.loads((folder / "sestavy" / "sestava.json").read_text(encoding="utf-8"))
-    assert saved["version"] == 30 and len(saved["constraints"]) == 1
+    assert saved["version"] == 31 and len(saved["constraints"]) == 1
+    assert saved["checks"] == {"clearance": 0.2}
+    assert any(row[0] == "collision" for row in _findings(assembly))
     expected = {"volume": result.volume_mm3,
                 "bounds": [list(instance.part.bounding_box().min)
                            + list(instance.part.bounding_box().max)
-                           for instance in result.instances]}
+                           for instance in result.instances],
+                "check": _findings(assembly)}
     (folder / "sestavy" / "ocekavani.json").write_text(json.dumps(expected), encoding="utf-8")
     print(f"Created assembly with {len(result.instances)} components.")
 
@@ -122,13 +127,26 @@ def check_assembly(folder: Path) -> None:
     assert not result.warnings, result.warnings  # otisky zdrojů stejné na obou systémech
     assert [c.state for c in result.constraints] == ["ok"] and not assembly.dirty
     assert [c.path for c in assembly.assembly.components] == [
-        "../01-jedno-teleso.step.json", "../01-jedno-teleso.step.json", "../04-palce.step.json"]
+        "../01-jedno-teleso.step.json", "../01-jedno-teleso.step.json", "../04-palce.step.json",
+        "../01-jedno-teleso.step.json"]
     assert abs(result.volume_mm3 - expected["volume"]) <= 1e-5
     for instance, bounds in zip(result.instances, expected["bounds"], strict=True):
         box = instance.part.bounding_box()
         assert all(abs(a - b) <= 1e-6
                    for a, b in zip([*box.min, *box.max], bounds, strict=True))
-    print(f"Opened assembly: {len(result.instances)} components, {result.volume_mm3:.6f} mm^3.")
+    findings = _findings(assembly)
+    assert [row[:3] for row in findings] == [row[:3] for row in expected["check"]], findings
+    for (*_, value), (*_, wanted) in zip(findings, expected["check"], strict=True):
+        assert abs(value - wanted) <= 1e-3 * max(1.0, abs(wanted)), (value, wanted)
+    print(f"Opened assembly: {len(result.instances)} components, {result.volume_mm3:.6f} mm^3, "
+          f"check {findings}.")
+
+
+def _findings(assembly: AssemblySession) -> list[list]:
+    """Nálezy kontroly kolizí a vůlí jako [druh, a, b, objem nebo vzdálenost]."""
+    outcome = assembly.check()
+    return [[f.kind, list(f.a), list(f.b), f.volume if f.volume is not None else f.distance]
+            for f in outcome.findings]
 
 
 def main() -> None:

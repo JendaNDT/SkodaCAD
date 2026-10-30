@@ -29,6 +29,7 @@ from typing import Any
 
 from skodacad.assembly import Accepted, AssemblyError, Checks
 from skodacad.assembly_build import AssemblyResult, Instance, read_source
+from skodacad.materials import DISPLAY_NAMES, material_key
 
 COLLISION_MM3 = 0.001  # průnik do této meze je dotyk, ne kolize (jako u NDT)
 TOUCH_MM = 1e-6  # vzdálenost do této meze = dotyk
@@ -287,7 +288,8 @@ def bill(result: AssemblyResult, assembly_file: str | Path) -> list[BomRow]:
             row = rows[instance.file] = BomRow(
                 position=len(rows) + 1,
                 name=document.name if document is not None else instance.file.stem,
-                path=path, count=0, material=instance.material, mass_kg=instance.mass_kg,
+                path=path, count=0, mass_kg=instance.mass_kg,
+                material=DISPLAY_NAMES.get(material_key(instance.material), instance.material),
                 volume_mm3=instance.volume_mm3, ndt=len(studies))
         row.count += 1
         row.components.append(" / ".join(instance.ids))

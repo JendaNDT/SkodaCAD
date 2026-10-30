@@ -1,4 +1,5 @@
-"""Okno sestavy (P5.2B, P5.3B): strom komponent a vazeb, poloha, kopie dílů ve 3D.
+"""Okno sestavy (P5.2B, P5.3B, P5.4B): strom komponent a vazeb, poloha, kopie dílů ve 3D,
+kontrola kolizí a vůlí, kusovník a export STEP.
 
 Okno nemodeluje – všechno jde přes ``AssemblySession`` (pravidlo 8 a 10), takže funguje
 Zpět/Znovu a soubory dílů se nikdy nemění. S ``runner`` (pomocný proces jako u dílu) se
@@ -7,6 +8,11 @@ díly sestavy počítají na pozadí a okno nestojí; bez něj (testy) hned.
 Vazba (M12): klik na plochu první komponenty, Ctrl+klik na plochu druhé, *Přidat vazbu…*
 nabídne jen vhodné druhy. Vazby jsou ve stromu pod komponentami se stavem; vybraná vazba
 jde přejmenovat, u vzdálenosti změnit hodnota, a smazat.
+
+Kontrola (K1–K12): *Zkontrolovat kolize a vůle* počítá na pozadí (s ``runner``), výsledek je
+jen pohled a po změně sestavy neplatí. Klik na nález zvýrazní obě kopie a místo průniku,
+*Přijmout kolizi…* ji zapíše s poznámkou (jeden krok Zpět). Kusovník je rozbalený po
+souborech dílů; uložit CSV a exportovat STEP jde jen z úplné sestavy.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QDockWidget,
@@ -34,6 +41,9 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -49,6 +59,7 @@ from skodacad.assembly_build import (
     Cache,
     build_part,
 )
+from skodacad.assembly_check import NDT_NOTE, labels, total_mass
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 
@@ -57,6 +68,8 @@ log = logging.getLogger(__name__)
 AXES = ("x", "y", "z")
 FILTER = "Sestava ŠkodaCAD (*.json)"
 PART_FILTER = "Díl nebo sestava ŠkodaCAD (*.json)"
+MARK = (0.85, 0.10, 0.10)  # kulička v těžišti průniku vybrané kolize
+GONE = "přijatá kolize – už není"
 
 
 def is_assembly_file(path: str | Path) -> bool:
@@ -97,6 +110,11 @@ class AssemblyWindow(QMainWindow):
         self._constraint: str | None = None  # vybraná vazba (místo komponenty)
         self._picks: list[tuple[Any, Any]] = []  # vybrané tvary ve 3D a místo kliknutí
         self._job_source: Any = None
+        self._check_job: tuple | None = None  # klíč sestavy při spuštění kontroly na pozadí
+        self._check_progress = (0, 0)
+        self._finding: dict[str, Any] | None = None  # vybraný nález kontroly
+        self._finding_rows: list[dict[str, Any]] = []  # řádky tabulky nálezů
+        self._bill_of: Any = None  # výsledek sestavy, ze kterého je tabulka kusovníku
         self._timer = QTimer(self)
         self._timer.setInterval(100)
         self._timer.timeout.connect(self._poll)
@@ -110,6 +128,7 @@ class AssemblyWindow(QMainWindow):
         self.setCentralWidget(self.viewer)
         self._build_tree()
         self._build_form()
+        self._build_checks()
         self._create_actions()
         self._build_menus()
         self.resize(1200, 760)
@@ -219,6 +238,67 @@ class AssemblyWindow(QMainWindow):
         self.constraint_box.setVisible(False)
         return self.constraint_box
 
+    def _build_checks(self) -> None:
+        """Panel *Kontrola sestavy*: kolize a vůle, kusovník (K1–K7, K9)."""
+        self.check_tabs = QTabWidget()
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Mez vůle [mm]"))
+        self.clearance_edit = QLineEdit()
+        self.clearance_edit.setMaximumWidth(70)
+        self.clearance_edit.returnPressed.connect(self.apply_clearance)
+        row.addWidget(self.clearance_edit)
+        self.check_button = QPushButton("Zkontrolovat kolize a vůle")
+        self.check_button.clicked.connect(self.run_check)
+        self.stop_check_button = QPushButton("Zastavit")
+        self.stop_check_button.clicked.connect(self.stop_check)
+        self.accept_button = QPushButton("Přijmout kolizi…")
+        self.accept_button.clicked.connect(self.accept_dialog)
+        self.unaccept_button = QPushButton("Zrušit přijetí")
+        self.unaccept_button.clicked.connect(self.unaccept_selected)
+        for button in (self.check_button, self.stop_check_button, self.accept_button,
+                       self.unaccept_button):
+            row.addWidget(button)
+        row.addStretch(1)
+        layout.addLayout(row)
+        self.check_note = QLabel()
+        self.check_note.setWordWrap(True)
+        layout.addWidget(self.check_note)
+        self.findings = self._table(["Nález", "Komponenty", "Hodnota", "Poznámka / důvod"])
+        self.findings.itemSelectionChanged.connect(self._finding_selected)
+        layout.addWidget(self.findings)
+        self.check_tabs.addTab(page, "Kolize a vůle")
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.bill_note = QLabel()
+        self.bill_note.setWordWrap(True)
+        layout.addWidget(self.bill_note)
+        self.bill_table = self._table(["Poz.", "Název", "Soubor", "Kusů", "Materiál",
+                                       "Hmotnost celkem [g]", "Komponenty", "NDT v dílu"])
+        layout.addWidget(self.bill_table)
+        self.bill_button = QPushButton("Uložit kusovník CSV…")
+        self.bill_button.clicked.connect(self.save_bill_dialog)
+        layout.addWidget(self.bill_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.check_tabs.addTab(page, "Kusovník")
+        dock = QDockWidget("Kontrola sestavy", self)
+        dock.setObjectName("assembly_checks")
+        dock.setWidget(self.check_tabs)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        self.resizeDocks([dock], [230], Qt.Orientation.Vertical)  # 3D pohled zůstane velký
+
+    @staticmethod
+    def _table(headers: list[str]) -> QTableWidget:
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.setMinimumHeight(80)
+        return table
+
     def _create_actions(self) -> None:
         self.new_action = self._action("Nová sestava…", self.new_dialog)
         self.open_action = self._action("Otevřít sestavu…", self.open_dialog)
@@ -231,6 +311,9 @@ class AssemblyWindow(QMainWindow):
         self.constraint_action = self._action("Přidat vazbu…", self.add_constraint_dialog,
                                               "Ctrl+L")
         self.reload_action = self._action("Načíst díly znovu", self.reload, "F5")
+        self.check_action = self._action("Zkontrolovat kolize a vůle", self.run_check, "F7")
+        self.bill_action = self._action("Uložit kusovník CSV…", self.save_bill_dialog)
+        self.export_action = self._action("Exportovat STEP…", self.export_dialog)
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
@@ -239,16 +322,23 @@ class AssemblyWindow(QMainWindow):
                        self.save_as_action):
             file_menu.addAction(action)
         file_menu.addSeparator()
+        file_menu.addAction(self.export_action)
+        file_menu.addAction(self.bill_action)
+        file_menu.addSeparator()
         file_menu.addAction(self._action("Zavřít sestavu", self.close, "Ctrl+W"))
         edit_menu = bar.addMenu("Ú&pravy")
         for action in (self.undo_action, self.redo_action, self.insert_action,
                        self.remove_action, self.constraint_action, self.reload_action):
             edit_menu.addAction(action)
+        check_menu = bar.addMenu("&Kontrola")
+        check_menu.addAction(self.check_action)
+        check_menu.addAction(self.bill_action)
         toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
         for action in (self.open_action, self.save_action, self.insert_action,
-                       self.constraint_action, self.undo_action, self.redo_action):
+                       self.constraint_action, self.check_action, self.undo_action,
+                       self.redo_action):
             toolbar.addAction(action)
 
     # --- soubor -------------------------------------------------------------------------
@@ -499,13 +589,255 @@ class AssemblyWindow(QMainWindow):
         if self.session.can_redo:
             self._run("Znovu se nepodařilo", self.session.redo)
 
+    # --- kontrola, kusovník, export (P5.4B) ------------------------------------------------
+
+    def apply_clearance(self) -> None:
+        if self.session.assembly is None:
+            return
+        try:
+            value = float(self.clearance_edit.text().strip().replace(",", "."))
+        except ValueError:
+            self._error("Mez vůle", "Mez vůle musí být kladné číslo v mm.")
+            self._refresh()
+            return
+        if value != self.session.assembly.checks.clearance:
+            self._run("Mez vůle nejde změnit", lambda: self.session.set_clearance(value))
+
+    def run_check(self) -> None:
+        """Kolize a vůle všech dvojic kopií – s ``runner`` na pozadí, jinak hned."""
+        if self.session.assembly is None or self.checking:
+            return
+        result = self.session.result
+        if self.computing or result is None:
+            self._error("Kontrola sestavy", "Díly se ještě počítají – zkontroluj sestavu, až "
+                        "budou hotové.")
+            return
+        if not result.complete:
+            self._error("Kontrola sestavy", "Kontrolu kolizí jde spustit jen u úplné sestavy – "
+                        "nejdřív oprav chybějící komponenty, chyby dílů a vazby ve sporu.")
+            return
+        self.check_tabs.setCurrentIndex(0)
+        if self.runner is None:
+            self._run("Kontrola se nepodařila", self.session.check)
+            return
+        self._check_job = self.session.check_key()
+        self._check_progress = (0, 0)
+        self.runner.submit_assembly_check(self.session.assembly.to_dict(),
+                                          str(self.session.path))
+        self._timer.start()
+        self._refresh_checks()
+
+    def stop_check(self) -> None:
+        if self._check_job is not None:
+            self.runner.cancel()
+            self._check_job = None
+            self.statusBar().showMessage("Kontrola zastavena.", 10000)
+            self._refresh_checks()
+
+    @property
+    def checking(self) -> bool:
+        return self._check_job is not None
+
+    def _check_finished(self, finished: Any) -> None:
+        key, self._check_job = self._check_job, None
+        if finished.error:
+            self._error("Kontrola se nepodařila", finished.error)
+        elif not self.session.store_check(finished.assembly_check, key):
+            self.statusBar().showMessage("Sestava se během kontroly změnila – spusť kontrolu "
+                                         "znovu.", 20000)
+        self._refresh_checks()
+        self._refresh_selection()
+
+    def accept_dialog(self) -> None:
+        finding = self._finding
+        if finding is None or finding["kind"] not in ("collision", "changed"):
+            return
+        note, ok = QInputDialog.getText(
+            self, "Přijmout kolizi",
+            f"{finding['pair']}: průnik {finding['value']}\n"
+            "Proč je kolize v pořádku (poznámka, např. „závit M3 – díra je jen vrták“):",
+            QLineEdit.EchoMode.Normal, finding["note"])
+        if ok:
+            self.accept_collision(finding["a"], finding["b"], finding["volume"], note)
+
+    def accept_collision(self, a: list[str], b: list[str], volume: float,
+                         note: str = "") -> bool:
+        return self._run("Kolizi nejde přijmout",
+                         lambda: self.session.accept_collision(a, b, volume, note))
+
+    def unaccept_selected(self) -> None:
+        finding = self._finding
+        if finding is not None and finding["kind"] in ("accepted", "changed", "gone"):
+            self._run("Přijetí nejde zrušit",
+                      lambda: self.session.unaccept_collision(finding["a"], finding["b"]))
+
+    def save_bill_dialog(self) -> None:
+        result = self.session.result
+        if self.session.assembly is None or result is None:
+            return
+        if not result.complete:
+            self._error("Kusovník", "Kusovník jde uložit jen z úplné sestavy – nejdřív oprav "
+                        "chybějící komponenty, chyby dílů a vazby ve sporu.")
+            return
+        start = self.session.path.with_name(f"{self.session.path.stem}-kusovnik.csv")
+        path, _ = QFileDialog.getSaveFileName(self, "Uložit kusovník", str(start),
+                                              "CSV (*.csv)")
+        if path:
+            path = path if path.lower().endswith(".csv") else path + ".csv"
+            if self._run("Kusovník se nepodařilo uložit",
+                         lambda: self.session.write_bill(path)):
+                self.statusBar().showMessage(f"Kusovník uložen: {path}", 20000)
+
+    def export_dialog(self) -> None:
+        result = self.session.result
+        if self.session.assembly is None or result is None:
+            return
+        if not result.complete:
+            self._error("Export STEP", "Export STEP jde jen z úplné sestavy – nejdřív oprav "
+                        "chybějící komponenty, chyby dílů a vazby ve sporu.")
+            return
+        start = self.session.path.with_suffix(".step")
+        if self.template:
+            start = self.user_dir / start.name
+        path, _ = QFileDialog.getSaveFileName(self, "Exportovat sestavu do STEP", str(start),
+                                              "STEP (*.step *.stp)")
+        if path:
+            path = path if path.lower().endswith((".step", ".stp")) else path + ".step"
+            if self._run("Export STEP se nepodařil", lambda: self.session.export_step(path)):
+                self.statusBar().showMessage(f"Sestava uložena do STEP: {path}", 20000)
+
+    def _finding_selected(self) -> None:
+        rows = self.findings.selectionModel().selectedRows()
+        finding = self._finding_rows[rows[0].row()] if rows else None
+        if finding is self._finding:
+            return
+        self._finding = finding
+        if finding is not None:
+            self._selected, self._constraint = None, None
+            self.tree.blockSignals(True)
+            self.tree.clearSelection()
+            self.tree.blockSignals(False)
+        self._refresh_finding_buttons()
+        self._refresh_selection()
+
+    def _refresh_finding_buttons(self) -> None:
+        kind = self._finding["kind"] if self._finding else None
+        self.accept_button.setEnabled(kind in ("collision", "changed") and not self.checking)
+        self.unaccept_button.setEnabled(kind in ("accepted", "changed", "gone")
+                                        and not self.checking)
+
+    def _refresh_checks(self) -> None:
+        assembly, result = self.session.assembly, self.session.result
+        if not self.clearance_edit.hasFocus():
+            self.clearance_edit.setText(show_value(assembly.checks.clearance)
+                                        if assembly is not None else "")
+        view = self.session.last_check() if not self.checking else None
+        rows: list[dict[str, Any]] = []
+        if view is not None:
+            for finding in view.findings:
+                value = (f"{finding.distance:.3f} mm" if finding.kind == "clearance"
+                         else f"{finding.volume:.3f} mm³" if finding.volume is not None
+                         else "?").replace(".", ",")
+                rows.append({"kind": finding.kind, "label": finding.label,
+                             "a": list(finding.a), "b": list(finding.b), "pair": finding.pair,
+                             "value": value, "volume": finding.volume,
+                             "center": list(finding.center) if finding.center else None,
+                             "note": finding.note, "reason": finding.reason})
+            for item in view.gone:
+                rows.append({"kind": "gone", "label": GONE, "a": item.a, "b": item.b,
+                             "pair": f"{labels(result, item.a)} × {labels(result, item.b)}",
+                             "value": f"{item.volume:.3f} mm³".replace(".", ","),
+                             "volume": item.volume, "center": None, "note": item.note,
+                             "reason": "záznam můžeš zrušit"})
+        if self.checking:
+            done, total = self._check_progress
+            note = (f"Kontroluji kolize a vůle na pozadí… {done} / {total} dvojic"
+                    if total else "Kontroluji kolize a vůle na pozadí…")
+        elif assembly is None:
+            note = "Nejdřív založ nebo otevři sestavu."
+        elif view is None:
+            note = ("Kontrola zatím neproběhla nebo po změně sestavy neplatí – dej "
+                    "Zkontrolovat kolize a vůle (F7).")
+        else:
+            lines = view.summary()
+            note = lines[0] + (" Žádná nepřijatá kolize." if view.clean else
+                               f" K řešení: {len(view.problems)}.")
+        self.check_note.setText(f"{note}\n{NDT_NOTE}")
+        self._finding_rows = rows
+        self.findings.blockSignals(True)
+        self.findings.setRowCount(len(rows))
+        chosen = None
+        for index, row in enumerate(rows):
+            texts = [row["label"].capitalize(), row["pair"], row["value"],
+                     " – ".join(part for part in (row["note"], row["reason"]) if part)]
+            for column, text in enumerate(texts):
+                cell = QTableWidgetItem(text)
+                cell.setToolTip(text)
+                self.findings.setItem(index, column, cell)
+            if self._finding is not None and (row["a"], row["b"]) == (self._finding["a"],
+                                                                      self._finding["b"]):
+                chosen = index
+        self.findings.clearSelection()
+        if chosen is not None:
+            self.findings.selectRow(chosen)
+            self._finding = rows[chosen]
+        else:
+            self._finding = None
+        self.findings.resizeColumnsToContents()
+        self.findings.blockSignals(False)
+        ready = (assembly is not None and result is not None and result.complete
+                 and not self.computing)
+        self.check_button.setEnabled(ready and not self.checking)
+        self.check_action.setEnabled(ready and not self.checking)
+        self.stop_check_button.setVisible(self.checking)
+        self.clearance_edit.setEnabled(assembly is not None and not self.checking)
+        self._refresh_finding_buttons()
+        self.export_action.setEnabled(ready)
+        self._refresh_bill(result, ready)
+
+    def _refresh_bill(self, result: AssemblyResult | None, ready: bool) -> None:
+        self.bill_button.setEnabled(ready)
+        self.bill_action.setEnabled(ready)
+        if result is self._bill_of and result is not None:
+            return  # soubory dílů se čtou jen po novém sestavení
+        self._bill_of = result
+        rows = self.session.bill() if result is not None else []
+        self.bill_table.setRowCount(len(rows))
+        for index, row in enumerate(rows):
+            grams = "?" if row.total_kg is None else f"{row.total_kg * 1000:.2f}"
+            texts = [str(row.position), row.name, row.path, str(row.count), row.material,
+                     grams.replace(".", ","), ", ".join(row.components),
+                     f"{row.ndt} (jen pro díl)" if row.ndt else ""]
+            for column, text in enumerate(texts):
+                cell = QTableWidgetItem(text)
+                cell.setToolTip(text)
+                self.bill_table.setItem(index, column, cell)
+        self.bill_table.resizeColumnsToContents()
+        mass = total_mass(rows)
+        text = (f"Řádků {len(rows)}, kusů {sum(row.count for row in rows)}, hmotnost celkem "
+                + ("neznámá (materiál bez hustoty)" if mass is None
+                   else f"{mass * 1000:.2f} g".replace(".", ",")))
+        if result is not None and not result.complete:
+            text += (" – NEÚPLNÁ sestava: chybějící díly v kusovníku nejsou, uložit jde jen "
+                     "kusovník úplné sestavy.")
+        self.bill_note.setText(f"{text}\n{NDT_NOTE}" if result is not None
+                               else "Nejdřív založ nebo otevři sestavu.")
+
     # --- výběr ---------------------------------------------------------------------------
 
     def select(self, ids: tuple[str, ...] | None) -> None:
         self._selected = ids
         if ids is not None:
             self._constraint = None
+            self._clear_finding()
         self._refresh_selection()
+
+    def _clear_finding(self) -> None:
+        self._finding = None
+        self.findings.blockSignals(True)
+        self.findings.clearSelection()
+        self.findings.blockSignals(False)
+        self._refresh_finding_buttons()
 
     def _tree_selected(self) -> None:
         items = self.tree.selectedItems()
@@ -515,6 +847,8 @@ class AssemblyWindow(QMainWindow):
         ids = tuple(data) if isinstance(data, list) else None
         if ids != self._selected or constraint != self._constraint:
             self._selected, self._constraint = ids, constraint
+            if ids is not None or constraint is not None:
+                self._clear_finding()
             self._refresh_selection()
 
     def _picked(self, shapes: list) -> None:
@@ -560,16 +894,29 @@ class AssemblyWindow(QMainWindow):
         waiting = list(self.session.cache.waiting.values())
         if not waiting:
             return
+        if self._check_job is not None:  # díl se změnil – kontrola by už neplatila
+            self.runner.cancel()
+            self._check_job = None
+            self.statusBar().showMessage("Kontrola se přerušila – díly sestavy se počítají "
+                                         "znovu.", 20000)
         self._job_source = waiting[0]
         self.runner.submit(self._job_source.document.to_dict())
         self._timer.start()
 
     def _poll(self) -> None:
-        if self.runner is None or self._job_source is None:
+        if self.runner is None or (self._job_source is None and self._check_job is None):
             self._timer.stop()
             return
         finished = self.runner.poll()
         if finished is None:
+            return
+        if self._check_job is not None:
+            if finished.update is not None:
+                self._check_progress = finished.update[1]
+                self._refresh_checks()
+                return
+            self._timer.stop()
+            self._check_finished(finished)
             return
         source, self._job_source = self._job_source, None
         built = (Built(problem=finished.error) if finished.error
@@ -618,6 +965,7 @@ class AssemblyWindow(QMainWindow):
                        self.reload_action):
             action.setEnabled(has)
         self._refresh_pick_note()
+        self._refresh_checks()
         if self.session.notice:
             self.statusBar().showMessage(self.session.notice, 20000)
         self.undo_action.setEnabled(self.session.can_undo)
@@ -729,7 +1077,17 @@ class AssemblyWindow(QMainWindow):
             for instance in result.instances:
                 if instance.ids[:len(self._selected)] == self._selected:
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
+        elif result is not None and self._finding is not None:
+            pair = (tuple(self._finding["a"]), tuple(self._finding["b"]))
+            for instance in result.instances:
+                if instance.ids in pair:
+                    shapes.extend(edge.wrapped for edge in instance.part.edges())
         self.viewer.highlight(shapes)
+        center = self._finding.get("center") if self._finding is not None else None
+        if center and self._selected is None and self._constraint is None:
+            self.viewer.show_points([tuple(center)], [MARK])
+        else:
+            self.viewer.hide_points()
 
     def _refresh_constraint_box(self) -> None:
         constraint_id = self._constraint
@@ -799,6 +1157,9 @@ class AssemblyWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._confirm_discard():
             self._timer.stop()
+            if self._check_job is not None:
+                self.runner.cancel()
+                self._check_job = None
             event.accept()
         else:
             event.ignore()
@@ -809,7 +1170,8 @@ class AssemblyWindow(QMainWindow):
         from PySide6.QtCore import QEvent
 
         if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
-                and self.session.assembly is not None and not self.computing):
+                and self.session.assembly is not None and not self.computing
+                and not self.checking):
             before = _signature(self.session.result)
             self.session.rebuild()
             if _signature(self.session.result) != before:

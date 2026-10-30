@@ -281,24 +281,29 @@ class AssemblySession:
         self.store_check(outcome)
         return outcome
 
-    def store_check(self, outcome: Any) -> None:
-        """Převezme výsledek kontroly (i z pomocného procesu) pro současnou sestavu."""
+    def check_key(self) -> tuple | None:
+        """Co určuje platnost kontroly: díly, polohy kopií a mez vůle (ne přijaté kolize)."""
         from skodacad.assembly_check import geometry_key
 
-        if self.result is not None:
-            self._checked = ((geometry_key(self.result), outcome.clearance), outcome)
+        if self.result is None or self.assembly is None:
+            return None
+        return geometry_key(self.result), self.assembly.checks.clearance
+
+    def store_check(self, outcome: Any, key: tuple | None = None) -> bool:
+        """Převezme výsledek kontroly (i z pomocného procesu). ``key`` = ``check_key`` při
+        spuštění: když se sestava mezitím změnila, výsledek se nepřevezme (False)."""
+        current = self.check_key()
+        if current is None or current[1] != outcome.clearance or key not in (None, current):
+            return False
+        self._checked = (current, outcome)
+        return True
 
     def last_check(self) -> Any:
         """Poslední kontrola, pokud pořád platí (stejné díly, polohy a mez vůle); přijaté
         kolize se do ní promítnou bez nového výpočtu. Jinak None."""
-        from skodacad.assembly_check import geometry_key
-
-        if self._checked is None or self.result is None or self.assembly is None:
+        if self._checked is None or self._checked[0] != self.check_key():
             return None
-        key, outcome = self._checked
-        if key != (geometry_key(self.result), self.assembly.checks.clearance):
-            return None
-        return outcome.with_accepted(self.assembly.checks)
+        return self._checked[1].with_accepted(self.assembly.checks)
 
     def bill(self) -> list[Any]:
         """Rozbalený kusovník (K6) – v okně i z neúplné sestavy (s nápisem „neúplný“)."""
