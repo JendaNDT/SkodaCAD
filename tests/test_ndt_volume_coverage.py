@@ -247,14 +247,16 @@ def test_volume_uses_verified_intermediate_source_after_side_wall_reflection():
 
 def test_plate_grid_refinement_approaches_known_855_percent_volume():
     geo = PartGeometry(rebuild(Document.load(EXAMPLES / "ndt/deska.json")).part)
+    # Spodní vrstva 5 mm: přímý paprsek svítí kolmo, pokrytí na hloubce nezávisí a
+    # buněk je 4× méně než přes celou tloušťku 20 mm (stejných 85,5 %).
     saved = volume_target(frame={"origin": [-100, -50, 0], "axis": [0, 1, 0],
                                   "across": [1, 0, 0]}, length_mm=100,
-                          profile_mm=[[0, 0], [200, 0], [200, 20], [0, 20]])
+                          profile_mm=[[0, 0], [200, 0], [200, 5], [0, 5]])
     placed = place(geo, Probe.straight(10), (0, 0, 20))
     coarse = compute_volume(geo, placed, target=saved, scan_step=10, target_step=10, bounces=0)
     fine = compute_volume(geo, placed, target=saved, scan_step=10, target_step=5, bounces=0)
-    assert fine.total_volume == pytest.approx(400000)
-    assert fine.volume("covered") == pytest.approx(342000)
+    assert fine.total_volume == pytest.approx(100000)
+    assert fine.volume("covered") == pytest.approx(85500)
     assert fine.percent("covered") == pytest.approx(85.5)
     assert abs(fine.percent("covered") - 85.5) < abs(coarse.percent("covered") - 85.5)
     assert sum(fine.volume(s) for s in ("covered", "uncovered", "uncertain")) == pytest.approx(
