@@ -61,6 +61,14 @@ s vybranou vazbou (plochy zvýrazněné, stav komponent ve stromu).
 Jednorázové měření v cloudu: ukázka s vazbami se sestaví za 0,7 s, podruhé z mezipaměti
 za 44 ms.
 
+## Sloučení
+
+Sloučeno v [PR #65](https://github.com/JendaNDT/SkodaCAD/pull/65) jako `822e3e8`. Před
+sloučením: v cloudu úplná sada **1 907 testů** (22:41 min) a `ruff check src tests`; na
+GitHubu workflow „Windows aplikace“ a „macOS aplikace“ (testy, sestavení, self-test,
+kontrola staženého balíčku) a „P3 STEP přenos mezi systémy“ (sestava s vazbou vytvořená na
+jednom systému a otevřená na druhém) – vše úspěšně. Ruční zkouška vazeb autorem zatím neproběhla.
+
 ## Co se při implementaci ukázalo (a je opravené)
 
 - Řešič z průzkumu dorovnával vzdálenost natočením dílu a krok tlumil podle velikosti sloupců

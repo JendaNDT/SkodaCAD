@@ -11,7 +11,8 @@
   rozhodnutí a sloučení po úspěšných kontrolách nevyžadují další souhlas. Tento pokyn
   má přednost před staršími požadavky na jednotlivá schválení v tomto souboru.
   Související kroky spojuj; v průběhu spouštěj cílené testy, úplnou sadu a kontroly
-  obou systémů před sloučením. Výsledky, omezení a další doporučený krok sděluj autorovi.
+  obou systémů před sloučením (kde běží úplná sada, říká pravidlo 6 – rozhodnutí autora
+  z 30. 10. 2026). Výsledky, omezení a další doporučený krok sděluj autorovi.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -288,6 +289,13 @@
   o obrácení o 180°, stupně volnosti z hodnosti; spor = úprava se nepřijme, spor po změně
   dílu = polohy zůstanou a sestava je neúplná; pevné a výrazové polohy řešič neposouvá;
   výsledek do `placement` (jeden krok Zpět); **formát 30** jen pro sestavy s vazbami.
+  Sloučeno v PR #65 (`822e3e8`); ruční zkouška vazeb autorem čeká.
+
+- (30. 10. 2026, rozhodnutí autora „Ok“) **Méně zdvojeného testování**: workflow
+  „Windows aplikace“ a „macOS aplikace“ spouští `push` jen ve větvi `main` (vydání); pracovní
+  větve kontroluje jen `pull_request` – dřív běželo každé nahrání dvakrát nad stejným kódem.
+  Úplná sada `pytest -q` běží u každého PR na Windows i macOS; v cloudu se pouští celá jen
+  u změn společného jádra (pravidlo 6), jinak jen testy dotčené oblasti.
 
 ## Architektura (`src/skodacad/`)
 
@@ -427,8 +435,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 4. Jednotky vždy **mm**, úhly ve **stupních**.
 5. Změna formátu JSON = zvýšit `VERSION` v `document.py` a umět načíst staré soubory.
    Modely v `examples/` musí jít vždy postavit (hlídá to test).
-6. Související kroky lze spojit: průběžně spusť cílené kontroly, úplné `ruff check src tests`
-   a `pytest -q` před sloučením společného výsledku podle aktuálního pokynu autora.
+6. Související kroky lze spojit. V cloudu průběžně spouštěj cílené testy dotčené oblasti
+   (moduly, které změna mění, a testy, které je používají) a úplné `ruff check src tests`.
+   **Úplnou sadu `pytest -q` v cloudu pusť jen u změn společného jádra** – přepočet dílu
+   (`rebuild.py`, `features.py`, `geometry_validation.py`), hledání ploch a hran
+   (`selectors.py`, `picking.py`), formát dílu (`document.py`), `session.py`, pomocný proces
+   (`worker.py`) a `ndt/geometry.py`. Jinak ji spouští GitHub u každého PR na Windows i
+   macOS (workflow „Windows aplikace“ a „macOS aplikace“, včetně ruff) a **sloučit jde jen
+   po jejím úspěchu na obou systémech** včetně kontroly staženého balíčku (rozhodnutí
+   autora 30. 10. 2026). Když GitHub ohlásí chybu, oprav ji a cílené testy spusť znovu.
 7. Nové závislosti jen se zdůvodněním a se zamčenou verzí.
 8. GUI nesmí modelovat přes build123d/OCCT – jen přes `ModelSession`. Výjimkou je
    `gui/viewer.py`, který OCCT používá jen ke kreslení a výběru.
@@ -445,7 +460,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 - Prostředí se v cloudové session připraví samo (`.claude/hooks/session-start.sh`).
   Ručně: `uv venv .venv && uv pip install --python .venv/bin/python -e ".[dev]"`
-- Testy: `pytest -q`  ·  Kontrola kódu: `ruff check src tests`
+- Testy: `pytest -q` (celá sada v cloudu jen u změn jádra – pravidlo 6; cíleně např.
+  `pytest -q tests/test_assembly*.py`)  ·  Kontrola kódu: `ruff check src tests`
 - Postavit model: `skodacad build examples/priruba.json --set D=200` → soubory v `out/`
 - Výsledek ukaž uživateli jako náhled `out/<model>.svg` spolu s objemem a hmotností.
 - Snímek okna v cloudu:
@@ -1252,12 +1268,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
-| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) implementovány | ruční zkouška vazeb, P5.4 kontroly, P5.5 přijetí |
+| P5 sestavy | P5.1 schválen (S1–S12), P5.2 polohy sloučeny (PR #63), autor: „Ok, funguje to“; [P5.3 vazby](docs/p5-3-vazby-overeni.md) (M1–M12) sloučeny (PR #65) | ruční zkouška vazeb, P5.4 kontroly, P5.5 přijetí |
 | P6–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
-a obě workflow včetně kontroly staženého balíčku); výsledek a další krok vždy sdělit autorovi.
+v obou workflow na GitHubu včetně kontroly staženého balíčku, v cloudu podle pravidla 6);
+výsledek a další krok vždy sdělit autorovi.
 Ruční přijetí etap (P2, P3, P4.5) a odbornou validaci NDT nikdy neprohlašovat za hotové
 bez autora.
 
@@ -1370,9 +1387,9 @@ díl*). **P5.3 vazby – návrh předán 30. 10. 2026:** [vazby](docs/p5-3-navrh
 dílu; vlastní řešič tuhých těles nad numpy po skupinách, nejmenší posun, obrácení o 180°,
 spor = úprava se nepřijme; formát 30 jen se vazbami), [průzkum](docs/p5-3-pruzkum-vazeb.py),
 matice B01–B20. **Schváleno autorem 30. 10. 2026 („schvaluji M1–M12“, PR #64).**
-**P5.3A/B implementováno:** formát 30, `assembly_solve.py`, vazby v `AssemblySession`,
-`skodacad sestava`, ukázka `krabicka_s_vazbami.json`, okno (B20), self-test „✓ Vazby“,
-[evidence](docs/p5-3-vazby-overeni.md).
+**P5.3A/B sloučeno v PR #65 (`822e3e8`):** formát 30, `assembly_solve.py`, vazby
+v `AssemblySession`, `skodacad sestava`, ukázka `krabicka_s_vazbami.json`, okno (B20),
+self-test „✓ Vazby“, [evidence](docs/p5-3-vazby-overeni.md). Ruční zkouška autorem čeká.
 **P6–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
