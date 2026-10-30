@@ -74,14 +74,15 @@ def project(tmp_path: Path) -> Path:
 
 
 def test_a01_part_files_never_get_assembly_version():
-    assert VERSION == 29
+    assert VERSION == 30
     parts = [path for path in EXAMPLES.rglob("*.json")
              if json.loads(path.read_text(encoding="utf-8")).get("kind") is None]
     assert len(parts) > 20
     for path in parts:
         assert Document.load(path).to_dict()["version"] <= 28, path
-    # Díl zapsaný ve verzi 29 (verze je nadmnožina) se načte jako dosud.
+    # Díl zapsaný ve verzi 29 nebo 30 (verze je nadmnožina) se načte jako dosud.
     assert Document.from_dict(part_data() | {"version": 29}).features
+    assert Document.from_dict(part_data() | {"version": 30}).features
 
 
 def test_a02_open_and_save_without_changes_keeps_identical_file(project):
@@ -103,7 +104,7 @@ def test_a03_assembly_needs_version_29_and_known_kind():
     with pytest.raises(AssemblyError, match="od formátu verze 29"):
         Assembly.from_dict(assembly_data([]) | {"version": 28})
     with pytest.raises(AssemblyError, match="novější verze"):
-        Assembly.from_dict(assembly_data([]) | {"version": 30})
+        Assembly.from_dict(assembly_data([]) | {"version": 31})
     with pytest.raises(DocumentError, match="Neznámý druh souboru"):
         Document.from_dict(part_data() | {"kind": "drawing"})
 

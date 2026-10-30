@@ -738,11 +738,14 @@ skodacad ai krabicka.json "krabička 100 × 60 × 40, stěna 2 mm"  # nový díl
 skodacad paprsek examples/ndt/trubka.json --z 0,0,100 --smer 0,0,-1   # NDT: přímka dílem
 skodacad sonda examples/ndt/zebro.json --bod 22,0,20 --smer -1,0,0 --posun -1,0,0 --delka 10
 skodacad sestava examples/sestavy/krabicka_s_vickem.json   # komponenty, stav, objem, hmotnost
+skodacad sestava examples/sestavy/krabicka_s_vazbami.json  # … i vazby a volnost komponent
 ```
 
 `skodacad sestava` vypíše komponenty sestavy (✓ v pořádku, ✕ chybí nebo nejde postavit
-s českým důvodem), upozornění, objem, hmotnost a obálku. Když některá komponenta chybí,
-napíše „NEÚPLNÁ“ a skončí kódem 1. Díly se přitom nemění.
+s českým důvodem) s volností podle vazeb (*plně určená*, *volná: 2 posuny, 1 otočení*),
+vazby se stavem, upozornění, objem, hmotnost a obálku. Když některá komponenta chybí nebo
+jsou vazby ve sporu, napíše „NEÚPLNÁ“ a skončí kódem 1. Když vazby dají jiné polohy, než jsou
+v souboru (změnil se díl), vypíše je – soubor sestavy ani díly se přitom nemění.
 
 `skodacad paprsek` vypíše, kudy přímka z bodu `--z` směrem `--smer` prochází materiálem
 (úseky, délky, úhly dopadu od normály) a jestli je výsledek jistý. Souřadnice v mm jako
@@ -1195,7 +1198,7 @@ Potvrzení ponechá zadané souřadnice, nepřesune cíl na jiné místo. Změna
 starou mapu i ověření. Ověření objemu má navíc `verified.target`, otisk zadání cíle;
 při ruční změně cíle v JSON přestane platit i při stejném dílu.
 
-### Sestavy (`"kind": "assembly"`, verze 29)
+### Sestavy (`"kind": "assembly"`, verze 29 a 30)
 
 Sestava je **samostatný soubor**, který skládá díly (a jiné sestavy) do poloh. Na soubory
 dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–28); sestava má verzi 29.
@@ -1221,7 +1224,7 @@ dílů jen odkazuje a nikdy je nemění. Díly zůstávají ve své verzi (24–
 | `source.fingerprint` | otisk receptu zdroje při posledním uložení (zapisuje aplikace); liší-li se, sestava upozorní „zdroj se změnil“ – nikdy neblokuje |
 | `placement.position` | posun [x, y, z] v mm (čísla nebo výrazy s `parameters` sestavy) |
 | `placement.rotation` | úhly [rx, ry, rz] ve stupních: otočení kolem **pevných os sestavy nejdřív X, pak Y, pak Z**; díl se točí kolem svého počátku |
-| `fixed` | `true` = pevná komponenta (nehne ji tažení ani budoucí vazby) |
+| `fixed` | `true` = pevná komponenta (nehne ji tažení ani vazby) |
 
 Bez měřítka a zrcadlení (zrcadlený díl = vlastní soubor s prvkem *Zrcadlení*). Neznámý klíč
 je chyba. Komponenta, jejíž soubor chybí, nejde přečíst, má chybu přepočtu nebo vede v kruhu
@@ -1229,6 +1232,47 @@ zpět na sestavu, v sestavě zůstane se stavem a důvodem; součty pak platí j
 díly a export je jen pro úplnou sestavu. Nejvýš 8 úrovní podsestav a 1 000 komponent.
 Kopie téhož dílu se počítají jednou. NDT studie, výkres a měření patří dílu, ne sestavě.
 Ukázka: `examples/sestavy/krabicka_s_vickem.json`.
+
+#### Vazby v sestavě (`constraints`, verze 30)
+
+Vazba říká, jak k sobě dvě komponenty patří; polohu dopočítá řešič a **zapíše ji do
+`placement`** (soubor jde tedy číst i bez řešiče). Sestava bez vazeb zůstává ve verzi 29,
+s vazbami se ukládá ve verzi 30 (starší aplikace ji odmítne, místo aby vazby tiše zahodila).
+
+```json
+"constraints": [
+  {"id": "v1", "type": "distance", "name": "Víčko na okraji", "value": "mezera",
+   "a": {"component": "krabicka", "face": {"at": [0, 24, 30], "normal": [0, 0, 1], "type": "plane"}},
+   "b": {"component": "vicko", "face": {"at": [0, 24, 2], "normal": [0, 0, 1], "type": "plane"}}},
+  {"id": "v2", "type": "coaxial",
+   "a": {"component": "deska", "face": {"at": [25, 0, 5], "normal": [-1, 0, 0], "type": "cylinder"}},
+   "b": {"component": "cep", "axis": "Z"}}
+]
+```
+
+| `type` | Česky | Odkazy | Co platí |
+|---|---|---|---|
+| `mate` | dotyk | dvě rovinné plochy (`plane`) nebo roviny dílu | plochy leží na sobě, normály proti sobě |
+| `flush` | zarovnání | dvě rovinné plochy nebo roviny dílu | plochy v jedné rovině, normály stejným směrem |
+| `distance` | vzdálenost | dvě rovinné plochy nebo roviny dílu | jako dotyk, ale s mezerou `value` mm (číslo nebo výraz s `parameters` sestavy) ve směru normály plochy `a` |
+| `coaxial` | souosost | dvě válcové plochy (`cylinder`) nebo osy dílu | osy splývají (posun podél osy a otočení kolem ní zůstanou volné) |
+
+Odkaz `a` / `b` má `component` (id komponenty) a právě jedno z: `face` – plocha **významem
+v souřadnicích dílu té komponenty** (`at` bod na ploše, `normal` směr ven z materiálu,
+`type` `plane` nebo `cylinder`; bez poloměru, aby se díra našla i po změně průměru), `plane`
+– základní rovina dílu `XY` (normála +Z), `XZ` (normála −Y, jako u skic) nebo `YZ` (+X),
+`axis` – osa dílu `X`, `Y` nebo `Z`. U podsestavy se plocha hledá na celé podsestavě v jejích
+souřadnicích. Vazba spojuje dvě různé komponenty; `value` má jen vzdálenost; neznámý klíč je
+chyba; smazání komponenty smaže i její vazby.
+
+Řešení: polohy co nejblíž dnešním – co vazby neurčují (posun do strany, otočení kolem osy),
+zůstane. Díl, který leží obráceně, řešič zkusí obrátit o 180°. **Pevná** komponenta se nehne
+nikdy, komponenta s polohou zadanou **výrazem** také ne (vazba, která by s ní musela hýbat, je
+spor s radou „nahraď výraz číslem“). Skupina vázaných komponent bez pevné drží první z nich.
+Vazby, které si odporují (zbytek nad 0,000001 mm), aplikace **nepřijme**; když spor vznikne
+změnou souboru dílu, polohy zůstanou uložené, vazby jsou „ve sporu“ a sestava je neúplná.
+Stav komponenty: *pevná*, *plně určená*, *volná: 2 posuny, 1 otočení*, *ve sporu*.
+Ukázka: `examples/sestavy/krabicka_s_vazbami.json`.
 
 ### Materiály
 

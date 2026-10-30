@@ -59,9 +59,11 @@ FORMAT = "skodacad"
 # Verze 28: skryté pohledy výkresu („views“), které by starší aplikace tiše ukázala.
 # Verze 29: sestavy – samostatný soubor s „kind“: „assembly“ (assembly.py, návrh
 # docs/p5-1-navrh-formatu-sestav.md). Díly se dál ukládají v nejnižší potřebné verzi.
-VERSION = 29
+# Verze 30: vazby v sestavě („constraints“, návrh docs/p5-3-navrh-vazeb.md); sestava bez
+# vazeb zůstává ve verzi 29.
+VERSION = 30
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30)
 ASSEMBLY_KIND = "assembly"
 
 

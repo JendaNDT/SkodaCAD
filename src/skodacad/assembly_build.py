@@ -8,6 +8,10 @@ Vadná komponenta v sestavě zůstane a jen se nekreslí; záznam v souboru se n
 Kopie téhož dílu sdílí tvar a liší se jen polohou (OCCT ``Location``). Průniky mezi nimi
 proto smí jít jen nedestruktivně (``ndt.geometry._common``) – výchozí průnik zapisuje do
 sdílených hran (P5.1, průzkum P4).
+
+Vazby (P5.3) se řeší po úrovních: každá komponenta se nejdřív postaví ve svých
+souřadnicích, řešič (``assembly_solve``) dopočítá polohy a teprve potom se kopie umístí.
+Nové polohy jsou v ``AssemblyResult.solved``; zapisuje je ``AssemblySession`` (M9).
 """
 
 from __future__ import annotations
@@ -17,17 +21,28 @@ import json
 import math
 import os
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from skodacad.assembly import MAX_COMPONENTS, MAX_DEPTH, Assembly, AssemblyError
+from skodacad.assembly import (
+    BASE_AXES,
+    BASE_PLANES,
+    CONSTRAINT_TYPES,
+    MAX_COMPONENTS,
+    MAX_DEPTH,
+    Assembly,
+    AssemblyError,
+    Component,
+)
 from skodacad.assembly import fingerprint as assembly_fingerprint
 from skodacad.document import ASSEMBLY_KIND, FORMAT, Document, DocumentError
 from skodacad.expressions import ExpressionError, evaluate, resolve_parameters
 
 LABELS = {"ok": "ok", "missing": "chybí", "unreadable": "nečitelná", "error": "chyba dílu",
           "cycle": "cyklus", "pending": "počítá se"}
+CONSTRAINT_LABELS = {"ok": "splněna", "conflict": "ve sporu", "missing": "odkaz nenalezen",
+                     "pending": "počítá se", "error": "chyba"}
 ANGLE_DIGITS = 9  # úhly z tlačítek se ukládají zaokrouhlené (90, ne 89,99999999999999)
 
 Matrix = tuple[tuple[float, float, float], tuple[float, float, float],
@@ -93,6 +108,12 @@ def turned(angles: Sequence[float], axis: str, degrees: float) -> list[float]:
     return angles_of(_multiply(axis_matrix(axis, degrees), rotation_matrix(angles)))
 
 
+def tidy(value: float) -> float:
+    """Číslo polohy pro soubor: zaokrouhlené na 1e-9, celé bez „.0“ a bez „-0“."""
+    value = round(value, 9) + 0.0
+    return int(value) if value.is_integer() else value
+
+
 def location(position: Sequence[float], angles: Sequence[float]) -> Any:
     """Poloha build123d z posunu a úhlů – matice se sestaví přímo, bez pořadí build123d
     (to je jiné: Intrinsic.XYZ by dalo jinou polohu)."""
@@ -124,10 +145,58 @@ class ComponentStatus:
     warnings: list[str] = field(default_factory=list)
     file: Path | None = None  # skutečný soubor zdroje
     fixed: bool = False
+    freedom: tuple[int, int] | None = None  # (posuny, otočení), které vazby neurčují (M6)
+    held: str = ""  # vazby s ní nehýbou: "fixed" / "anchor" (drží skupinu) / "expression"
+    conflict: bool = False  # vazby její skupiny jsou ve sporu
 
     @property
     def depth(self) -> int:
         return len(self.ids) - 1
+
+    @property
+    def freedom_text(self) -> str:
+        """Stav komponenty podle vazeb česky; prázdný, když na ni žádná vazba nevede."""
+        if self.conflict:
+            return "ve sporu"
+        if self.held:
+            return {"fixed": "pevná", "anchor": "drží polohu skupiny vazeb",
+                    "expression": "poloha výrazem – vazby s ní nehýbou"}[self.held]
+        if self.freedom is None:
+            return ""
+        translations, rotations = self.freedom
+        if not translations and not rotations:
+            return "plně určená"
+        parts = []
+        if translations:
+            parts.append(f"{translations} {_plural(translations, 'posun', 'posuny', 'posunů')}")
+        if rotations:
+            parts.append(f"{rotations} otočení")
+        return "volná: " + ", ".join(parts)
+
+
+def _plural(count: int, one: str, few: str, many: str) -> str:
+    return one if count == 1 else few if 2 <= count <= 4 else many
+
+
+@dataclass
+class ConstraintStatus:
+    """Stav jedné vazby (``ids`` = cesta id komponent od kořene + id vazby)."""
+
+    ids: tuple[str, ...]
+    label: str
+    type: str
+    components: tuple[str, str]
+    state: str = "ok"
+    reason: str = ""
+    residual: float = 0.0  # zbytek rovnic vazby po řešení (mm / bez jednotky)
+
+    @property
+    def depth(self) -> int:
+        return len(self.ids) - 1
+
+    @property
+    def type_label(self) -> str:
+        return CONSTRAINT_TYPES[self.type]
 
 
 @dataclass
@@ -148,11 +217,19 @@ class AssemblyResult:
     instances: list[Instance] = field(default_factory=list)
     parameters: dict[str, float] = field(default_factory=dict)
     error: str = ""  # chyba celé sestavy (parametry, příliš mnoho komponent)
+    constraints: list[ConstraintStatus] = field(default_factory=list)
+    # Polohy podle vazeb, které se liší od zapsaných: cesta id → (posun, úhly) pro soubor.
+    solved: dict[tuple[str, ...], tuple[list[float], list[float]]] = field(
+        default_factory=dict)
+    # Tvar komponent nejvyšší úrovně v jejich vlastních souřadnicích (odkazy vazeb z okna).
+    local_shapes: dict[str, Any] = field(default_factory=dict)
 
     @property
     def complete(self) -> bool:
-        """Úplná sestava: bez chyby a všechny komponenty ok (export a kontroly jen tehdy)."""
-        return not self.error and all(status.state == "ok" for status in self.statuses)
+        """Úplná sestava: bez chyby, všechny komponenty ok a všechny vazby splněné
+        (export a kontroly jen tehdy)."""
+        return (not self.error and all(status.state == "ok" for status in self.statuses)
+                and all(status.state == "ok" for status in self.constraints))
 
     @property
     def problems(self) -> list[str]:
@@ -161,7 +238,18 @@ class AssemblyResult:
             if status.state != "ok":
                 lines.append(f"{status.label} ({status.source}): {LABELS[status.state]} – "
                              f"{status.reason}")
+        for constraint in self.constraints:
+            if constraint.state != "ok":
+                lines.append(f"Vazba {constraint.label}: "
+                             f"{CONSTRAINT_LABELS[constraint.state]} – {constraint.reason}")
         return lines
+
+    def constraint(self, ids: str | Sequence[str]) -> ConstraintStatus:
+        key = (ids,) if isinstance(ids, str) else tuple(ids)
+        for status in self.constraints:
+            if status.ids == key:
+                return status
+        raise AssemblyError(f"Sestava nemá vazbu {' / '.join(key)}.")
 
     @property
     def warnings(self) -> list[str]:
@@ -363,23 +451,64 @@ def build(assembly: Assembly, file: str | Path, cache: Cache | None = None) -> A
         result.error = f"Parametry sestavy: {exc}"
         return result
     root = Path(file).resolve()
-    _build_level(assembly, root.parent, (), None, [root], result, cache, result.parameters)
+    result.instances = _build_level(assembly, root.parent, (), [root], result, cache,
+                                    result.parameters)
     if len(result.statuses) > MAX_COMPONENTS:
         result.error = (f"Sestava má po rozbalení podsestav {len(result.statuses)} komponent, "
                         f"nejvýš {MAX_COMPONENTS}.")
         result.instances.clear()
+    for ids in result.solved:
+        if len(ids) > 1:  # podsestavu sestava nikdy nepřepisuje (S11)
+            status = result.status(ids[:-1])
+            note = ("polohy uvnitř podsestavy se podle jejích vazeb přepočítaly – otevři ji "
+                    "a ulož")
+            if note not in status.warnings:
+                status.warnings.append(note)
     return result
 
 
-def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...], parent: Any,
+@dataclass
+class _Piece:
+    """Komponenta jedné úrovně: kopie v jejích vlastních souřadnicích a její poloha."""
+
+    component: Component
+    status: ComponentStatus
+    instances: list[Instance] = field(default_factory=list)
+    position: list[float] | None = None  # vyhodnocená poloha (None = nejde umístit)
+    angles: list[float] | None = None
+    pending: bool = False  # díl (nebo díl v podsestavě) se ještě počítá
+    _shape: Any = None
+
+    @property
+    def expression(self) -> bool:
+        return any(isinstance(value, str)
+                   for value in (*self.component.position, *self.component.rotation))
+
+    def shape(self) -> Any:
+        """Tvar komponenty v jejích souřadnicích (díl, nebo celá podsestava)."""
+        if self._shape is None:
+            if self.status.kind == "part":
+                self._shape = self.instances[0].part
+            else:
+                from build123d import Compound
+
+                self._shape = Compound([instance.part for instance in self.instances])
+        return self._shape
+
+
+def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...],
                  chain: list[Path], result: AssemblyResult, cache: Cache,
-                 parameters: dict[str, float]) -> None:
+                 parameters: dict[str, float]) -> list[Instance]:
+    """Postaví jednu úroveň sestavy; vrátí kopie dílů umístěné v souřadnicích úrovně."""
+    pieces: list[_Piece] = []
     for component in assembly.components:
         if len(result.statuses) > MAX_COMPONENTS:
-            return
+            break
         status = ComponentStatus(ids=(*prefix, component.id), label=component.label,
                                  source=component.path, fixed=component.fixed)
         result.statuses.append(status)
+        piece = _Piece(component, status)
+        pieces.append(piece)
         file, warning = locate(folder, component.path)
         if warning:
             status.warnings.append(warning)
@@ -411,8 +540,7 @@ def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...], pare
         if not all(math.isfinite(value) for value in (*position, *angles)):
             status.state, status.reason = "error", "poloha není konečné číslo"
             continue
-        placed = location(position, angles)
-        world = placed if parent is None else parent * placed
+        piece.position, piece.angles = position, angles
         if source.assembly is not None:
             if len(status.ids) >= MAX_DEPTH:
                 status.state = "error"
@@ -423,21 +551,183 @@ def _build_level(assembly: Assembly, folder: Path, prefix: tuple[str, ...], pare
             except ExpressionError as exc:
                 status.state, status.reason = "error", f"parametry podsestavy: {exc}"
                 continue
-            _build_level(source.assembly, status.file.parent, status.ids, world,
-                         [*chain, status.file], result, cache, inner)
+            first = len(result.statuses)
+            piece.instances = _build_level(source.assembly, status.file.parent, status.ids,
+                                           [*chain, status.file], result, cache, inner)
+            piece.pending = any(inner_status.state == "pending"
+                                for inner_status in result.statuses[first:])
             continue
         built = cache.part(source)
         if built.pending:
             status.state, status.reason = "pending", "díl se počítá"
+            piece.pending = True
             continue
         if built.problem:
             status.state, status.reason = "error", built.problem
             continue
-        result.instances.append(Instance(ids=status.ids, file=status.file,
-                                         part=built.part.moved(world),
-                                         material=built.material,
-                                         volume_mm3=built.volume_mm3, mass_kg=built.mass_kg))
+        piece.instances = [Instance(ids=status.ids, file=status.file, part=built.part,
+                                    material=built.material, volume_mm3=built.volume_mm3,
+                                    mass_kg=built.mass_kg)]
+    if assembly.constraints:
+        _solve_level(assembly, pieces, prefix, result, parameters)
+    if not prefix:
+        result.local_shapes = {piece.component.id: piece.shape() for piece in pieces
+                               if piece.instances and not piece.pending}
+    placed: list[Instance] = []
+    for piece in pieces:
+        if piece.position is None or piece.angles is None or not piece.instances:
+            continue
+        where = location(piece.position, piece.angles)
+        placed.extend(replace(instance, part=instance.part.moved(where))
+                      for instance in piece.instances)
+    return placed
 
+
+# --- vazby ---------------------------------------------------------------------------
+
+
+class _Unresolved(Exception):
+    """Odkaz vazby nejde použít (``state`` = stav vazby, zpráva česky)."""
+
+    def __init__(self, state: str, text: str) -> None:
+        super().__init__(text)
+        self.state = state
+
+
+def _vector(value: Any) -> Any:
+    import numpy as np
+
+    return np.array([float(v) for v in value], dtype=float)
+
+
+def _feature(pieces: dict[str, _Piece], reference: dict[str, Any]) -> tuple[Any, Any]:
+    """Odkaz vazby → (bod, směr) v souřadnicích komponenty: normála roviny, nebo osa."""
+    from skodacad.selectors import SelectionError
+
+    component_id = reference["component"]
+    piece = pieces.get(component_id)
+    if piece is None:
+        raise _Unresolved("missing", f"komponenta „{component_id}“ v sestavě není")
+    label = piece.status.label
+    if piece.pending:
+        raise _Unresolved("pending", f"díl „{label}“ se ještě počítá")
+    if piece.status.state != "ok" or piece.position is None or not piece.instances:
+        state = LABELS[piece.status.state] if piece.status.state != "ok" else "nic nekreslí"
+        raise _Unresolved("missing", f"komponenta „{label}“ se nesestavila ({state})")
+    try:
+        return feature_of(piece.shape(), reference)
+    except SelectionError as exc:
+        raise _Unresolved("missing", f"„{label}“: {exc}") from None
+
+
+def feature_of(shape: Any, reference: dict[str, Any]) -> tuple[Any, Any]:
+    """(bod, směr) odkazu v souřadnicích tvaru komponenty; plocha, která zmizela,
+    = ``SelectionError``."""
+    from skodacad.selectors import find_face
+
+    if "plane" in reference:
+        point, normal = BASE_PLANES[reference["plane"]]
+        return _vector(point), _vector(normal)
+    if "axis" in reference:
+        point, direction = BASE_AXES[reference["axis"]]
+        return _vector(point), _vector(direction)
+    spec = reference["face"]
+    face, on_face = find_face(shape, spec)
+    if spec["type"] == "plane":
+        return _vector(on_face), _vector(face.normal_at(on_face))
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    axis = BRepAdaptor_Surface(face.wrapped).Cylinder().Axis()
+    origin, direction = axis.Location(), axis.Direction()
+    return (_vector((origin.X(), origin.Y(), origin.Z())),
+            _vector((direction.X(), direction.Y(), direction.Z())))
+
+
+def _number(value: float) -> str:
+    return f"{value:.3g}".replace(".", ",")
+
+
+def _solve_level(assembly: Assembly, pieces: list[_Piece], prefix: tuple[str, ...],
+                 result: AssemblyResult, parameters: dict[str, float]) -> None:
+    """Vyřeší vazby jedné úrovně a nové polohy zapíše do ``pieces`` a ``result.solved``."""
+    import numpy as np
+
+    from skodacad.assembly_solve import SATISFIED, Body, Link, solve
+
+    by_id = {piece.component.id: piece for piece in pieces}
+    bodies = {
+        piece.component.id: Body(
+            id=piece.component.id,
+            rotation=np.array(rotation_matrix(piece.angles), dtype=float),
+            position=_vector(piece.position),
+            movable=not (piece.component.fixed or piece.expression))
+        for piece in pieces if piece.position is not None and piece.angles is not None}
+    links: list[Link] = []
+    statuses: dict[str, ConstraintStatus] = {}
+    for constraint in assembly.constraints:
+        status = ConstraintStatus(ids=(*prefix, constraint.id), label=constraint.label,
+                                  type=constraint.type, components=constraint.components)
+        result.constraints.append(status)
+        try:
+            value = 0.0
+            if constraint.type == "distance":
+                try:
+                    value = evaluate(constraint.value, parameters)
+                except ExpressionError as exc:
+                    raise _Unresolved("error", f"hodnota: {exc}") from None
+                if not math.isfinite(value):
+                    raise _Unresolved("error", "hodnota není konečné číslo")
+            (pa, na), (pb, nb) = (_feature(by_id, side) for side in (constraint.a, constraint.b))
+        except _Unresolved as exc:
+            status.state, status.reason = exc.state, str(exc)
+            continue
+        a, b = constraint.components
+        links.append(Link(id=constraint.id, kind=constraint.type, a=a, pa=pa,
+                          na=na / np.linalg.norm(na), b=b, pb=pb, nb=nb / np.linalg.norm(nb),
+                          value=value))
+        statuses[constraint.id] = status
+    if not links:
+        return
+    solution = solve(bodies, links)
+    for group in solution.groups:
+        names = [by_id[body_id].status.label for body_id in group.held
+                 if by_id[body_id].expression]
+        worst = {link.id for link in group.links if solution.residuals[link.id] > SATISFIED}
+        for link in group.links:
+            status = statuses[link.id]
+            status.residual = solution.residuals[link.id]
+            if group.satisfied or (worst and link.id not in worst):
+                continue
+            status.state = "conflict"
+            status.reason = (f"vazby nejdou splnit současně (zbytek {_number(group.residual)} "
+                             "mm)")
+            if not group.bodies and not group.anchor:
+                status.reason += " – obě komponenty jsou pevné nebo mají polohu výrazem"
+            for name in names:
+                status.reason += (f"; poloha „{name}“ je zadaná výrazem – vazby s ní nehýbou, "
+                                  "nahraď výraz číslem")
+        for body_id in group.held:
+            piece = by_id[body_id]
+            piece.status.held = "fixed" if piece.component.fixed else "expression"
+        if group.anchor:
+            by_id[group.anchor].status.held = "anchor"
+        if not group.satisfied:
+            for body_id in (*group.bodies, *([group.anchor] if group.anchor else [])):
+                by_id[body_id].status.conflict = True
+    for body_id, freedom in solution.freedom.items():
+        by_id[body_id].status.freedom = (freedom.translations, freedom.rotations)
+    for body_id, (rotation, position) in solution.poses.items():
+        piece = by_id[body_id]
+        new_position = [tidy(float(v)) for v in position]
+        old_rotation = bodies[body_id].rotation
+        same_rotation = bool(np.allclose(rotation, old_rotation, atol=1e-10, rtol=0))
+        new_angles = (list(piece.component.rotation) if same_rotation
+                      else angles_of(tuple(tuple(float(v) for v in row) for row in rotation)))
+        if same_rotation and new_position == [tidy(v) for v in piece.position]:
+            continue
+        piece.position = [float(v) for v in new_position]
+        piece.angles = [float(v) for v in new_angles]
+        result.solved[piece.status.ids] = (new_position, new_angles)
 
 
 def reachable(assembly: Assembly, file: str | Path) -> set[Path]:
