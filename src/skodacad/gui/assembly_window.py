@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -63,17 +62,13 @@ from skodacad.assembly_build import (
 from skodacad.assembly_check import NDT_NOTE, labels, total_mass
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
+from skodacad.gui.file_dialogs import FILE_OPTIONS
 
 log = logging.getLogger(__name__)
 
 AXES = ("x", "y", "z")
 FILTER = "Sestava ŠkodaCAD (*.json)"
 PART_FILTER = "Díl nebo sestava ŠkodaCAD (*.json)"
-# In the macOS 27.2 / Qt 6.11.2 accessibility-driven acceptance, native
-# single-filter panels left valid JSON/CSV paths disabled. Use Qt's dialog
-# for assembly files and exports, keeping the same filename filters.
-FILE_OPTIONS = (QFileDialog.Option.DontUseNativeDialog if sys.platform == "darwin"
-                else QFileDialog.Option(0))
 MARK = (0.85, 0.10, 0.10)  # kulička v těžišti průniku vybrané kolize
 GONE = "přijatá kolize – už není"
 

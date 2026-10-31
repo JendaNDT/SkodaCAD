@@ -1158,6 +1158,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Známé pasti (macOS)
 
+- Souborové dialogy dílu a sestavy používají sdílené `gui/file_dialogs.FILE_OPTIONS`:
+  na Macu Qt dialog (`DontUseNativeDialog`). V macOS 27.2 přes přístupnost nativní
+  panel nepovolil platný JSON/CSV. Běžný přepočet nesmí plošně mazat strom položek:
+  Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
+  i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.
 - 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
   ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
@@ -1293,7 +1298,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Stav k 30. 10. 2026** ([schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md)):
+**Stav k 31. 10. 2026** ([schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md)):
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|
@@ -1303,7 +1308,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | [Pracovní výběr a omezený průzkum](docs/p6-1-vyber-operaci.md), šest místních případů; první doporučené rozšíření proměnné zaoblení | ověření průběhu/tečnosti, návrh zápisu a směru, implementace |
+| P6 pokročilé modelování | [Lineární proměnné zaoblení](docs/p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, formát 32, směr/původ, session a GUI; výsledky úplných kontrol v implementačním PR | P6.4 na autorském dílu, další operace z P6.1 |
 | P7–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
@@ -1442,7 +1447,15 @@ prošly. Autor na navazující ruční Windows/Excel odpověděl „to přeskoč
 zkoušky nejsou provedené a pokračování neblokují.
 **P6.1/P6.2 — zahájena příprava:** [výběr a průzkum](docs/p6-1-vyber-operaci.md)
 proměnného zaoblení: šest případů v OCCT na Macu, včetně geometrie konců a orientace.
-Bez změny produkce/formátu; vnitřní průběh a tečnost zbývá ověřit před P6.3.
+Původní dvouhodnotové volání OCCT má nelineární vnitřní průběh.
+**P6.2/P6.3 — první operace implementována 31. 10. 2026** po „ok pokračuj“:
+[návrh a meze](docs/p6-2-promenne-zaobleni.md), `variable_fillet.py`, typ
+`variable_fillet` (v32), přímkový loft čtvrtkruhového řezacího profilu, jeden přímý
+vypouklý pravoúhlý roh s kolmými rovinnými konci; směr a původ/boky uložené,
+objem podle vzorce, průběh a tečnost ověřené. Session, výběr ve 3D, formulář R1/R2,
+obrácení, značky konců, ukázka a self-test. Úplné kontroly jsou podmínkou sloučení. P6.4 na vlastním
+dílu a další kandidáti z P6.1 zůstávají otevřené. Ostatní díly zůstávají v24–28,
+sestavy v29–31; nejnovější podporovaný formát je 32.
 **P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

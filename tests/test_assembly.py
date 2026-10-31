@@ -74,14 +74,19 @@ def project(tmp_path: Path) -> Path:
 
 
 def test_a01_part_files_never_get_assembly_version():
-    assert VERSION == 31
+    assert VERSION == 32
     parts = [path for path in EXAMPLES.rglob("*.json")
              if json.loads(path.read_text(encoding="utf-8")).get("kind") is None]
     assert len(parts) > 20
     for path in parts:
-        assert Document.load(path).to_dict()["version"] <= 28, path
+        document = Document.load(path)
+        saved = document.to_dict()["version"]
+        if any(f["type"] == "variable_fillet" for f in document.features):
+            assert saved == 32, path
+        else:
+            assert saved <= 28, path
     # Díl zapsaný ve verzi 29–31 (verze je nadmnožina) se načte jako dosud.
-    for version in (29, 30, 31):
+    for version in (29, 30, 31, 32):
         assert Document.from_dict(part_data() | {"version": version}).features
 
 

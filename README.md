@@ -915,6 +915,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `standard` | normalizovaný díl | `kind` (`socket_screw`, `hex_screw`, `countersunk_screw`, `nut`, `washer`, `bearing`, `pin`, `key`, `profile`), `size` (`"M6"`, `"608"`, `"6"`, `"8x7"`, `"IPE 100"`), `length`, `plane`, `offset`, `positions` (`[[x, y], …]`), `angle`, `direction` (`normal`/`reverse` = do materiálu), `operation`, `clearance` (vůle kapsy) |
 | `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled` (`true` = rovné stěny), `wall` (dutý s otevřenými konci), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
+| `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -933,6 +934,36 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 * **`direction`** – `normal` (ven z roviny), `reverse` (opačně), `both` (symetricky, `distance` je
   celková tloušťka). Řez (`cut`) jde ve výchozím stavu do materiálu.
 * **`through_all": true`** – řez skrz celý díl.
+
+### Proměnné zaoblení (`variable_fillet`, verze 32)
+
+Ve 3D vyber **jednu přímou vnější hranu** a v místní nabídce zvol
+**Proměnné zaoblení vybrané hrany**. Vpravo zadej R1 a R2 (čísla nebo výrazy).
+Konce původní hrany označují zelené značky **R1** a **R2**. Volba
+**Obrátit směr R1 → R2** prohodí konce; hodnoty poloměrů zůstanou stejné.
+Ukázka: *Soubor → Otevřít ukázku → promenne_zaobleni*.
+
+První verze vyžaduje dva **rovinné pravoúhlé boky** a oba konce uzavřené
+**kolmými rovinnými plochami**. Neumí vnitřní kout, křivou hranu, tečný řetězec,
+šikmé zakončení ani zaoblení zasahující do díry nebo jiného detailu. Takový případ
+odmítne; původní geometrie zůstane k opravě a export vyžaduje celý platný model.
+Poloměr v řezech kolmých k původní hraně roste **lineárně po délce hrany**.
+Výpočet je přesný přímkový loft čtvrtkruhového řezacího profilu, ne síťová aproximace.
+
+```json
+{"id": "zaobleni", "type": "variable_fillet",
+ "edges": {"between": ["back", "right"]},
+ "radius_start": "R1", "radius_end": "R2", "reverse": false,
+ "direction": [0, 0, 1], "origin": "teleso", "normals": [[1, 0, 0], [0, 1, 0]]}
+```
+
+`direction` je uložený jednotkový směr od R1 k R2 před obrácením; pořadí vrcholů
+OCCT jej nemění. `origin` je id prvku, od kterého vybraná hrana nepřetržitě existuje;
+`normals` jsou vnější normály jejích boků. Změna původu, boků nebo směru vyžaduje
+nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v JSON.
+Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
+neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, ostatní díly nadále
+v nejnižší potřebné verzi 24–28; verze 1–31 se stále načítají.
 
 ### Import STEP (`step_import`, verze 24)
 

@@ -27,7 +27,7 @@ def window(tmp_path):
 
 @pytest.mark.parametrize("accept", [True, False])
 def test_import_preview_accept_or_cancel(window, monkeypatch, accept):
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a: (str(STEP), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a, **kw: (str(STEP), ""))
     answer = QtWidgets.QMessageBox.StandardButton.Yes if accept else (
         QtWidgets.QMessageBox.StandardButton.No
     )
@@ -47,7 +47,8 @@ def test_import_preview_accept_or_cancel(window, monkeypatch, accept):
 
 def test_corrupt_step_does_not_modify_document(window, monkeypatch):
     damaged = STEP.with_name("06-poskozeny.step")
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a: (str(damaged), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName",
+                        lambda *a, **kw: (str(damaged), ""))
     errors = []
     monkeypatch.setattr(window, "_error", lambda title, message: errors.append((title, message)))
     before = window.session.document.to_dict()
@@ -59,7 +60,8 @@ def test_corrupt_step_does_not_modify_document(window, monkeypatch):
 
 def test_metre_import_preview_and_confirmation(window, monkeypatch):
     metre_step = STEP.with_name("07-metry.step")
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a: (str(metre_step), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName",
+                        lambda *a, **kw: (str(metre_step), ""))
     prompts = []
 
     def confirm(*args):
@@ -93,7 +95,7 @@ def test_cancel_running_import_preserves_document(window, monkeypatch):
             self.canceled = True
 
     monkeypatch.setattr(step_task, "StepTask", WaitingTask)
-    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a: (str(STEP), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName", lambda *a, **kw: (str(STEP), ""))
     before = window.session.document.to_dict()
 
     def cancel_dialog():

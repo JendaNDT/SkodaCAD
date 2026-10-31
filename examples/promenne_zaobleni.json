@@ -1,0 +1,18 @@
+{
+  "format": "skodacad",
+  "version": 32,
+  "name": "Proměnné zaoblení R2 až R6",
+  "description": "Lineární proměnné zaoblení jedné přímé vnější hrany. Dva pravoúhlé rovinné boky a kolmé rovinné konce; R1 dole, R2 nahoře. Změň R1, R2 nebo H; v prvku lze obrátit směr.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"H": 20, "R1": 2, "R2": 6},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys 40 × 30", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 40, "height": 30}]},
+    {"id": "teleso", "type": "extrude", "name": "Kvádr", "sketch": "obrys", "distance": "H"},
+    {"id": "zaobleni", "type": "variable_fillet", "name": "R1 → R2 podél hrany",
+     "edges": {"between": ["back", "right"]}, "radius_start": "R1", "radius_end": "R2",
+     "direction": [0, 0, 1], "reverse": false, "origin": "teleso",
+     "normals": [[1, 0, 0], [0, 1, 0]]}
+  ]
+}

@@ -278,10 +278,50 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_ndt(window, lines) and ok
     ok = _self_test_audit(window, lines) and ok
     ok = _self_test_design(window, lines) and ok
+    ok = _self_test_variable_fillet(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_variable_fillet(window, lines: list[str]) -> bool:
+    """Stejná ukázka v zabalené aplikaci: směry, historie a skutečné značky ve 3D."""
+    import math
+
+    from skodacad.document import Document
+
+    model = examples_dir() / "promenne_zaobleni.json"
+    window.session.dirty = False
+    try:
+        if not window.open_model(model, template=True):
+            raise ValueError("ukázku nejde otevřít")
+        expected = 24000 - (1 - math.pi / 4) * 20 / 3 * (4 + 12 + 36)
+        assert window.session.result.ok
+        assert abs(window.session.result.part.volume - expected) < 2e-6
+        feature = window.session.feature("zaobleni")
+        feature["reverse"] = True
+        window.session.update_feature("zaobleni", feature)
+        assert window.session.feature_direction("zaobleni")[0][0].Z == 20
+        window.session.undo()
+        assert window.session.feature_direction("zaobleni")[0][0].Z == 0
+        window.session.redo()
+        path = user_dir() / "self-test-promenne-zaobleni.json"
+        window.session.document.save(path)
+        assert Document.load(path).to_dict()["version"] == 32
+        window._selected_id = "zaobleni"
+        window._reload_all()
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-promenne-zaobleni.png"))
+        lines.append("✓ Proměnné zaoblení: lineární R2 → R6, objem 23925,604697 mm³, "
+                     "obrácení, Zpět/Znovu, uložení v32 a značky R1/R2")
+        window.session.dirty = False
+        return True
+    except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
+        lines.append(f"✕ Proměnné zaoblení: {type(exc).__name__}: {exc}")
+        window.session.dirty = False
+        return False
 
 
 def _self_test_assembly(window, lines: list[str]) -> bool:
