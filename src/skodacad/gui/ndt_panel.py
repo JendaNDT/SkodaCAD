@@ -294,7 +294,7 @@ class NdtPanel(QWidget):
         layout.addLayout(new_row)
         self.hint = QLabel(HINT)
         self.hint.setWordWrap(True)
-        self.hint.setStyleSheet("color: #555;")
+        self.hint.setStyleSheet("color: palette(text);")
         layout.addWidget(self.hint)
         self.studies = QListWidget()
         self.studies.setObjectName("ndt_studies")
@@ -337,7 +337,7 @@ class NdtPanel(QWidget):
         self.material_label = QLabel()
         self.material_label.setObjectName("ndt_ut_material_info")
         self.material_label.setWordWrap(True)
-        self.material_label.setStyleSheet("color: #555;")
+        self.material_label.setStyleSheet("color: palette(text);")
         probe_layout.addWidget(self.material_label)
         self.angle_check_label = QLabel()
         self.angle_check_label.setObjectName("ndt_angle_check")
@@ -731,7 +731,7 @@ class NdtPanel(QWidget):
         self.access_rejected = QLabel()
         self.access_rejected.setObjectName("ndt_access_rejected")
         self.access_rejected.setWordWrap(True)
-        self.access_rejected.setStyleSheet("color: #555;")
+        self.access_rejected.setStyleSheet("color: palette(text);")
         self.access_rejected.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         box.addWidget(self.access_rejected)
@@ -1311,11 +1311,11 @@ class NdtPanel(QWidget):
         self.coverage_estimate.setVisible(volume)
         self.volume_legend.setVisible(volume)
         if estimate is None:
-            self.coverage_estimate.setStyleSheet("color: #555;")
+            self.coverage_estimate.setStyleSheet("color: palette(text);")
             self.coverage_estimate.setText("Odhad velikosti výpočtu se ukáže po přiložení "
                                            "sondy této studie na pojezdovou plochu.")
         else:
-            self.coverage_estimate.setStyleSheet("color: #555;" if estimate.ok
+            self.coverage_estimate.setStyleSheet("color: palette(text);" if estimate.ok
                                                  else "color: #b9770e;")
             text = estimate.text
             if recommended is not None and \
@@ -1693,11 +1693,11 @@ class NdtPanel(QWidget):
         ut = (self._record(self.current_id()) or {}).get("method") == "UT"
         self.access_box.setVisible(bool(ut or access is not None or pending))
         if estimate is not None:
-            self.access_estimate.setStyleSheet("color: #555;" if estimate.ok
+            self.access_estimate.setStyleSheet("color: palette(text);" if estimate.ok
                                                else "color: #b9770e;")
             self.access_estimate.setText(estimate.text)
         elif not pending:
-            self.access_estimate.setStyleSheet("color: #555;")
+            self.access_estimate.setStyleSheet("color: palette(text);")
             self.access_estimate.setText("Návrh poloh potřebuje platnou UT studii s "
                                          "kontrolovanou oblastí (plochy nebo cílový objem).")
 
@@ -1904,11 +1904,11 @@ class NdtPanel(QWidget):
             widget.setEnabled(not pending and not ai)
         self.plan_box.setVisible(bool(ut or has_plan or pending))
         if estimate is not None:
-            self.plan_estimate.setStyleSheet("color: #555;" if estimate.ok
+            self.plan_estimate.setStyleSheet("color: palette(text);" if estimate.ok
                                              else "color: #b9770e;")
             self.plan_estimate.setText(estimate.text)
         elif not pending:
-            self.plan_estimate.setStyleSheet("color: #555;")
+            self.plan_estimate.setStyleSheet("color: palette(text);")
             self.plan_estimate.setText("Plán dráhy potřebuje platnou UT studii a přiloženou "
                                        "sondu na rovinné ploše (nebo návrh poloh).")
 
@@ -2222,7 +2222,7 @@ class NdtPanel(QWidget):
             stored = "" if "device" in record else " (výchozí)"
             probe = session.ndt_probe(record["id"])
             beam_info = f", paprsek {probe.beam_angle:g}°" if probe.kind == "angle" else ""
-            details = "".join(f"<br><span style='color: #555;'>{escape(line)}</span>"
+            details = "".join(f"<br><span>{escape(line)}</span>"
                               for line in describe(probe))
             self.probe_label.setText(f"{escape(probe.label)}{beam_info}{stored}; mezera nejvýš "
                                      f"{probe.max_gap:.2f} mm, rezerva {probe.reserve:.2f} mm, "

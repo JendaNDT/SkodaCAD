@@ -200,10 +200,12 @@ def test_successful_body_counts_are_visible_in_tree_and_properties(window, tmp_p
         if status.id in transitions:
             before, after = transitions[status.id]
             message = f"Počet těles: {before} → {after}."
-            assert item.text(0).startswith(f"✓  {message} — ")
+            assert item.text(1) == f"{before} → {after}"
+            assert item.toolTip(1) == message
             assert message in item.toolTip(0)
         else:
             assert "Počet těles:" not in item.text(0)
+            assert not item.text(1)
 
 
 def test_long_feature_name_keeps_body_count_visible_in_a_narrow_tree(window, tmp_path):
@@ -217,8 +219,10 @@ def test_long_feature_name_keeps_body_count_visible_in_a_narrow_tree(window, tmp
     QtWidgets.QApplication.processEvents()
     item = window.tree.topLevelItem(1)
     rendered = window.tree.fontMetrics().elidedText(
-        item.text(0), Qt.TextElideMode.ElideRight, window.tree.viewport().width() - 40)
-    assert "Počet těles: 0 → 2." in rendered
+        item.text(0), Qt.TextElideMode.ElideRight, window.tree.columnWidth(0) - 20)
+    assert item.text(1) == "0 → 2"
+    assert window.tree.columnWidth(1) >= window.tree.fontMetrics().horizontalAdvance("0 → 2")
+    assert window.tree.columnWidth(0) + window.tree.columnWidth(1) <= 300
     assert long_name not in rendered  # název se nevejde, počet zůstane čitelný
     assert "Počet těles: 0 → 2." in item.toolTip(0)
 
@@ -799,9 +803,9 @@ def test_new_part_from_scratch(empty_window):
     assert "Vyber prvek" in w.feature_editor.title.text()
     build_box(w)
     assert tree_texts(w) == ["✓  Skica „Skica 1“",
-                             "✓  Počet těles: 0 → 1. — Vysunutí „Vysunutí 1“"]
+                             "✓  Vysunutí „Vysunutí 1“"]
     # Nový prvek je hned vybraný; jeho nové hlášení nesmí zmizet.
-    assert selected_text(w) == "✓  Počet těles: 0 → 1. — Vysunutí „Vysunutí 1“"
+    assert selected_text(w) == "✓  Vysunutí „Vysunutí 1“"
     assert "Vysunutí" in w.feature_editor.title.text()
     assert "Objem:  12 000 mm³" in w.props_label.text()
     assert w.viewer.parts[-1][0] is not None
@@ -953,7 +957,7 @@ def test_fillet_from_clicked_edge(empty_window):
     w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
     assert fillet.isEnabled()
     fillet.trigger()
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Zaoblení „Zaoblení 1“"
+    assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
     assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
@@ -1125,7 +1129,7 @@ def test_hole_from_clicked_face_and_size_change(empty_window):
     build_box(w)
     w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
     action(w, "Díra na vybrané ploše").trigger()
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Díra „Díra 1“ – M6 závit"
+    assert selected_text(w) == "✓  Díra „Díra 1“ – M6 závit"
     size = form_field(w, "size")
     assert size.currentData() == "M6"
     size.setCurrentIndex(size.findData("M3"))  # menší závit → menší vrták Ø2,5
@@ -1149,7 +1153,7 @@ def test_modeled_thread_checkbox(empty_window):
     form_field(w, "modeled_thread").setChecked(True)
     hole = w.session.feature("hole1")
     assert hole["modeled_thread"] is True
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Díra „Díra 1“ – M12 závit (vymodelovaný)"
+    assert selected_text(w) == "✓  Díra „Díra 1“ – M12 závit (vymodelovaný)"
     assert w.session.result.ok
     assert w.session.properties.volume_mm3 < before  # drážka závitu ubrala materiál
 
@@ -1163,7 +1167,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     positions.editingFinished.emit()
     one = 40 * 30 * 10 - w.session.properties.volume_mm3
     action(w, "Pole").trigger()  # vybraná je díra → pole ji rovnou opakuje
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Pole „Pole 1“ – v řadě, 3 ks"
+    assert selected_text(w) == "✓  Pole „Pole 1“ – v řadě, 3 ks"
     form = w.feature_editor.form
     assert form.widget("features").findChild(QtWidgets.QCheckBox, "feature_hole1").isChecked()
     assert form.is_shown("spacing") and not form.is_shown("axis")
@@ -1173,7 +1177,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     kind.setCurrentIndex(kind.findData("circular"))  # 3× dokola kolem osy Z
     assert form.is_shown("axis") and form.is_shown("center") and not form.is_shown("spacing")
     assert w.session.feature("pattern1")["kind"] == "circular"
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Pole „Pole 1“ – dokola, 3 ks"
+    assert selected_text(w) == "✓  Pole „Pole 1“ – dokola, 3 ks"
     set_text(form_field(w, "center").findChild(QtWidgets.QLineEdit, "point_z"), "4")
     assert w.session.feature("pattern1")["center"] == [0, 0, 4]
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
@@ -1185,7 +1189,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     assert "features" not in w.session.feature("mirror1")
     plane = form_field(w, "plane")
     plane.setCurrentIndex(plane.findData("right"))
-    assert selected_text(w) == "✓  Počet těles: 1 → 1. — Zrcadlení „Zrcadlení 1“ – celý díl"
+    assert selected_text(w) == "✓  Zrcadlení „Zrcadlení 1“ – celý díl"
     assert w.session.properties.volume_mm3 == pytest.approx(2 * (40 * 30 * 10 - 3 * one))
 
 
@@ -1221,7 +1225,7 @@ def test_sweep_form_path_and_profile(empty_window):
     assert feature["path"] == [[0, 0, 0], [100, 0, 0], [100, 100, 0]]
     assert "bend_radius" not in feature and feature["diameter"] == 30  # skryté zůstane
     assert w.session.properties.volume_mm3 == pytest.approx((40 * 20 - 36 * 16) * 200)
-    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Tažení „Tažení 1“"
+    assert selected_text(w) == ("✓  Tažení „Tažení 1“"
                                  " – jekl 40 × 20 × 2, trasa z 3 bodů")
     path.setPlainText("0; 0\n1; 1")  # bod bez z
     path.editingFinished.emit()
@@ -1255,7 +1259,7 @@ def test_standard_part_form_switches_sizes_by_kind(empty_window):
     d, big, width = BEARING["608"]
     assert w.session.properties.volume_mm3 == pytest.approx(
         math.pi / 4 * (big**2 - d**2) * width)
-    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Normalizovaný díl „Normalizovaný díl 1“"
+    assert selected_text(w) == ("✓  Normalizovaný díl „Normalizovaný díl 1“"
                                 " – ložisko 608 (8 × 22 × 7)")
 
 
@@ -1279,7 +1283,7 @@ def test_nut_pocket_from_form(empty_window):
     s, m = NUT["M6"]
     assert w.session.properties.volume_mm3 == pytest.approx(
         40 * 30 * 10 - math.sqrt(3) / 2 * (s + 0.4)**2 * (m + 0.2))
-    assert selected_text(w) == ("✓  Počet těles: 1 → 1. — Normalizovaný díl „Normalizovaný díl 1“"
+    assert selected_text(w) == ("✓  Normalizovaný díl „Normalizovaný díl 1“"
                                  " – ISO 4032 M6 (kapsa)")
 
 
@@ -1295,7 +1299,7 @@ def test_loft_form_picks_sketches_in_order(empty_window):
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 30)
     set_text(form_field(w, "wall"), "2")
     assert w.session.properties.volume_mm3 == pytest.approx((40 * 30 - 36 * 26) * 30, rel=1e-6)
-    assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Přechod „Přechod 1“"
+    assert selected_text(w) == ("✓  Přechod „Přechod 1“"
                                  " – mezi 2 skicami, dutý 2 mm, kolmo ke stěně")
     first.setChecked(False)
     assert "zaškrtni aspoň 2 skici" in w.statusBar().currentMessage()
@@ -2992,3 +2996,143 @@ def test_guide_direction_is_view_only_and_survives_history_and_reopen(
     assert w.feature_editor.form.widget('guides').drag_direction.currentData() == 'X'
     assert 'drag_direction' not in path.read_text(encoding='utf-8')
     assert w.session.document.to_dict()['version'] == 34 and not slot_errors
+
+
+def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors):
+    from skodacad.gui.ribbon import RibbonButton
+
+    buttons = window.ribbon.findChildren(RibbonButton)
+    extrude = next(b for b in buttons if b.defaultAction()
+                   is window.add_feature_actions['extrude'])
+    window.workspace.show_panel('measure')
+    extrude.click()
+    assert window.session.document.features[-1]['type'] == 'extrude'
+    assert window.workspace.active == 'editor'
+    assert len(window.session._undo) == 1
+    undo = next(b for b in window.ribbon.findChildren(QtWidgets.QToolButton)
+                if b.defaultAction() is window.undo_action)
+    undo.click()
+    assert not undo.isEnabled() and window.redo_action.isEnabled()
+    panel = next(b for b in buttons if b.defaultAction() is window.workspace.actions['editor'])
+    assert panel.isChecked()
+    panel.click()
+    assert not panel.isChecked() and window.workspace.active is None
+    assert not slot_errors
+
+
+def test_workspace_panels_reset_and_collapse_do_not_change_model_or_camera(window):
+    window.resize(1024, 720)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    original = window.session.document.to_dict()
+    history = len(window.session._undo)
+    views, parts = list(window.viewer.views), list(window.viewer.parts)
+    for key, action_ in window.workspace.actions.items():
+        if action_.isChecked():
+            action_.trigger()
+        action_.trigger()
+        assert window.workspace.active == key
+        assert {k for k, d in window.workspace.docks.items() if d.isVisible()} == {key}
+        action_.trigger()
+        assert window.workspace.active is None
+    window.workspace.reset_action.trigger()
+    QtWidgets.QApplication.processEvents()
+    assert window.model_dock.isHidden() and window.viewer.width() >= 600
+    window.workspace.model_action.trigger()
+    assert not window.model_dock.isHidden()
+    window.workspace.collapse_action.trigger()
+    assert window.ribbon.collapsed and window.ribbon.stack.isHidden()
+    window.ribbon.select_page('ndt')
+    window.ribbon.set_collapsed(False)
+    assert not window.workspace.collapse_action.isChecked()
+    assert window.ribbon.page == 'ndt'
+    assert window.session.document.to_dict() == original
+    assert len(window.session._undo) == history and not window.session.dirty
+    assert window.viewer.views == views and window.viewer.parts == parts
+
+
+def test_hidden_editor_preserves_invalid_input_and_valid_focus_commit(
+        window, examples_dir, slot_errors):
+    assert window.open_model(examples_dir / 'rizeny_prechod.json', template=True)
+    window.tree.setCurrentItem(window.tree.topLevelItem(2))
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    original = window.session.document.to_dict()
+    guides = window.feature_editor.form.widget('guides')
+    field = guides.edits[0, 0, 0]
+    field.setFocus()
+    field.setText('1+')
+    window.workspace.show_panel('measure')
+    QtWidgets.QApplication.processEvents()
+    window.workspace.show_panel('editor')
+    assert window.feature_editor.form.widget('guides') is guides
+    assert field.text() == '1+' and window.session.document.to_dict() == original
+    guides.corner_picker.setCurrentIndex(3)
+    guides.handle_buttons.button(1).click()
+    assert guides.pages.currentIndex() == 7
+    assert field.text() == '1+' and not window.session.can_undo
+    guides.set_selection(0, 0)
+    field.setFocus()
+    field.setText('4*Bx/3+1')
+    window.workspace.show_panel("measure")  # losing focus commits exactly once
+    QtWidgets.QApplication.processEvents()
+    window.workspace.show_panel("editor")
+    assert window.session.result.part.volume == pytest.approx(78009, abs=2e-5)
+    assert len(window.session._undo) == 1
+    guides.corner_picker.setCurrentIndex(2)
+    guides.handle_buttons.button(1).click()
+    window.undo_action.trigger()
+    guides = window.feature_editor.form.widget('guides')
+    assert guides.selected_index == 2 and guides.selected_handle == 1
+    assert window.session.result.part.volume == pytest.approx(77760, abs=2e-5)
+    window.redo_action.trigger()
+    assert window.session.result.part.volume == pytest.approx(78009, abs=2e-5)
+    assert not slot_errors
+
+
+def test_workspace_preferences_round_trip_and_cancelled_close(window, tmp_path, monkeypatch):
+    from skodacad.gui.window_state import load_state
+
+    window.resize(1280, 720)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    window.ribbon.select_page('view')
+    window.ribbon.set_collapsed(True)
+    window.workspace.show_panel('measure')
+    window.sidebar_sections['info'].set_expanded(True)
+    window.session.dirty = True
+    monkeypatch.setattr(window, '_confirm_discard', lambda: False)
+    assert not window.close()
+    assert not (tmp_path / 'okno.json').exists()
+    monkeypatch.setattr(window, '_confirm_discard', lambda: True)
+    assert window.close()
+    state = load_state(tmp_path / 'okno.json')
+    assert state['panel'] == 'measure' and state['page'] == 'view'
+    assert state['ribbon_collapsed'] and state['sections']['info']
+    again = MainWindow(viewer_factory=FakeViewer, user_dir=tmp_path)
+    try:
+        again.show()
+        QtWidgets.QApplication.processEvents()
+        assert again.workspace.active == 'measure' and again.ribbon.page == 'view'
+        assert again.ribbon.collapsed and again.sidebar_sections['info'].expanded
+        assert again.minimumWidth() <= again.width() <= 1280
+        assert again.minimumHeight() <= again.height() <= 720
+        assert again.session.document is None
+    finally:
+        again.close()
+
+
+def test_ribbon_overflow_keeps_commands_available(window):
+    window.resize(960, 600)
+    window.show()
+    window.ribbon.select_page('model')
+    window.ribbon.setFixedWidth(600)  # exercise overflow on every platform/font
+    QtWidgets.QApplication.processEvents()
+    scroll = window.ribbon.stack.currentWidget()
+    assert scroll.widget().height() >= scroll.widget().sizeHint().height()
+    assert scroll.horizontalScrollBar().maximum() > 0
+    scroll.horizontalScrollBar().setValue(scroll.horizontalScrollBar().maximum())
+    button = next(b for b in window.ribbon.buttons
+                  if b.defaultAction() is window.workspace.actions['editor'])
+    center = button.mapTo(scroll.viewport(), button.rect().center())
+    assert scroll.viewport().rect().contains(center)

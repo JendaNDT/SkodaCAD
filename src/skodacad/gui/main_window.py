@@ -9,12 +9,13 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEventLoop, QPoint, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, Qt, QTimer
+from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -40,6 +42,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QStyle,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -54,14 +57,18 @@ from skodacad.gui.assembly_window import AssemblyWindow, is_assembly_file
 from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.audit_panel import MARK as AUDIT_MARK
 from skodacad.gui.audit_panel import AuditPanel
+from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.ndt_panel import NdtPanel
+from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
+from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
+from skodacad.gui.workspace import Section, Workspace
 from skodacad.inspection import number
 from skodacad.materials import DENSITIES_G_CM3, DISPLAY_NAMES, material_key
 from skodacad.measure import SavedResult, Value, format_value
@@ -157,6 +164,8 @@ class MainWindow(QMainWindow):
         self._guide_commit_pending = None
         self._guide_drag_step = DEFAULT_STEP
         self._guide_drag_direction = DEFAULT_DIRECTION
+        self._guide_edit_corner = 0
+        self._guide_edit_handle = 0
         self._shown_plan: Any = None  # plán dráhy sondy a zóny právě v prohlížeči (klíč)
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -189,21 +198,15 @@ class MainWindow(QMainWindow):
         self._build_design_panel()
         self._build_assistant_panel()
         self._build_menus()
-        self.resize(1400, 860)
-        self.resizeDocks([self.model_dock, self.editor_dock], [380, 360],
-                         Qt.Orientation.Horizontal)
-        self.resizeDocks([self.editor_dock, self.measure_dock], [420, 400],
-                         Qt.Orientation.Vertical)
-        self.tabifyDockWidget(self.measure_dock, self.map_dock)
-        self.tabifyDockWidget(self.map_dock, self.section_dock)
-        self.tabifyDockWidget(self.section_dock, self.ndt_dock)
-        self.tabifyDockWidget(self.ndt_dock, self.audit_dock)
-        self.tabifyDockWidget(self.audit_dock, self.design_dock)
-        self.tabifyDockWidget(self.design_dock, self.assistant_dock)
-        self.measure_dock.raise_()
+        self.setMinimumSize(960, 600)
+        available = self.screen().availableGeometry()
+        self.resize(min(1400, available.width()), min(800, available.height() - 36))
+        self.workspace = Workspace(self, user_dir / "okno.json" if user_dir else None)
+        self._build_ribbon()
         self._had_part = False
         self._build_progress()
         self._reload_all()
+        self.workspace.refresh_palette()
         self.statusBar().showMessage(HELP_HINT)
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll)
@@ -305,8 +308,15 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
-        info_box = QGroupBox("Díl")
+        self.sidebar_sections = {}
+        self.part_caption = QLabel()
+        self.part_caption.setTextFormat(Qt.TextFormat.PlainText)
+        self.part_caption.setWordWrap(True)
+        layout.addWidget(self.part_caption)
+        info_box = QWidget()
         info_form = QFormLayout(info_box)
+        info_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        info_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.name_edit = QLineEdit()
         self.name_edit.setObjectName("part_name")
         self.name_edit.editingFinished.connect(self._name_edited)
@@ -320,31 +330,43 @@ class MainWindow(QMainWindow):
         info_form.addRow("Materiál", self.material_combo)
         self.description_label = QLabel()
         self.description_label.setWordWrap(True)
-        self.description_label.setStyleSheet("color: #555;")
+        self.description_label.setProperty("secondaryText", True)
         info_form.addRow(self.description_label)
-        layout.addWidget(info_box)
+        self.sidebar_sections["info"] = Section("Díl a materiál", info_box)
+        layout.addWidget(self.sidebar_sections["info"])
 
-        params_box = QGroupBox("Parametry (Enter = přepočítat)")
+        params_box = QWidget()
         params_layout = QVBoxLayout(params_box)
         self.params_form = QFormLayout()
         params_layout.addLayout(self.params_form)
         params_buttons = QHBoxLayout()
         for action in (self.add_parameter_action, self.delete_parameter_action):
-            params_buttons.addWidget(self._tool_button(action))
+            button = self._tool_button(action)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setAccessibleName(action.text())
+            params_buttons.addWidget(button)
         params_buttons.addStretch()
         params_layout.addLayout(params_buttons)
-        layout.addWidget(params_box)
+        self.sidebar_sections["parameters"] = Section("Parametry dílu", params_box, True)
+        layout.addWidget(self.sidebar_sections["parameters"])
 
         tree_box = QGroupBox("Strom prvků")
         tree_layout = QVBoxLayout(tree_box)
         self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
+        self.tree.setHeaderLabels(["Prvek", "Tělesa"])
+        self.tree.setColumnWidth(1, 65)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.header().setStretchLastSection(False)
         self.tree.setRootIsDecorated(False)
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
+        self.tree.itemDoubleClicked.connect(lambda _item, _column:
+                                           self.workspace.show_panel("editor"))
         tree_layout.addWidget(self.tree)
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
-        self.add_feature_button.setText("Přidat prvek")
+        self.add_feature_button.setText("Přidat")
+        self.add_feature_button.setAccessibleName("Přidat prvek")
         self.add_feature_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         add_menu = QMenu(self.add_feature_button)
         for action in self.add_feature_actions.values():
@@ -354,7 +376,10 @@ class MainWindow(QMainWindow):
         self.add_feature_button.setMenu(add_menu)
         tree_buttons.addWidget(self.add_feature_button)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
-            tree_buttons.addWidget(self._tool_button(action))
+            button = self._tool_button(action)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setAccessibleName(action.text())
+            tree_buttons.addWidget(button)
         tree_buttons.addStretch()
         tree_layout.addLayout(tree_buttons)
         self.error_label = QLabel()
@@ -365,12 +390,13 @@ class MainWindow(QMainWindow):
         tree_layout.addWidget(self.error_label)
         layout.addWidget(tree_box, stretch=1)
 
-        props_box = QGroupBox("Vlastnosti dílu")
+        props_box = QWidget()
         props_layout = QVBoxLayout(props_box)
         self.props_label = QLabel()
         self.props_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         props_layout.addWidget(self.props_label)
-        layout.addWidget(props_box)
+        self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box)
+        layout.addWidget(self.sidebar_sections["properties"])
 
         self.model_dock = self._add_dock("Model", "model_dock", panel,
                                          Qt.DockWidgetArea.LeftDockWidgetArea)
@@ -378,7 +404,8 @@ class MainWindow(QMainWindow):
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
         self.feature_editor.changed.connect(self._feature_edited)
-        self.feature_editor.guide_selected.connect(lambda _row: self._refresh_guides())
+        self.feature_editor.guide_selected.connect(self._guide_selection_changed)
+        self.feature_editor.guide_handle_selected.connect(self._guide_handle_selected)
         self.feature_editor.guide_step_changed.connect(self._guide_step_changed)
         self.feature_editor.guide_direction_changed.connect(self._guide_direction_changed)
         self.feature_editor.wall_panel.requested.connect(self.inspect_loft_wall)
@@ -393,7 +420,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         self.measure_hint = QLabel(MEASURE_HINT)
         self.measure_hint.setWordWrap(True)
-        self.measure_hint.setStyleSheet("color: #555;")
+        self.measure_hint.setProperty("secondaryText", True)
         layout.addWidget(self.measure_hint)
         self.measure_list = QListWidget()
         self.measure_list.setObjectName("measure_list")
@@ -610,7 +637,7 @@ class MainWindow(QMainWindow):
         self.section_position_label = QLabel("Poloha [mm]")
         form.addRow(self.section_position_label, self.section_field)
         self.section_range_label = QLabel()
-        self.section_range_label.setStyleSheet("color: #555;")
+        self.section_range_label.setProperty("secondaryText", True)
         form.addRow("", self.section_range_label)
         layout.addLayout(form)
         self.section_info = QLabel()
@@ -645,10 +672,7 @@ class MainWindow(QMainWindow):
                                      "zprávu o geometrickém posouzení (model se nemění)")
 
     def show_audit(self) -> None:
-        self.audit_dock.show()
-        self.audit_dock.raise_()
-        self.resizeDocks([self.editor_dock, self.audit_dock], [220, 620],
-                         Qt.Orientation.Vertical)
+        self.workspace.show_panel("audit")
         self.audit_panel.refresh_items()
         self.audit_panel.refresh()
 
@@ -663,10 +687,7 @@ class MainWindow(QMainWindow):
         self.design_action = self._action("Konstrukční návrh…", self.show_design)
 
     def show_design(self) -> None:
-        self.design_dock.show()
-        self.design_dock.raise_()
-        self.resizeDocks([self.editor_dock, self.design_dock], [220, 620],
-                         Qt.Orientation.Vertical)
+        self.workspace.show_panel("design")
         self.design_panel.refresh()
 
     def _refresh_probe(self) -> None:
@@ -798,11 +819,8 @@ class MainWindow(QMainWindow):
             self.viewer.show_target(*preview)
 
     def show_ndt(self) -> None:
-        self.ndt_dock.show()
-        self.ndt_dock.raise_()
+        self.workspace.show_panel("ndt")
         # seznam studií a tlačítka potřebují místo – úprava prvku nad nimi se zmenší
-        self.resizeDocks([self.editor_dock, self.ndt_dock], [220, 620],
-                         Qt.Orientation.Vertical)
 
     def _build_assistant_panel(self) -> None:
         """Panel AI asistenta: rozhovor s Claude, který model upravuje (jeden krok Zpět)."""
@@ -813,11 +831,8 @@ class MainWindow(QMainWindow):
                                              scroll=False)  # historie se posouvá sama
 
     def show_assistant(self) -> None:
-        self.assistant_dock.show()
-        self.assistant_dock.raise_()
+        self.workspace.show_panel("assistant")
         # rozhovor potřebuje místo – úprava prvku nad ním se zmenší
-        self.resizeDocks([self.editor_dock, self.assistant_dock], [220, 620],
-                         Qt.Orientation.Vertical)
         self.assistant_panel.prompt.setFocus()
 
     def set_assistant_busy(self, busy: bool) -> None:
@@ -857,7 +872,7 @@ class MainWindow(QMainWindow):
         dock.setObjectName(name)
         dock.setWidget(content)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        dock.setMinimumWidth(340)
+        dock.setMinimumWidth(230 if name == "model_dock" else 300)
         self.addDockWidget(area, dock)
         return dock
 
@@ -876,7 +891,8 @@ class MainWindow(QMainWindow):
         for action in (self.new_action, self.open_action):
             file_menu.addAction(action)
             toolbar.addAction(action)
-        file_menu.addAction(self._action("Nová sestava…", self.new_assembly_dialog))
+        self.new_assembly_action = self._action("Nová sestava…", self.new_assembly_dialog)
+        file_menu.addAction(self.new_assembly_action)
         examples_menu = file_menu.addMenu("Otevřít ukázku")
         for path in sorted(self.examples_dir.glob("*.json")) if self.examples_dir else []:
             examples_menu.addAction(
@@ -902,14 +918,15 @@ class MainWindow(QMainWindow):
                     Path(path).stem, lambda p=path: self.open_assembly(p, template=True)))
         examples_menu.setEnabled(not examples_menu.isEmpty())
         file_menu.addSeparator()
-        import_action = self._action("Importovat STEP…", self.import_step_dialog)
+        import_action = self.import_action = self._action(
+            "Importovat STEP…", self.import_step_dialog)
         file_menu.addAction(import_action)
         toolbar.addAction(import_action)
         file_menu.addAction(self._action("Obnovit zdroj STEP…", self.restore_step_dialog))
         file_menu.addAction(self.save_action)
         toolbar.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
-        export_menu = file_menu.addMenu("Exportovat")
+        export_menu = self.export_menu = file_menu.addMenu("Exportovat")
         for fmt, label in EXPORT_FORMATS:
             action = self._action(label + "…", lambda f=fmt: self.export_dialog(f))
             self.export_actions.append(action)
@@ -993,12 +1010,14 @@ class MainWindow(QMainWindow):
         ndt_menu.addAction(self.audit_action)
         ndt_menu.addAction(self.design_action)
 
-        view_menu = bar.addMenu("&Zobrazení")
+        view_menu = self.view_menu = bar.addMenu("&Zobrazení")
         view_menu.addAction(self.fit_action)
         toolbar.addAction(self.fit_action)
+        self.view_actions = {}
         for key, (label, shortcut) in VIEW_LABELS.items():
             action = self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
             self._view_actions.append(action)
+            self.view_actions[key] = action
             view_menu.addAction(action)
             if key in ("iso", "top", "front", "right"):
                 toolbar.addAction(action)
@@ -1006,6 +1025,164 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Nápověda")
         help_menu.addAction(self._action("Ovládání", self.show_controls))
         help_menu.addAction(self._action("O aplikaci", self.show_about))
+
+    def _build_ribbon(self):
+        workspace = self.workspace
+        self.drawing_preview_action = self._action("Náhled výkresu", self.show_drawing_preview)
+        self.drawing_export_action = self._action("Export výkresu PDF/DXF…", self.export_drawing)
+        # Geometry commands remain the very same actions used by menus and shortcuts.
+        kinds = {"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",
+                 "sweep": "sweep", "loft": "loft", "guided_loft": "loft", "hole": "hole",
+                 "fillet": "fillet", "variable_fillet": "fillet", "chamfer": "chamfer",
+                 "shell": "shell", "pattern": "pattern", "mirror": "mirror"}
+        self._icon_actions = [(action, kinds.get(key, "box"))
+                              for key, action in self.add_feature_actions.items()]
+        self._icon_actions += [(self.profile_sketch_action, "sketch"),
+                               (self.rebuild_action, "box"),
+                               (self.new_assembly_action, "pattern"),
+                               (self.import_action, "document"),
+                               (self.add_parameter_action, "params"),
+                               (self.drawing_preview_action, "document"),
+                               (self.drawing_export_action, "document"),
+                               (self.thickness_map_action, "measure"),
+                               (self.section_action, "section"),
+                               (self.ndt_action, "ndt"), (self.audit_action, "document"),
+                               (self.assistant_action, "document"),
+                               (self.export_menu.menuAction(), "document"),
+                               (self.add_feature_button.menu().menuAction(), "box")]
+        for key, action in workspace.actions.items():
+            kind = {"measure": "measure", "section": "section", "ndt": "ndt",
+                    "map": "measure", "editor": "params"}.get(key, "document")
+            self._icon_actions.append((action, kind))
+        self._icon_actions.append((workspace.model_action, "pattern"))
+        self._icon_actions += [(self.ndt_panel.new_action, "ndt"), (self.fit_action, "box"),
+                               (workspace.panels_menu.menuAction(), "pattern"),
+                               (workspace.appearance_menu.menuAction(), "params")]
+        self._icon_actions += [(action, "box") for action in self.view_actions.values()]
+        self._standard_icons = [
+            (self.new_action, QStyle.StandardPixmap.SP_FileIcon),
+            (self.open_action, QStyle.StandardPixmap.SP_DirOpenIcon),
+            (self.save_action, QStyle.StandardPixmap.SP_DialogSaveButton),
+            (self.save_as_action, QStyle.StandardPixmap.SP_DialogSaveButton),
+            (self.undo_action, QStyle.StandardPixmap.SP_ArrowBack),
+            (self.redo_action, QStyle.StandardPixmap.SP_ArrowForward),
+            (self.delete_feature_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
+            (self.delete_parameter_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
+            (self.move_up_action, QStyle.StandardPixmap.SP_ArrowUp),
+            (self.move_down_action, QStyle.StandardPixmap.SP_ArrowDown),
+            (workspace.reset_action, QStyle.StandardPixmap.SP_BrowserReload),
+        ]
+        self._refresh_ui_icons()
+        self.ribbon = Ribbon((self.new_action, self.open_action, self.save_action,
+                              self.undo_action, self.redo_action))
+        self.toolbar.clear()
+        self.toolbar.addWidget(self.ribbon)
+        self.toolbar.setFloatable(False)
+
+        def command(action, text=None, menu=None):
+            return action, text, menu
+
+        def feature(key, text):
+            return command(self.add_feature_actions[key], text)
+
+        transition_menu = QMenu("Přechod", self)
+        transition_menu.addAction(self.add_feature_actions["loft"])
+        transition_menu.addAction(self.add_feature_actions["guided_loft"])
+        self.ribbon.add_page("file", "Soubor", [
+            ("Model", [command(self.new_action), command(self.open_action),
+                       command(self.import_action, "STEP")]),
+            ("Uložit", [command(self.save_action), command(self.save_as_action, "Uložit jako")]),
+            ("Výstup", [command(self.export_menu.menuAction(), "Export", self.export_menu)]),
+        ])
+        self.ribbon.add_page("model", "3D model", [
+            ("Vytvořit", [command(self.profile_sketch_action, "Skica"),
+                          feature("extrude", "Vysunout"), feature("revolve", "Rotovat"),
+                          feature("sweep", "Tažení"),
+                          command(self.add_feature_actions["guided_loft"], "Přechod",
+                                  transition_menu)]),
+            ("Upravit", [feature("hole", "Díra"), feature("fillet", "Zaoblit"),
+                         feature("chamfer", "Srazit"), feature("shell", "Skořepina")]),
+            ("Uspořádat", [feature("pattern", "Pole"), feature("mirror", "Zrcadlit")]),
+            ("Další", [command(self.add_feature_button.menu().menuAction(), "Další prvky",
+                               self.add_feature_button.menu()),
+                       command(workspace.actions["editor"], "Prvek")]),
+        ])
+        self.ribbon.add_page("sketch", "Skica", [
+            ("Skica", [command(self.profile_sketch_action, "Nakreslit obrys"),
+                       feature("sketch", "Tvary a rozměry")]),
+            ("Úprava", [command(workspace.actions["editor"], "Prvek"),
+                        command(self.add_parameter_action, "Parametry")]),
+        ])
+        self.ribbon.add_page("drawing", "Výkres", [
+            ("Příprava", [command(workspace.actions["measure"], "Kóty a měření")]),
+            ("Výkres", [command(self.drawing_preview_action, "Pohledy"),
+                         command(self.drawing_export_action, "PDF / DXF")]),
+        ])
+        self.ribbon.add_page("assembly", "Sestava", [
+            ("Okno sestavy", [command(self.new_assembly_action, "Nová sestava"),
+                              command(self.open_action, "Otevřít sestavu")]),
+        ])
+        self.ndt_method_actions = {}
+        for key in ("ut", "pt", "mt", "rt"):
+            action = self._action(f"Metoda nové studie: {key.upper()}",
+                                  lambda k=key: self._choose_ndt_method(k))
+            action.setIcon(cad_icon("ndt", QApplication.palette().color(
+                QPalette.ColorRole.Link).name()))
+            self._icon_actions.append((action, "ndt"))
+            self.ndt_method_actions[key] = action
+        self.ribbon.add_page("ndt", "NDT", [
+            ("Metoda nové studie", [command(action, key.upper())
+                                    for key, action in self.ndt_method_actions.items()]),
+            ("Studie", [command(self.ndt_panel.new_action, "Nová studie"),
+                        command(workspace.actions["ndt"], "NDT panel")]),
+            ("Přehled", [command(self.audit_action, "NDT audit"),
+                         command(workspace.actions["design"], "Návrh úpravy")]),
+        ])
+        self.ribbon.add_page("view", "Zobrazení", [
+            ("Pohled", [command(self.fit_action, "Celý díl"),
+                        *[command(self.view_actions[key], title) for key, title in
+                          (("iso", "Izo"), ("front", "Zepředu"), ("top", "Shora"))]]),
+            ("Panely", [command(workspace.model_action, "Model"),
+                        command(workspace.actions["editor"], "Prvek"),
+                        command(workspace.actions["measure"], "Měření"),
+                        command(workspace.panels_menu.menuAction(), "Další panely",
+                                workspace.panels_menu)]),
+            ("Rozložení", [command(workspace.reset_action, "Obnovit"),
+                           command(workspace.appearance_menu.menuAction(), "Vzhled",
+                                   workspace.appearance_menu)]),
+        ])
+        self.ribbon.collapsed_changed.connect(workspace.collapse_action.setChecked)
+        self.view_menu.addSeparator()
+        self.view_menu.addAction(workspace.model_action)
+        self.view_menu.addMenu(workspace.panels_menu)
+        self.view_menu.addAction(workspace.collapse_action)
+        self.view_menu.addAction(workspace.reset_action)
+        self.view_menu.addMenu(workspace.appearance_menu)
+
+    def _refresh_ui_icons(self):
+        color = QApplication.palette().color(QPalette.ColorRole.Link).name()
+        for action, kind in getattr(self, "_icon_actions", []):
+            action.setIcon(cad_icon(kind, color))
+        for action, standard in getattr(self, "_standard_icons", []):
+            action.setIcon(self.style().standardIcon(standard))
+
+    def _choose_ndt_method(self, method):
+        combo = self.ndt_panel.method_combo
+        index = combo.findData(method)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+        self.workspace.show_panel("ndt")
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if hasattr(self, "workspace"):
+            self.workspace.restore()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if (event.type() in (QEvent.Type.PaletteChange, QEvent.Type.ApplicationPaletteChange)
+                and hasattr(self, "workspace") and hasattr(self, "ribbon")):
+            self.workspace.refresh_palette()
 
     def _fill_selection_menu(self, menu: QMenu) -> None:
         for action in self.selection_actions.values():
@@ -1278,6 +1455,7 @@ class MainWindow(QMainWindow):
                 structural=False):
             self._selected_id = new_id[0]
             self._reload_all()
+            self.workspace.show_panel("editor")
 
     def edit_profile(self, profile: dict, new: bool = False) -> dict | None:
         """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit).
@@ -1660,6 +1838,7 @@ class MainWindow(QMainWindow):
 
     def _reload_info(self) -> None:
         document = self.session.document
+        self.part_caption.setText(document.name if document else "Nový díl")
         for widget in (self.name_edit, self.material_combo):
             widget.blockSignals(True)
         self.name_edit.setText(document.name if document else "")
@@ -1697,8 +1876,7 @@ class MainWindow(QMainWindow):
         chosen = None
         for index, (key, label, status, message) in enumerate(rows):
             text = f"{_STATUS_ICONS[status]}  {label}"
-            if status == "ok" and message:
-                text = f"{_STATUS_ICONS[status]}  {message} — {label}"
+            count = re.search(r"Počet těles: (\d+) → (\d+)\.", message) if status == "ok" else None
             item = previous.pop(key, None)
             if item is None:
                 item = QTreeWidgetItem()
@@ -1710,8 +1888,11 @@ class MainWindow(QMainWindow):
                 self.tree.insertTopLevelItem(index, item)
             if item.text(0) != text:
                 item.setText(0, text)
-            item.setForeground(0, _STATUS_COLORS[status])
-            item.setToolTip(0, message or key)
+            item.setText(1, f"{count[1]} → {count[2]}" if count else "")
+            for column in (0, 1):
+                item.setForeground(column, status_color(status))
+            item.setToolTip(0, f"{label}\n{message or key}")
+            item.setToolTip(1, message)
             if key == self._selected_id:
                 chosen = item
         for item in previous.values():
@@ -1801,6 +1982,7 @@ class MainWindow(QMainWindow):
                                          repeatable)
         form = self.feature_editor.form
         if form is not None and form.data.get("type") == "guided_loft":
+            form.widget("guides").set_selection(self._guide_edit_corner, self._guide_edit_handle)
             control = form.widget("guides").drag_step
             control.blockSignals(True)
             control.setValue(self._guide_drag_step)
@@ -1824,6 +2006,13 @@ class MainWindow(QMainWindow):
             self.viewer.show_guides(data)
             self._shown_guides = key
 
+    def _guide_selection_changed(self, row: int) -> None:
+        self._guide_edit_corner = row
+        self._refresh_guides()
+
+    def _guide_handle_selected(self, handle: int) -> None:
+        self._guide_edit_handle = handle
+
     def _guide_step_changed(self, step: float) -> None:
         self.viewer.set_guide_drag_step(step)
         self._guide_drag_step = step  # preference tohoto okna; nepatří do receptu dílu
@@ -1837,6 +2026,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Vyber řízený přechod a uchop rukojeť znovu.", 10000)
             return
         self._guide_commit_pending = self._selected_id
+        if type(request.get("handle")) is int and request["handle"] in (0, 1):
+            self._guide_edit_handle = request["handle"]
         self.statusBar().showMessage("Ověřuji tažení; model se změní až po úspěšném přepočtu.")
         if not self._apply(lambda: self.session.move_guided_handle(**request), structural=False):
             self._guide_commit_pending = None
@@ -1848,12 +2039,10 @@ class MainWindow(QMainWindow):
         if fid != self._selected_id:
             return
         form = self.feature_editor.form
-        selected = (form.widget("guides").selected_index
-                    if form is not None and form.data.get("type") == "guided_loft" else 0)
         self._load_editor()
         form = self.feature_editor.form
         if form is not None and form.data.get("type") == "guided_loft":
-            form.widget("guides").buttons.button(selected).setChecked(True)
+            form.widget("guides").set_selection(self._guide_edit_corner, self._guide_edit_handle)
             self._shown_guides = None
             self._refresh_guides()
         self.statusBar().clearMessage()
@@ -2371,7 +2560,7 @@ class MainWindow(QMainWindow):
             self.thickness_map_action.setChecked(False)
             return
         if visible:
-            self.map_dock.raise_()
+            self.workspace.show_panel("map")
         self._busy(lambda: self.session.show_thickness_map(visible))
         self._refresh_all()
 
@@ -2449,7 +2638,7 @@ class MainWindow(QMainWindow):
         if not self.section_action.isChecked():
             self.session.clear_section()
         else:
-            self.section_dock.raise_()
+            self.workspace.show_panel("section")
             axis = self.section_combo.currentData()
             try:
                 self._busy(lambda: self.session.set_section_axis(
@@ -2469,7 +2658,7 @@ class MainWindow(QMainWindow):
             self._error("Řez nejde vést", str(exc))
             self._refresh_section_panel()
             return
-        self.section_dock.raise_()
+        self.workspace.show_panel("section")
         self._refresh_all()
 
     def flip_section(self) -> None:
@@ -2680,6 +2869,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._confirm_discard():
+            self.workspace.save()
             self.assistant_panel.shutdown()  # rozpracovaná odpověď AI se zastaví
             self._poll_timer.stop()
             if self._runner is not None:

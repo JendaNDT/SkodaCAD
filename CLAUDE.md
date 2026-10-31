@@ -16,6 +16,11 @@
 - **Pokyn autora z 30. 10. 2026:** na doporučení ruční přejímky P5 ve Windows
   a Excelu odpověděl „to přeskočíme“. Tyto zkoušky zůstávají neprovedené a další
   vývoj P6 neblokují; neoznačovat je za úspěšně ověřené.
+- **Pokyn autora z 31. 10. 2026:** přeskočit zkoušku P6 na vlastním dílu a navázat
+  ergonomií P7. Na hlavním okně si máme „dát extra záležet“; vzhled má být
+  „ve stylu solid edge nebo Inventor“. P6.4 na autorském dílu zůstává neprovedené.
+  [P7.1 audit a návrh](docs/p7-1-audit-a-navrh-prostredi.md) odděluje technický
+  průzkum, vizuální návrhy a dosud neprovedenou autorskou přejímku.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -1341,7 +1346,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | [Řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34); [Lineární proměnné zaoblení](docs/p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, formát 32, směr/původ, session a GUI; výsledky úplných kontrol v implementačním PR | P6.4 na autorském dílu, další operace z P6.1 |
-| P7–P8 | nezahájeno | – |
+| P7 ergonomie | [P7.1 technický audit a návrh prostředí CAD](docs/p7-1-audit-a-navrh-prostredi.md), dvě varianty a nativní průzkum | volba rozložení, nativní implementace a přejímka |
+| P8 výkon/stabilizace | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
@@ -1524,7 +1530,14 @@ produkční operace: dvě obdélníková čela, čtyři kubická vodítka s impl
 v geometrických rozích, pevný parametr výšky, plný solid a přímé Bézierovy plochy.
 Produkční kód a formát 33 se nemění; `guided_loft`/v34 je zatím pouze návrh.
 Výsledky cílených a úplných systémových kontrol v PR průzkumu.
-**P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P7.1/P7.2 — návrh a nativní prototyp:** autor vybral směr strojního CADu
+ve stylu Solid Edge / Inventor a pokynem „ok, udělej to“ navázal implementací
+varianty Strom a pravý editor. [P7.2](docs/p7-2-nativni-prostredi.md): pás činností
+se sdílenými QAction, jeden pravý panel, skládací strom, samostatný sloupec počtu
+těles, plná pole X/Y rukojetí a profil `okno.json`. UI bez změny jádra/formátu 34,
+přepínání bez změny modelu; Enter/ztráta fokusu potvrzuje jako dosud. Self-test
+„✓ Prostředí CAD“ musí projít v obou balíčcích. P7.4 přijetí autorem čeká.
+**P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,
