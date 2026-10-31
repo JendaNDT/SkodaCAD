@@ -1071,9 +1071,14 @@ class OccViewer(QWidget):
 
                 window = WNT_Window(_as_capsule(handle))
             elif sys.platform == "darwin":  # Qt winId() je na Macu NSView
-                from OCP.Cocoa import Cocoa_Window
+                from OCP.Aspect import Aspect_NeutralWindow
 
-                window = Cocoa_Window(_as_capsule(handle))
+                # Qt owns this NSView. OCP's by-value Cocoa_Window capsule
+                # constructor can over-release it when its temporary is copied.
+                # NeutralWindow lends the handle without taking ownership.
+                window = Aspect_NeutralWindow()
+                window.SetNativeHandle(handle)
+                window.SetSize(self._surface.width(), self._surface.height())
             else:
                 from OCP.Xw import Xw_Window
 
@@ -1168,6 +1173,8 @@ class OccViewer(QWidget):
 
         Ptáme se přímo okna (ne Qt): nativní okno se může zvětšit o chvilku později.
         """
+        if sys.platform == "darwin":
+            self._window.SetSize(self._surface.width(), self._surface.height())
         size = tuple(self._view.Window().Size())
         if size != self._known_size:
             self._known_size = size

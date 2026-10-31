@@ -282,10 +282,48 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_viewer_lifecycle(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_viewer_lifecycle(window, lines) -> bool:
+    """Destroy real native surfaces while Qt is alive, including Python reference cycles."""
+    import gc
+
+    from PySide6.QtCore import QEvent
+
+    from skodacad.gui.viewer import OccViewer
+
+    if not window.viewer.ready:
+        lines.append("! Životnost 3D ploch: chybí grafický prohlížeč")
+        return True
+    try:
+        for _ in range(4):
+            viewer = OccViewer()
+            viewer.resize(640, 480)
+            viewer.show()
+            QApplication.processEvents()
+            assert viewer.ready, viewer.error
+            viewer.show_part(window.session.result.part, fit=True)
+            viewer.resize(720, 520)
+            QApplication.processEvents()
+            viewer.fit_all()
+            assert viewer.dump(str(user_dir() / "self-test-zivotnost-3d.png"))
+            viewer.close()
+            viewer.deleteLater()
+            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            del viewer
+            gc.collect()
+            QApplication.processEvents()
+        lines.append("✓ Životnost 3D ploch: 4× otevření, změna velikosti, kreslení, "
+                     "zavření a zničení nativního widgetu")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- native crashes also fail the process exit code
+        lines.append(f"✕ Životnost 3D ploch: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _self_test_workspace(window, lines: list[str]) -> bool:

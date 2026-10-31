@@ -1536,7 +1536,11 @@ varianty Strom a pravý editor. [P7.2](docs/p7-2-nativni-prostredi.md): pás či
 se sdílenými QAction, jeden pravý panel, skládací strom, samostatný sloupec počtu
 těles, plná pole X/Y rukojetí a profil `okno.json`. UI bez změny jádra/formátu 34,
 přepínání bez změny modelu; Enter/ztráta fokusu potvrzuje jako dosud. Self-test
-„✓ Prostředí CAD“ musí projít v obou balíčcích. P7.4 přijetí autorem čeká.
+„✓ Prostředí CAD“ musí projít v obou balíčcích. Rozšířená nativní zkouška
+odhalila i přeuvolnění QNSView přes kapslový Cocoa_Window; Mac teď předává
+Qt handle přes nevlastnící Aspect_NeutralWindow a aktualizuje jeho rozměry.
+Self-test „✓ Životnost 3D ploch“ ověřuje čtyři cykly v obou balíčcích.
+P7.4 přijetí autorem čeká.
 **P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

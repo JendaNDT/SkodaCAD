@@ -88,3 +88,21 @@ kontrola potvrzení při ztrátě fokusu, profilu a přetečení: **3 testy pro�
 obou stažených balíčků a STEP přenosu. Konkrétní výsledky a odkazy obsahuje
 implementační PR. P7.4 (práce autora na vlastním dílu, pocit z hustoty a ovládání),
 širší matice trackpadu/Retiny a odborná validace NDT se tím neprohlašují za hotové.
+
+## Nález při rozšířeném nativním ověřování
+
+Opakované vytváření/zavírání skutečných oken odhalilo SIGSEGV při ukončení procesu
+v `Cocoa_Window::~Cocoa_Window`. Stejný minimální případ bez nového rozhraní
+selhal; diagnostika NSZombie hlásila uvolnění již zaniklého `QNSView`.
+Pouhé časnější zrušení pohledu nepomohlo. OCP přemosťuje kapsli konstrukcí
+[Cocoa_Window vracenou hodnotou](https://github.com/CadQuery/OCP/blob/a6d078cfda3e5e695c68d2bfbfe38e91b0ccb566/ocp.toml#L2169),
+přičemž [OCCT wrapper drží a uvolňuje NSView](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_1/src/Visualization/TKService/Cocoa/Cocoa_Window.mm#L151).
+To spolu se stopou pádu ukazuje na chybu vlastnictví v tomto propojení.
+
+Mac nyní předává zapůjčený handle přes `Aspect_NeutralWindow`, který NSView
+nevlastní. Jeho rozměry aktualizuje Qt před synchronizací pohledu. OpenGL ovladač
+OCCT [používá NativeHandle](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_1/src/Visualization/TKOpenGl/OpenGl/OpenGl_Window_1.mm#L209);
+Windows/Linux své adaptéry nemění. Minimální čtyři okna a tři cykly obnovy
+rozložení po této změně končí kódem 0. Nejde o změnu geometrického jádra.
+Self-test balíčku obsahuje navíc **„✓ Životnost 3D ploch“**: čtyři skutečné
+widgety, resize, kreslení, zavření, `deleteLater` a garbage collection.
