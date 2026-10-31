@@ -432,6 +432,7 @@ def _self_test_native_accessibility(lines) -> bool:
     if not install():
         return True  # This ownership defect is specific to the Cocoa platform plugin.
     try:
+        QAccessible.setActive(True)
         for _ in range(4):
             views = [QTreeWidget(), QListWidget(), QTableWidget(3, 2)]
             views[0].setHeaderLabels(["Prvek", "Tělesa"])

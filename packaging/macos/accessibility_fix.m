@@ -67,11 +67,12 @@ __attribute__((visibility("default"))) int skodacad_probe_ax_table(uint32_t tabl
             (id)cls, sel_registerName("elementWithId:"), tableId);
         if (!element) return 0;
         NSArray *children = [NSArray arrayWithArray:[element accessibilityChildren]];
+        if (![children count]) return 0;
         for (id child in children) {
             (void)[child accessibilityChildren];
             (void)[child accessibilitySelectedChildren];
         }
-        (void)[element accessibilitySelectedChildren];
+        if (![[element accessibilitySelectedChildren] count]) return 0;
     }
     return 1;
 }
