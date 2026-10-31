@@ -83,6 +83,14 @@ def test_subdivision_accepts_positive_mixed_coefficients_and_refuses_touch_or_un
     assert not _positive([1e-12]*7, 1e-10)  # neprokázaná kladnost není přijetí
 
 
+def test_subdivision_budget_is_a_hard_limit(monkeypatch):
+    from skodacad import guided_loft
+
+    monkeypatch.setattr(guided_loft, "MAX_NODES", 1)
+    assert guided_loft._positive([1, 1, 1], 1e-10)
+    assert not guided_loft._positive([1, -.1, 1], 1e-10)
+
+
 def pinched(a=.371234, c=-1e-8):
     """Poloviční šířka 100*((t-a)^2+c): krajní čela kladná, nebezpečí uvnitř."""
     doc = Document.load(EXAMPLE)

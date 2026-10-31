@@ -184,9 +184,11 @@ def _positive(coeffs: list[float], margin: float) -> bool:
     while pending:
         values, depth = pending.pop()
         nodes += 1
+        if nodes > MAX_NODES:
+            return False
         if min(values) > margin:
             continue  # celá konvexní obálka koeficientů leží nad rezervou
-        if max(values) <= margin or depth >= MAX_DEPTH or nodes > MAX_NODES:
+        if max(values) <= margin or depth >= MAX_DEPTH:
             return False  # záporné nebo neprokázané; nejistota nikdy není přijetí
         left, right = [values[0]], [values[-1]]
         while len(values) > 1:
