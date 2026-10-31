@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import ast
 import copy
+import html
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -31,12 +32,14 @@ from PySide6.QtWidgets import (
     QMenu,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.guide_drag import DEFAULT_STEP, DIRECTION_CHOICES, MAX_STEP
 from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.gui.loft_wall_panel import LoftWallPanel
@@ -123,12 +126,65 @@ class GuidesEditor(QGroupBox):
 
     edited = Signal()
     selected = Signal(int)
+    handle_selected = Signal(int)
     step_changed = Signal(float)
     direction_changed = Signal(str)
 
     def __init__(self, value) -> None:
         super().__init__("Vodítka · posuny rukojetí [mm]")
-        layout = QGridLayout(self)
+        layout = QVBoxLayout(self)
+        self.corner_picker = QComboBox()
+        self.corner_picker.setObjectName("guide_corner")
+        self.corner_picker.setAccessibleName("Vodítko")
+        self.buttons = QButtonGroup(self)
+        self.buttons.setExclusive(True)
+        for row, label in enumerate(LABELS):
+            color = "#" + "".join(f"{round(value*255):02x}" for value in GUIDE_COLORS[row])
+            self.corner_picker.addItem(cad_icon("loft", color), label, row)
+            button = QToolButton(self)  # compatible ids for selection and drag/history callbacks
+            button.setText(label)
+            button.setCheckable(True)
+            self.buttons.addButton(button, row)
+            button.setChecked(row == 0)
+            button.hide()
+        layout.addWidget(QLabel("Vodítko"))
+        layout.addWidget(self.corner_picker)
+        handles = QHBoxLayout()
+        self.handle_buttons = QButtonGroup(self)
+        self.handle_buttons.setExclusive(True)
+        for index in range(2):
+            button = QToolButton()
+            button.setObjectName(f"guide_handle_{index}")
+            button.setText(f"Rukojeť {index+1}")
+            button.setCheckable(True)
+            self.handle_buttons.addButton(button, index)
+            button.setChecked(index == 0)
+            handles.addWidget(button)
+        layout.addLayout(handles)
+        self.pages = QStackedWidget()
+        layout.addWidget(self.pages)
+        self.edits = {}
+        by_corner = {(g["corner"]["x"], g["corner"]["y"]): g for g in value or default_guides()}
+        for row, corner in enumerate(CORNERS):
+            for handle in range(2):
+                page = QWidget()
+                form = QFormLayout(page)
+                form.setContentsMargins(0, 0, 0, 0)
+                form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+                form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+                for axis in range(2):
+                    edit = QLineEdit(_number_text(by_corner[corner]["controls"][handle][axis]))
+                    edit.setMinimumWidth(120)
+                    edit.setObjectName(f"guide_{row}_{handle}_{axis}")
+                    edit.setToolTip(f"{LABELS[row]} · rukojeť {handle+1} · {'XY'[axis]} [mm]")
+                    edit.editingFinished.connect(self.edited)
+                    form.addRow(f"{'XY'[axis]} [mm]", edit)
+                    self.edits[row, handle, axis] = edit
+                self.pages.addWidget(page)
+        self.corner_picker.currentIndexChanged.connect(
+            lambda row: self.buttons.button(row).setChecked(True))
+        self.buttons.idToggled.connect(self._corner_toggled)
+        self.handle_buttons.idToggled.connect(self._handle_toggled)
         step_row = QHBoxLayout()
         self.drag_step = QDoubleSpinBox()
         self.drag_step.setObjectName("guide_drag_step")
@@ -145,7 +201,7 @@ class GuidesEditor(QGroupBox):
         step_row.addWidget(QLabel("Krok tažení:"))
         step_row.addWidget(self.drag_step)
         step_row.addStretch(1)
-        layout.addLayout(step_row, 0, 0, 1, 5)
+        layout.addLayout(step_row)
         direction_row = QHBoxLayout()
         self.drag_direction = QComboBox()
         self.drag_direction.setObjectName("guide_drag_direction")
@@ -158,43 +214,44 @@ class GuidesEditor(QGroupBox):
         direction_row.addWidget(QLabel("Směr tažení:"))
         direction_row.addWidget(self.drag_direction)
         direction_row.addStretch(1)
-        layout.addLayout(direction_row, 1, 0, 1, 5)
-        self.buttons = QButtonGroup(self)
-        self.buttons.setExclusive(True)
-        self.buttons.idClicked.connect(self.selected)
-        self.edits = {}
-        by_corner = {(g["corner"]["x"], g["corner"]["y"]): g for g in value or default_guides()}
-        for col, title in enumerate(("Vodítko", "X₁", "Y₁", "X₂", "Y₂")):
-            layout.addWidget(QLabel(title), 2, col)
-        for row, corner in enumerate(CORNERS):
-            button = QToolButton()
-            button.setText(LABELS[row].replace(" · ", " "))
-            color = ",".join(str(round(v*255)) for v in GUIDE_COLORS[row])
-            button.setStyleSheet(f"border-left: 4px solid rgb({color}); padding: 3px;")
-            button.setCheckable(True)
-            button.setChecked(row == 0)
-            self.buttons.addButton(button, row)
-            layout.addWidget(button, row+3, 0)
-            controls = by_corner[corner]["controls"]
-            for handle in range(2):
-                for axis in range(2):
-                    edit = QLineEdit(_number_text(controls[handle][axis]))
-                    edit.setMinimumWidth(30)
-                    edit.setObjectName(f"guide_{row}_{handle}_{axis}")
-                    edit.setToolTip(f"{LABELS[row]} · rukojeť {handle+1} · {'XY'[axis]} [mm]")
-                    edit.editingFinished.connect(self.edited)
-                    layout.addWidget(edit, row+3, 1+2*handle+axis)
-                    self.edits[row, handle, axis] = edit
+        layout.addLayout(direction_row)
         note = QLabel("Rukojeť 1 je v H/3, rukojeť 2 ve 2H/3. "
                       "Posun rukojeti není kóta skutečného vyboulení. "
                       "Ve 3D táhni větší bod rukojeti v XY; puštění ověří těleso, Esc zruší. "
                       "Během tahu se mění jen vodítko. Výrazy zachovají vazbu na parametry.")
         note.setWordWrap(True)
-        layout.addWidget(note, 7, 0, 1, 5)
+        note.setProperty("secondaryText", True)
+        layout.addWidget(note)
+
+    def _corner_toggled(self, row, checked):
+        if checked:
+            blocker = QSignalBlocker(self.corner_picker)
+            self.corner_picker.setCurrentIndex(row)
+            del blocker
+            self.pages.setCurrentIndex(2*row + self.selected_handle)
+            self.selected.emit(row)
+
+    def _handle_toggled(self, handle, checked):
+        if checked:
+            self.pages.setCurrentIndex(2*self.selected_index + handle)
+            self.handle_selected.emit(handle)
+
+    def set_selection(self, row, handle):
+        blockers = [QSignalBlocker(group) for group in
+                    (self.buttons, self.handle_buttons, self.corner_picker)]
+        self.buttons.button(row).setChecked(True)
+        self.handle_buttons.button(handle).setChecked(True)
+        self.corner_picker.setCurrentIndex(row)
+        self.pages.setCurrentIndex(2*row + handle)
+        del blockers
 
     @property
     def selected_index(self) -> int:
         return self.buttons.checkedId()
+
+    @property
+    def selected_handle(self) -> int:
+        return self.handle_buttons.checkedId()
 
     def value(self) -> list:
         result = default_guides()
@@ -217,6 +274,7 @@ class FieldsForm(QWidget):
 
     edited = Signal(dict)
     guide_selected = Signal(int)
+    guide_handle_selected = Signal(int)
     guide_step_changed = Signal(float)
     guide_direction_changed = Signal(str)
     invalid = Signal(str)
@@ -233,6 +291,7 @@ class FieldsForm(QWidget):
         self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         self._layout = layout = QFormLayout(self)
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for field in fields:
             widget, read = self._build(field, self._data.get(field.key))
@@ -436,7 +495,7 @@ class FieldsForm(QWidget):
     def _build_picked_edges(self, value: Any):
         """Výběr kliknutím ve 3D (hrana mezi plochami, nejbližší k bodu …) – jen ukázat."""
         label = QLabel(f"<b>Vybráno ve 3D:</b> {describe_edges(value)}<br>"
-                       "<span style='color:#666'>Další hrany: vyber je ve 3D (Ctrl+klik) → "
+                       "<span>Další hrany: vyber je ve 3D (Ctrl+klik) → "
                        "pravé tlačítko → Přidat vybrané hrany. Hrany prvku jsou ve 3D "
                        "zvýrazněné růžově.</span>")
         label.setWordWrap(True)
@@ -574,6 +633,7 @@ class FieldsForm(QWidget):
         editor = GuidesEditor(value)
         editor.edited.connect(self._commit)
         editor.selected.connect(self.guide_selected)
+        editor.handle_selected.connect(self.guide_handle_selected)
         editor.step_changed.connect(self.guide_step_changed)
         editor.direction_changed.connect(self.guide_direction_changed)
         return editor, editor.value
@@ -739,6 +799,7 @@ class FeatureEditor(QWidget):
     """Panel „Úprava prvku“: formulář vybraného prvku ze stromu."""
 
     guide_selected = Signal(int)
+    guide_handle_selected = Signal(int)
     guide_step_changed = Signal(float)
     guide_direction_changed = Signal(str)
     changed = Signal(str, dict)  # id prvku, nový obsah prvku
@@ -753,6 +814,11 @@ class FeatureEditor(QWidget):
         self.title = QLabel()
         self.title.setWordWrap(True)
         self._layout.addWidget(self.title)
+        self.help = QLabel()
+        self.help.setTextFormat(Qt.TextFormat.PlainText)
+        self.help.setWordWrap(True)
+        self.help.setProperty("secondaryText", True)
+        self._layout.addWidget(self.help)
         self.wall_panel = LoftWallPanel()
         self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
@@ -773,21 +839,25 @@ class FeatureEditor(QWidget):
         self.feature_id = feature["id"] if feature else None
         self.wall_panel.setVisible(feature is not None and feature.get("type") == "loft")
         if feature is None:
+            self.help.hide()
             self.title.setText("Vyber prvek ve stromu prvků – tady se ukážou jeho hodnoty.\n\n"
                                "Nový prvek přidáš tlačítkem „Přidat prvek“ pod stromem.")
             return
         schema = FEATURE_SCHEMAS.get(feature.get("type"))
         if schema is None:
+            self.help.hide()
             self.title.setText(f"Prvek typu „{feature.get('type')}“ tady upravit nejde.")
             return
-        self.title.setText(f"<b>{schema.label}</b> <span style='color:#777'>({feature['id']})"
-                           f"</span><br><span style='color:#555'>{schema.help}</span>")
+        self.title.setText(f"<b>{html.escape(schema.label)}</b> ({html.escape(feature['id'])})")
+        self.help.setText(schema.help)
+        self.help.setVisible(bool(schema.help))
         self.form = FieldsForm(schema.fields, feature, sketches,
                                profile_editor=self._profile_editor, features=features)
         self.form.setObjectName("feature_form")
         self.form.edited.connect(lambda data: self.changed.emit(self.feature_id, data))
         self.form.invalid.connect(self.invalid)
         self.form.guide_selected.connect(self.guide_selected)
+        self.form.guide_handle_selected.connect(self.guide_handle_selected)
         self.form.guide_step_changed.connect(self.guide_step_changed)
         self.form.guide_direction_changed.connect(self.guide_direction_changed)
-        self._layout.insertWidget(1, self.form)
+        self._layout.insertWidget(2, self.form)

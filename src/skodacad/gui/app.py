@@ -281,10 +281,122 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_variable_fillet(window, lines) and ok
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
+    ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_viewer_lifecycle(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_viewer_lifecycle(window, lines) -> bool:
+    """Destroy real native surfaces while Qt is alive, including Python reference cycles."""
+    import gc
+
+    from PySide6.QtCore import QEvent
+
+    from skodacad.gui.viewer import OccViewer
+
+    if not window.viewer.ready:
+        lines.append("! Životnost 3D ploch: chybí grafický prohlížeč")
+        return True
+    try:
+        for _ in range(4):
+            viewer = OccViewer()
+            viewer.resize(640, 480)
+            viewer.show()
+            QApplication.processEvents()
+            assert viewer.ready, viewer.error
+            viewer.show_part(window.session.result.part, fit=True)
+            viewer.resize(720, 520)
+            QApplication.processEvents()
+            viewer.fit_all()
+            assert viewer.dump(str(user_dir() / "self-test-zivotnost-3d.png"))
+            viewer.close()
+            viewer.deleteLater()
+            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            del viewer
+            gc.collect()
+            QApplication.processEvents()
+        lines.append("✓ Životnost 3D ploch: 4× otevření, změna velikosti, kreslení, "
+                     "zavření a zničení nativního widgetu")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- native crashes also fail the process exit code
+        lines.append(f"✕ Životnost 3D ploch: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_workspace(window, lines: list[str]) -> bool:
+    """Native layout, real fields, geometry and history in each downloaded package."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.window_state import load_state
+
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "rizeny_prechod.json", template=True)
+        window._selected_id = "rizeny"
+        window._guide_edit_corner = window._guide_edit_handle = 0
+        window._reload_all()
+        window.resize(1280, 760)
+        window.workspace.reset()
+        QApplication.processEvents()
+        original = window.session.document.to_dict()
+        guides = window.feature_editor.form.widget("guides")
+        for corner in range(4):
+            guides.corner_picker.setCurrentIndex(corner)
+            for handle in range(2):
+                guides.handle_buttons.button(handle).click()
+                QApplication.processEvents()
+                assert guides.pages.currentIndex() == corner*2 + handle
+                for axis in (0, 1):
+                    field = guides.edits[corner, handle, axis]
+                    assert field.isVisibleTo(guides) and field.width() >= 150
+        for key in window.workspace.docks:
+            window.workspace.show_panel(key)
+            QApplication.processEvents()
+            assert {k for k, dock in window.workspace.docks.items() if dock.isVisible()} == {key}
+        assert window.session.document.to_dict() == original and not window.session.can_undo
+        window.workspace.show_panel("editor")
+        guides.set_selection(0, 0)
+        field = guides.edits[0, 0, 0]
+        field.setText("4*Bx/3+1")
+        field.setFocus()
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert window.session.result.ok and len(window.session._undo) == 1
+        assert abs(window.session.result.part.volume - 78009) < 2e-5
+        guides.corner_picker.setCurrentIndex(3)
+        guides.handle_buttons.button(1).click()
+        window.undo_action.trigger()
+        assert abs(window.session.result.part.volume - 77760) < 2e-5
+        guides = window.feature_editor.form.widget("guides")
+        assert guides.selected_index == 3 and guides.selected_handle == 1
+        window.redo_action.trigger()
+        assert abs(window.session.result.part.volume - 78009) < 2e-5
+        window.session.save(user_dir() / "self-test-prostredi.json")
+        window.resize(1024, 720)
+        window.workspace.reset()
+        QApplication.processEvents()
+        assert window.model_dock.isHidden() and window.viewer.width() >= 600
+        window.workspace.model_action.trigger()
+        assert not window.model_dock.isHidden()
+        window.workspace.close_panel()
+        window.workspace.actions["editor"].trigger()
+        assert window.workspace.active == "editor"
+        window.ribbon.set_collapsed(True)
+        assert window.ribbon.stack.isHidden()
+        window.workspace.save()
+        saved = load_state(window.workspace.path)
+        assert saved["panel"] == "editor" and saved["ribbon_collapsed"]
+        window.ribbon.set_collapsed(False)
+        lines.append("✓ Prostředí CAD: pás příkazů, 8 pravých panelů, široká pole všech "
+                     "rukojetí, 78009/77760 mm³ a historie, kompaktní okno 1024, obnova panelů "
+                     "a oddělené nastavení okna")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _self_test_variable_fillet(window, lines: list[str]) -> bool:
@@ -378,7 +490,10 @@ def _self_test_guide_drag(window, lines: list[str]) -> None:
     from PySide6.QtTest import QTest
 
     window._selected_id = "rizeny"
+    window._guide_edit_corner = 0
+    window._guide_edit_handle = 0
     window._reload_all()
+    window.workspace.show_panel("editor")
     viewer = window.viewer
     if not viewer.ready:
         lines.append("! Tažení ve 3D: chybí grafický prohlížeč; session ověřují testy.")

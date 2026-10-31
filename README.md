@@ -51,6 +51,19 @@ a jen s vloženým API klíčem. Bez klíče (např. při prezentaci) z aplikace
 Mac sestavuje samostatný postup [.github/workflows/macos.yml](.github/workflows/macos.yml);
 sestavení pro Windows se tím nemění.
 
+### Nové hlavní okno (P7 – nativní prototyp)
+
+Pás činností nahoře, strom dílu vlevo a jeden panel po celé výšce vpravo.
+Pravý panel zvolíš v jeho hlavičce nebo přes **Zobrazení → Panely**. **F4**
+přepíná editor, **F9** strom, **Ctrl+F1** (na Macu Cmd+F1) sbalí pás.
+**Zobrazení → Obnovit rozložení** vrátí výchozí podobu; v menším okně skryje
+strom, aby zůstal prostor pro 3D. **Zobrazení → Vzhled** přepíná světlý/tmavý
+režim. Rozložení se pamatuje v `~/SkodaCAD/okno.json`, odděleně od dílu.
+
+U vodítek nejprve vyber roh A–D a rukojeť 1/2, pak uprav X/Y v širokých polích.
+Enter nebo opuštění platného pole změnu potvrdí; Zpět ji vrátí. Přepnutí panelu
+formulář zachová. Podrobný rozsah, ověření a meze: [P7.2](docs/p7-2-nativni-prostredi.md).
+
 ### Ovládání
 
 | Akce | Jak |
