@@ -693,6 +693,12 @@ u okrajů a zesílených rohů má samostatná omezení.
 
 Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se dělá tloušťkou stěny).
 
+Rozšíření o vodicí křivky má [ověřený průzkum a návrh první funkce](docs/p6-6-vodici-krivky-overeni-a-navrh.md):
+obdélníková čela, čtyři rohová vodítka a kontrola křížení. Jde zatím o výzkumné
+STEP/SVG reference, nikoli novou volbu v aplikaci. U kruhových čel počet a tvar
+mezilehlých profilů zásadně ovlivňují meziřezy a návaznost ploch.
+
+
 ### Normalizované díly
 
 *Přidat prvek → Normalizovaný díl* vloží díl podle strojnických tabulek. Ukázka:

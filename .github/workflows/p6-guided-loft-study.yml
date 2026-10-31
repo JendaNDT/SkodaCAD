@@ -1,0 +1,53 @@
+name: P6 průzkum vodicích křivek
+
+on:
+  pull_request:
+    paths:
+      - 'docs/p6-6-pruzkum-voditek.py'
+      - 'tests/test_guided_loft_study.py'
+      - '.github/workflows/p6-guided-loft-study.yml'
+      - 'src/skodacad/geometry_validation.py'
+      - 'src/skodacad/export.py'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p6-guided-loft-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  pruzkum:
+    name: Vodítka – ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Instalace jádra a zkoumané již používané knihovny
+        run: python -m pip install -e '.[dev]' 'ocp_gordon==0.3.1'
+      - name: Kontrola kódu a nezávislé analytické reference
+        run: |
+          ruff check src tests docs/p6-6-pruzkum-voditek.py
+          python -m pytest -q tests/test_guided_loft_study.py
+      - name: Devět sítí křivek, objemy, průřezy, G0 a vzorky návaznosti
+        run: python docs/p6-6-pruzkum-voditek.py --output out/p6-guided-loft-study
+      - name: Vstupy, výsledky, vzorky, STEP a SVG
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p6-voditka-${{ matrix.os }}
+          path: out/p6-guided-loft-study/
+          retention-days: 14
