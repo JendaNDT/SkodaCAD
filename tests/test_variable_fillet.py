@@ -129,7 +129,7 @@ def test_session_selection_direction_undo_save_and_old_format(tmp_path):
     doc = model()
     doc.features.pop()
     doc.save(path)
-    assert json.loads(path.read_text())["version"] == 24
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 24
     session = ModelSession()
     session.open(path)
     before = part_fingerprint(session.document)
@@ -152,7 +152,7 @@ def test_session_selection_direction_undo_save_and_old_format(tmp_path):
     assert session.feature_direction(fid)[0][0].Z == pytest.approx(0)
     session.redo()
     session.document.save(path)
-    saved = json.loads(path.read_text())
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["version"] == 32
     reopened = ModelSession()
     reopened.open(path)
