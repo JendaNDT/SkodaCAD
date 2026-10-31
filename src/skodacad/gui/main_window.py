@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
         self._shown_points: Any = None  # mapa kontaktních ploch návrhu poloh v prohlížeči
         self._shown_target: Any = None  # náhled cílového objemu NDT právě v prohlížeči
         self._shown_guides = None
+        self._guide_commit_pending = None
         self._shown_plan: Any = None  # plán dráhy sondy a zóny právě v prohlížeči (klíč)
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -167,6 +168,9 @@ class MainWindow(QMainWindow):
         self.assembly_windows: list[AssemblyWindow] = []  # otevřené sestavy (P5.2B)
         self._assembly_runner: BackgroundRebuilder | None = None
         self.viewer = viewer_factory()
+        self.viewer.guide_handle_moved.connect(self._guide_handle_moved)
+        self.viewer.guide_drag_message.connect(
+            lambda text: self.statusBar().showMessage(text, 10000))
         self.viewer.selection_changed.connect(self._selection_changed)
         self.viewer.context_menu_requested.connect(self._show_context_menu)
         self.setCentralWidget(self.viewer)
@@ -1519,6 +1523,8 @@ class MainWindow(QMainWindow):
         self.design_panel.refresh()
         self._refresh_loft_wall()
         self._refresh_guides()
+        if self._guide_commit_pending is not None and not self.session.computing:
+            self._finish_guide_editor()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -1802,6 +1808,32 @@ class MainWindow(QMainWindow):
                     if self._selected_id is not None else None)
             self.viewer.show_guides(data)
             self._shown_guides = key
+
+    def _guide_handle_moved(self, request: dict) -> None:
+        if self.ai_busy or request.get("feature_id") != self._selected_id:
+            self.statusBar().showMessage("Vyber řízený přechod a uchop rukojeť znovu.", 10000)
+            return
+        self._guide_commit_pending = self._selected_id
+        self.statusBar().showMessage("Ověřuji tažení; model se změní až po úspěšném přepočtu.")
+        if not self._apply(lambda: self.session.move_guided_handle(**request), structural=False):
+            self._guide_commit_pending = None
+            self._shown_guides = None
+            self._refresh_guides()
+
+    def _finish_guide_editor(self) -> None:
+        fid, self._guide_commit_pending = self._guide_commit_pending, None
+        if fid != self._selected_id:
+            return
+        form = self.feature_editor.form
+        selected = (form.widget("guides").selected_index
+                    if form is not None and form.data.get("type") == "guided_loft" else 0)
+        self._load_editor()
+        form = self.feature_editor.form
+        if form is not None and form.data.get("type") == "guided_loft":
+            form.widget("guides").buttons.button(selected).setChecked(True)
+            self._shown_guides = None
+            self._refresh_guides()
+        self.statusBar().clearMessage()
 
     def inspect_loft_wall(self) -> None:
         if self._selected_id is None:

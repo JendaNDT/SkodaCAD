@@ -318,6 +318,14 @@
   Formulář A–D a vodítka ve 3D přes ModelSession, příklad `rizeny_prechod.json`.
   Kruhy, zaoblení, šikmá čela a duté stěny mimo tento rozsah. Výsledky ověření v PR.
 
+- (31. 10. 2026, pokyn autora) **P6.8 tažení rukojetí ve 3D**
+  (`docs/p6-8-tazeni-rukojeti.md`): vybrané vodítko, dvě větší rukojeti v XY při pevné
+  výšce, náhled jen čar. Session ověří celý kandidát v pomocném procesu a přijme ho
+  přes `_change(computed_result=...)` jako jeden krok, bez druhého přepočtu. Esc,
+  ztráta fokusu a přerušení návrh neukládají; selhání zachová původní historii.
+  Konverze myši zohledňuje Retinu; téměř boční či překryté body se odmítnou.
+  Formát zůstává 34 a výrazy zachovávají parametry. Výsledky kontrol v PR.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy

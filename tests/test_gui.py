@@ -22,6 +22,8 @@ class FakeViewer(QtWidgets.QWidget):
     context_menu_requested = Signal(QPoint)
     probe_dragged = Signal(list, object)
     probe_rotated = Signal(int)
+    guide_handle_moved = Signal(dict)
+    guide_drag_message = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -2852,3 +2854,67 @@ def test_guided_loft_invalid_geometry_hides_old_guides_and_undo_recovers(
     assert w.viewer.guides is None
     w.undo_action.trigger()
     assert w.session.result.ok and w.viewer.guides is not None
+
+
+def test_guide_mouse_commit_reloads_selected_row_and_refused_drag_preserves_state(
+        empty_window, examples_dir, slot_errors):
+    import copy
+
+    w = empty_window
+    w.open_model(examples_dir / "rizeny_prechod.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    w.feature_editor.form.widget("guides").buttons.button(2).click()
+    data = w.viewer.guides
+    request = {"feature_id": "rizeny", "signature": data["signature"],
+               "corner": [-1, -1], "handle": 1, "delta": [-3, 2]}
+    w.viewer.guide_handle_moved.emit(request)
+    assert w.session.result.ok and len(w.session._undo) == 1
+    editor = w.feature_editor.form.widget("guides")
+    assert editor.selected_index == 2 and w.viewer.guides['selected'] == 2
+    assert '-3.0' in editor.edits[2, 1, 0].text()
+    assert len(w.session._undo) == 1
+    original, result = copy.deepcopy(w.session.document), w.session.result
+    w.viewer.guide_handle_moved.emit(request | {"signature": result.model_signature,
+                                              "delta": [200, 0]})
+    assert w.session.document == original and w.session.result is result
+    assert w.viewer.guides is not None and not slot_errors
+    w.undo_action.trigger()
+    assert w.session.result.part.volume == pytest.approx(77760, abs=2e-5)
+    w.redo_action.trigger()
+    assert w.session.result.ok
+
+
+def test_guide_async_commit_refreshes_form_only_after_success(empty_window, examples_dir):
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    from skodacad.worker import BackgroundRebuilder
+
+    w = empty_window
+    w.open_model(examples_dir / "rizeny_prechod.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    w.feature_editor.form.widget('guides').buttons.button(1).click()
+    original = w.session.document
+    runner = BackgroundRebuilder()
+    w.session._runner = runner
+    try:
+        w.viewer.guide_handle_moved.emit({
+            "feature_id": "rizeny", "signature": w.session.result.model_signature,
+            "corner": [-1, 1], "handle": 0, "delta": [-2, 1]})
+        assert w.session.document is original and not w.session.dirty
+        assert w.viewer.guides is None
+        end = time.monotonic()+40
+        while w.session.computing and time.monotonic() < end:
+            QApplication.processEvents()
+            w._poll()
+            time.sleep(.02)
+        assert not w.session.computing and w.session.result.ok
+        assert w.session.document != original and len(w.session._undo) == 1
+        assert w._guide_commit_pending is None
+        assert w.feature_editor.form.widget('guides').selected_index == 1
+        assert '-2.0' in w.feature_editor.form.widget('guides').edits[1, 0, 0].text()
+        assert w.viewer.guides is not None
+    finally:
+        runner.close()
+        w.session._runner = None

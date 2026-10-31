@@ -361,12 +361,69 @@ def _self_test_guided_loft(window, lines: list[str]) -> bool:
         assert window.open_model(path)
         assert window.session.result.ok
         window.session.export(user_dir() / "self-test-rizeny-prechod.step")
+        _self_test_guide_drag(window, lines)
         lines.append("✓ Řízený přechod: 77760 mm³, čtyři vodítka a řídicí polygon ve 3D, "
                      "úprava rukojeti, Zpět/Znovu, uložení/otevření v34 a STEP")
         return True
     except Exception as exc:  # noqa: BLE001 -- výsledek self-testu místo pádu aplikace
         lines.append(f"✗ Řízený přechod: {exc}")
         return False
+
+
+def _self_test_guide_drag(window, lines: list[str]) -> None:
+    """Skutečné Qt události přes nativní plochu a OCCT projekci, nikoli jen signál."""
+    import copy
+
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    window._selected_id = "rizeny"
+    window._reload_all()
+    viewer = window.viewer
+    if not viewer.ready:
+        lines.append("! Tažení ve 3D: chybí grafický prohlížeč; session ověřují testy.")
+        return
+    window.resize(1400, 850)
+    QApplication.processEvents()
+    viewer.fit_all()
+    QApplication.processEvents()
+
+    def position():
+        data = viewer._guides_data
+        pole = data["guides"][data["selected"]]["poles"][1]
+        x, y = viewer._view.Convert(*map(float, pole))
+        ratio = viewer._pixel_scale()
+        return QPoint(round(x/ratio), round(y/ratio))
+
+    before = copy.deepcopy(window.session.document)
+    result, undo = window.session.result, len(window.session._undo)
+    start = position()
+    QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+    assert viewer._guide_drag is not None, "Rukojeť se nepodařilo uchopit."
+    end = start + QPoint(-24, 0)
+    QTest.mouseMove(viewer._surface, end)
+    assert window.session.document == before and window.session.result is result
+    assert len(window.session._undo) == undo
+    QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+    assert viewer._guide_drag is None and window.session.result.ok
+    assert window.session.document != before and len(window.session._undo) == undo+1
+    moved = copy.deepcopy(window.session.document)
+    window.undo_action.trigger()
+    assert window.session.document == before
+    window.redo_action.trigger()
+    assert window.session.document == moved
+    start = position()
+    QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+    assert viewer._guide_drag is not None
+    QTest.mouseMove(viewer._surface, start + QPoint(12, 0))
+    QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
+    QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=start + QPoint(12, 0))
+    assert viewer._guide_drag is None and window.session.document == moved
+    assert len(window.session._undo) == undo+1
+    window.session.save(user_dir() / "self-test-tazeni-rukojeti.json")
+    viewer.dump(str(user_dir() / "self-test-tazeni-rukojeti.png"))
+    lines.append("✓ Tažení rukojeti ve 3D: Qt události, OCCT projekce XY, náhled bez změny "
+                 "modelu, jeden krok Zpět/Znovu a zrušení Esc")
 
 
 def _self_test_loft_wall(window, lines: list[str]) -> bool:
