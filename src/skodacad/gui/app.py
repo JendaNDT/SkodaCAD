@@ -339,6 +339,13 @@ def _self_test_loft_wall(window, lines: list[str]) -> bool:
         form = window.feature_editor.form
         combo = form.widget("wall_mode")
         assert combo.count() == 2 and combo.currentData() == "normal"
+        wall_panel = window.feature_editor.wall_panel
+        wall_panel.button.click()
+        report = window.session.loft_wall_report("prechod")
+        assert report is not None and report.counts["nominal"] == 25
+        wall_panel.table.setCurrentCell(0, 0)
+        assert window.session.loft_wall_measurement("prechod", 0)
+        lines.append("✓ CAD přehled stěny: 25 normálových měření 3 mm, tabulka a značka ve 3D")
         shift = 3 * math.sqrt(1 + 1 / 9)
         normal_volume = math.pi * 60 * (60 * shift - shift**2)
         assert window.session.result.ok
@@ -348,6 +355,11 @@ def _self_test_loft_wall(window, lines: list[str]) -> bool:
             window.viewer.dump(str(user_dir() / "self-test-stena-loftu.png"))
         combo.setCurrentIndex(combo.findData("sections"))
         assert abs(window.session.result.part.volume - math.pi * 10260) < 2e-5
+        assert window.session.loft_wall_report("prechod") is None
+        wall_panel.button.click()
+        report = window.session.loft_wall_report("prechod")
+        assert report is not None and report.counts["below"] == 25
+        assert all(abs(t - 3 / math.sqrt(1 + 1 / 9)) < 2e-5 for t in report.lengths)
         window.undo_action.trigger()
         assert window.session.feature("prechod")["wall_mode"] == "normal"
         window.redo_action.trigger()

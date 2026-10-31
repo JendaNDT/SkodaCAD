@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.loft_wall_panel import LoftWallPanel
 from skodacad.schema import (
     FACE_CHOICES,
     FEATURE_SCHEMAS,
@@ -642,6 +643,8 @@ class FeatureEditor(QWidget):
         self.title = QLabel()
         self.title.setWordWrap(True)
         self._layout.addWidget(self.title)
+        self.wall_panel = LoftWallPanel()
+        self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
         self.form: FieldsForm | None = None
         self.feature_id: str | None = None
@@ -658,6 +661,7 @@ class FeatureEditor(QWidget):
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None
+        self.wall_panel.setVisible(feature is not None and feature.get("type") == "loft")
         if feature is None:
             self.title.setText("Vyber prvek ve stromu prvků – tady se ukážou jeho hodnoty.\n\n"
                                "Nový prvek přidáš tlačítkem „Přidat prvek“ pod stromem.")

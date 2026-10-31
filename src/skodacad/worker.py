@@ -110,11 +110,16 @@ def _worker_main(conn: Any, step_phase: Any) -> None:
         except (EOFError, OSError):
             return  # okno skončilo
         if message[0] not in ("rebuild", "coverage", "access", "plan", "pt", "mt", "rt",
-                              "audit", "design", "assembly_check"):
+                              "audit", "design", "assembly_check", "loft_wall"):
             return
         kind, job, data, *options = message
         try:
-            if kind == "design":
+            if kind == "loft_wall":
+                from skodacad.loft_inspection import inspect_loft
+
+                doc = Document.from_dict(data)
+                reply = ("loft_wall", job, inspect_loft(doc, rebuild(doc), options[0]))
+            elif kind == "design":
                 import datetime
 
                 from skodacad.ndt.design import Design, run
@@ -327,6 +332,7 @@ class Finished:
     rt: Any = None  # mapa geometrického promítnutí oblasti RT (etapa 13)
     audit: Any = None  # předběžný NDT audit doběhl (etapa 14; studie chodí v ``update``)
     design: Any = None  # konstrukční návrhy (etapa 15; varianty chodí v ``update``)
+    loft_wall: Any = None  # vzorkovaný CAD přehled stěny přechodu
     assembly_check: Any = None  # kolize a vůle sestavy (P5.4; průběh chodí v ``update``)
     update: tuple[str, Any] | None = None  # průběžná zpráva – výpočet běží dál
 
@@ -361,6 +367,10 @@ class BackgroundRebuilder:
         """Spustí přepočet modelu (slovník z ``Document.to_dict``), s ``with_map`` i mapu
         tloušťky stěny. Rozpočítaný starší přepočet se ukončí – jeho výsledek by už neplatil."""
         return self._submit(("rebuild", document, with_map))
+
+    def submit_loft_wall(self, document: dict[str, Any], feature_id: str) -> int:
+        """Změří stěnu přechodu v hotovém dílu, bez přenosu nativních tvarů."""
+        return self._submit(("loft_wall", document, feature_id))
 
     def submit_coverage(self, document: dict[str, Any], placement: Any,
                         options: dict[str, Any]) -> int:
@@ -473,6 +483,8 @@ class BackgroundRebuilder:
                     return Finished(job, audit=payload)
                 if kind == "design":
                     return Finished(job, design=payload)
+                if kind == "loft_wall":
+                    return Finished(job, loft_wall=payload)
                 if kind == "assembly_check":
                     return Finished(job, assembly_check=payload)
                 return Finished(job, error=payload)

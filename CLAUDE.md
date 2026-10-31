@@ -1472,7 +1472,16 @@ vnitřních ploch); validita samotná nezachytila obrácený kužel při příli
 2D režim vyžaduje jeden menší profil a celý vnitřní loft uvnitř vnějšího. Formulář
 zachovává chybějící volbu při jiné úpravě; ukázka, historie a self-test balíčku.
 Nejnovější formát je 33 (čtení 1–33), ostatní díly nadále 24–32 a sestavy 29–31.
-Výsledky kontrol v implementačním PR. Samostatný CAD přehled zůstává otevřený.
+Výsledky kontrol v implementačním PR.
+**P6.3 CAD přehled stěny — implementace 31. 10. 2026:** [význam a meze](docs/p6-5-prehled-steny-loftu.md),
+`loft_inspection.py`, 5 × 5 bodů původního pláště / boční plocha, v aktuálním hotovém dílu.
+Geometrické délky přes PartGeometry bez NDT filtru 60°, hrany/tečnost a změněný povrch
+nejisté. Pod/u zadání, delší průchod a nejisté; číselná tolerance není výrobní přejímka,
+vzorky nejsou globální minimum. Dočasná zpráva přes session a samostatnou úlohu workeru,
+zastavení bez změny receptu; změna modelu, historie a otevření ji zneplatní. Panel pod
+loftem, tabulka a výběr měřicí úsečky/bodu ve 3D, žádná změna formátu ani NDT.
+Analytické reference, výsypka, navazující odebrání, chyby a platnost, proces, GUI a
+self-test; konkrétní úplné výsledky před sloučením v implementačním PR.
 **P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

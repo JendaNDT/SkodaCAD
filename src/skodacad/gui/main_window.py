@@ -370,6 +370,8 @@ class MainWindow(QMainWindow):
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
         self.feature_editor.changed.connect(self._feature_edited)
+        self.feature_editor.wall_panel.requested.connect(self.inspect_loft_wall)
+        self.feature_editor.wall_panel.selected.connect(lambda _row: self._show_measure_line(None))
         self.feature_editor.invalid.connect(
             lambda message: self.statusBar().showMessage(message, 10000))
         self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
@@ -1512,6 +1514,7 @@ class MainWindow(QMainWindow):
         self.ndt_panel.refresh()
         self.audit_panel.refresh()
         self.design_panel.refresh()
+        self._refresh_loft_wall()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -1560,7 +1563,9 @@ class MainWindow(QMainWindow):
             self._pending_shown = False
         shown = computing and self._pending_shown
         self.progress_label.setText(
-            f"⏳ Přepočítávám… {self.session.computing_seconds:.0f} s" if shown else "")
+            (f"⏳ Měřím stěnu… {self.session.computing_seconds:.0f} s"
+             if self.session.loft_wall_pending else
+             f"⏳ Přepočítávám… {self.session.computing_seconds:.0f} s") if shown else "")
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
             widget.setVisible(shown)
         self.stop_action.setEnabled(computing)
@@ -1590,8 +1595,13 @@ class MainWindow(QMainWindow):
         rt = self.session.rt_pending
         audit = self.session.audit_pending
         design = self.session.design_pending
+        loft_wall = self.session.loft_wall_pending
         if self.session.cancel():
             self._pending_shown = False
+            if loft_wall:
+                self._refresh_all()
+                self.statusBar().showMessage("Měření stěny zastaveno.", 10000)
+                return
             if coverage or access or plan or pt or mt or rt or audit or design:
                 # zastavený výpočet NDT – model se neměnil
                 self._refresh_all()
@@ -1764,6 +1774,7 @@ class MainWindow(QMainWindow):
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
             self.feature_editor.show_feature(None)
+            self._refresh_loft_wall()
             return
         features = self.session.document.features
         index = self.session.feature_index(self._selected_id)
@@ -1772,6 +1783,30 @@ class MainWindow(QMainWindow):
                       if f["type"] in REPEATABLE_FEATURES]
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)
+        self._refresh_loft_wall()
+
+    def inspect_loft_wall(self) -> None:
+        if self._selected_id is None:
+            return
+        try:
+            self._busy(lambda: self.session.inspect_loft_wall(self._selected_id))
+        except DocumentError as exc:
+            self._error("Stěnu nelze změřit", str(exc))
+        self._refresh_all()
+
+    def _refresh_loft_wall(self) -> None:
+        panel = self.feature_editor.wall_panel
+        fid = self._selected_id
+        feature = (next((f for f in self.session.document.features if f["id"] == fid), None)
+                   if self.session.document else None)
+        if feature is None or feature.get("type") != "loft":
+            panel.hide()
+            panel.refresh(None, None, "", self.session.computing)
+            return
+        panel.show()
+        report = self.session.loft_wall_report(fid)
+        panel.refresh(fid, report, self.session.loft_wall_problem(fid), self.session.computing)
+        panel.button.setEnabled(self.session.loft_wall_available(fid))
 
     def _refresh_properties(self) -> None:
         props = self.session.properties
@@ -1871,6 +1906,8 @@ class MainWindow(QMainWindow):
             lines = [(*value.points, format_value(value.value, value.unit))]
         if self._selected_id is not None:
             lines += self.session.feature_direction(self._selected_id)
+            lines += self.session.loft_wall_measurement(
+                self._selected_id, self.feature_editor.wall_panel.selected_index)
         self.viewer.show_measurement(lines)
 
     def _refresh_saved_measurements(self) -> None:
