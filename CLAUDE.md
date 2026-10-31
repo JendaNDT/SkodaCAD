@@ -1456,6 +1456,14 @@ objem podle vzorce, průběh a tečnost ověřené. Session, výběr ve 3D, form
 obrácení, značky konců, ukázka a self-test. Úplné kontroly jsou podmínkou sloučení. P6.4 na vlastním
 dílu a další kandidáti z P6.1 zůstávají otevřené. Ostatní díly zůstávají v24–28,
 sestavy v29–31; nejnovější podporovaný formát je 32.
+**P6.2 skořepiny — průzkum 31. 10. 2026:** [tři reference a návrh opravy](docs/p6-3-skorepiny-overeni-a-navrh.md),
+spustitelný `docs/p6-3-pruzkum-skorepin.py`, samostatné časově omezené workflow pro oba OS.
+Kvádr, šikmé stěny a zaoblený kryt souhlasí s analytickým objemem a ve vzorcích
+pravidelných stěn mají 3/3/2 mm. Rozlišovat geometrickou délku materiálem kolmo
+od měřidla s filtrem 60°: klíny a zaniklé vnitřní zaoblení tvoří zesílené rohy,
+nikoli automaticky chybu. Výsypka potvrzuje 2,61–2,77 mm kolmo při zadaných 3 mm
+v rovinách skic; přímý offset vrací nezměněný solid. Navazuje výslovný režim stěny
+loftu a oddělený CAD přehled; změna produkce a formátu zatím není implementovaná.
 **P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

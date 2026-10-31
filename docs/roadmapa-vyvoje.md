@@ -278,7 +278,11 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
 Nová funkce pro výslovně omezený pravoúhlý roh používá přímkový loft řezacího
 čtvrtkruhového profilu a má analytický objem, kontroly průběhu a tečnosti,
 zápis verze 32, pojistky směru a původu, historii, formulář, značky R1/R2 a ukázku.
-P6.4 přijetí na vlastním dílu, robustnější skořepiny a vodicí křivky loftu zbývají.
+**Skořepiny — průzkum 31. 10. 2026:** [tři reference a návrh další opravy](p6-3-skorepiny-overeni-a-navrh.md),
+analytické objemy, vzorkovaná normálová měření, zesílení rohů a odmítnutá tloušťka.
+U výsypky potvrzen rozdíl 3 mm v rovině skic proti 2,61–2,77 mm kolmo.
+Navazuje výslovná volba významu stěny loftu a měření oddělené od filtru NDT;
+produkční změna zatím nevznikla. P6.4 přijetí na vlastním dílu a vodicí křivky loftu zbývají.
 
 1. **P6.1 Výběr operací** (P1–P5): sestavit priority podle skutečných dílů autora,
    např. proměnné zaoblení, robustnější skořepina, vodicí křivky loftu, další křivky/plochy.
