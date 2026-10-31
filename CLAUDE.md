@@ -334,6 +334,13 @@
   Formát 34 a session/jádro beze změny. Změna kroku rozpracovaný tah zruší.
   Cílené místní testy a úplné kontroly obou systémů v implementačním PR.
 
+- (31. 10. 2026, pokyn autora) **P6.10 omezení směru tažení**
+  (`docs/p6-10-smer-tazeni.md`): volba XY / Pouze X / Pouze Y v osách dílu,
+  použití stávajícího kroku, pevná druhá souřadnice a Z. Pro jednu osu parametr
+  nejbližšího bodu osy vůči pohledovému paprsku, proto X funguje i zepředu a Y zprava;
+  zaniklá osa se odmítne. Změna směru tah zruší. Preference otevřeného okna,
+  ne dokumentu; formát 34 a jádro/session beze změny. Výsledky kontrol v PR.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy

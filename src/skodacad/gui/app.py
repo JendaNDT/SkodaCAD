@@ -463,6 +463,49 @@ def _self_test_guide_drag(window, lines: list[str]) -> None:
     lines.append("✓ Krok tažení: ovládání 1 mm / 0,1 mm / Volně, stejné přichycení náhledu "
                  "a výsledku, pevné Z, jeden krok Zpět/Znovu, volba beze změny receptu")
 
+    for direction, view in (("X", "front"), ("Y", "right")):
+        before = copy.deepcopy(window.session.document)
+        result, undo = window.session.result, len(window.session._undo)
+        editor = window.feature_editor.form.widget("guides")
+        editor.drag_step.setValue(1.)
+        editor.drag_direction.setCurrentIndex(editor.drag_direction.findData(direction))
+        assert window.session.document == before and window.session.result is result
+        viewer.set_standard_view(view)
+        QApplication.processEvents()
+        pole = viewer._guides_data["guides"][viewer._guides_data["selected"]]["poles"][1]
+        start = position()
+        QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+        assert viewer._guide_drag is not None, f"Osa {direction} není uchopitelná v {view}."
+        end = start + QPoint(24, 0)
+        QTest.mouseMove(viewer._surface, end)
+        delta = list(viewer._guide_drag["delta"])
+        active, inactive = (0, 1) if direction == "X" else (1, 0)
+        assert delta[inactive] == 0 and abs(delta[active]) >= 1
+        assert delta[active] == round(delta[active])
+        assert window.session.document == before and window.session.result is result
+        QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+        assert window.session.result.ok and len(window.session._undo) == undo+1
+        actual = viewer._guides_data["guides"][viewer._guides_data["selected"]]["poles"][1]
+        assert abs(actual[active]-pole[active]-delta[active]) < 1e-8
+        assert actual[inactive] == pole[inactive] and actual[2] == pole[2]
+        assert window.session.document.features[-1]["guides"][0]["controls"][0][inactive] == \
+            before.features[-1]["guides"][0]["controls"][0][inactive]
+        moved = copy.deepcopy(window.session.document)
+        window.undo_action.trigger()
+        assert window.session.document == before
+        window.redo_action.trigger()
+        assert window.session.document == moved
+        editor = window.feature_editor.form.widget("guides")
+        assert editor.drag_direction.currentData() == direction and editor.drag_step.value() == 1.
+    before = copy.deepcopy(window.session.document)
+    editor.drag_direction.setCurrentIndex(editor.drag_direction.findData("XY"))
+    assert viewer._guide_drag_direction == "XY" and window.session.document == before
+    viewer.set_standard_view("iso")
+    window.session.save(user_dir() / "self-test-smer-tazeni.json")
+    viewer.dump(str(user_dir() / "self-test-smer-tazeni.png"))
+    lines.append("✓ Směr tažení: pouze X zepředu / pouze Y zprava / XY, krok 1 mm, "
+                 "pevné Z a druhá souřadnice, jeden krok Zpět/Znovu, volba beze změny receptu")
+
 
 def _self_test_loft_wall(window, lines: list[str]) -> bool:
     """Výslovné režimy přes skutečný formulář, historie a zápis v33 v balíčku."""

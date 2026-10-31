@@ -284,3 +284,120 @@ def test_snapped_move_reaches_exact_geometry_volume_and_one_undo():
     assert len(s._undo) == 1
     s.undo()
     assert s.result.part.volume == pytest.approx(77760, abs=2e-5)
+
+
+@pytest.mark.parametrize('direction', ['XY', 'X', 'Y'])
+@pytest.mark.parametrize('step,expected', [(0., (2.7, -1.8)), (.1, (2.7, -1.8)),
+                                          (.5, (2.5, -2.)), (1., (3., -2.))])
+def test_axis_constraint_combines_with_free_or_stepped_drag(direction, step, expected):
+    from skodacad.gui.guide_drag import constrained_delta
+
+    actual = constrained_delta((2.7, -1.8), step, direction)
+    assert actual == (0. if direction == 'Y' else expected[0],
+                      0. if direction == 'X' else expected[1])
+
+
+@pytest.mark.parametrize('direction', ['X', 'Y'])
+@pytest.mark.parametrize('d', [(2., -1., -2.), (1., 2., 3.), (0., 0., 1.)])
+def test_axis_parameter_matches_independent_closest_lines_solve(direction, d):
+    import numpy as np
+
+    from skodacad.gui.guide_drag import axis_parameter
+
+    anchor, origin = np.array((20., -7., 40.)), np.array((13., 5., 2.))
+    e = np.array((1., 0., 0.) if direction == 'X' else (0., 1., 0.))
+    expected = np.linalg.lstsq(np.column_stack((e, -np.array(d))), origin-anchor, rcond=None)[0][0]
+    assert axis_parameter((*origin, *d), anchor, direction) == pytest.approx(expected, abs=1e-10)
+    translation = np.array((1000., -700., 500.))
+    assert axis_parameter((*(origin+translation), *(v*1e6 for v in d)),
+                          anchor+translation, direction) == pytest.approx(expected, abs=1e-10)
+
+
+def test_hidden_axis_is_refused_and_front_side_views_have_visible_axis():
+    from skodacad.gui.guide_drag import axis_parameter, constrained_delta
+
+    assert axis_parameter((3, 4, 5, 0, 1, 0), (1, 2, 20), 'X') == 2
+    assert axis_parameter((3, 4, 5, 1, 0, 0), (1, 2, 20), 'Y') == 2
+    assert axis_parameter((3, 4, 5, 1, 0, 0), (1, 2, 20), 'X') is None
+    assert axis_parameter((3, 4, 5, 0, 1, 0), (1, 2, 20), 'Y') is None
+    assert axis_parameter((3, 4, 5, 1, 1e-5, 0), (1, 2, 20), 'X') is None
+    assert axis_parameter((3, 4, 5, 0, 0, 0), (1, 2, 20), 'X') is None
+    assert axis_parameter((3, 4, 5, 0, 0, float('inf')), (1, 2, 20), 'X') is None
+    with pytest.raises(ValueError, match='Směr tažení'):
+        constrained_delta((1, 2), 1, 'Z')
+
+
+@pytest.mark.parametrize('direction,delta', [('X', [.5, 0.]), ('Y', [0., -.5])])
+@pytest.mark.parametrize('ratio', [1., 1.25, 2.])
+def test_locked_mouse_preview_and_release_preserve_other_coordinate(
+        viewer, monkeypatch, direction, delta, ratio):
+    v = viewer
+    monkeypatch.setattr(v, '_pixel_scale', lambda: ratio)
+    v.set_guide_drag_step(.5)
+    v.set_guide_drag_direction(direction)
+    events = []
+    v.guide_handle_moved.connect(events.append)
+    start, end = (102/ratio, 100/ratio), (109/ratio, 93/ratio)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, start))
+    v._mouse_move(mouse(QEvent.Type.MouseMove, end))
+    assert v._drawn[-1]['guides'][0]['poles'][1] == pytest.approx((10+delta[0], 10+delta[1], 20))
+    assert not events
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, end))
+    assert len(events) == 1 and events[0]['delta'] == delta
+
+
+@pytest.mark.parametrize('direction,end', [('X', (100, 116)), ('Y', (116, 100))])
+def test_movement_across_locked_axis_never_creates_change(viewer, monkeypatch, direction, end):
+    v = viewer
+    monkeypatch.setattr(v, '_pixel_scale', lambda: 1.)
+    v.set_guide_drag_direction(direction)
+    events = []
+    v.guide_handle_moved.connect(events.append)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, end))
+    assert not events
+
+
+def test_direction_switch_cancels_preview_and_front_drag_works(viewer, monkeypatch):
+    v = viewer
+    monkeypatch.setattr(v, '_pixel_scale', lambda: 1.)
+    events = []
+    v.guide_handle_moved.connect(events.append)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    v._mouse_move(mouse(QEvent.Type.MouseMove, (116, 100)))
+    v.set_guide_drag_direction('X')
+    assert v._guide_drag is None and v._drawn[-1] == v._guides_data
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, (116, 100)))
+    assert not events
+    # Paprsek rovnoběžný s XY: volné tažení by odmítl, viditelná osa X zůstává použitelná.
+    v._view.ConvertWithProj = lambda x, y: (x/10, 0., y/10, 0., 1., 0.)
+    v.set_guide_drag_step(1.)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    assert v._guide_drag is not None
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, (118, 100)))
+    assert events[0]['delta'] == [2., 0.]
+    v.set_guide_drag_direction('Y')
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    assert v._guide_drag is None and v._press is None
+
+
+@pytest.mark.parametrize('direction,delta,volume', [('X', (3., 0.), 78507.),
+                                                   ('Y', (0., -2.), 77088.)])
+def test_single_axis_move_has_independent_volume_and_unchanged_other_expression(
+        direction, delta, volume):
+    from skodacad.gui.guide_drag import constrained_delta
+
+    s = ModelSession()
+    s.open(EXAMPLE)
+    original = copy.deepcopy(s.document)
+    s.move_guided_handle(**request(s, delta=constrained_delta((2.7, -1.8), 1., direction)))
+    assert s.result.ok and s.result.part.is_valid
+    assert s.result.part.volume == pytest.approx(volume, abs=2e-5)  # 77760 + 249dx + 336dy
+    rail = s.guided_loft_display('rizeny')['guides'][0]
+    assert rail['curve'][20] == pytest.approx((23+3*delta[0]/8, 17+3*delta[1]/8, 30))
+    inactive = 1 if direction == 'X' else 0
+    assert s.document.features[-1]['guides'][0]['controls'][0][inactive] == \
+        original.features[-1]['guides'][0]['controls'][0][inactive]
+    assert len(s._undo) == 1
+    s.undo()
+    assert s.document == original and s.result.part.volume == pytest.approx(77760, abs=2e-5)

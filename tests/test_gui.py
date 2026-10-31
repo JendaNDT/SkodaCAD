@@ -32,6 +32,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.highlighted = []
         self.guides = None
         self.guide_drag_step = 0.
+        self.guide_drag_direction = "XY"
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.coverage_map = None
@@ -66,6 +67,9 @@ class FakeViewer(QtWidgets.QWidget):
 
     def set_guide_drag_step(self, step):
         self.guide_drag_step = step
+
+    def set_guide_drag_direction(self, direction):
+        self.guide_drag_direction = direction
 
     def show_guides(self, data):
         self.guides = data
@@ -2954,4 +2958,37 @@ def test_guide_step_is_view_only_and_survives_selection_history_and_reopen(
     assert w.feature_editor.form.widget('guides').drag_step.value() == .25
     saved = path.read_text(encoding='utf-8')
     assert 'drag_step' not in saved and 'Krok tažení' not in saved
+    assert w.session.document.to_dict()['version'] == 34 and not slot_errors
+
+
+def test_guide_direction_is_view_only_and_survives_history_and_reopen(
+        empty_window, examples_dir, tmp_path, slot_errors):
+    import copy
+
+    w = empty_window
+    w.open_model(examples_dir / 'rizeny_prechod.json', template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    editor = w.feature_editor.form.widget('guides')
+    assert editor.drag_direction.currentData() == 'XY'
+    original, result = copy.deepcopy(w.session.document), w.session.result
+    editor.drag_step.setValue(.25)
+    editor.drag_direction.setCurrentIndex(editor.drag_direction.findData('X'))
+    assert w.viewer.guide_drag_direction == 'X' and w.viewer.guide_drag_step == .25
+    assert w.session.document == original and w.session.result is result
+    assert not w.session.dirty and not w.session.can_undo
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.feature_editor.form.widget('guides').drag_direction.currentData() == 'X'
+    w.viewer.guide_handle_moved.emit({
+        'feature_id': 'rizeny', 'signature': result.model_signature,
+        'corner': [1, 1], 'handle': 0, 'delta': [1., 0.]})
+    w.undo_action.trigger()
+    w.redo_action.trigger()
+    editor = w.feature_editor.form.widget('guides')
+    assert editor.drag_direction.currentData() == 'X' and editor.drag_step.value() == .25
+    path = w.session.save(tmp_path/'smer.json')
+    assert w.open_model(path)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.feature_editor.form.widget('guides').drag_direction.currentData() == 'X'
+    assert 'drag_direction' not in path.read_text(encoding='utf-8')
     assert w.session.document.to_dict()['version'] == 34 and not slot_errors
