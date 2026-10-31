@@ -425,6 +425,44 @@ def _self_test_guide_drag(window, lines: list[str]) -> None:
     lines.append("✓ Tažení rukojeti ve 3D: Qt události, OCCT projekce XY, náhled bez změny "
                  "modelu, jeden krok Zpět/Znovu a zrušení Esc")
 
+    before = copy.deepcopy(window.session.document)
+    result, undo = window.session.result, len(window.session._undo)
+    control = window.feature_editor.form.widget("guides").drag_step
+    control.setValue(1.)
+    assert window.session.document == before and window.session.result is result
+    assert len(window.session._undo) == undo and viewer._guide_drag_step == 1.
+    pole = viewer._guides_data["guides"][viewer._guides_data["selected"]]["poles"][1]
+    start = position()
+    QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+    assert viewer._guide_drag is not None
+    end = start + QPoint(-24, 0)
+    QTest.mouseMove(viewer._surface, end)
+    delta = list(viewer._guide_drag["delta"])
+    assert any(delta) and all(v == round(v) for v in delta)
+    assert window.session.document == before and window.session.result is result
+    QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+    assert window.session.result.ok and len(window.session._undo) == undo+1
+    actual = viewer._guides_data["guides"][viewer._guides_data["selected"]]["poles"][1]
+    assert abs(actual[0]-pole[0]-delta[0]) < 1e-8
+    assert abs(actual[1]-pole[1]-delta[1]) < 1e-8 and actual[2] == pole[2]
+    moved = copy.deepcopy(window.session.document)
+    window.undo_action.trigger()
+    assert window.session.document == before
+    assert window.feature_editor.form.widget("guides").drag_step.value() == 1.
+    window.redo_action.trigger()
+    assert window.session.document == moved
+    result, undo = window.session.result, len(window.session._undo)
+    control = window.feature_editor.form.widget("guides").drag_step
+    control.setValue(.1)
+    assert viewer._guide_drag_step == .1
+    control.setValue(0.)
+    assert "Volně" in control.text() and viewer._guide_drag_step == 0.
+    assert window.session.document == moved and window.session.result is result
+    assert len(window.session._undo) == undo
+    window.session.save(user_dir() / "self-test-krok-tazeni.json")
+    lines.append("✓ Krok tažení: ovládání 1 mm / 0,1 mm / Volně, stejné přichycení náhledu "
+                 "a výsledku, pevné Z, jeden krok Zpět/Znovu, volba beze změny receptu")
+
 
 def _self_test_loft_wall(window, lines: list[str]) -> bool:
     """Výslovné režimy přes skutečný formulář, historie a zápis v33 v balíčku."""

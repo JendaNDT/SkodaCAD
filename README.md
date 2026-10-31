@@ -704,7 +704,11 @@ Kliknutí na A–D zvýrazní vodítko a zobrazí jeho čárkovaný řídicí po
 výšce; během tahu se mění jen náhled vodítka. Puštění myši ověří celý model
 na pozadí a úspěšný tah uloží jako jeden krok Zpět. Esc nebo přepnutí z okna
 tah zruší. Neplatný výsledek ponechá původní model i historii. Výraz rukojeti
-si zachová vazbu na parametry. Při bočním pohledu nebo překrytých rukojetích
+si zachová vazbu na parametry. Nad vodítky je **Krok tažení**: 0 = **Volně**,
+kladná hodnota 0,001–1000 mm přichytává posun v X i Y od začátku tahu
+(např. 0,1 / 0,5 / 1 / 5 mm). Polovina kroku se zaokrouhlí od nuly.
+Volba platí pro otevřené okno, drží se při přepínání prvků a Zpět/Znovu,
+model ani jeho formát nemění. [Podrobnosti kroku](docs/p6-9-krok-tazeni.md). Při bočním pohledu nebo překrytých rukojetích
 zvol Izometrii či Shora nebo díl přibliž. [Podrobnosti tažení](docs/p6-8-tazeni-rukojeti.md).
 Posun rukojeti není skutečné vyboulení: při stejném posunu obou rukojetí
 je prostřední bod vychýlen o 3/4 tohoto posunu.

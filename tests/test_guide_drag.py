@@ -207,3 +207,80 @@ def test_valid_guides_but_broken_later_hole_are_rejected_atomically():
     with pytest.raises(DocumentError, match='řez neodebral'):
         s.move_guided_handle(**request(s, delta=(-20, 0)))
     assert s.document == original and s.result is result and s._undo == undo
+
+
+@pytest.mark.parametrize('delta,step,expected', [
+    ((1.49, -1.51), 1., (1., -2.)),
+    ((.25, -.25), .5, (.5, -.5)),
+    ((.15, -.15), .1, (.2, -.2)),
+    ((.0005, -.0005), .001, (.001, -.001)),
+    ((.26, -.34), .1, (.3, -.3)),
+    ((499., -501.), 1000., (0., -1000.)),
+    ((1.23456789, -2.3456789), 0., (1.23456789, -2.3456789)),
+])
+def test_step_is_symmetric_and_decimal_clean(delta, step, expected):
+    from skodacad.gui.guide_drag import snapped_delta
+
+    assert snapped_delta(delta, step) == expected
+
+
+@pytest.mark.parametrize('step', [-1., float('nan'), float('inf'), 1000.001])
+def test_bad_drag_step_is_refused(step):
+    from skodacad.gui.guide_drag import snapped_delta
+
+    with pytest.raises(ValueError, match='Krok tažení'):
+        snapped_delta((1., 2.), step)
+
+
+@pytest.mark.parametrize('ratio', [1., 1.25, 2.])
+def test_snapped_preview_and_release_use_total_xy_displacement(viewer, monkeypatch, ratio):
+    v = viewer
+    monkeypatch.setattr(v, '_pixel_scale', lambda: ratio)
+    v.set_guide_drag_step(.5)
+    events = []
+    v.guide_handle_moved.connect(events.append)
+    start = (100/ratio+2, 100/ratio)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, start))
+    # Více událostí nesmí sčítat zaokrouhlení; každý náhled patří témuž počátku tahu.
+    for amount in (7, 13, 7):
+        v._mouse_move(mouse(QEvent.Type.MouseMove,
+                            (start[0]+amount/ratio, start[1]-7/ratio)))
+    assert v._drawn[-1]['guides'][0]['poles'][1] == pytest.approx((10.5, 9.5, 20))
+    assert not events
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease,
+                           (start[0]+7/ratio, start[1]-7/ratio)))
+    assert len(events) == 1 and events[0]['delta'] == [.5, -.5]
+    assert v._drawn[-1] == v._guides_data
+
+
+def test_substep_drag_is_no_change_and_step_switch_cancels_active_drag(viewer, monkeypatch):
+    v = viewer
+    monkeypatch.setattr(v, '_pixel_scale', lambda: 1.)
+    events = []
+    v.guide_handle_moved.connect(events.append)
+    v.set_guide_drag_step(1.)
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, (104, 100)))
+    assert not events  # čtyři pixely už jsou tah, ale 0,4 mm je stále nulový krok
+    v._mouse_press(mouse(QEvent.Type.MouseButtonPress, (100, 100)))
+    v._mouse_move(mouse(QEvent.Type.MouseMove, (116, 100)))
+    assert v._drawn[-1]['guides'][0]['poles'][1] == (12., 10., 20.)
+    v.set_guide_drag_step(.1)
+    assert v._guide_drag is None
+    v._mouse_release(mouse(QEvent.Type.MouseButtonRelease, (116, 100)))
+    assert not events and v._drawn[-1] == v._guides_data
+
+
+def test_snapped_move_reaches_exact_geometry_volume_and_one_undo():
+    from skodacad.gui.guide_drag import snapped_delta
+
+    s = ModelSession()
+    s.open(EXAMPLE)
+    s.move_guided_handle(**request(s, delta=snapped_delta((2.7, 1.8), 1.)))
+    # Posun jedné první rukojeti o (3,2): nezávislý integrál změny plochy
+    # dV = H * integral[3t(1-t)^2 * (b(t)*dx + a(t)*dy)] = 249dx + 336dy.
+    assert s.result.ok and s.result.part.is_valid
+    assert s.result.part.volume == pytest.approx(77760+249*3+336*2, abs=2e-5)
+    assert len(s._undo) == 1
+    s.undo()
+    assert s.result.part.volume == pytest.approx(77760, abs=2e-5)

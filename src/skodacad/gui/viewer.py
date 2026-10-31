@@ -81,7 +81,7 @@ from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 
-from skodacad.gui.guide_drag import nearest_handle, on_xy_plane
+from skodacad.gui.guide_drag import DEFAULT_STEP, nearest_handle, on_xy_plane, snapped_delta
 from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
 
@@ -245,6 +245,7 @@ class OccViewer(QWidget):
         self._pending_guides = None
         self._guides_data = None
         self._guide_drag = None
+        self._guide_drag_step = DEFAULT_STEP
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
@@ -437,6 +438,13 @@ class OccViewer(QWidget):
                         p, p, f"{letter} řízení {j}", color, point_size=6.0)
         self._view.Redraw()
 
+    def set_guide_drag_step(self, step: float) -> None:
+        """Volba pohledu; rozpracovaný tah se při změně kroku zruší."""
+        snapped_delta((0., 0.), step)  # stejná kontrola jako při vlastním přichycení
+        if step != self._guide_drag_step:
+            self.cancel_guide_drag()
+            self._guide_drag_step = step
+
     def _guide_handle_at(self, pos):
         data = self._guides_data
         if data is None or "signature" not in data:
@@ -463,9 +471,12 @@ class OccViewer(QWidget):
             self.guide_drag_message.emit("Rukojeť se pohybuje v XY – zvol Izometrii nebo Shora.")
             return True
         self._guide_drag = {"data": copy.deepcopy(data), "handle": handle,
-                            "start": start, "pole": pole, "delta": [0., 0.]}
+                            "start": start, "pole": pole, "step": self._guide_drag_step,
+                            "delta": [0., 0.]}
         self._surface.setCursor(Qt.CursorShape.ClosedHandCursor)
-        self.guide_drag_message.emit("Náhled vodítka v XY · puštění = ověřit těleso · Esc = zrušit")
+        step_text = f"krok {self._guide_drag_step:g} mm" if self._guide_drag_step else "volně"
+        self.guide_drag_message.emit(
+            f"Náhled vodítka v XY ({step_text}) · puštění = ověřit těleso · Esc = zrušit")
         return True
 
     def _move_guide_drag(self, pos) -> None:
@@ -477,7 +488,8 @@ class OccViewer(QWidget):
         if xy is None:
             self.cancel_guide_drag()
             return
-        drag["delta"] = [a-b for a, b in zip(xy, drag["start"], strict=True)]
+        drag["delta"] = list(snapped_delta(
+            [a-b for a, b in zip(xy, drag["start"], strict=True)], drag["step"]))
         preview = copy.deepcopy(drag["data"])
         poles = preview["guides"][preview["selected"]]["poles"]
         poles[drag["handle"]+1] = (drag["pole"][0]+drag["delta"][0],
@@ -1204,7 +1216,7 @@ class OccViewer(QWidget):
                     request = {"feature_id": data["feature_id"], "signature": data["signature"],
                                "corner": data["guides"][data["selected"]]["corner"],
                                "handle": drag["handle"], "delta": drag["delta"]}
-                    moved = self._dragging
+                    moved = self._dragging and any(drag["delta"])
                     self.cancel_guide_drag()
                     if moved:
                         self.guide_handle_moved.emit(request)

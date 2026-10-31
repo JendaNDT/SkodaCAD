@@ -326,6 +326,14 @@
   Konverze myši zohledňuje Retinu; téměř boční či překryté body se odmítnou.
   Formát zůstává 34 a výrazy zachovávají parametry. Výsledky kontrol v PR.
 
+- (31. 10. 2026, pokyn autora) **P6.9 nastavitelný krok tažení**
+  (`docs/p6-9-krok-tazeni.md`): volba nad vodítky, 0 = Volně (výchozí),
+  0,001–1000 mm, posun po X/Y relativně k začátku tahu; poloviny od nuly.
+  Stejná funkce pro náhled a uvolnění, desítkové zaokrouhlení bez zbytků v JSON.
+  Čistě GUI preference okna, drží se při přepínání a historii, neukládá se do modelu.
+  Formát 34 a session/jádro beze změny. Změna kroku rozpracovaný tah zruší.
+  Cílené místní testy a úplné kontroly obou systémů v implementačním PR.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy

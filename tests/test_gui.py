@@ -31,6 +31,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.views = []
         self.highlighted = []
         self.guides = None
+        self.guide_drag_step = 0.
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.coverage_map = None
@@ -62,6 +63,9 @@ class FakeViewer(QtWidgets.QWidget):
 
     def show_design_ghost(self, original):
         self.design_ghost = original
+
+    def set_guide_drag_step(self, step):
+        self.guide_drag_step = step
 
     def show_guides(self, data):
         self.guides = data
@@ -2918,3 +2922,36 @@ def test_guide_async_commit_refreshes_form_only_after_success(empty_window, exam
     finally:
         runner.close()
         w.session._runner = None
+
+
+def test_guide_step_is_view_only_and_survives_selection_history_and_reopen(
+        empty_window, examples_dir, tmp_path, slot_errors):
+    import copy
+
+    w = empty_window
+    w.open_model(examples_dir / 'rizeny_prechod.json', template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    control = w.feature_editor.form.widget('guides').drag_step
+    assert control.value() == 0 and 'Volně' in control.text()
+    original, result = copy.deepcopy(w.session.document), w.session.result
+    control.setValue(.25)
+    assert w.viewer.guide_drag_step == .25 and w._guide_drag_step == .25
+    assert w.session.document == original and w.session.result is result
+    assert not w.session.dirty and not w.session.can_undo
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.feature_editor.form.widget('guides').drag_step.value() == .25
+    w.viewer.guide_handle_moved.emit({
+        'feature_id': 'rizeny', 'signature': result.model_signature,
+        'corner': [1, 1], 'handle': 0, 'delta': [.5, -.25]})
+    assert w.feature_editor.form.widget('guides').drag_step.value() == .25
+    w.undo_action.trigger()
+    w.redo_action.trigger()
+    assert w.feature_editor.form.widget('guides').drag_step.value() == .25
+    path = w.session.save(tmp_path/'krok.json')
+    assert w.open_model(path)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.feature_editor.form.widget('guides').drag_step.value() == .25
+    saved = path.read_text(encoding='utf-8')
+    assert 'drag_step' not in saved and 'Krok tažení' not in saved
+    assert w.session.document.to_dict()['version'] == 34 and not slot_errors
