@@ -669,11 +669,20 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
    jde zaškrtnout i víc skic (dole kruh, uprostřed ovál, nahoře čtverec).
 3. **Rovné stěny** – mezi skicami rovné plochy (jehlan, komolý kužel); bez nich se plocha
    mezi více skicami plynule prohne.
-4. **Tloušťka stěny** – dutý přechod s otevřenými konci (plech). Mezi dvěma kruhy nebo
-   podobnými tvary je stěna přesně kolmo k povrchu. U přechodu **kruh ↔ hranatý tvar** to
-   jádro neumí – stěna se tam měří v rovinách skic (vodorovně) a kolmo k šikmé stěně je
-   o něco tenčí (u ukázky výsypky asi 2,7 mm místo 3 mm). Skutečnou tloušťku ukáže
-   *mapa tloušťky stěny*.
+4. **Tloušťka stěny** – dutý přechod s otevřenými konci. Prázdné nebo 0 = plné těleso.
+5. **Tloušťku měřit** – u nového přechodu vyber jednu ze dvou možností:
+   **Kolmo ke stěně** (výchozí) používá 3D offset; když jej jádro neumí nebo výsledek
+   neprojde kontrolami, zobrazí chybu. **V rovinách skic** zmenší každý profil o zadanou
+   hodnotu a odečte vnitřní přechod. Kolmo ke šikmému plášti je pak materiál tenčí.
+   Starý přechod bez volby ukazuje **Automaticky (starší model)** a zachovává původní
+   geometrii. Úprava jiného políčka jej nepřevede na nový režim.
+
+Ukázka **loft_stena.json**: redukce Ø80 → Ø40, výška 60 mm a stěna 3 mm.
+V normálovém režimu má objem **33 879,562165 mm³**, v rovinách skic **32 232,740626 mm³**
+a kolmo k plášti asi **2,846 mm**. Přepnutí jde vrátit přes Zpět/Znovu.
+Stávající výsypka zachovává původní výsledek; při výslovném požadavku 3 mm kolmo
+se její neproveditelný offset odmítne. Mapa tloušťky ukazuje vzorky měření,
+u okrajů a zesílených rohů má samostatná omezení.
 
 Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se dělá tloušťkou stěny).
 
@@ -913,7 +922,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `revolve` | rotace skici kolem osy | `sketch`, `axis` (`X`/`Y`/`Z`), `angle` (výchozí 360) |
 | `sweep` | tažení profilu po trase | `path` (`[[x, y, z], …]`, aspoň 2 body; poslední = první → uzavřený rám), `bend_radius` (0 = ostré rohy na pokos), `profile` (`circle`/`rectangle`/`steel`/`sketch`), `diameter`; `width`, `height`; `section` (`"IPE 100"`, `"L 50x5"`, `"RHS 40x20x2"`, `"CHS 48.3x2.6"`); `sketch`; `wall` (trubka/jekl), `operation` |
 | `standard` | normalizovaný díl | `kind` (`socket_screw`, `hex_screw`, `countersunk_screw`, `nut`, `washer`, `bearing`, `pin`, `key`, `profile`), `size` (`"M6"`, `"608"`, `"6"`, `"8x7"`, `"IPE 100"`), `length`, `plane`, `offset`, `positions` (`[[x, y], …]`), `angle`, `direction` (`normal`/`reverse` = do materiálu), `operation`, `clearance` (vůle kapsy) |
-| `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled` (`true` = rovné stěny), `wall` (dutý s otevřenými konci), `operation` |
+| `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled`, `wall`, `wall_mode` (`normal` / `sections`, verze 33), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
 | `chamfer` | sražení hran | `edges`, `distance` |
@@ -962,8 +971,22 @@ OCCT jej nemění. `origin` je id prvku, od kterého vybraná hrana nepřetržit
 `normals` jsou vnější normály jejích boků. Změna původu, boků nebo směru vyžaduje
 nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v JSON.
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
-neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, ostatní díly nadále
-v nejnižší potřebné verzi 24–28; verze 1–31 se stále načítají.
+neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
+výslovný režim stěny loftu (pak verze 33). Ostatní díly nadále používají nejnižší
+potřebnou verzi 24–28; verze 1–33 se stále načítají.
+
+### Význam stěny loftu (`wall_mode`, verze 33)
+
+```json
+{"id": "redukce", "type": "loft", "sketches": ["dole", "nahore"],
+ "wall": 3, "wall_mode": "normal"}
+```
+
+`normal` znamená vnitřní 3D offset a nikdy tiše nepřechází na náhradní postup.
+`sections` používá 2D offset skic; kolmo může být stěna tenčí. Chybějící klíč zachová
+starší automatické chování. Nové pole vyžaduje verzi **33**, i když je `wall` právě
+prázdné nebo 0; starší aplikace musí takový soubor odmítnout. Bez tohoto pole se
+verze starých dílů nemění. Podrobnosti: [návrh a kontroly](docs/p6-4-rezim-steny-loftu.md).
 
 ### Import STEP (`step_import`, verze 24)
 

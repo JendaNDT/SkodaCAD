@@ -162,7 +162,7 @@ def test_session_selection_direction_undo_save_and_old_format(tmp_path):
     with pytest.raises(DocumentError, match="32"):
         Document.from_dict(saved)
     old = copy.deepcopy(doc)
-    for number in range(1, 33):
+    for number in range(1, VERSION + 1):
         data = old.to_dict()
         data["version"] = number
         assert rebuild(Document.from_dict(data)).ok

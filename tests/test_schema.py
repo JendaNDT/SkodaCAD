@@ -7,6 +7,7 @@ import pytest
 
 from conftest import make_doc
 from skodacad import rebuild
+from skodacad.document import VERSION, Document
 from skodacad.features import FEATURE_TYPES
 from skodacad.schema import FEATURE_SCHEMAS, SHAPE_DEFAULTS, SHAPE_SCHEMAS, new_feature
 
@@ -46,7 +47,8 @@ def test_choices_are_accepted_by_core():
 
 
 def build(features):
-    result = rebuild(make_doc(features))
+    result = rebuild(Document.from_dict({"format": "skodacad", "version": VERSION,
+                                        "features": features}))
     assert result.ok, [(s.label, s.message) for s in result.statuses if s.status != "ok"]
     return result
 
@@ -149,4 +151,5 @@ def test_new_sweep_is_a_pipe_elbow_and_new_loft_joins_last_two_sketches():
     add(features, "sketch", offset=30, elements=[{"shape": "circle", "diameter": 20}])
     loft = add(features, "loft")
     assert loft["sketches"] == ["sketch1", "sketch2"]
+    assert loft["wall_mode"] == "normal"
     assert build(features).part.volume > 0

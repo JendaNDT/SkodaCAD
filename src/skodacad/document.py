@@ -65,9 +65,10 @@ FORMAT = "skodacad"
 # docs/p5-4-navrh-kontrol.md); sestava bez nich zůstává ve verzi 29 nebo 30.
 # Verze 32: lineární proměnné zaoblení jedné pravoúhlé hrany (variable_fillet),
 # dva poloměry, uložený směr a pojistka původu/boků.
-VERSION = 32
+# Verze 33: výslovný význam stěny loftu (wall_mode: normal / sections).
+VERSION = 33
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33)
 ASSEMBLY_KIND = "assembly"
 
 
@@ -157,6 +158,12 @@ class Document:
                 raise DocumentError("Import STEP vyžaduje formát modelu verze 24.")
             if feature["type"] == "variable_fillet" and version < 32:
                 raise DocumentError("Proměnné zaoblení vyžaduje formát modelu verze 32.")
+            if feature["type"] == "loft" and "wall_mode" in feature and version < 33:
+                raise DocumentError("Volba významu stěny přechodu vyžaduje formát modelu verze 33.")
+            if (feature["type"] == "loft" and "wall_mode" in feature
+                    and feature["wall_mode"] not in ("normal", "sections")):
+                raise DocumentError("Způsob měření stěny přechodu musí být „normal“ "
+                                    "nebo „sections“.")
         if sum(feature.get("type") == "step_import" for feature in features) > 1:
             raise DocumentError("Model zatím podporuje nejvýš jeden import STEP.")
 
@@ -240,7 +247,9 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": (32 if any(f.get("type") == "variable_fillet" for f in self.features)
+            "version": (33 if any(f.get("type") == "loft" and "wall_mode" in f
+                                 for f in self.features)
+                else 32 if any(f.get("type") == "variable_fillet" for f in self.features)
                 else 28 if self.drawing is not None and "views" in self.drawing
                 else 27 if self.drawing is not None and "title_block" in self.drawing
                 else 26 if self.drawing is not None and any(
