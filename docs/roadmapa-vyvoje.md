@@ -26,7 +26,7 @@ Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
 `main` ani automatické slučování bez souhlasu autora.
 
-## Stav k 30. 10. 2026
+## Stav k 31. 10. 2026
 
 **Pokyn autora z 28. 10. 2026:** pokračovat v roadmapě samostatně; běžná rozhodnutí
 a sloučení po úspěšných kontrolách (úplná sada testů, obě workflow včetně kontroly
@@ -46,12 +46,12 @@ technické výsledky a známé meze P5 zůstávají v protokolu.
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 | [Pracovní výběr operací a šest místních pokusů](p6-1-vyber-operaci.md); první doporučené rozšíření je proměnné zaoblení | doplnit ověření průběhu a tečnosti, návrh zápisu/směru, implementace |
+| P6 | [Lineární proměnné zaoblení](p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, průběh/tečnost/objem, směr a původ, formát 32, session a GUI; úplné výsledky v implementačním PR | P6.4 na autorském dílu; další kandidáti v návrhu P6.1 |
 | P7–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
-Nejnovější formát je **31** (načítá verze 1–31; sestavy 29–31 podle vazeb a kontrol,
-díly se ukládají ve verzi 24–28). Výkon: průniky NDT bez zápisu do
+Nejnovější formát je **32** (načítá verze 1–32; sestavy 29–31 podle vazeb a kontrol,
+díly s proměnným zaoblením 32, ostatní ve verzi 24–28). Výkon: průniky NDT bez zápisu do
 vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
 Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
 
@@ -272,11 +272,13 @@ tisk, DXF v jiném CADu a ruční průchod na obou OS.
 
 ## P6 — pokročilé modelování
 
-**Zahájena příprava P6.1/P6.2:** [výběr operací](p6-1-vyber-operaci.md) a
-[omezený průzkum proměnného zaoblení](p6-1-pruzkum-zaobleni.py). Šest případů na Macu
-ověřuje analytický konstantní případ, dva koncové poloměry, obrácený směr a topologii,
-vzdálený otvor a odmítnutí příliš velkého poloměru. Produkční implementace ani
-formát se nemění; nejde o úplnou přejímku nové operace.
+**P6.1 zahájeno, P6.2/P6.3 první operace implementována 31. 10. 2026:**
+[výběr operací](p6-1-vyber-operaci.md), [průzkum](p6-1-pruzkum-zaobleni.py) a
+[návrh/implementace lineárního proměnného zaoblení](p6-2-promenne-zaobleni.md).
+Nová funkce pro výslovně omezený pravoúhlý roh používá přímkový loft řezacího
+čtvrtkruhového profilu a má analytický objem, kontroly průběhu a tečnosti,
+zápis verze 32, pojistky směru a původu, historii, formulář, značky R1/R2 a ukázku.
+P6.4 přijetí na vlastním dílu, robustnější skořepiny a vodicí křivky loftu zbývají.
 
 1. **P6.1 Výběr operací** (P1–P5): sestavit priority podle skutečných dílů autora,
    např. proměnné zaoblení, robustnější skořepina, vodicí křivky loftu, další křivky/plochy.

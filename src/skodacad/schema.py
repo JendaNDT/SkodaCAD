@@ -224,6 +224,14 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("edges", "Hrany", "edges"),
             Field("distance", "Velikost [mm]", "number"),
         ), "Srazí vybrané hrany."),
+        Schema("variable_fillet", "Proměnné zaoblení", (
+            _NAME,
+            Field("radius_start", "Počáteční poloměr R1 [mm]", "number"),
+            Field("radius_end", "Koncový poloměr R2 [mm]", "number"),
+            Field("reverse", "Obrátit směr R1 → R2", "bool", required=False, default=False),
+        ), "Poloměr roste lineárně po jedné přímé vnější hraně. Boky musí být pravoúhlé "
+           "a konce rovinné a kolmé. Vyber hranu ve 3D; R1 a R2 označují její konce.",
+           menu=False),
         Schema("hole", "Díra", (
             _NAME,
             Field("kind", "Druh", "choice", choices=HOLE_KIND_CHOICES, default="tapped"),
@@ -454,6 +462,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
                        plane="top" if has_solid else "XY", positions=[[0, 0]])
     elif feature_type == "fillet":
         feature.update(edges={"face": "top"}, radius=2)
+    elif feature_type == "variable_fillet":
+        feature.update(radius_start=1, radius_end=2, reverse=False)
     elif feature_type == "chamfer":
         feature.update(edges={"face": "top"}, distance=1)
     elif feature_type == "shell":

@@ -738,6 +738,31 @@ def form_field(w, key):
     return w.feature_editor.form.widget(key)
 
 
+def test_variable_fillet_selection_form_end_labels_reverse_and_undo(empty_window):
+    from skodacad.selectors import select_edges
+
+    w = empty_window
+    build_box(w)
+    edge, = select_edges(w.session.result.part, {"parallel": "Z", "near": [20, 15, 5]}, float)
+    w._selection_changed([edge.wrapped])
+    assert w.selection_actions["variable_fillet"].isEnabled()
+    w.selection_actions["variable_fillet"].trigger()
+    fid = w._selected_id
+    assert w.session.feature(fid)["type"] == "variable_fillet"
+    set_text(form_field(w, "radius_start"), "2")
+    set_text(form_field(w, "radius_end"), "6")
+    assert w.session.result.ok
+    expected = 12000 - (1 - math.pi / 4) * 10 / 3 * (4 + 12 + 36)
+    assert w.session.result.part.volume == pytest.approx(expected, abs=2e-6)
+    assert [line[2] for line in w.viewer.measurement] == ["R1 = 2 mm", "R2 = 6 mm"]
+    assert w.viewer.measurement[0][0].Z == pytest.approx(0)
+    form_field(w, "reverse").setChecked(True)
+    assert w.session.feature(fid)["reverse"] is True
+    assert w.viewer.measurement[0][0].Z == pytest.approx(10)
+    w.undo_action.trigger()
+    assert w.viewer.measurement[0][0].Z == pytest.approx(0)
+
+
 def set_text(widget, text):
     widget.setText(text)
     widget.editingFinished.emit()

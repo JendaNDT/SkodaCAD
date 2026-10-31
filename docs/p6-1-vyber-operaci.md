@@ -98,3 +98,10 @@ omezeným rozsahem:
 Nový typ bude vyžadovat návrh změny formátu (navazující verze 32); v tomto kroku
 zůstává `document.VERSION = 31`. Nepřidává se závislost ani náhradní aproximace.
 P6.3 implementace ani P6.4 přijetí tímto nejsou dokončené.
+
+**Navázání 31. 10. 2026:** po pokynu autora „ok pokračuj“ bylo doplněno měření
+uvnitř hrany. Původní dvouhodnotové volání OCCT má v tomto případě nelineární
+průběh. [Návrh a implementace P6.2/P6.3](p6-2-promenne-zaobleni.md) používá přesný
+přímkový loft řezacího profilu pro výslovně omezený pravoúhlý roh, s kontrolou
+průběhu, tečnosti a objemu a se zápisem verze 32. Historické výsledky výše zůstávají
+evidencí původního pokusu, nikoli objemem nové funkce.

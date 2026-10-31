@@ -83,6 +83,7 @@ HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+l
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
     "fillet": "Zaoblit vybrané hrany",
+    "variable_fillet": "Proměnné zaoblení vybrané hrany",
     "chamfer": "Srazit vybrané hrany",
     "sketch": "Skica na vybrané ploše",
     "hole": "Díra na vybrané ploše",
@@ -1713,7 +1714,8 @@ class MainWindow(QMainWindow):
         has_part = (self.session.result is not None and self.session.result.part is not None
                     and not self.session.computing)  # výběr jen na hotovém dílu
         flat = info.faces > 0 and info.flat_faces == info.faces
-        needs = {"fillet": info.edges > 0, "chamfer": info.edges > 0,  # skica a díra jdou
+        needs = {"variable_fillet": info.edges == 1 and info.faces == 0,
+                 "fillet": info.edges > 0, "chamfer": info.edges > 0,  # skica a díra jdou
                  "sketch": info.faces == 1, "hole": info.faces == 1,  # i na šikmou a válcovou
                  "shell": flat, "move_face": info.faces == 1 and info.edges == 0,
                  "face_diameter": info.faces == 1 and info.edges == 0}
@@ -1724,6 +1726,7 @@ class MainWindow(QMainWindow):
                         if f["id"] == self._selected_id), None) if document else None
         kind = feature["type"] if feature else None
         texts = {"fillet": "Přidat vybrané hrany do: ", "chamfer": "Přidat vybrané hrany do: ",
+                 "variable_fillet": "Nahradit hranu v: ",
                  "sketch": "Přesunout na vybranou plochu: ",
                  "hole": "Přidat díru v místě kliknutí do: ",
                  "shell": "Otevřít vybrané plochy v: ",
@@ -1746,6 +1749,7 @@ class MainWindow(QMainWindow):
         self._refresh_actions()
         self._load_editor()
         self._update_highlight()
+        self._refresh_measure_list()
 
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
@@ -1855,6 +1859,8 @@ class MainWindow(QMainWindow):
         lines = []
         if value is not None and value.points is not None:
             lines = [(*value.points, format_value(value.value, value.unit))]
+        if self._selected_id is not None:
+            lines += self.session.feature_direction(self._selected_id)
         self.viewer.show_measurement(lines)
 
     def _refresh_saved_measurements(self) -> None:

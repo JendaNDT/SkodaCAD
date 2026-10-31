@@ -50,6 +50,7 @@ from build123d import (
     sweep,
 )
 
+from skodacad import variable_fillet
 from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
 from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
@@ -228,7 +229,7 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 # Každý 3D typ musí projít závěrečnou kontrolou i tehdy, když nevolá ctx.apply.
 # Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
-                             "pattern", "mirror", "fillet", "chamfer", "shell",
+                             "pattern", "mirror", "fillet", "variable_fillet", "chamfer", "shell",
                              "move_face", "face_diameter", "step_import"))
 
 
@@ -734,6 +735,23 @@ def build_fillet(ctx: BuildContext, feature: dict[str, Any]) -> None:
             "nejspíš větší, než dovoluje okolní geometrie."
         ) from None
     _accept_modification(ctx, candidate, before, "Zaoblení")
+
+
+@feature("variable_fillet", "Proměnné zaoblení")
+def build_variable_fillet(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    part, before = _modification_input(ctx, "Proměnné zaoblení")
+    start = ctx.positive(feature, "radius_start", "Počáteční poloměr R1")
+    end = ctx.positive(feature, "radius_end", "Koncový poloměr R2")
+    edges = select_edges(part, required(feature, "edges"), ctx.num)
+    if len(edges) != 1:
+        raise FeatureError("Proměnné zaoblení potřebuje právě jednu přímou hranu.")
+    try:
+        variable_fillet.check_origin(ctx.history, edges[0], feature.get("origin"))
+        candidate = variable_fillet.apply(part, edges[0], start, end,
+            feature.get("direction"), feature.get("reverse", False), feature.get("normals"))
+    except (variable_fillet.VariableFilletError, GeometryValidationError) as exc:
+        raise FeatureError(f"Proměnné zaoblení: {exc}") from None
+    _accept_modification(ctx, candidate, before, "Proměnné zaoblení")
 
 
 @feature("chamfer", "Sražení")

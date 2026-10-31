@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from build123d import GeomType, Vector, Vertex
 
+from skodacad import variable_fillet
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.direct_edit import face_origin
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
@@ -228,8 +229,8 @@ _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "d
                         "through_all", "kind", "size", "fit", "modeled_thread", "features",
                         "direction2"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
-SELECTION_FEATURES = ("fillet", "chamfer", "sketch", "shell", "hole", "move_face",
-                      "face_diameter")
+SELECTION_FEATURES = ("fillet", "variable_fillet", "chamfer", "sketch", "shell", "hole",
+                      "move_face", "face_diameter")
 
 
 def parse_parameter_text(text: str) -> int | float | str:
@@ -991,7 +992,7 @@ class ModelSession:
             feature = self.document.features[self.feature_index(feature_id)]
             kind = feature["type"]
             part = self.result.parts_before.get(feature_id)
-            if kind in ("fillet", "chamfer") and part is not None:
+            if kind in ("fillet", "variable_fillet", "chamfer") and part is not None:
                 edges = select_edges(part, feature.get("edges", "all"), self._evaluate)
                 return [edge.wrapped for edge in edges]
             if kind == "shell" and part is not None:
@@ -1004,6 +1005,23 @@ class ModelSession:
         except Exception:  # noqa: BLE001 – zvýraznění je jen pomůcka, nesmí nic shodit
             return []
         return []
+
+    def feature_direction(self, feature_id: str) -> list[tuple[Any, Any, str]]:
+        """Značky R1/R2 na původní hraně; jen pohled, bez změny modelu."""
+        try:
+            feature = self.feature(feature_id)
+            if feature["type"] != "variable_fillet" or self.computing or self.result is None:
+                return []
+            part = self.result.parts_before[feature_id]
+            edge, = select_edges(part, feature["edges"], self._evaluate)
+            a, b = variable_fillet.endpoints(edge, feature["direction"],
+                                             feature.get("reverse", False))
+            return [(a, a + (b - a) * 0.15,
+                     f"R1 = {self._evaluate(feature['radius_start']):g} mm"),
+                    (b - (b - a) * 0.15, b,
+                     f"R2 = {self._evaluate(feature['radius_end']):g} mm")]
+        except Exception:  # noqa: BLE001 – neplatný prvek nesmí shodit pomůcku zobrazení
+            return []
 
     # --- měření --------------------------------------------------------------------
 
@@ -4336,7 +4354,18 @@ class ModelSession:
                 from skodacad.picking import map_faces
 
                 faces = map_faces(faces, part)
-            if kind in ("fillet", "chamfer"):
+            if kind == "variable_fillet":
+                if faces or len(edges) != 1:
+                    raise DocumentError("Vyber ve 3D právě jednu přímou vnější hranu.")
+                chosen = edges[0] if new else map_edges(edges, part)[0]
+                document = self._require()
+                stop = len(document.features) if new else self.feature_index(feature["id"])
+                history = [(f["id"], (self.result.parts_before.get(document.features[i + 1]["id"])
+                    if i + 1 < len(document.features) else self.result.part))
+                    for i, f in enumerate(document.features[:stop])]
+                feature.update(variable_fillet.reference(part, chosen, history))
+                feature["edges"] = edge_selector(part, [chosen])
+            elif kind in ("fillet", "chamfer"):
                 if not edges:
                     raise DocumentError("Vyber ve 3D aspoň jednu hranu (Ctrl+klik přidá další).")
                 if new:
@@ -4369,7 +4398,7 @@ class ModelSession:
                 feature["open_faces"] = names
             else:
                 raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
-        except SelectionError as exc:
+        except (SelectionError, variable_fillet.VariableFilletError) as exc:
             raise DocumentError(str(exc)) from None
 
     def _hole_from_selection(self, feature: dict[str, Any], part: Any, faces: list[Any],
