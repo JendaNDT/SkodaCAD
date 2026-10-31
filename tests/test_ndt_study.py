@@ -54,8 +54,10 @@ def test_old_models_load_without_ndt_and_save_as_current_version(path, tmp_path)
     document = Document.load(path)
     assert document.ndt is None
     data = document.to_dict()
-    expected_version = 32 if any(f["type"] == "variable_fillet"
-                                for f in document.features) else 24
+    expected_version = (33 if any(f["type"] == "loft" and "wall_mode" in f
+                                  for f in document.features)
+                        else 32 if any(f["type"] == "variable_fillet"
+                                       for f in document.features) else 24)
     assert "ndt" not in data and data["version"] == expected_version
 
 

@@ -1,0 +1,17 @@
+{
+  "format": "skodacad",
+  "version": 33,
+  "name": "Redukce – význam tloušťky stěny",
+  "description": "Dutý přechod ze dvou kružnic, otevřený na obou koncích. Stěna 3 mm kolmo k plášti. Ve stromu vyber Přechod a přepni Tloušťku měřit na V rovinách skic: pak jde o zmenšení poloměru skic o 3 mm a kolmo je stěna asi 2,846 mm. Volba se ukládá a jde vrátit přes Zpět.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"D": 80, "d": 40, "H": 60, "stena": 3},
+  "features": [
+    {"id": "dole", "type": "sketch", "plane": "XY", "elements": [
+      {"shape": "circle", "diameter": "D"}]},
+    {"id": "nahore", "type": "sketch", "plane": "XY", "offset": "H", "elements": [
+      {"shape": "circle", "diameter": "d"}]},
+    {"id": "prechod", "type": "loft", "name": "Přechod s výslovnou stěnou",
+      "sketches": ["dole", "nahore"], "wall": "stena", "wall_mode": "normal"}
+  ]
+}

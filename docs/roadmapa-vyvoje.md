@@ -50,8 +50,9 @@ technické výsledky a známé meze P5 zůstávají v protokolu.
 | P7–P8 | nezahájeno | – |
 | NDT-17 | nezahájeno | – |
 
-Nejnovější formát je **32** (načítá verze 1–32; sestavy 29–31 podle vazeb a kontrol,
-díly s proměnným zaoblením 32, ostatní ve verzi 24–28). Výkon: průniky NDT bez zápisu do
+Nejnovější formát je **33** (načítá verze 1–33; sestavy 29–31 podle vazeb a kontrol,
+díly s výslovným režimem stěny loftu 33, s proměnným zaoblením 32, ostatní 24–28).
+Výkon: průniky NDT bez zápisu do
 vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
 Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
 
@@ -281,8 +282,9 @@ zápis verze 32, pojistky směru a původu, historii, formulář, značky R1/R2 
 **Skořepiny — průzkum 31. 10. 2026:** [tři reference a návrh další opravy](p6-3-skorepiny-overeni-a-navrh.md),
 analytické objemy, vzorkovaná normálová měření, zesílení rohů a odmítnutá tloušťka.
 U výsypky potvrzen rozdíl 3 mm v rovině skic proti 2,61–2,77 mm kolmo.
-Navazuje výslovná volba významu stěny loftu a měření oddělené od filtru NDT;
-produkční změna zatím nevznikla. P6.4 přijetí na vlastním dílu a vodicí křivky loftu zbývají.
+[Výslovné režimy stěny](p6-4-rezim-steny-loftu.md) jsou implementovány ve formátu 33:
+normálový offset s geometrickými pojistkami / offset v rovinách skic bez přepínání,
+staré recepty zachovány. Samostatný CAD přehled, P6.4 na vlastním dílu a vodicí křivky loftu zbývají.
 
 1. **P6.1 Výběr operací** (P1–P5): sestavit priority podle skutečných dílů autora,
    např. proměnné zaoblení, robustnější skořepina, vodicí křivky loftu, další křivky/plochy.

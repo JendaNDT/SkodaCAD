@@ -93,6 +93,8 @@ class Field:
     min_count: int = 1  # u „points“, „points3“, „sketches“: nejmenší počet
     # pole se ukáže, jen když má jiné pole tuto hodnotu (nebo jednu z n-tice hodnot)
     when: tuple[str, Any] = ()
+    # Zpětná kompatibilita volby: popisek pro chybějící pole, jen pokud klíč chybí.
+    missing_label: str | None = None
 
 
 def field_shown(field: Field, data: dict[str, Any], defaults: dict[str, Any]) -> bool:
@@ -181,10 +183,16 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                   help="Zaškrtni aspoň dvě skici – přechod jde v pořadí stromu."),
             Field("ruled", "Rovné stěny (bez zaoblení mezi skicami)", "bool", required=False),
             Field("wall", "Tloušťka stěny [mm]", "number", required=False,
-                  help="Dutý přechod s otevřenými konci (plech). Stěna je kolmá k povrchu; "
-                       "u přechodu kruh ↔ hranatý tvar se měří v rovinách skic."),
+                  help="Dutý přechod s otevřenými konci. Prázdné nebo 0 = plné těleso. "
+                       "Způsob měření tloušťky vyber níže."),
+            Field("wall_mode", "Tloušťku měřit", "choice", required=False,
+                  choices=(("normal", "Kolmo ke stěně"), ("sections", "V rovinách skic")),
+                  missing_label="Automaticky (starší model)",
+                  help="Kolmo ke stěně: při neproveditelném offsetu se zobrazí chyba. "
+                       "V rovinách skic: kolmo k šikmé stěně může být materiál tenčí. "
+                       "Starší model bez volby zachovává původní automatický postup."),
             Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
-        ), "Plynulý přechod mezi skicami – výsypka, redukce, násypka."),
+        ), "Přechod mezi skicami. V rovinách skic může být stěna kolmo k povrchu tenčí."),
         Schema("standard", "Normalizovaný díl", (
             _NAME,
             Field("kind", "Druh", "choice", choices=STANDARD_KIND_CHOICES,
@@ -457,6 +465,7 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
                        profile="circle", diameter=30, width=40, height=20, wall=2)
     elif feature_type == "loft":
         feature["sketches"] = sketches[-2:]  # dvě poslední skici (třeba dole a nahoře)
+        feature["wall_mode"] = "normal"
     elif feature_type == "standard":  # imbus M6 × 20 na ploše dílu (bez dílu samostatně)
         feature.update(kind="socket_screw", size="M6", length=20,
                        plane="top" if has_solid else "XY", positions=[[0, 0]])

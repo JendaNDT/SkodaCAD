@@ -61,10 +61,12 @@ from skodacad.geometry_validation import (
     check_cut_volume,
     check_modification,
     inspect_volume,
+    volume_tolerance,
 )
 from skodacad.holes import KINDS as HOLE_KINDS
 from skodacad.holes import HoleError, HoleShape, hole_shape, point_height
 from skodacad.holes import summary as hole_summary
+from skodacad.loft_wall import check_normal_wall
 from skodacad.projection import ProjectionError
 from skodacad.projection import refresh as refresh_references
 from skodacad.selectors import (
@@ -636,6 +638,8 @@ def _sweep_profile(ctx: BuildContext, feature: dict[str, Any]) -> Sketch:
 @feature("loft", "Přechod")
 def build_loft(ctx: BuildContext, feature: dict[str, Any]) -> None:
     """Plynulý přechod mezi dvěma a více skicami (v pořadí), plný nebo dutý se stěnou."""
+    if "wall_mode" in feature:
+        _choice(feature, "wall_mode", ("normal", "sections"), "normal")
     sections = _loft_sections(ctx, feature)
     ruled = bool(feature.get("ruled", False))
     operation = _choice(
@@ -672,6 +676,64 @@ def _loft_sections(ctx: BuildContext, feature: dict[str, Any]) -> list[Any]:
 
 def _hollow_loft(ctx: BuildContext, feature: dict[str, Any], sections: list[Any],
                  solid: Part, ruled: bool) -> Part:
+    if "wall_mode" in feature:
+        return _explicit_hollow_loft(ctx, feature, sections, solid, ruled)
+    return _legacy_hollow_loft(ctx, feature, sections, solid, ruled)
+
+
+def _explicit_hollow_loft(ctx: BuildContext, feature: dict[str, Any], sections: list[Any],
+                          solid: Part, ruled: bool) -> Part:
+    """Výslovný režim nikdy nepřepíná způsob konstrukce stěny."""
+    wall = ctx.positive(feature, "wall", "Tloušťka stěny")
+    mode = feature["wall_mode"]
+    before = inspect_volume(solid)
+    if before.solids != 1:
+        raise FeatureError("Dutý přechod potřebuje právě jedno souvislé těleso.")
+    if mode == "normal":
+        try:
+            ends = [face for face in solid.faces() if face.geom_type.name == "PLANE"
+                    and any(_coplanar(face, section) for section in (sections[0], sections[-1]))]
+            if len(ends) != 2:
+                raise ValueError("přechod nemá právě dvě čela")
+            candidate = offset(solid, amount=-wall, openings=ends)
+            check_modification(before, inspect_volume(candidate), shell=True)
+            check_normal_wall(solid, candidate, ends, wall)
+        except Exception as exc:  # noqa: BLE001 – jádro ani kontrola nesmí změnit režim
+            raise FeatureError(
+                f"Přechod se stěnou {wall:g} mm kolmo ke stěně se nepodařil – "
+                "zmenši tloušťku nebo výslovně zvol „V rovinách skic“ "
+                "(kolmo k šikmé stěně pak může být materiál tenčí)."
+            ) from exc
+        return candidate
+    try:
+        inner_faces = []
+        for section in sections:
+            inner = offset(section, amount=-wall, kind=Kind.INTERSECTION)
+            faces = inner.faces()
+            if (len(faces) != 1 or faces[0].inner_wires() or not faces[0].is_valid
+                    or not 0 < faces[0].area < section.area):
+                raise ValueError("vnitřní profil se rozpadl nebo nezmenšil")
+            inner_faces.append(faces[0])
+        tool = loft(inner_faces, ruled=ruled)
+        tool_facts = inspect_volume(tool)
+        if tool_facts.solids != 1:
+            raise ValueError("vnitřní přechod se rozpadl")
+        candidate = solid - tool
+        after = inspect_volume(candidate)
+        check_modification(before, after, shell=True)
+        tolerance = max(volume_tolerance(before.volume, after.volume), tool_facts.volume * 1e-7)
+        if abs(before.volume - after.volume - tool_facts.volume) > tolerance:
+            raise ValueError("vnitřní přechod vyčnívá mimo vnější těleso")
+    except Exception as exc:  # noqa: BLE001 – neplatný 2D profil nebo výsledek jádra
+        raise FeatureError(
+            f"Přechod se stěnou {wall:g} mm v rovinách skic se nepodařil – "
+            "zmenši tloušťku nebo uprav profily (vnitřní přechod se musí vejít do vnějšího)."
+        ) from exc
+    return candidate
+
+
+def _legacy_hollow_loft(ctx: BuildContext, feature: dict[str, Any], sections: list[Any],
+                       solid: Part, ruled: bool) -> Part:
     """Dutý přechod s otevřenými konci. Stěna je kolmá k povrchu (jako plech); kde to jádro
     neumí (přechod kruh ↔ hranatý tvar), měří se v rovinách skic."""
     wall = ctx.positive(feature, "wall", "Tloušťka stěny")
@@ -1167,6 +1229,10 @@ def describe(feature: dict[str, Any], params: dict[str, float] | None = None) ->
         text += f" – mezi {count} {'skicou' if count == 1 else 'skicami'}"
         if feature.get("wall") not in (None, 0):
             text += f", dutý {_plain(feature['wall'], params)} mm"
+            if feature.get("wall_mode") == "normal":
+                text += ", kolmo ke stěně"
+            elif feature.get("wall_mode") == "sections":
+                text += ", v rovinách skic"
     return text
 
 

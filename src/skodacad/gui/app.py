@@ -279,6 +279,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_audit(window, lines) and ok
     ok = _self_test_design(window, lines) and ok
     ok = _self_test_variable_fillet(window, lines) and ok
+    ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -322,6 +323,52 @@ def _self_test_variable_fillet(window, lines: list[str]) -> bool:
         lines.append(f"✕ Proměnné zaoblení: {type(exc).__name__}: {exc}")
         window.session.dirty = False
         return False
+
+
+def _self_test_loft_wall(window, lines: list[str]) -> bool:
+    """Výslovné režimy přes skutečný formulář, historie a zápis v33 v balíčku."""
+    import math
+
+    from skodacad.document import Document
+
+    window.session.dirty = False
+    try:
+        assert window.open_model(examples_dir() / "loft_stena.json", template=True)
+        window._selected_id = "prechod"
+        window._reload_all()
+        form = window.feature_editor.form
+        combo = form.widget("wall_mode")
+        assert combo.count() == 2 and combo.currentData() == "normal"
+        shift = 3 * math.sqrt(1 + 1 / 9)
+        normal_volume = math.pi * 60 * (60 * shift - shift**2)
+        assert window.session.result.ok
+        assert abs(window.session.result.part.volume - normal_volume) < 2e-5
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-stena-loftu.png"))
+        combo.setCurrentIndex(combo.findData("sections"))
+        assert abs(window.session.result.part.volume - math.pi * 10260) < 2e-5
+        window.undo_action.trigger()
+        assert window.session.feature("prechod")["wall_mode"] == "normal"
+        window.redo_action.trigger()
+        assert window.session.feature("prechod")["wall_mode"] == "sections"
+        path = user_dir() / "self-test-stena-loftu.json"
+        window.session.document.save(path)
+        saved = Document.load(path)
+        assert saved.to_dict()["version"] == 33
+        assert saved.features[-1]["wall_mode"] == "sections"
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "vysypka.json", template=True)
+        assert window.session.result.ok and "wall_mode" not in window.session.feature("vysypka")
+        assert abs(window.session.result.part.volume - 908807.4817089331) < 2e-5
+        lines.append("✓ Stěna přechodu: kolmo / v rovinách skic, formulář, Zpět/Znovu, "
+                     "zápis v33 a zachovaná geometrie staré výsypky")
+        return True
+    except Exception as exc:  # noqa: BLE001 – důvod uvést ve zprávě balíčku
+        lines.append(f"✕ Stěna přechodu: {type(exc).__name__}: {exc}")
+        return False
+    finally:
+        window.session.dirty = False
 
 
 def _self_test_assembly(window, lines: list[str]) -> bool:

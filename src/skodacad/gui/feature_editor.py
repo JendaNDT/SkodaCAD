@@ -198,7 +198,9 @@ class FieldsForm(QWidget):
         picked = copy.deepcopy(value) if isinstance(value, dict) else None
         if picked is not None:  # plocha vybraná ve 3D (šikmá, zakřivená) – nabídne se navíc
             choices, current = (*choices, (_PICKED, describe_plane(picked))), _PICKED
-        combo = _combo(choices, current, optional=not field.required)
+        optional = not field.required and (field.missing_label is None or value is None)
+        combo = _combo(choices, current, optional=optional,
+                       empty_label=field.missing_label or "(automaticky)")
         combo.currentIndexChanged.connect(self._commit)
 
         def read() -> Any:

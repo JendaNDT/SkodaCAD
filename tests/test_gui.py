@@ -1281,10 +1281,56 @@ def test_loft_form_picks_sketches_in_order(empty_window):
     set_text(form_field(w, "wall"), "2")
     assert w.session.properties.volume_mm3 == pytest.approx((40 * 30 - 36 * 26) * 30, rel=1e-6)
     assert selected_text(w) == ("✓  Počet těles: 0 → 1. — Přechod „Přechod 1“"
-                                 " – mezi 2 skicami, dutý 2 mm")
+                                 " – mezi 2 skicami, dutý 2 mm, kolmo ke stěně")
     first.setChecked(False)
     assert "zaškrtni aspoň 2 skici" in w.statusBar().currentMessage()
     assert w.session.feature("loft1")["sketches"] == ["sketch1", "sketch2"]
+
+
+def test_loft_wall_mode_form_history_save_and_reopen(empty_window, examples_dir, tmp_path):
+    w = empty_window
+    assert w.open_model(examples_dir / "loft_stena.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    combo = form_field(w, "wall_mode")
+    assert combo.count() == 2 and combo.currentData() == "normal"
+    normal_volume = w.session.result.part.volume
+    combo.setCurrentIndex(combo.findData("sections"))
+    assert w.session.result.part.volume == pytest.approx(32232.740625831255, abs=2e-5)
+    assert "v rovinách skic" in selected_text(w)
+    w.undo_action.trigger()
+    assert form_field(w, "wall_mode").currentData() == "normal"
+    assert w.session.result.part.volume == pytest.approx(normal_volume, abs=2e-5)
+    w.redo_action.trigger()
+    assert form_field(w, "wall_mode").currentData() == "sections"
+    path = tmp_path / "loft.json"
+    w.session.save(path)
+    assert w.open_model(path)
+    assert w.session.document.to_dict()["version"] == 33
+    assert w.session.feature("prechod")["wall_mode"] == "sections"
+
+
+def test_legacy_loft_form_preserves_missing_mode_and_recovers_from_normal_error(
+        empty_window, examples_dir):
+    w = empty_window
+    assert w.open_model(examples_dir / "vysypka.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    combo = form_field(w, "wall_mode")
+    assert combo.count() == 3 and combo.currentData() is None
+    assert "starší model" in combo.currentText()
+    volume = w.session.result.part.volume
+    set_text(form_field(w, "name"), "Přejmenovaná výsypka")
+    assert "wall_mode" not in w.session.feature("vysypka")
+    assert w.session.document.to_dict()["version"] == 24
+    combo.setCurrentIndex(combo.findData("normal"))
+    assert not w.session.result.ok and "V rovinách skic" in w.error_label.text()
+    combo.setCurrentIndex(combo.findData("sections"))
+    assert w.session.result.ok
+    assert w.session.result.part.volume == pytest.approx(volume, abs=2e-5)
+    w.undo_action.trigger()
+    assert not w.session.result.ok
+    w.undo_action.trigger()
+    assert w.session.result.ok and "wall_mode" not in w.session.feature("vysypka")
+    assert w.session.result.part.volume == pytest.approx(volume, abs=2e-5)
 
 
 def test_sketch_on_inclined_face_from_click(empty_window):
