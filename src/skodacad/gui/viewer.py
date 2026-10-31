@@ -81,7 +81,15 @@ from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 
-from skodacad.gui.guide_drag import DEFAULT_STEP, nearest_handle, on_xy_plane, snapped_delta
+from skodacad.gui.guide_drag import (
+    DEFAULT_DIRECTION,
+    DEFAULT_STEP,
+    axis_parameter,
+    constrained_delta,
+    nearest_handle,
+    on_xy_plane,
+    snapped_delta,
+)
 from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
 
@@ -246,6 +254,7 @@ class OccViewer(QWidget):
         self._guides_data = None
         self._guide_drag = None
         self._guide_drag_step = DEFAULT_STEP
+        self._guide_drag_direction = DEFAULT_DIRECTION
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
@@ -445,6 +454,13 @@ class OccViewer(QWidget):
             self.cancel_guide_drag()
             self._guide_drag_step = step
 
+    def set_guide_drag_direction(self, direction: str) -> None:
+        """Omezení na osu dílu je preference pohledu, nikoli změna modelu."""
+        constrained_delta((0., 0.), DEFAULT_STEP, direction)
+        if direction != self._guide_drag_direction:
+            self.cancel_guide_drag()
+            self._guide_drag_direction = direction
+
     def _guide_handle_at(self, pos):
         data = self._guides_data
         if data is None or "signature" not in data:
@@ -465,18 +481,26 @@ class OccViewer(QWidget):
             return True
         data = self._guides_data
         pole = data["guides"][data["selected"]]["poles"][handle+1]
-        start = on_xy_plane(self._view.ConvertWithProj(*self._pixels(pos)), pole[2])
+        ray = self._view.ConvertWithProj(*self._pixels(pos))
+        direction = self._guide_drag_direction
+        start = (on_xy_plane(ray, pole[2]) if direction == "XY"
+                 else axis_parameter(ray, pole, direction))
         if start is None:
             self._press = None
-            self.guide_drag_message.emit("Rukojeť se pohybuje v XY – zvol Izometrii nebo Shora.")
+            message = ("Rukojeť se pohybuje v XY – zvol Izometrii nebo Shora."
+                       if direction == "XY" else
+                       f"Osa {direction} v pohledu zaniká – natoč pohled nebo zvol Izometrii.")
+            self.guide_drag_message.emit(message)
             return True
         self._guide_drag = {"data": copy.deepcopy(data), "handle": handle,
                             "start": start, "pole": pole, "step": self._guide_drag_step,
+                            "direction": self._guide_drag_direction,
                             "delta": [0., 0.]}
         self._surface.setCursor(Qt.CursorShape.ClosedHandCursor)
         step_text = f"krok {self._guide_drag_step:g} mm" if self._guide_drag_step else "volně"
         self.guide_drag_message.emit(
-            f"Náhled vodítka v XY ({step_text}) · puštění = ověřit těleso · Esc = zrušit")
+            f"Náhled vodítka v {self._guide_drag_direction} ({step_text}) · "
+            "puštění = ověřit těleso · Esc = zrušit")
         return True
 
     def _move_guide_drag(self, pos) -> None:
@@ -484,12 +508,21 @@ class OccViewer(QWidget):
         if not self._dragging and (pos.toPoint()-self._press).manhattanLength() <= _DRAG_THRESHOLD:
             return
         self._dragging = True
-        xy = on_xy_plane(self._view.ConvertWithProj(*self._pixels(pos)), drag["pole"][2])
-        if xy is None:
+        ray = self._view.ConvertWithProj(*self._pixels(pos))
+        direction = drag["direction"]
+        if direction == "XY":
+            xy = on_xy_plane(ray, drag["pole"][2])
+            raw = ([a-b for a, b in zip(xy, drag["start"], strict=True)]
+                   if xy is not None else None)
+        else:
+            value = axis_parameter(ray, drag["pole"], direction)
+            raw = [0., 0.] if value is not None else None
+            if raw is not None:
+                raw[0 if direction == "X" else 1] = value-drag["start"]
+        if raw is None:
             self.cancel_guide_drag()
             return
-        drag["delta"] = list(snapped_delta(
-            [a-b for a, b in zip(xy, drag["start"], strict=True)], drag["step"]))
+        drag["delta"] = list(constrained_delta(raw, drag["step"], direction))
         preview = copy.deepcopy(drag["data"])
         poles = preview["guides"][preview["selected"]]["poles"]
         poles[drag["handle"]+1] = (drag["pole"][0]+drag["delta"][0],

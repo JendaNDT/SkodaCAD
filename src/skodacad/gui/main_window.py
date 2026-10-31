@@ -58,7 +58,7 @@ from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.file_dialogs import FILE_OPTIONS
-from skodacad.gui.guide_drag import DEFAULT_STEP
+from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -156,6 +156,7 @@ class MainWindow(QMainWindow):
         self._shown_guides = None
         self._guide_commit_pending = None
         self._guide_drag_step = DEFAULT_STEP
+        self._guide_drag_direction = DEFAULT_DIRECTION
         self._shown_plan: Any = None  # plán dráhy sondy a zóny právě v prohlížeči (klíč)
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -379,6 +380,7 @@ class MainWindow(QMainWindow):
         self.feature_editor.changed.connect(self._feature_edited)
         self.feature_editor.guide_selected.connect(lambda _row: self._refresh_guides())
         self.feature_editor.guide_step_changed.connect(self._guide_step_changed)
+        self.feature_editor.guide_direction_changed.connect(self._guide_direction_changed)
         self.feature_editor.wall_panel.requested.connect(self.inspect_loft_wall)
         self.feature_editor.wall_panel.selected.connect(lambda _row: self._show_measure_line(None))
         self.feature_editor.invalid.connect(
@@ -1803,6 +1805,10 @@ class MainWindow(QMainWindow):
             control.blockSignals(True)
             control.setValue(self._guide_drag_step)
             control.blockSignals(False)
+            direction = form.widget("guides").drag_direction
+            direction.blockSignals(True)
+            direction.setCurrentIndex(direction.findData(self._guide_drag_direction))
+            direction.blockSignals(False)
         self._refresh_guides()
         self._refresh_loft_wall()
 
@@ -1821,6 +1827,10 @@ class MainWindow(QMainWindow):
     def _guide_step_changed(self, step: float) -> None:
         self.viewer.set_guide_drag_step(step)
         self._guide_drag_step = step  # preference tohoto okna; nepatří do receptu dílu
+
+    def _guide_direction_changed(self, direction: str) -> None:
+        self.viewer.set_guide_drag_direction(direction)
+        self._guide_drag_direction = direction
 
     def _guide_handle_moved(self, request: dict) -> None:
         if self.ai_busy or request.get("feature_id") != self._selected_id:
