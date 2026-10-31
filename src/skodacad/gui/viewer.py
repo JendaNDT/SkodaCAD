@@ -32,6 +32,7 @@ from OCP.AIS import (
 from OCP.Aspect import (
     Aspect_DisplayConnection,
     Aspect_GFM_VER,
+    Aspect_TOL_DASH,
     Aspect_TOL_SOLID,
     Aspect_TOM_BALL,
     Aspect_TOM_POINT,
@@ -40,7 +41,9 @@ from OCP.Aspect import (
 from OCP.BRep import BRep_Builder
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+from OCP.collections import Array1_gp_Pnt
 from OCP.Font import Font_FA_Bold
+from OCP.Geom import Geom_BezierCurve
 from OCP.GeomAbs import GeomAbs_C1
 from OCP.gp import gp_Pnt
 from OCP.Graphic3d import (
@@ -77,6 +80,7 @@ from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 
+from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
 
 log = logging.getLogger(__name__)
@@ -221,6 +225,8 @@ class OccViewer(QWidget):
         self._window = None
         self._ais: AIS_Shape | None = None
         self._highlight: AIS_Shape | None = None
+        self._guide_objects: list[Any] = []
+        self._pending_guides = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
@@ -252,12 +258,14 @@ class OccViewer(QWidget):
         ``accent`` = plochy jinou barvou (plochy řezu)."""
         if not self.ready:
             self._pending = (part, fit, accent)
+            self._pending_guides = None
             return
         context = self._context
         if self._ais is not None:
             context.Remove(self._ais, False)
             self._ais = None
         self._remove_highlight()
+        self._remove_guides()
         self._remove_measurement()
         self._remove_map()
         self._remove_probe()
@@ -359,6 +367,59 @@ class OccViewer(QWidget):
             self._context.SetZLayer(ais, Graphic3d_ZLayerId_Topmost)
             self._highlight = ais
         self._view.Redraw()
+
+    def show_guides(self, data: dict | None) -> None:
+        """Přesné kubické křivky z čísel session; řídicí polygon odděleně čárkovaně."""
+        if not self.ready:
+            self._pending_guides = data
+            return
+        self._pending_guides = None
+        self._remove_guides()
+        if data is None:
+            self._view.Redraw()
+            return
+        for i, guide in enumerate(data["guides"]):
+            poles = guide["poles"]
+            color = _rgb(*GUIDE_COLORS[i])
+            points = Array1_gp_Pnt(1, 4)
+            for j, p in enumerate(poles, start=1):
+                points.SetValue(j, gp_Pnt(*p))
+            edge = BRepBuilderAPI_MakeEdge(Geom_BezierCurve(points)).Edge()
+            shown = AIS_Shape(edge)
+            shown.SetColor(color)
+            shown.SetWidth(4.0 if i == data["selected"] else 2.0)
+            self._display_guide(shown)
+            letter = chr(65+i)
+            for end, p in ((0, poles[0]), (1, poles[-1])):
+                self._guide_objects += self._marker_objects(p, p, f"{letter}{end}", color)
+            if i == data["selected"]:
+                polygon = TopoDS_Compound()
+                builder = BRep_Builder()
+                builder.MakeCompound(polygon)
+                for a, b in zip(poles, poles[1:], strict=False):
+                    builder.Add(polygon, BRepBuilderAPI_MakeEdge(gp_Pnt(*a), gp_Pnt(*b)).Edge())
+                control = AIS_Shape(polygon)
+                control.SetColor(color)
+                aspect = Prs3d_LineAspect(color, Aspect_TOL_DASH, 1.5)
+                control.Attributes().SetLineAspect(aspect)
+                control.Attributes().SetWireAspect(aspect)
+                self._display_guide(control)
+                for j in (1, 2):
+                    p = poles[j]
+                    self._guide_objects += self._marker_objects(
+                        p, p, f"{letter} řízení {j}", color)
+        self._view.Redraw()
+
+    def _display_guide(self, shown: Any) -> None:
+        self._context.Display(shown, False)
+        self._context.Deactivate(shown)
+        self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+        self._guide_objects.append(shown)
+
+    def _remove_guides(self) -> None:
+        for shown in self._guide_objects:
+            self._context.Remove(shown, False)
+        self._guide_objects = []
 
     def show_measurement(self, lines: list[tuple[Any, Any, str]]) -> None:
         """Čáry měření (od bodu k bodu, s popiskem) navrch dílu; [] = žádné.
@@ -909,6 +970,8 @@ class OccViewer(QWidget):
             part, fit, accent = self._pending
             self._pending = None
             self.show_part(part, fit=fit, accent=accent)
+        if self._pending_guides is not None:
+            self.show_guides(self._pending_guides)
 
     def _open_view(self, display: Any, window: Any, software: bool) -> tuple[Any, Any]:
         """Grafický ovladač, prohlížeč a pohled OCCT napojený na okno. ``software`` = bez

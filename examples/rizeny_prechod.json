@@ -1,0 +1,20 @@
+{
+  "format": "skodacad", "version": 34,
+  "name": "Řízený obdélníkový přechod",
+  "description": "Plný přechod 40×30 → 24×18 mm, výška 60 mm. Čtyři vodítka jej vyboulí o Bx/By v polovině. Ve stromu vyber Řízený přechod; řádek A–D ukáže řídicí polygon. Posuny rukojetí jsou 4/3 skutečného vyboulení, protože leží v H/3 a 2H/3. Změny i výběr fungují přes Zpět/Znovu; křížení vodítek se odmítá.",
+  "units": "mm", "material": "PETG",
+  "parameters": {"H": 60, "Bx": 7, "By": 5},
+  "features": [
+    {"id": "dole", "type": "sketch", "plane": "XY", "elements": [
+      {"shape": "rectangle", "width": 40, "height": 30}]},
+    {"id": "nahore", "type": "sketch", "plane": "XY", "offset": "H", "elements": [
+      {"shape": "rectangle", "width": 24, "height": 18}]},
+    {"id": "rizeny", "type": "guided_loft", "name": "Řízený přechod se čtyřmi vodítky",
+     "sketches": ["dole", "nahore"], "guides": [
+       {"corner": {"x": 1, "y": 1}, "controls": [["4*Bx/3", "4*By/3"], ["4*Bx/3", "4*By/3"]]},
+       {"corner": {"x": -1, "y": 1}, "controls": [["-4*Bx/3", "4*By/3"], ["-4*Bx/3", "4*By/3"]]},
+       {"corner": {"x": -1, "y": -1}, "controls": [["-4*Bx/3", "-4*By/3"], ["-4*Bx/3", "-4*By/3"]]},
+       {"corner": {"x": 1, "y": -1}, "controls": [["4*Bx/3", "-4*By/3"], ["4*Bx/3", "-4*By/3"]]}
+     ]}
+  ]
+}

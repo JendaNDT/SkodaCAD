@@ -198,7 +198,7 @@ def test_invalid_mode_is_rejected_on_read_and_in_the_core(bad):
 
 def test_version_and_missing_mode_are_distinct():
     document = Document.load(EXAMPLE)
-    assert VERSION == 33 and document.to_dict()["version"] == 33
+    assert VERSION == 34 and document.to_dict()["version"] == 33
     data = document.to_dict()
     data["version"] = 32
     with pytest.raises(DocumentError, match="33"):

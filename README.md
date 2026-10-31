@@ -693,10 +693,27 @@ u okrajů a zesílených rohů má samostatná omezení.
 
 Skici přechodu musí mít každá jeden obrys bez děr (dutý přechod se dělá tloušťkou stěny).
 
-Rozšíření o vodicí křivky má [ověřený průzkum a návrh první funkce](docs/p6-6-vodici-krivky-overeni-a-navrh.md):
-obdélníková čela, čtyři rohová vodítka a kontrola křížení. Jde zatím o výzkumné
-STEP/SVG reference, nikoli novou volbu v aplikaci. U kruhových čel počet a tvar
-mezilehlých profilů zásadně ovlivňují meziřezy a návaznost ploch.
+### Řízený přechod se čtyřmi vodítky
+
+*Přidat prvek → Řízený přechod* vytvoří plné těleso mezi dvěma obdélníkovými
+skicami v rovinách XY. Druhá skica musí být výše. Čtyři kubická vodítka A–D
+spojují rohy určené znaménky X/Y; každé má dvě rukojeti s posunem X/Y
+oproti přímému spojení, ve výšce H/3 a 2H/3. Hodnoty mohou být výrazy parametrů.
+Kliknutí na A–D zvýrazní vodítko a zobrazí jeho čárkovaný řídicí polygon ve 3D.
+Posun rukojeti není skutečné vyboulení: při stejném posunu obou rukojetí
+je prostřední bod vychýlen o 3/4 tohoto posunu.
+
+Otevři ukázku `examples/rizeny_prechod.json`: čela 40 × 30 a 24 × 18 mm,
+výška 60 mm, skutečné prostřední vyboulení Bx = 7 a By = 5 mm, objem
+**77 760 mm³** (bez vyboulení 47 040 mm³). Úpravy podporují Zpět/Znovu,
+uložení a opětovné otevření; lze vytvořit nové těleso, přidávat nebo odebírat.
+
+Křížení, zborcení i neprůkazná konvexita se odmítnou kontrolou celého intervalu
+výšky. Meziřezy mohou být obecné konvexní čtyřúhelníky. Zaoblené nebo kruhové
+profily, díry, šikmá čela a dutá stěna zatím nejsou podporované.
+[Popis formátu, přesnosti a kontrol](docs/p6-7-rizeny-prechod.md).
+[Geometrický průzkum](docs/p6-6-vodici-krivky-overeni-a-navrh.md) zůstává podkladem
+pro pozdější rozšíření o další profily.
 
 
 ### Normalizované díly
@@ -935,6 +952,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `revolve` | rotace skici kolem osy | `sketch`, `axis` (`X`/`Y`/`Z`), `angle` (výchozí 360) |
 | `sweep` | tažení profilu po trase | `path` (`[[x, y, z], …]`, aspoň 2 body; poslední = první → uzavřený rám), `bend_radius` (0 = ostré rohy na pokos), `profile` (`circle`/`rectangle`/`steel`/`sketch`), `diameter`; `width`, `height`; `section` (`"IPE 100"`, `"L 50x5"`, `"RHS 40x20x2"`, `"CHS 48.3x2.6"`); `sketch`; `wall` (trubka/jekl), `operation` |
 | `standard` | normalizovaný díl | `kind` (`socket_screw`, `hex_screw`, `countersunk_screw`, `nut`, `washer`, `bearing`, `pin`, `key`, `profile`), `size` (`"M6"`, `"608"`, `"6"`, `"8x7"`, `"IPE 100"`), `length`, `plane`, `offset`, `positions` (`[[x, y], …]`), `angle`, `direction` (`normal`/`reverse` = do materiálu), `operation`, `clearance` (vůle kapsy) |
+| `guided_loft` | řízený plný přechod | dvě `sketches`, čtyři `guides` s rohem `corner` a dvěma XY posuny `controls`, `operation` (verze 34) |
 | `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled`, `wall`, `wall_mode` (`normal` / `sections`, verze 33), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
@@ -985,8 +1003,8 @@ OCCT jej nemění. `origin` je id prvku, od kterého vybraná hrana nepřetržit
 nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v JSON.
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
 neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
-výslovný režim stěny loftu (pak verze 33). Ostatní díly nadále používají nejnižší
-potřebnou verzi 24–28; verze 1–33 se stále načítají.
+výslovný režim stěny loftu (pak verze 33) nebo řízený přechod (pak verze 34).
+Ostatní díly nadále používají nejnižší potřebnou verzi 24–28; verze 1–34 se stále načítají.
 
 ### Význam stěny loftu (`wall_mode`, verze 33)
 
