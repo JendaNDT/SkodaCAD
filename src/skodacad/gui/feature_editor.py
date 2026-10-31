@@ -153,7 +153,8 @@ class GuidesEditor(QGroupBox):
                     self.edits[row, handle, axis] = edit
         note = QLabel("Rukojeť 1 je v H/3, rukojeť 2 ve 2H/3. "
                       "Posun rukojeti není kóta skutečného vyboulení. "
-                      "Ve 3D: 0 → 1 je směr vodítka, čárkovaně řídicí polygon.")
+                      "Ve 3D táhni větší bod rukojeti v XY; puštění ověří těleso, Esc zruší. "
+                      "Během tahu se mění jen vodítko. Výrazy zachovají vazbu na parametry.")
         note.setWordWrap(True)
         layout.addWidget(note, 5, 0, 1, 5)
 

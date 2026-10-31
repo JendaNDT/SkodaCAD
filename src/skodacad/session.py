@@ -271,6 +271,7 @@ class ModelSession:
         self._runner = runner
         self._job: int | None = None  # běžící přepočet na pozadí
         self._computed: Document | None = None  # model, ke kterému patří ``result``
+        self._guided_move_pending: tuple[Document, Document] | None = None
         self._loft_wall_cache: WallReport | None = None
         self._loft_wall_pending: tuple[str, str] | None = None
         self._loft_wall_error: tuple[str, str] | None = None
@@ -369,6 +370,15 @@ class ModelSession:
         dosavadní výsledek (nový převezme ``poll``)."""
         if self.document is None:
             raise DocumentError("Není otevřený žádný model.")
+        self._reset_build_state()
+        if self._runner is None:
+            self.result = rebuild(self.document, with_map=self.map_visible)
+            self._computed = self.document
+            return self.result
+        self._job = self._runner.submit(self.document.to_dict(), with_map=self.map_visible)
+        return self.result
+
+    def _reset_build_state(self) -> None:
         self.failure = ""
         self._loft_wall_cache = self._loft_wall_pending = self._loft_wall_error = None
         self.clear_ndt_coverage()
@@ -381,12 +391,7 @@ class ModelSession:
         self._audit_pending = None
         self._design_pending = None
         self._design_cache = None
-        if self._runner is None:
-            self.result = rebuild(self.document, with_map=self.map_visible)
-            self._computed = self.document
-            return self.result
-        self._job = self._runner.submit(self.document.to_dict(), with_map=self.map_visible)
-        return self.result
+        self._guided_move_pending = None
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -441,7 +446,14 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._loft_wall_pending is not None:
+        if self._guided_move_pending is not None:
+            original, candidate = self._guided_move_pending
+            self._guided_move_pending = None
+            try:
+                self._accept_guided_move(original, candidate, finished.result, finished.error)
+            except DocumentError as exc:
+                self.failure = str(exc)
+        elif self._loft_wall_pending is not None:
             signature, fid = self._loft_wall_pending
             report = finished.loft_wall
             if (report is not None and report.signature == signature and report.feature_id == fid
@@ -511,6 +523,9 @@ class ModelSession:
             return False
         self._runner.cancel()
         self._job = None
+        if self._guided_move_pending is not None:
+            self._guided_move_pending = None
+            return True  # neprovedený návrh nikdy není změna ani položka Znovu
         if self._loft_wall_pending is not None:
             self._loft_wall_error = (self._loft_wall_pending[1], "Měření bylo zastaveno.")
             self._loft_wall_pending = None
@@ -651,7 +666,8 @@ class ModelSession:
             raise DocumentError("Není otevřený žádný model.")
         return self.document
 
-    def _change(self, mutate: Callable[[Document], None]) -> BuildResult:
+    def _change(self, mutate: Callable[[Document], None], *,
+                computed_result: BuildResult | None = None) -> BuildResult:
         """Provede úpravu na kopii, zkontroluje ji a přijme (s možností Zpět)."""
         current = self._require()
         candidate = copy.deepcopy(current)
@@ -663,6 +679,9 @@ class ModelSession:
             resolve_parameters(candidate.parameters)
         except ExpressionError as exc:
             raise DocumentError(str(exc)) from None
+        if (computed_result is not None
+                and computed_result.model_signature != model_signature(candidate)):
+            raise DocumentError("Vypočtený návrh nepatří upravenému modelu – zopakuj tažení.")
         self._undo.append(current)
         overflow = max(0, len(self._undo) - _UNDO_LIMIT)
         del self._undo[:overflow]
@@ -671,6 +690,11 @@ class ModelSession:
         self._redo.clear()
         self.document = candidate
         self.dirty = True
+        if computed_result is not None:
+            self._reset_build_state()
+            self.result = computed_result
+            self._computed = candidate
+            return self.result
         return self.rebuild()
 
     def begin_group(self) -> None:
@@ -1099,12 +1123,70 @@ class ModelSession:
             if feature["type"] != "guided_loft":
                 return None
             data = guided_loft.prepare(feature, self.result.sketches, self._evaluate)
-            return {"selected": selected, "guides": [
-                {"label": guided_loft.LABELS[i],
+            return {"feature_id": feature_id, "signature": self.result.model_signature,
+                    "selected": selected, "guides": [
+                {"label": guided_loft.LABELS[i], "corner": list(guided_loft.CORNERS[i]),
                  "curve": [data.world(guided_loft.point(rail, k/40)) for k in range(41)],
                  "poles": [data.world(p) for p in rail]} for i, rail in enumerate(data.poles)]}
         except (ValueError, KeyError):
             return None
+
+    def move_guided_handle(self, feature_id: str, corner: list[int], handle: int,
+                           delta: list[float], signature: str) -> None:
+        """Návrh jednoho tahu; recept/historie se změní až po úspěšném celém přepočtu."""
+        self._require_complete_part("tažení rukojeti")
+        if (self.result.model_signature != signature or self._group is not None
+                or self.result.model_signature != model_signature(self._require())):
+            raise DocumentError("Model se od začátku tahu změnil – uchop rukojeť znovu.")
+        try:
+            valid_delta = (isinstance(delta, (list, tuple)) and len(delta) == 2
+                           and all(type(v) in (int, float) and math.isfinite(v) for v in delta))
+        except OverflowError:
+            valid_delta = False
+        if (not isinstance(corner, (list, tuple)) or len(corner) != 2
+                or any(type(v) is not int or v not in (-1, 1) for v in corner)
+                or type(handle) is not int or handle not in (0, 1)
+                or not valid_delta):
+            raise DocumentError("Rukojeť potřebuje roh, číslo 1/2 a konečný posun X/Y.")
+        if max(abs(v) for v in delta) < 1e-9:
+            return
+        feature = self.feature(feature_id)
+        if feature["type"] != "guided_loft":
+            raise DocumentError("Vybraný prvek není řízený přechod.")
+        guide = next(g for g in feature["guides"]
+                     if [g["corner"]["x"], g["corner"]["y"]] == list(corner))
+        for axis, change in enumerate(delta):
+            if abs(change) < 1e-9:
+                continue
+            value = guide["controls"][handle][axis]
+            guide["controls"][handle][axis] = (f"({value}) + ({float(change)!r})"
+                                              if isinstance(value, str) else value + change)
+        try:
+            data = guided_loft.prepare(feature, self.result.sketches, self._evaluate)
+            guided_loft.checked_volume(data)
+        except ValueError as exc:
+            raise DocumentError(f"Tah nelze použít: {exc} Původní model se nezměnil.") from None
+        original = copy.deepcopy(self._require())
+        candidate = copy.deepcopy(original)
+        candidate.features[self.feature_index(feature_id)] = feature
+        if self._runner is None:
+            result = rebuild(candidate, with_map=self.map_visible)
+            self._accept_guided_move(original, candidate, result, "")
+        else:
+            self._job = self._runner.submit(candidate.to_dict(), with_map=self.map_visible)
+            self._guided_move_pending = (original, candidate)
+            self.failure = ""
+
+    def _accept_guided_move(self, original: Document, candidate: Document,
+                            result: BuildResult | None, error: str) -> None:
+        if original != self.document:
+            raise DocumentError("Model se od návrhu změnil – zopakuj tažení rukojeti.")
+        problem = error or part_problem(result)
+        if problem:
+            detail = result.first_error.message if result and result.first_error else problem
+            raise DocumentError(f"Tah nelze použít: {detail} Původní model se nezměnil.")
+        self._change(lambda doc: setattr(doc, "features", copy.deepcopy(candidate.features)),
+                     computed_result=result)
 
     def feature_direction(self, feature_id: str) -> list[tuple[Any, Any, str]]:
         """Značky R1/R2 na původní hraně; jen pohled, bez změny modelu."""

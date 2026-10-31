@@ -700,6 +700,12 @@ skicami v rovinách XY. Druhá skica musí být výše. Čtyři kubická vodítk
 spojují rohy určené znaménky X/Y; každé má dvě rukojeti s posunem X/Y
 oproti přímému spojení, ve výšce H/3 a 2H/3. Hodnoty mohou být výrazy parametrů.
 Kliknutí na A–D zvýrazní vodítko a zobrazí jeho čárkovaný řídicí polygon ve 3D.
+**Větší bod rukojeti uchop levým tlačítkem a táhni.** Pohyb je v XY při stejné
+výšce; během tahu se mění jen náhled vodítka. Puštění myši ověří celý model
+na pozadí a úspěšný tah uloží jako jeden krok Zpět. Esc nebo přepnutí z okna
+tah zruší. Neplatný výsledek ponechá původní model i historii. Výraz rukojeti
+si zachová vazbu na parametry. Při bočním pohledu nebo překrytých rukojetích
+zvol Izometrii či Shora nebo díl přibliž. [Podrobnosti tažení](docs/p6-8-tazeni-rukojeti.md).
 Posun rukojeti není skutečné vyboulení: při stejném posunu obou rukojetí
 je prostřední bod vychýlen o 3/4 tohoto posunu.
 
