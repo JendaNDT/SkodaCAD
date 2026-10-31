@@ -1,0 +1,54 @@
+name: P6 průzkum skořepin
+
+on:
+  pull_request:
+    paths:
+      - 'docs/p6-3-pruzkum-skorepin.py'
+      - '.github/workflows/p6-shell-study.yml'
+      - 'src/skodacad/features.py'
+      - 'src/skodacad/geometry_validation.py'
+      - 'src/skodacad/measure.py'
+      - 'src/skodacad/document.py'
+      - 'src/skodacad/selectors.py'
+      - 'examples/vysypka.json'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p6-shell-study-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: '1'
+
+jobs:
+  pruzkum:
+    name: Skořepiny – ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Instalace zamčeného jádra a kontroly kódu
+        run: python -m pip install -e '.[dev]'
+      - name: Kontrola kódu
+        run: ruff check src tests docs/p6-3-pruzkum-skorepin.py
+      - name: Analytické objemy, normálová měření a meze
+        run: python docs/p6-3-pruzkum-skorepin.py --output out/p6-3-skorepiny
+      - name: Recepty, STEP, SVG a úplná evidence vzorků
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p6-skorepiny-${{ matrix.os }}
+          path: out/p6-3-skorepiny/
+          retention-days: 14
