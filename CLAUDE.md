@@ -1482,6 +1482,16 @@ zastavení bez změny receptu; změna modelu, historie a otevření ji zneplatn�
 loftem, tabulka a výběr měřicí úsečky/bodu ve 3D, žádná změna formátu ani NDT.
 Analytické reference, výsypka, navazující odebrání, chyby a platnost, proces, GUI a
 self-test; konkrétní úplné výsledky před sloučením v implementačním PR.
+**P6.2 vodicí křivky — průzkum 31. 10. 2026:** [výsledky a první návrh](docs/p6-6-vodici-krivky-overeni-a-navrh.md),
+spustitelný `docs/p6-6-pruzkum-voditek.py`, devět sítí v oddělených časově omezených
+procesech a workflow pro oba OS. Již dostupný Gordon i Bézier: analytické obdélníky,
+výkyv/ohnutí, více profilů a obrácené křivky; dva kruhové profily nezaručují kruhový
+meziřez ani G1, třetí profil v konkrétní referenci pomohl. P1 může přijmout křížení
+vodítek, proto nezávislá kontrola konvexity průřezů v celém intervalu. Návrh první
+produkční operace: dvě obdélníková čela, čtyři kubická vodítka s implicitními konci
+v geometrických rozích, pevný parametr výšky, plný solid a přímé Bézierovy plochy.
+Produkční kód a formát 33 se nemění; `guided_loft`/v34 je zatím pouze návrh.
+Výsledky cílených a úplných systémových kontrol v PR průzkumu.
 **P7–P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 
