@@ -45,6 +45,7 @@ from skodacad.expressions import (
 )
 from skodacad.features import describe, profile_problem, sketch_plane
 from skodacad.inspection import describe_shape
+from skodacad.loft_inspection import WallReport, inspect_loft, wall_feature
 from skodacad.materials import density_g_cm3, material_key
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
 from skodacad.measure import face_reference as surface_reference
@@ -270,6 +271,9 @@ class ModelSession:
         self._runner = runner
         self._job: int | None = None  # běžící přepočet na pozadí
         self._computed: Document | None = None  # model, ke kterému patří ``result``
+        self._loft_wall_cache: WallReport | None = None
+        self._loft_wall_pending: tuple[str, str] | None = None
+        self._loft_wall_error: tuple[str, str] | None = None
         self.map_visible = False  # počítat i mapu tloušťky stěny (zapíná okno)
         self.section_settings: SectionSettings | None = None  # řez modelem (jen pohled)
         self._section_cache: tuple[Any, ...] | None = None
@@ -366,6 +370,7 @@ class ModelSession:
         if self.document is None:
             raise DocumentError("Není otevřený žádný model.")
         self.failure = ""
+        self._loft_wall_cache = self._loft_wall_pending = self._loft_wall_error = None
         self.clear_ndt_coverage()
         self._coverage_pending = None
         self._access_pending = None
@@ -436,7 +441,17 @@ class ModelSession:
                 elif kind == "variant":
                     pending["results"].append(payload[1])
         self._job = None
-        if self._design_pending is not None:
+        if self._loft_wall_pending is not None:
+            signature, fid = self._loft_wall_pending
+            report = finished.loft_wall
+            if (report is not None and report.signature == signature and report.feature_id == fid
+                    and self.result is not None and self.result.model_signature == signature):
+                self._loft_wall_cache = report
+            else:
+                self.failure = finished.error or "Měření nepatří aktuálnímu modelu. Zopakuj je."
+                self._loft_wall_error = (fid, self.failure)
+            self._loft_wall_pending = None
+        elif self._design_pending is not None:
             self._finish_design(finished.design, finished.error)
         elif self._audit_pending is not None:
             if finished.audit is None:  # chyba: hotové studie zůstanou, zbylé neprovedeno
@@ -496,6 +511,10 @@ class ModelSession:
             return False
         self._runner.cancel()
         self._job = None
+        if self._loft_wall_pending is not None:
+            self._loft_wall_error = (self._loft_wall_pending[1], "Měření bylo zastaveno.")
+            self._loft_wall_pending = None
+            return True
         self._coverage_pending = None
         self._plan_pending = None
         self._pt_pending = None
@@ -526,6 +545,69 @@ class ModelSession:
             self.document = computed
             self.dirty = True
         return True
+
+    def loft_wall_report(self, feature_id: str) -> WallReport | None:
+        """Pouze aktuální měření; změna modelu, Zpět i otevření je zneplatní."""
+        report = self._loft_wall_cache
+        if (report is not None and report.feature_id == feature_id and self.result is not None
+                and report.signature == self.result.model_signature
+                and self._computed == self.document and not self.computing):
+            return report
+        return None
+
+    @property
+    def loft_wall_pending(self) -> bool:
+        return self._loft_wall_pending is not None
+
+    def loft_wall_available(self, feature_id: str) -> bool:
+        if self.model_problem:
+            return False
+        try:
+            wall_feature(self._require(), self.result, feature_id)
+        except ValueError:
+            return False
+        return True
+
+    def loft_wall_problem(self, feature_id: str) -> str:
+        if self._loft_wall_pending is not None and self._loft_wall_pending[1] == feature_id:
+            return "Měřím stěnu na pozadí…"
+        if self._loft_wall_error is not None and self._loft_wall_error[0] == feature_id:
+            return self._loft_wall_error[1]
+        try:
+            self._require_complete_part("měření stěny")
+            wall_feature(self._require(), self.result, feature_id)
+        except (DocumentError, ValueError) as exc:
+            return str(exc)
+        return ""
+
+    def inspect_loft_wall(self, feature_id: str) -> WallReport | None:
+        """Měření je jen pohled: nemění recept, špinavý stav ani historii."""
+        self._require_complete_part("měření stěny")
+        document = self._require()
+        wall_feature(document, self.result, feature_id)
+        self.failure = ""
+        self._loft_wall_cache = self._loft_wall_error = None
+        if self._runner is None:
+            try:
+                self._loft_wall_cache = inspect_loft(document, self.result, feature_id)
+            except DocumentError as exc:
+                self._loft_wall_error = (feature_id, str(exc))
+                raise
+            return self._loft_wall_cache
+        self._job = self._runner.submit_loft_wall(document.to_dict(), feature_id)
+        self._loft_wall_pending = (self.result.model_signature, feature_id)
+        return None
+
+    def loft_wall_measurement(self, feature_id: str, index: int) -> list:
+        report = self.loft_wall_report(feature_id)
+        if report is None or not 0 <= index < len(report.samples):
+            return []
+        sample = report.samples[index]
+        start = Vector(sample.point)
+        end = Vector(sample.end) if sample.end is not None else start
+        label = (f"Bod {index + 1}: {sample.length:.3f} mm" if sample.length is not None
+                 else f"Bod {index + 1}: nejisté")
+        return [(start, end, label)]
 
     def _require_computed(self, what: str) -> None:
         if self.computing:

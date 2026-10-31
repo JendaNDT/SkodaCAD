@@ -677,6 +677,13 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
    Starý přechod bez volby ukazuje **Automaticky (starší model)** a zachovává původní
    geometrii. Úprava jiného políčka jej nepřevede na nový režim.
 
+6. **Změřit stěnu** pod formulářem zobrazí rozsah vzorkovaných tlouštěk v aktuálním
+   hotovém dílu a počty bodů pod zadáním, u zadání, s delším průchodem a nejistých.
+   Kliknutí na řádek ukáže místo a měřicí úsečku ve 3D. Po změně modelu měření zopakuj.
+   Výpočet běží na pozadí a lze jej zastavit. Vzorky nejsou globální minimum ani
+   výrobní přejímka; zesílený roh může mít delší průchod a paprsek přes hranu je nejistý.
+   Jde o CAD délku kolmo do materiálu, nezávislou na filtru NDT měřidla.
+
 Ukázka **loft_stena.json**: redukce Ø80 → Ø40, výška 60 mm a stěna 3 mm.
 V normálovém režimu má objem **33 879,562165 mm³**, v rovinách skic **32 232,740626 mm³**
 a kolmo k plášti asi **2,846 mm**. Přepnutí jde vrátit přes Zpět/Znovu.

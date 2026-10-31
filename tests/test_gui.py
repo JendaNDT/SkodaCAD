@@ -2744,3 +2744,54 @@ def test_drawing_title_dialog_saves_and_reopens(window, monkeypatch):
     monkeypatch.setattr(MainWindow, "_exec_dialog", cancel)
     window.edit_drawing_title_block()
     assert window.session.document.drawing["title_block"]["revision"] == "B"
+
+
+def test_loft_wall_report_button_selection_invalidation_and_legacy(window, examples_dir):
+    w = window
+    assert w.open_model(examples_dir / "loft_stena.json", template=True)
+    w._selected_id = "prechod"
+    w._reload_all()
+    panel = w.feature_editor.wall_panel
+    assert not panel.isHidden() and panel.button.isEnabled()
+    panel.button.click()
+    report = w.session.loft_wall_report("prechod")
+    assert report is not None and report.counts["nominal"] == 25
+    assert "3,000" in panel.summary.text() or "3" in panel.summary.text()
+    assert panel.table.rowCount() == 25 and not w.session.dirty and not w.session.can_undo
+    first_item = panel.table.item(0, 0)
+    panel.table.setCurrentCell(0, 0)
+    assert w.viewer.measurement and "Bod 1" in w.viewer.measurement[-1][2]
+    assert (w.viewer.measurement[-1][0] - w.viewer.measurement[-1][1]).length == pytest.approx(3)
+    w._refresh_all()
+    assert panel.table.item(0, 0) is first_item and panel.selected_index == 0
+    combo = w.feature_editor.form.widget("wall_mode")
+    combo.setCurrentIndex(combo.findData("sections"))
+    assert w.session.loft_wall_report("prechod") is None and panel.selected_index == -1
+    assert not w.viewer.measurement
+    panel.button.click()
+    assert w.session.loft_wall_report("prechod").counts["below"] == 25
+    assert panel.table.item(0, 0) is first_item
+    panel.table.setCurrentCell(0, 0)
+    w.undo()
+    assert panel.selected_index == -1 and w.session.loft_wall_report("prechod") is None
+    w.session.dirty = False
+    assert w.open_model(examples_dir / "vysypka.json", template=True)
+    w._selected_id = "vysypka"
+    w._reload_all()
+    panel.button.click()
+    report = w.session.loft_wall_report("vysypka")
+    unknown = next(i for i, s in enumerate(report.samples) if s.status == "unknown")
+    panel.table.setCurrentCell(unknown, 0)
+    assert "hran" in panel.location.text() and "nejisté" in w.viewer.measurement[-1][2]
+    assert w.viewer.measurement[-1][0] == w.viewer.measurement[-1][1]
+    assert "wall_mode" not in w.session.feature("vysypka") and not w.session.dirty
+    w._selected_id = w.session.document.features[0]["id"]
+    w._load_editor()
+    assert panel.isHidden() and panel.selected_index == -1
+    w._selected_id = "vysypka"
+    w._load_editor()
+    feature = w.session.feature("vysypka")
+    feature["wall"] = 0
+    w.session.update_feature("vysypka", feature)
+    w._refresh_all()
+    assert not panel.button.isEnabled() and "kladnou" in panel.summary.text()
