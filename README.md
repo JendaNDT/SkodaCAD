@@ -64,6 +64,11 @@ U vodítek nejprve vyber roh A–D a rukojeť 1/2, pak uprav X/Y v širokých po
 Enter nebo opuštění platného pole změnu potvrdí; Zpět ji vrátí. Přepnutí panelu
 formulář zachová. Podrobný rozsah, ověření a meze: [P7.2](docs/p7-2-nativni-prostredi.md).
 
+[Ověření modelování desky od nuly](docs/p7-3-overeni-workflow-2026-11-01.md)
+pokrývá parametry, vysunutí, čtyři průchozí otvory Ø6, R2 a historii. Hotový
+recept je v **Příklady → deska_workflow**. V souřadnicích otvorů Enter přidává
+řádek a Tab opouští pole a potvrzuje platný vstup.
+
 ### Ovládání
 
 | Akce | Jak |
@@ -1517,6 +1522,8 @@ Měřicí evidence vzniká příkazem `python tests/benchmark_p0.py --output out
 
 ```bash
 pip install -e ".[dev,gui]"   # jádro, okno a nástroje pro vývoj
+# Jen macOS, před prvním spuštěním ze zdrojů (Xcode Command Line Tools):
+python packaging/build_macos_accessibility.py
 pytest -q                     # testy (ověřují geometrii výpočtem objemu)
 ruff check src tests          # kontrola kódu
 skodacad-gui                  # spustí okno (bez argumentu otevře ukázku příruby)

@@ -1200,6 +1200,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   panel nepovolil platný JSON/CSV. Běžný přepočet nesmí plošně mazat strom položek:
   Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
   i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.
+- P7.3 zopakovalo pád Cocoa AX i v seznamu tvarů skici. Příčina odpovídá
+  QTBUG-149612: nativní buňky uvolňovaly rozhraní vlastněná Qt. Přesný backport
+  sémantiky `invalidate/dealloc` z Qt `8148c48` staví
+  `packaging/build_macos_accessibility.py`; spec přibalí dylib automaticky.
+  Při vývoji na Macu jej sestav před spuštěním Cocoa GUI. Oprava je omezená
+  na Qt 6.11.3, používá introspekci ivarů a ponechává přístupnost zapnutou.
+  Při aktualizaci Qt ověř upstream opravu a shim odstraň; nerozšiřuj slepě
+  seznam verzí. Self-test „Přístupnost macOS“ čte skutečnou nativní AX strukturu
+  a kontroluje životnost Qt ID. [Evidence](docs/p7-3-overeni-workflow-2026-11-01.md).
 - 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
   ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
@@ -1541,6 +1550,12 @@ odhalila i přeuvolnění QNSView přes kapslový Cocoa_Window; Mac teď předá
 Qt handle přes nevlastnící Aspect_NeutralWindow a aktualizuje jeho rozměry.
 Self-test „✓ Životnost 3D ploch“ ověřuje čtyři cykly v obou balíčcích.
 P7.4 přijetí autorem čeká.
+**P7.3 — technické ověření modelování:** [deska od nuly](docs/p7-3-overeni-workflow-2026-11-01.md),
+80 × 50 × 10, čtyři Ø6, vnější R2; parametry, historie, uložení a exporty.
+Oprava Cocoa AX, potvrzení souřadnic Tabem, editor po vytvoření z výběru/skicáře,
+čitelnější rozbalený strom. Self-test „Modelování desky“ také kliká na skutečnou
+plochu a čtyři hrany přes Qt a OCCT projekci. Úplné výsledky v implementačním PR;
+nejde o autorskou přejímku P7.4.
 **P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 Historické fáze níže nejsou etapy P0–P8.
 

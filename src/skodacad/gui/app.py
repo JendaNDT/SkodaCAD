@@ -282,11 +282,186 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_plate_workflow(window, lines) and ok
+    ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_plate_workflow(window, lines) -> bool:
+    """Reference plate through real fields, native mouse picking and session history."""
+    import math
+
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        window.session.new_document("Ověření desky 80 × 50 × 10")
+        for name, value in (("delka", "80"), ("sirka", "50"), ("tloustka", "10")):
+            window.session.add_parameter(name, value)
+        window._selected_id = None
+        window._reload_all()
+        window.resize(1400, 850)
+        window.workspace.show_panel("editor")
+        window.add_feature_actions["sketch"].trigger()
+
+        def enter(field, value):
+            field.setFocus()
+            field.setText(value)
+            QTest.keyClick(field, Qt.Key.Key_Return)
+
+        shapes = window.feature_editor.form.widget("elements")
+        enter(shapes._form.widget("width"), "delka")
+        enter(shapes._form.widget("height"), "sirka")
+        window.add_feature_actions["extrude"].trigger()
+        enter(window.feature_editor.form.widget("distance"), "tloustka")
+        assert window.session.result.ok
+        assert abs(window.session.properties.volume_mm3 - 40000) < 1e-5
+        viewer = window.viewer
+
+        def click(point, toggle=False):
+            x, y = viewer._view.Convert(*map(float, point))
+            ratio = viewer._pixel_scale()
+            modifiers = (Qt.KeyboardModifier.ControlModifier if toggle
+                         else Qt.KeyboardModifier.NoModifier)
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, modifiers,
+                             QPoint(round(x/ratio), round(y/ratio)))
+            QApplication.processEvents()
+
+        if viewer.ready:
+            viewer.set_standard_view("top")
+            viewer.fit_all()
+            QApplication.processEvents()
+            click((0, 0, 10))
+            assert window.selection_actions["sketch"].isEnabled()
+            window.workspace.show_panel("measure")
+            window.selection_actions["sketch"].trigger()
+            assert window.workspace.active == "editor"
+            assert window.session.document.features[-1]["type"] == "sketch"
+            window.undo_action.trigger()  # selection test must leave the plate unchanged
+
+        window.add_feature_actions["hole"].trigger()
+        form = window.feature_editor.form
+        kind = form.widget("kind")
+        kind.setCurrentIndex(kind.findData("clearance"))
+        enter(form.widget("diameter"), "6")
+        points = form.widget("positions")
+        points.setFocus()
+        points.setPlainText("-delka/2+10; -sirka/2+10\ndelka/2-10; -sirka/2+10\n"
+                            "delka/2-10; sirka/2-10\n-delka/2+10; sirka/2-10")
+        count = len(window.session._undo)
+        QTest.keyClick(points, Qt.Key.Key_Tab)
+        QApplication.processEvents()
+        assert not points.hasFocus() and len(window.session._undo) == count+1
+        assert window.session.result.ok
+        assert abs(window.session.properties.volume_mm3 - (40000-360*math.pi)) < 1e-5
+
+        if viewer.ready:
+            # Four external vertical corners; cylindrical seams must not be selected.
+            for side, y in (("front", -25), ("back", 25)):
+                viewer.set_standard_view(side)
+                QApplication.processEvents()
+                click((-40, y, 5), toggle=(side == "back"))
+                click((40, y, 5), toggle=True)
+            assert len(viewer.selected_shapes()) == 4
+            window.workspace.show_panel("measure")
+            window.selection_actions["fillet"].trigger()
+            assert window.workspace.active == "editor"
+        else:
+            for side in ("front", "back"):
+                window.add_feature_actions["fillet"].trigger()
+                fid = window._selected_id
+                feature = window.session.feature(fid)
+                feature["edges"] = {"face": side, "parallel": "Z"}
+                window.session.update_feature(fid, feature)
+                window._reload_all()
+        expected = 39840 - 320*math.pi
+
+        def verify(length, volume):
+            assert window.session.result.ok and window.session.result.part.is_valid
+            props = window.session.properties
+            assert props.solids == 1 and abs(props.volume_mm3-volume) < 1e-5
+            assert all(abs(a-b) < 1e-5
+                       for a, b in zip(props.size_mm, (length, 50, 10), strict=True))
+
+        verify(80, expected)
+        enter(window._param_fields["delka"], "100")
+        verify(100, expected+10000)
+        window.undo_action.trigger()
+        verify(80, expected)
+        window.redo_action.trigger()
+        verify(100, expected+10000)
+        window.undo_action.trigger()
+        path = user_dir() / "self-test-deska.json"
+        assert window._save_to(path) and window.open_model(path)
+        verify(80, expected)
+        for fmt in ("step", "stl"):
+            target = path.with_suffix("."+fmt)
+            window.session.export(target)
+            assert target.stat().st_size > 0
+        if viewer.ready:
+            viewer.set_standard_view("iso")
+            viewer.fit_all()
+            viewer.dump(str(path.with_suffix(".png")))
+        lines.append("✓ Modelování desky: 80×50×10, čtyři Ø6 skrz, R2, "
+                     "38834,690351 mm³, délka 100/80 a Zpět/Znovu, uložení/otevření, STEP/STL"
+                     + (", Qt klik na plochu a čtyři hrany ve 3D" if viewer.ready else ""))
+        return True
+    except Exception:  # noqa: BLE001 -- include the exact assertion in the package report
+        lines.append("✕ Modelování desky:\n" + traceback.format_exc())
+        return False
+
+
+def _self_test_native_accessibility(lines) -> bool:
+    """Native Cocoa AX must not delete the live Qt interface of a table/list/tree."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtGui import QAccessible
+    from PySide6.QtWidgets import (
+        QListWidget,
+        QTableWidget,
+        QTableWidgetItem,
+        QTreeWidget,
+        QTreeWidgetItem,
+    )
+
+    from skodacad.gui.macos_accessibility import install, probe
+
+    if not install():
+        return True  # This ownership defect is specific to the Cocoa platform plugin.
+    try:
+        for _ in range(4):
+            views = [QTreeWidget(), QListWidget(), QTableWidget(3, 2)]
+            views[0].setHeaderLabels(["Prvek", "Tělesa"])
+            for row in range(3):
+                views[0].addTopLevelItem(QTreeWidgetItem([f"Prvek {row}", "1 → 1"]))
+                views[1].addItem(f"Tvar {row}")
+                for col in range(2):
+                    views[2].setItem(row, col, QTableWidgetItem(f"{row}/{col}"))
+            views[0].setCurrentItem(views[0].topLevelItem(0))
+            views[1].setCurrentRow(0)
+            views[2].setCurrentCell(0, 0)
+            for view in views:
+                view.show()
+                QApplication.processEvents()
+                for _query in range(3):
+                    ident = QAccessible.uniqueId(QAccessible.queryAccessibleInterface(view))
+                    assert probe(ident)
+                    iface = QAccessible.accessibleInterface(ident)
+                    assert iface is not None and iface.isValid()
+                view.clear()
+                QApplication.processEvents()
+                view.close()
+                view.deleteLater()
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        lines.append("✓ Přístupnost macOS: 12 nativních seznamů/stromů/tabulek, "
+                     "výběr a čtení AX, platná identita Qt, obnova a zničení bez pádu")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- process exit also detects native SIGSEGV
+        lines.append(f"✕ Přístupnost macOS: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _self_test_viewer_lifecycle(window, lines) -> bool:
