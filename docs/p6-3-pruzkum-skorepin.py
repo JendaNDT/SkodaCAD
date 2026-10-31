@@ -182,6 +182,7 @@ def run_case(case: str, folder: Path) -> dict:
             assert math.isclose(after.volume, expected, rel_tol=1e-8, abs_tol=1e-5)
             record["analytic_volume_mm3"] = expected
         elif case == "zanik_polomeru":
+            assert min(lengths) >= wall - TOL
             point = Vector(-37 - 3 / math.sqrt(2), 0, 3 - 3 / math.sqrt(2))
             normal = Vector(-1, 0, -1).normalized()
             depth, oblique = RayCaster(candidate).thickness(tuple(point), tuple(-normal))
