@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from build123d import GeomType, Vector, Vertex
 
-from skodacad import variable_fillet
+from skodacad import guided_loft, variable_fillet
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.direct_edit import face_origin
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
@@ -192,7 +192,7 @@ from skodacad.picking import (
 from skodacad.projection import Projected, ProjectionError, candidates, reference_for
 from skodacad.projection import refresh as refresh_references
 from skodacad.properties import PartProperties, compute
-from skodacad.rebuild import BuildResult, part_problem, rebuild
+from skodacad.rebuild import BuildResult, model_signature, part_problem, rebuild
 from skodacad.schema import FEATURE_SCHEMAS, new_feature
 from skodacad.section import (
     Section,
@@ -1087,6 +1087,24 @@ class ModelSession:
         except Exception:  # noqa: BLE001 – zvýraznění je jen pomůcka, nesmí nic shodit
             return []
         return []
+
+    def guided_loft_display(self, feature_id: str, selected: int = 0) -> dict | None:
+        """Pouze vypočtená vodítka aktuálního přijatého prvku; GUI dostává čísla."""
+        if (self.computing or self.result is None or self._computed != self.document
+                or self.result.model_signature != model_signature(self._require())
+                or not any(s.id == feature_id and s.status == "ok" for s in self.result.statuses)):
+            return None
+        try:
+            feature = self.feature(feature_id)
+            if feature["type"] != "guided_loft":
+                return None
+            data = guided_loft.prepare(feature, self.result.sketches, self._evaluate)
+            return {"selected": selected, "guides": [
+                {"label": guided_loft.LABELS[i],
+                 "curve": [data.world(guided_loft.point(rail, k/40)) for k in range(41)],
+                 "poles": [data.world(p) for p in rail]} for i, rail in enumerate(data.poles)]}
+        except (ValueError, KeyError):
+            return None
 
     def feature_direction(self, feature_id: str) -> list[tuple[Any, Any, str]]:
         """Značky R1/R2 na původní hraně; jen pohled, bez změny modelu."""

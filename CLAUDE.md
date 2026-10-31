@@ -309,6 +309,15 @@
   Úplná sada `pytest -q` běží u každého PR na Windows i macOS; v cloudu se pouští celá jen
   u změn společného jádra (pravidlo 6), jinak jen testy dotčené oblasti.
 
+- (31. 10. 2026, pokyn autora pokračovat) **P6.7 řízený obdélníkový přechod**
+  (`docs/p6-7-rizeny-prechod.md`): `guided_loft.py`, prvek `guided_loft`, dvě osově
+  orientované XY obdélníkové skici, čtyři kubická rohová vodítka se dvěma XY posuny
+  rukojetí. Plné těleso new/add/cut; konvexita po celém intervalu Bernsteinovými mezemi
+  s dělením, neprůkazný případ odmítnout. Vlastní čela, P1, analytický objem a body
+  konečného pláště. Formát **34** jen s tímto prvkem; staré díly zůstávají v24–33.
+  Formulář A–D a vodítka ve 3D přes ModelSession, příklad `rizeny_prechod.json`.
+  Kruhy, zaoblení, šikmá čela a duté stěny mimo tento rozsah. Výsledky ověření v PR.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -1308,7 +1317,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | [Lineární proměnné zaoblení](docs/p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, formát 32, směr/původ, session a GUI; výsledky úplných kontrol v implementačním PR | P6.4 na autorském dílu, další operace z P6.1 |
+| P6 pokročilé modelování | [Řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34); [Lineární proměnné zaoblení](docs/p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, formát 32, směr/původ, session a GUI; výsledky úplných kontrol v implementačním PR | P6.4 na autorském dílu, další operace z P6.1 |
 | P7–P8 | nezahájeno | – |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

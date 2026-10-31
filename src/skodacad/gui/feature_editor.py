@@ -17,10 +17,12 @@ from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFormLayout,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -34,7 +36,9 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.gui.loft_wall_panel import LoftWallPanel
+from skodacad.guided_loft import CORNERS, LABELS, default_guides
 from skodacad.schema import (
     FACE_CHOICES,
     FEATURE_SCHEMAS,
@@ -112,6 +116,63 @@ def _combo(choices, current: Any, optional: bool, empty_label: str = "(automatic
     return combo
 
 
+class GuidesEditor(QGroupBox):
+    """Pevné řádky rukojetí; výběr řádku je jen pohled, úprava hodnot jde přes formulář."""
+
+    edited = Signal()
+    selected = Signal(int)
+
+    def __init__(self, value) -> None:
+        super().__init__("Vodítka · posuny rukojetí [mm]")
+        layout = QGridLayout(self)
+        self.buttons = QButtonGroup(self)
+        self.buttons.setExclusive(True)
+        self.buttons.idClicked.connect(self.selected)
+        self.edits = {}
+        by_corner = {(g["corner"]["x"], g["corner"]["y"]): g for g in value or default_guides()}
+        for col, title in enumerate(("Vodítko", "X₁", "Y₁", "X₂", "Y₂")):
+            layout.addWidget(QLabel(title), 0, col)
+        for row, corner in enumerate(CORNERS):
+            button = QToolButton()
+            button.setText(LABELS[row].replace(" · ", " "))
+            color = ",".join(str(round(v*255)) for v in GUIDE_COLORS[row])
+            button.setStyleSheet(f"border-left: 4px solid rgb({color}); padding: 3px;")
+            button.setCheckable(True)
+            button.setChecked(row == 0)
+            self.buttons.addButton(button, row)
+            layout.addWidget(button, row+1, 0)
+            controls = by_corner[corner]["controls"]
+            for handle in range(2):
+                for axis in range(2):
+                    edit = QLineEdit(_number_text(controls[handle][axis]))
+                    edit.setMinimumWidth(30)
+                    edit.setObjectName(f"guide_{row}_{handle}_{axis}")
+                    edit.setToolTip(f"{LABELS[row]} · rukojeť {handle+1} · {'XY'[axis]} [mm]")
+                    edit.editingFinished.connect(self.edited)
+                    layout.addWidget(edit, row+1, 1+2*handle+axis)
+                    self.edits[row, handle, axis] = edit
+        note = QLabel("Rukojeť 1 je v H/3, rukojeť 2 ve 2H/3. "
+                      "Posun rukojeti není kóta skutečného vyboulení. "
+                      "Ve 3D: 0 → 1 je směr vodítka, čárkovaně řídicí polygon.")
+        note.setWordWrap(True)
+        layout.addWidget(note, 5, 0, 1, 5)
+
+    @property
+    def selected_index(self) -> int:
+        return self.buttons.checkedId()
+
+    def value(self) -> list:
+        result = default_guides()
+        for row in range(4):
+            for handle in range(2):
+                for axis in range(2):
+                    field = Field("guides", f"{LABELS[row]} · rukojeť {handle+1} · {'XY'[axis]}",
+                                  "number")
+                    result[row]["controls"][handle][axis] = parse_number(
+                        self.edits[row, handle, axis].text(), field)
+        return result
+
+
 class FieldsForm(QWidget):
     """Formulář nad jedním slovníkem (prvek nebo tvar skici) podle seznamu polí.
 
@@ -120,6 +181,7 @@ class FieldsForm(QWidget):
     """
 
     edited = Signal(dict)
+    guide_selected = Signal(int)
     invalid = Signal(str)
 
     def __init__(self, fields: tuple[Field, ...], data: dict[str, Any],
@@ -140,7 +202,7 @@ class FieldsForm(QWidget):
             widget.setObjectName(f"field_{field.key}")
             if field.help:
                 widget.setToolTip(field.help)
-            if field.kind in ("shapes", "bool"):
+            if field.kind in ("shapes", "bool", "guides"):
                 layout.addRow(widget)
             else:
                 layout.addRow(field.label, widget)
@@ -471,6 +533,12 @@ class FieldsForm(QWidget):
 
         return holder, read
 
+    def _build_guides(self, field: Field, value: Any):
+        editor = GuidesEditor(value)
+        editor.edited.connect(self._commit)
+        editor.selected.connect(self.guide_selected)
+        return editor, editor.value
+
     def _build_shapes(self, field: Field, value: Any):
         editor = ShapesEditor(value or [], profile_editor=self._profile_editor)
         editor.edited.connect(self._commit)
@@ -631,6 +699,7 @@ class ShapesEditor(QWidget):
 class FeatureEditor(QWidget):
     """Panel „Úprava prvku“: formulář vybraného prvku ze stromu."""
 
+    guide_selected = Signal(int)
     changed = Signal(str, dict)  # id prvku, nový obsah prvku
     invalid = Signal(str)
 
@@ -677,4 +746,5 @@ class FeatureEditor(QWidget):
         self.form.setObjectName("feature_form")
         self.form.edited.connect(lambda data: self.changed.emit(self.feature_id, data))
         self.form.invalid.connect(self.invalid)
+        self.form.guide_selected.connect(self.guide_selected)
         self._layout.insertWidget(1, self.form)

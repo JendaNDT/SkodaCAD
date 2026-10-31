@@ -28,6 +28,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.parts = []
         self.views = []
         self.highlighted = []
+        self.guides = None
         self.measurement = []  # čáry měření (od, do, popisek)
         self.thickness_map = None  # (uzlů, trojúhelníků, barvy, značka) zobrazené mapy
         self.coverage_map = None
@@ -40,6 +41,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.plan = None  # ({barva: [(od, do)]}, začátek, zóny) plánu dráhy sondy
 
     def show_part(self, part, fit=False, accent=None):
+        self.guides = None
         self.parts.append((part, fit))
         self.accent = list(accent or [])  # plochy jinou barvou (plochy řezu)
         self.picked_point = None
@@ -58,6 +60,9 @@ class FakeViewer(QtWidgets.QWidget):
 
     def show_design_ghost(self, original):
         self.design_ghost = original
+
+    def show_guides(self, data):
+        self.guides = data
 
     def show_measurement(self, lines):
         self.measurement = list(lines)
@@ -2795,3 +2800,55 @@ def test_loft_wall_report_button_selection_invalidation_and_legacy(window, examp
     w.session.update_feature("vysypka", feature)
     w._refresh_all()
     assert not panel.button.isEnabled() and "kladnou" in panel.summary.text()
+
+
+def test_guided_loft_handles_selection_history_and_file_round_trip(
+        empty_window, examples_dir, tmp_path, slot_errors):
+    w = empty_window
+    assert w.open_model(examples_dir / "rizeny_prechod.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.viewer.guides is not None and len(w.viewer.guides["guides"]) == 4
+    assert not w.session.dirty and not w.session.can_undo
+    assert w.session.result.part.volume == pytest.approx(77760, abs=2e-5)
+    editor = w.feature_editor.form.widget("guides")
+    editor.buttons.button(3).click()
+    assert w.viewer.guides["selected"] == 3 and not w.session.dirty
+    original = w.session.document.to_dict()
+    field = editor.edits[0, 0, 0]
+    field.setText("1+")
+    field.editingFinished.emit()
+    assert w.session.document.to_dict() == original
+    field.setText("12")
+    field.editingFinished.emit()
+    assert w.session.result.ok and w.session.dirty
+    assert w.viewer.guides["guides"][0]["curve"][20] == pytest.approx((24, 17, 30))
+    w.undo_action.trigger()
+    assert w.session.result.part.volume == pytest.approx(77760, abs=2e-5)
+    assert w.viewer.guides["guides"][0]["curve"][20][0] == pytest.approx(23)
+    w.redo_action.trigger()
+    assert w.viewer.guides["guides"][0]["curve"][20][0] == pytest.approx(24)
+    path = tmp_path / "guided.json"
+    w.session.save(path)
+    assert w.open_model(path)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    assert w.session.document.to_dict()["version"] == 34
+    assert w.feature_editor.form.widget("guides").edits[0, 0, 0].text() == "12"
+    w._refresh_all(fit=True)
+    assert w.viewer.guides is not None  # opětovné zobrazení dílu nesmí smazat vodítka
+    w.tree.setCurrentItem(w.tree.topLevelItem(0))
+    assert w.viewer.guides is None
+    assert not slot_errors
+
+
+def test_guided_loft_invalid_geometry_hides_old_guides_and_undo_recovers(
+        empty_window, examples_dir):
+    w = empty_window
+    assert w.open_model(examples_dir / "rizeny_prechod.json", template=True)
+    w.tree.setCurrentItem(w.tree.topLevelItem(2))
+    field = w.feature_editor.form.widget("guides").edits[0, 0, 0]
+    field.setText("-150")
+    field.editingFinished.emit()
+    assert not w.session.result.ok and "konvexitu" in w.error_label.text()
+    assert w.viewer.guides is None
+    w.undo_action.trigger()
+    assert w.session.result.ok and w.viewer.guides is not None

@@ -18,6 +18,7 @@ Druhy polí (``Field.kind``):
 * ``points`` – seznam bodů [[x, y], …]
 * ``points3`` – seznam bodů v prostoru [[x, y, z], …] (trasa tažení)
 * ``sketches`` – seznam dřívějších skic v pořadí stromu (přechod)
+* ``guides`` – čtyři rohová vodítka a posuny dvou rukojetí v X/Y
 * ``shapes`` – seznam tvarů skici
 * ``profile`` – obrys z úseček a oblouků s vazbami (upravuje se ve skicáři)
 * ``text`` – obyčejný text
@@ -30,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from skodacad.features import REPEATABLE_FEATURES
+from skodacad.guided_loft import default_guides
 from skodacad.holes import FITS, KINDS, SIZES
 from skodacad.selectors import FACE_NAMES_CZ
 from skodacad.standards import KINDS as STANDARD_KINDS
@@ -193,6 +195,16 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                        "Starší model bez volby zachovává původní automatický postup."),
             Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
         ), "Přechod mezi skicami. V rovinách skic může být stěna kolmo k povrchu tenčí."),
+        Schema("guided_loft", "Řízený přechod", (
+            _NAME,
+            Field("sketches", "Dvě skici v pořadí", "sketches"),
+            Field("guides", "Vodítka", "guides",
+                  help="Posuny řídicích bodů od přímého spojení rohů, v mm. "
+                       "Rukojeti jsou v 1/3 a 2/3 výšky; jejich posun není přímo "
+                       "vyboulení pláště. Výběr řádku ukáže řídicí polygon ve 3D."),
+            Field("operation", "Operace", "choice", required=False, choices=OPERATION_CHOICES),
+        ), "Plný přechod mezi dvěma obdélníky v XY, druhá skica výše. "
+           "Čtyři rohová vodítka určují tvar mezi čely; křížení se odmítá."),
         Schema("standard", "Normalizovaný díl", (
             _NAME,
             Field("kind", "Druh", "choice", choices=STANDARD_KIND_CHOICES,
@@ -430,7 +442,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
     schema = FEATURE_SCHEMAS[feature_type]
     before = existing if index is None else existing[:index]
     has_solid = any(
-        f.get("type") in ("extrude", "revolve", "sweep", "loft", "standard", "step_import")
+        f.get("type") in ("extrude", "revolve", "sweep", "loft", "guided_loft",
+                          "standard", "step_import")
         for f in before
     )
     sketches = [f["id"] for f in before if f.get("type") == "sketch"]
@@ -463,6 +476,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         # šířka a výška jsou skryté, dokud se nepřepne na jekl – pak hned něco ukáže
         feature.update(path=[[0, 0, 0], [0, 0, 100], [100, 0, 100]], bend_radius=40,
                        profile="circle", diameter=30, width=40, height=20, wall=2)
+    elif feature_type == "guided_loft":
+        feature.update(sketches=sketches[-2:], guides=default_guides())
     elif feature_type == "loft":
         feature["sketches"] = sketches[-2:]  # dvě poslední skici (třeba dole a nahoře)
         feature["wall_mode"] = "normal"

@@ -152,6 +152,7 @@ class MainWindow(QMainWindow):
         self._shown_probe: Any = None  # přiložená NDT sonda právě v prohlížeči
         self._shown_points: Any = None  # mapa kontaktních ploch návrhu poloh v prohlížeči
         self._shown_target: Any = None  # náhled cílového objemu NDT právě v prohlížeči
+        self._shown_guides = None
         self._shown_plan: Any = None  # plán dráhy sondy a zóny právě v prohlížeči (klíč)
         self._assistant_lock: list[QAction] = []  # akce zamčené, dokud pracuje AI
         self.ai_busy = False  # AI asistent zrovna upravuje model
@@ -370,6 +371,7 @@ class MainWindow(QMainWindow):
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
         self.feature_editor.changed.connect(self._feature_edited)
+        self.feature_editor.guide_selected.connect(lambda _row: self._refresh_guides())
         self.feature_editor.wall_panel.requested.connect(self.inspect_loft_wall)
         self.feature_editor.wall_panel.selected.connect(lambda _row: self._show_measure_line(None))
         self.feature_editor.invalid.connect(
@@ -1501,6 +1503,7 @@ class MainWindow(QMainWindow):
             self._shown_probe = None  # … i sondu
             self._shown_target = None  # … i náhled cílového objemu
             self._shown_plan = None  # … i plán dráhy a zóny
+            self._shown_guides = None
         self._refresh_actions()
         self._refresh_progress()
         self._update_highlight()
@@ -1515,6 +1518,7 @@ class MainWindow(QMainWindow):
         self.audit_panel.refresh()
         self.design_panel.refresh()
         self._refresh_loft_wall()
+        self._refresh_guides()
 
     # --- přepočet na pozadí ----------------------------------------------------------
 
@@ -1774,6 +1778,7 @@ class MainWindow(QMainWindow):
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
             self.feature_editor.show_feature(None)
+            self._refresh_guides()
             self._refresh_loft_wall()
             return
         features = self.session.document.features
@@ -1783,7 +1788,20 @@ class MainWindow(QMainWindow):
                       if f["type"] in REPEATABLE_FEATURES]
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)
+        self._refresh_guides()
         self._refresh_loft_wall()
+
+    def _refresh_guides(self) -> None:
+        form = self.feature_editor.form
+        selected = 0
+        if form is not None and form.data.get("type") == "guided_loft":
+            selected = form.widget("guides").selected_index
+        key = (id(self.session.result), self._selected_id, selected, self.session.computing)
+        if key != self._shown_guides:
+            data = (self.session.guided_loft_display(self._selected_id, selected)
+                    if self._selected_id is not None else None)
+            self.viewer.show_guides(data)
+            self._shown_guides = key
 
     def inspect_loft_wall(self) -> None:
         if self._selected_id is None:

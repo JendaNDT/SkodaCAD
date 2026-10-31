@@ -280,6 +280,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_design(window, lines) and ok
     ok = _self_test_variable_fillet(window, lines) and ok
     ok = _self_test_loft_wall(window, lines) and ok
+    ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -322,6 +323,49 @@ def _self_test_variable_fillet(window, lines: list[str]) -> bool:
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
         lines.append(f"✕ Proměnné zaoblení: {type(exc).__name__}: {exc}")
         window.session.dirty = False
+        return False
+
+
+def _self_test_guided_loft(window, lines: list[str]) -> bool:
+    """Nová funkce, rukojeti, přesné čáry v prohlížeči, historie a zápis v34."""
+    from skodacad.document import Document
+
+    window.session.dirty = False
+    try:
+        assert window.open_model(examples_dir() / "rizeny_prechod.json", template=True)
+        window._selected_id = "rizeny"
+        window._reload_all()
+        assert window.session.result.ok
+        assert abs(window.session.result.part.volume - 77760) < 2e-5
+        editor = window.feature_editor.form.widget("guides")
+        editor.buttons.button(2).click()
+        assert window.session.guided_loft_display("rizeny", 2)["selected"] == 2
+        if window.viewer.ready:
+            assert window.viewer._guide_objects
+            QApplication.processEvents()
+            window.viewer.dump(str(user_dir() / "self-test-rizeny-prechod.png"))
+        edit = editor.edits[0, 0, 0]
+        edit.setText("12")
+        edit.editingFinished.emit()
+        assert window.session.result.ok
+        assert abs(window.session.guided_loft_display("rizeny")["guides"][0]["curve"][20][0]
+                   - 24) < 1e-6
+        window.undo_action.trigger()
+        assert abs(window.session.result.part.volume - 77760) < 2e-5
+        window.redo_action.trigger()
+        path = user_dir() / "self-test-rizeny-prechod.json"
+        window.session.save(path)
+        saved = Document.load(path)
+        assert saved.to_dict()["version"] == 34
+        assert saved.features[-1]["guides"][0]["controls"][0][0] == 12
+        assert window.open_model(path)
+        assert window.session.result.ok
+        window.session.export(user_dir() / "self-test-rizeny-prechod.step")
+        lines.append("✓ Řízený přechod: 77760 mm³, čtyři vodítka a řídicí polygon ve 3D, "
+                     "úprava rukojeti, Zpět/Znovu, uložení/otevření v34 a STEP")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- výsledek self-testu místo pádu aplikace
+        lines.append(f"✗ Řízený přechod: {exc}")
         return False
 
 

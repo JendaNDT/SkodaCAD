@@ -50,7 +50,7 @@ from build123d import (
     sweep,
 )
 
-from skodacad import variable_fillet
+from skodacad import guided_loft, variable_fillet
 from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
 from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
@@ -230,7 +230,8 @@ class FeatureType:
 FEATURE_TYPES: dict[str, FeatureType] = {}
 # Každý 3D typ musí projít závěrečnou kontrolou i tehdy, když nevolá ctx.apply.
 # Při novém typu aktualizuj klasifikaci (regrese hlídá celý současný registr).
-VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "standard", "hole",
+VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "guided_loft",
+                             "standard", "hole",
                              "pattern", "mirror", "fillet", "variable_fillet", "chamfer", "shell",
                              "move_face", "face_diameter", "step_import"))
 
@@ -635,6 +636,18 @@ def _sweep_profile(ctx: BuildContext, feature: dict[str, Any]) -> Sketch:
     return shape - Rectangle(width - 2 * wall, height - 2 * wall) if wall else shape
 
 
+@feature("guided_loft", "Řízený přechod")
+def build_guided_loft(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    operation = _choice(feature, "operation", ("new", "add", "cut"),
+                        "new" if ctx.part is None else "add")
+    try:
+        geometry = guided_loft.prepare(feature, ctx.sketches, ctx.num)
+        candidate = guided_loft.build(geometry)
+    except guided_loft.GuidedLoftError as exc:
+        raise FeatureError(str(exc)) from None
+    ctx.apply(candidate, operation, "Řízený přechod", empty_cut="zkontroluj polohu obou skic")
+
+
 @feature("loft", "Přechod")
 def build_loft(ctx: BuildContext, feature: dict[str, Any]) -> None:
     """Plynulý přechod mezi dvěma a více skicami (v pořadí), plný nebo dutý se stěnou."""
@@ -1019,8 +1032,8 @@ def _depth_through(part: Part, plane: Plane) -> float:
 # --- Pole a zrcadlení ----------------------------------------------------------------
 
 # Prvky, které přidávají nebo ubírají materiál – jen ty jde opakovat v poli a zrcadlit.
-REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "standard", "hole", "pattern",
-                       "mirror")
+REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "guided_loft", "standard",
+                       "hole", "pattern", "mirror")
 PATTERN_KINDS = ("circular", "linear")
 MAX_COPIES = 500
 _AXES = {"X": Vector(1, 0, 0), "Y": Vector(0, 1, 0), "Z": Vector(0, 0, 1)}
@@ -1223,7 +1236,7 @@ def describe(feature: dict[str, Any], params: dict[str, float] | None = None) ->
         text += f" – o {value} mm"
     elif feature["type"] == "face_diameter" and "diameter" in feature:
         text += f" – na Ø{_plain(feature['diameter'], params)}"
-    elif feature["type"] == "loft":
+    elif feature["type"] in ("loft", "guided_loft"):
         sketches = feature.get("sketches")
         count = len(sketches) if isinstance(sketches, list) else "?"
         text += f" – mezi {count} {'skicou' if count == 1 else 'skicami'}"
