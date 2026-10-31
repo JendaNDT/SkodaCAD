@@ -57,6 +57,7 @@ from skodacad.gui.audit_panel import AuditPanel
 from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -1076,7 +1077,7 @@ class MainWindow(QMainWindow):
     def open_dialog(self) -> None:
         start = str(self.session.path.parent if self.session.path else self.user_dir)
         path, _ = QFileDialog.getOpenFileName(self, "Otevřít model", start,
-                                              "Model ŠkodaCAD (*.json)")
+                                              "Model ŠkodaCAD (*.json)", options=FILE_OPTIONS)
         if path:
             self.open_model(path)
 
@@ -1092,7 +1093,7 @@ class MainWindow(QMainWindow):
             return False
         suggested = self.session.path or self.user_dir / f"{self._stem()}.json"
         path, _ = QFileDialog.getSaveFileName(self, "Uložit model", str(suggested),
-                                              "Model ŠkodaCAD (*.json)")
+                                              "Model ŠkodaCAD (*.json)", options=FILE_OPTIONS)
         if not path:
             return False
         if not path.lower().endswith(".json"):
@@ -1121,7 +1122,7 @@ class MainWindow(QMainWindow):
             return
         snapshot = document.to_dict()
         path, _ = QFileDialog.getOpenFileName(self, "Vybrat STEP", str(self.user_dir),
-                                              "STEP (*.step *.stp)")
+                                              "STEP (*.step *.stp)", options=FILE_OPTIONS)
         if not path:
             return
         try:
@@ -1203,7 +1204,7 @@ class MainWindow(QMainWindow):
             self._error("Obnovení STEP", "Vybraný prvek není import STEP.")
             return
         path, _ = QFileDialog.getOpenFileName(self, "Najít původní STEP", str(self.user_dir),
-                                              "STEP (*.step *.stp)")
+                                              "STEP (*.step *.stp)", options=FILE_OPTIONS)
         if not path:
             return
         try:
@@ -1220,7 +1221,7 @@ class MainWindow(QMainWindow):
         folder = self.session.path.parent if self.session.path else self.user_dir
         suggested = folder / f"{self._stem()}.{fmt}"
         path, _ = QFileDialog.getSaveFileName(self, f"Export {fmt.upper()}", str(suggested),
-                                              f"{fmt.upper()} (*.{fmt})")
+                                              f"{fmt.upper()} (*.{fmt})", options=FILE_OPTIONS)
         if not path:
             return
         if not path.lower().endswith(f".{fmt}"):
@@ -1652,41 +1653,50 @@ class MainWindow(QMainWindow):
 
     def _refresh_tree(self) -> None:
         self.tree.blockSignals(True)
-        self.tree.clear()
+        # Cocoa AX retains references to cells. Resetting the model on an ordinary
+        # edit can crash libqcocoa (macOS 27.2, also with Qt 6.11.3). Reuse rows by id.
+        previous = {self.tree.topLevelItem(i).data(0, _FEATURE_ID): self.tree.topLevelItem(i)
+                    for i in range(self.tree.topLevelItemCount())}
         result = self.session.result
         document = self.session.document
-        if document is None:
-            self.error_label.hide()
-            self.tree.blockSignals(False)
-            return
-        if result is None and not self.session.computing:
-            self.error_label.setText(self.session.model_problem)
-            self.error_label.show()
-            self.tree.blockSignals(False)
-            return
         old = {s.id: s for s in result.statuses} if result else {}
-        if self.session.computing:  # strom podle modelu, stavy z posledního přepočtu
+        if document is None or result is None and not self.session.computing:
+            rows = []
+        elif self.session.computing:  # strom podle modelu, stavy z posledního přepočtu
             rows = [(f["id"], describe(f), old[f["id"]].status if f["id"] in old else "pending",
                      "") for f in document.features]
             if self._pending_shown:
                 rows = [(key, label, "pending", "Přepočítává se…") for key, label, _, _ in rows]
         else:
             rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
-        for key, label, status, message in rows:
+        chosen = None
+        for index, (key, label, status, message) in enumerate(rows):
             text = f"{_STATUS_ICONS[status]}  {label}"
             if status == "ok" and message:
                 text = f"{_STATUS_ICONS[status]}  {message} — {label}"
-            item = QTreeWidgetItem([text])
-            item.setData(0, _FEATURE_ID, key)
+            item = previous.pop(key, None)
+            if item is None:
+                item = QTreeWidgetItem()
+                item.setData(0, _FEATURE_ID, key)
+            position = self.tree.indexOfTopLevelItem(item)
+            if position != index:
+                if position >= 0:
+                    self.tree.takeTopLevelItem(position)
+                self.tree.insertTopLevelItem(index, item)
+            if item.text(0) != text:
+                item.setText(0, text)
             item.setForeground(0, _STATUS_COLORS[status])
             item.setToolTip(0, message or key)
-            self.tree.addTopLevelItem(item)
             if key == self._selected_id:
-                self.tree.setCurrentItem(item)
+                chosen = item
+        for item in previous.values():
+            self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(item))
+        if self.tree.currentItem() is not chosen:
+            self.tree.setCurrentItem(chosen)
         if self._selected_id not in {row[0] for row in rows}:
             self._selected_id = None
         self.tree.blockSignals(False)
-        problem = self.session.model_problem
+        problem = self.session.model_problem if document is not None else ""
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))
 
@@ -2075,7 +2085,7 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
         filename, chosen = QFileDialog.getSaveFileName(
             self, title, "vykres.pdf",
-            "PDF – výkres (*.pdf);;DXF – výkres (*.dxf)")
+            "PDF – výkres (*.pdf);;DXF – výkres (*.dxf)", options=FILE_OPTIONS)
         if not filename:
             return
         path = Path(filename)
@@ -2366,7 +2376,8 @@ class MainWindow(QMainWindow):
         name = self.session.document.name if self.session.document else "rez"
         path, _ = QFileDialog.getSaveFileName(
             self, "Export řezu", str(self.user_dir / f"{name}-rez.dxf"),
-            "DXF – 2D výkres pro CAD (*.dxf);;SVG – obrázek do protokolu (*.svg)")
+            "DXF – 2D výkres pro CAD (*.dxf);;SVG – obrázek do protokolu (*.svg)",
+            options=FILE_OPTIONS)
         if not path:
             return
         try:
@@ -2489,7 +2500,7 @@ class MainWindow(QMainWindow):
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""
         default = self.user_dir / f"{self.session.document.name or 'mapa'}-tloustka.csv"
         path, _ = QFileDialog.getSaveFileName(self, "Export bodů mapy tloušťky", str(default),
-                                              "CSV pro Excel (*.csv)")
+                                              "CSV pro Excel (*.csv)", options=FILE_OPTIONS)
         if not path:
             return
         try:

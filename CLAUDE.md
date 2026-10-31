@@ -1158,6 +1158,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Známé pasti (macOS)
 
+- Souborové dialogy dílu a sestavy používají sdílené `gui/file_dialogs.FILE_OPTIONS`:
+  na Macu Qt dialog (`DontUseNativeDialog`). V macOS 27.2 přes přístupnost nativní
+  panel nepovolil platný JSON/CSV. Běžný přepočet nesmí plošně mazat strom položek:
+  Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
+  i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.
 - 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
   ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT

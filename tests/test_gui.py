@@ -739,6 +739,8 @@ def form_field(w, key):
 
 
 def test_variable_fillet_selection_form_end_labels_reverse_and_undo(empty_window):
+    from PySide6.QtCore import QPersistentModelIndex
+
     from skodacad.selectors import select_edges
 
     w = empty_window
@@ -748,10 +750,12 @@ def test_variable_fillet_selection_form_end_labels_reverse_and_undo(empty_window
     assert w.selection_actions["variable_fillet"].isEnabled()
     w.selection_actions["variable_fillet"].trigger()
     fid = w._selected_id
+    persistent = QPersistentModelIndex(w.tree.currentIndex())
     assert w.session.feature(fid)["type"] == "variable_fillet"
     set_text(form_field(w, "radius_start"), "2")
     set_text(form_field(w, "radius_end"), "6")
     assert w.session.result.ok
+    assert persistent.isValid() and "Proměnné zaoblení" in persistent.data()
     expected = 12000 - (1 - math.pi / 4) * 10 / 3 * (4 + 12 + 36)
     assert w.session.result.part.volume == pytest.approx(expected, abs=2e-6)
     assert [line[2] for line in w.viewer.measurement] == ["R1 = 2 mm", "R2 = 6 mm"]
@@ -761,6 +765,7 @@ def test_variable_fillet_selection_form_end_labels_reverse_and_undo(empty_window
     assert w.viewer.measurement[0][0].Z == pytest.approx(10)
     w.undo_action.trigger()
     assert w.viewer.measurement[0][0].Z == pytest.approx(0)
+    assert persistent.isValid() and w.tree.currentIndex() == persistent
 
 
 def set_text(widget, text):
@@ -2598,7 +2603,7 @@ def test_export_drawing_from_panel(window, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
     path = tmp_path / "vykres.dxf"
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(path), "DXF"))
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kw: (str(path), "DXF"))
     monkeypatch.setattr(window, "_error", lambda title, message: pytest.fail(f"{title}: {message}"))
     window.drawing_scale.setCurrentIndex(window.drawing_scale.findData(0.5))
     window.export_drawing()
@@ -2617,7 +2622,10 @@ def test_export_warns_before_saving_overlapping_dimensions(window, tmp_path, mon
         window.session.set_drawing_dimension_placement(dimension, "front", "low", 6)
     seen = []
 
-    def save_dialog(_parent, title, *_args):
+    def save_dialog(_parent, title, *_args, **kwargs):
+        from skodacad.gui.file_dialogs import FILE_OPTIONS
+
+        assert kwargs["options"] == FILE_OPTIONS
         seen.append((title, window.statusBar().currentMessage()))
         return str(path), "DXF"
 

@@ -90,6 +90,30 @@ vzdálený a kolidující otvor, neplatné hodnoty a pojistky, křivku, vnitřn�
 GUI regrese navíc provádí výběr → formulář → obrácení → Zpět a ověřuje značky.
 Self-test balíčku obsahuje ukázku, obrácení, Zpět/Znovu, zápis v32 a snímek 3D.
 
+### Místní ověření na MacBooku Air M4
+
+31. 10. 2026 prošlo **1 966 testů za 541,39 s** a kontrola Ruff. Po následných
+opravách pouze v okně prošlo dalších **142 cílených GUI testů za 95,17 s**.
+Finální balíček PyInstaller prošel celým self-testem (`VÝSLEDEK: OK`) s místním
+akcelerovaným kreslením a kontrolou podpisu `codesign --verify --deep --strict`.
+Evidence je místně v ignorované složce `out/p6-2026-10-31/`.
+
+Při průchodu skutečným oknem přes macOS přístupnost se potvrdily dvě závady:
+nativní dialog nepovolil platný JSON a úplné mazání stromu při přepočtu vedlo
+k pádu `libqcocoa` se zastaralými odkazy na buňky. Díl nyní sdílí se sestavou
+Qt souborové dialogy na Macu a při běžné úpravě znovu používá položky stromu
+podle id prvku. Regrese ověřuje platnost trvalého indexu přes změnu R1/R2,
+obrácení a Zpět. Ve finálním balíčku prošel skutečný průchod: R2 **6 → 8 mm**,
+Zpět/Znovu, uložení, otevření téhož souboru z dialogu a kontrola R2 = 8 mm
+i objemu **23 880 mm³** v okně. Poté byla testovací kopie vrácena na R2 = 6 mm.
+Použitý model i profil byly oddělené od dat autora. Obrácení směru ověřily
+automatické GUI testy a self-test, nikoli tento ruční průchod.
+
+Exportovaný STEP otevřel také **FreeCAD 1.1.4 s jiným OCCT 7.8.1**: platný solid,
+objem 23 925,604696567 mm³. Pět kolmých řezů v z = 2, 5, 10, 15, 18 mm mělo
+poloměry 2,4; 3; 4; 5; 5,6 mm. Největší odchylka 25 měřených bodů od kružnic
+byla **9,41 · 10⁻⁹ mm**. Jde o ověření této ukázky, ne přejímku libovolného dílu.
+
 Číselné výsledky úplné sady, místního balíčku a workflow obou systémů se předávají
 v navazujícím PR. P6.4 na vlastním autorském dílu ani pokročilé obecné zaoblení,
 robustnější skořepiny a vodicí křivky loftu nejsou tímto uzavřené.
