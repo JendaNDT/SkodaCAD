@@ -55,6 +55,7 @@ from shiboken6 import isValid
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
+from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.assembly_window import AssemblyWindow, is_assembly_file
 from skodacad.gui.assistant_panel import AssistantPanel
 from skodacad.gui.audit_panel import MARK as AUDIT_MARK
@@ -1310,6 +1311,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Otevřít model", start,
                                               "Model ŠkodaCAD (*.json)", options=FILE_OPTIONS)
         if path:
+            if is_assembly_file(path) and not request_project_access(self, path):
+                return
             self.open_model(path)
 
     def save(self) -> bool:

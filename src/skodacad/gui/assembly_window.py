@@ -62,6 +62,7 @@ from skodacad.assembly_build import (
 from skodacad.assembly_check import NDT_NOTE, labels, total_mass
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
+from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 
 log = logging.getLogger(__name__)
@@ -375,7 +376,7 @@ class AssemblyWindow(QMainWindow):
         start = self.session.path.parent if self.session.path else self.user_dir
         path, _ = QFileDialog.getOpenFileName(self, "Otevřít sestavu", str(start), FILTER,
                                               options=FILE_OPTIONS)
-        if path:
+        if path and request_project_access(self, path):
             self.open_assembly(path)
 
     template = False  # otevřená ukázka – ukládá se jen jinam
