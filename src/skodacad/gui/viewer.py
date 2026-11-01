@@ -116,6 +116,7 @@ PROBE_COLORS = {"ok": (0.13, 0.62, 0.30), "tight": (0.93, 0.55, 0.10),
 TARGET_COLOR = (0.20, 0.45, 0.85)
 TARGET_OUTLINE = (0.35, 0.35, 0.40)
 PLAN_START_COLOR = STEP_COLORS["scan"]  # začátek dráhy sondy (etapa 10)
+PART_TRANSPARENCY = 0.70
 
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
@@ -270,7 +271,8 @@ class OccViewer(QWidget):
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
         self._probe_dragging = False
-        self._pending: tuple[Any, bool] | None = None
+        self._pending: tuple[Any, bool, Any, Any] | None = None
+        self._transparent_parts: list[Any] = []
         self._press: QPoint | None = None
         self._last: QPoint | None = None
         self._dragging = False
@@ -285,13 +287,15 @@ class OccViewer(QWidget):
         return self._view is not None
 
     def show_part(self, part: Any | None, fit: bool = False,
-                  accent: list[Any] | None = None) -> None:
+                  accent: list[Any] | None = None,
+                  transparent: list[Any] | None = None) -> None:
         """Zobrazí díl (build123d ``Part``) nebo nic; ``fit`` = přizpůsobit pohled,
-        ``accent`` = plochy jinou barvou (plochy řezu)."""
+        ``accent`` = plochy jinou barvou (plochy řezu), ``transparent`` = průhledné části.
+        Geometrie i výběr ploch/hran zůstávají úplné."""
         self.cancel_guide_drag()
         self._guides_data = None
         if not self.ready:
-            self._pending = (part, fit, accent)
+            self._pending = (part, fit, accent, transparent)
             self._pending_guides = None
             return
         context = self._context
@@ -308,6 +312,7 @@ class OccViewer(QWidget):
         self._remove_coverage()
         self._remove_points()
         self._remove_plan()
+        self._transparent_parts = []
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -324,17 +329,47 @@ class OccViewer(QWidget):
             drawer.SetFaceBoundaryUpperContinuity(GeomAbs_C1)
             drawer.UIsoAspect().SetNumber(0)  # drátěný režim (pod mapou tloušťky) bez izočar
             drawer.VIsoAspect().SetNumber(0)
+            self._transparent_parts = [getattr(p, "wrapped", p) for p in transparent or []]
+            for shape in self._transparent_parts:
+                ais.SetCustomTransparency(shape, PART_TRANSPARENCY)
             context.Display(ais, False)
             context.Deactivate(ais)  # celé těleso ne, jen plochy a hrany
             context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_FACE))
             context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_EDGE))
             self._ais = ais
+        self._highlight_fill(True)
         if fit:
             self._sync_size()
             self._view.FitAll(0.08, False)
         self.picked_point = None
         self.selection_changed.emit([])
         self._view.Redraw()
+
+    def set_transparent_parts(self, parts: list[Any]) -> None:
+        """Změní pouze vzhled částí aktuálního dílu; zachová kameru i vybrané plochy.
+
+        Resetuje jen průhlednost, ostatní vlastní barvy (např. řezu) zůstávají.
+        Před prvním vykreslením upraví čekající požadavek.
+        """
+        shapes = [getattr(p, "wrapped", p) for p in parts]
+        if not self.ready:
+            if self._pending is not None:
+                part, fit, accent, _transparent = self._pending
+                self._pending = (part, fit, accent, shapes)
+        elif self._ais is not None:
+            for shape in self._transparent_parts:
+                self._ais.SetCustomTransparency(shape, 0.0)
+            for shape in shapes:
+                self._ais.SetCustomTransparency(shape, PART_TRANSPARENCY)
+            self._transparent_parts = shapes
+            self._highlight_fill(not self._map_objects and not self._coverage_objects)
+            self._context.ClearDetected(False)
+            # Redisplay přepočítává také výběr. Geometrie se nemění: vlastníci
+            # vybraných ploch musí zůstat stejní pro rozepsanou vazbu.
+            self._context.RecomputePrsOnly(self._ais, False)
+            self._context.HilightSelected(False)
+            self._view.Redraw()
+        self._transparent_parts = shapes
 
     def disable_model_selection(self) -> None:
         """Pracovní náhled lze prohlížet, jeho geometrii však nelze převzít do modelu."""
@@ -987,6 +1022,7 @@ class OccViewer(QWidget):
         self._highlight_fill(not self._coverage_objects)
 
     def _highlight_fill(self, fill: bool) -> None:
+        fill = fill and not self._transparent_parts  # výplň by zakryla průhledné plochy
         for kind in (Prs3d_TypeOfHighlight_LocalSelected, Prs3d_TypeOfHighlight_LocalDynamic):
             self._context.HighlightStyle(kind).SetDisplayMode(1 if fill else 0)
 
@@ -1122,9 +1158,9 @@ class OccViewer(QWidget):
         self._sync_size()
         log.info("3D prohlížeč spuštěn (OpenGL: %s)", self.graphics_info())
         if self._pending is not None:
-            part, fit, accent = self._pending
+            part, fit, accent, transparent = self._pending
             self._pending = None
-            self.show_part(part, fit=fit, accent=accent)
+            self.show_part(part, fit=fit, accent=accent, transparent=transparent)
         if self._pending_guides is not None:
             self.show_guides(self._pending_guides)
 

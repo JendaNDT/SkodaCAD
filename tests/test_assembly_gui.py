@@ -338,10 +338,11 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
     field.setFocus()
     field.selectAll()
     app.processEvents()
-    QTest.keyClicks(field, "107FIH")
-    assert field.text() == "107FIH" and opened.viewer.views == []
+    QTest.keyClicks(field, "107FIHT")
+    assert field.text() == "107FIHT" and opened.viewer.views == []
     assert opened._isolated is None
     assert not opened._visibility
+    assert not opened._transparency
     assert not opened.session.can_undo
     opened.viewer.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     opened.viewer.setFocus()
@@ -359,7 +360,11 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
     assert len(opened.visible_instances()) == 5
     QTest.keyClick(opened.viewer, Qt.Key.Key_H)
     assert len(opened.visible_instances()) == 6
-    assert field.text() == "107FIH" and not opened.session.can_undo
+    QTest.keyClick(opened.viewer, Qt.Key.Key_T)
+    assert opened._is_transparent(("vicko",))
+    QTest.keyClick(opened.viewer, Qt.Key.Key_T)
+    assert not opened._transparency
+    assert field.text() == "107FIHT" and not opened.session.can_undo
 
 
 def test_isolation_preserves_pending_fields_model_history_and_restores_all(opened):
@@ -631,10 +636,12 @@ def test_hidden_parts_remain_in_saved_recipe_step_and_constraint_values(opened, 
 
     w = opened
     w.set_component_visible(("krabicka",), False)
+    w.set_component_transparent(("vicko",), True)
     total = w.session.result.volume_mm3
     saved = tmp_path / "cele.json"
     w.session.save(saved)
     assert len(json.loads(saved.read_text(encoding="utf-8"))["components"]) == 6
+    assert json.loads(saved.read_text(encoding="utf-8")) == w.session.assembly.to_dict()
     step = tmp_path / "cele.step"
     w.session.export_step(step)
     shape = import_step(step)
@@ -644,10 +651,133 @@ def test_hidden_parts_remain_in_saved_recipe_step_and_constraint_values(opened, 
     w.set_component_visible(("krabicka",), False)
     w.select_constraint("v1")
     w.constraint_value.setText("rozepsaná vazba")
+    w.set_component_transparent(("vicko",), True)
+    w.reset_transparency_action.trigger()
     assert not w.viewer.highlighted and w.constraint_isolation_note.isVisible()
     w.show_all()
     assert len(w.viewer.highlighted) == 2 and not w.constraint_isolation_note.isVisible()
     assert w.constraint_value.text() == "rozepsaná vazba"
+
+
+def transparent_ids(window):
+    return {i.ids for i in window.visible_instances() if any(
+        p.wrapped.IsSame(i.part.wrapped) for p in window.viewer.transparent_parts)}
+
+
+def test_transparency_controls_preserve_picks_pending_fields_geometry_and_history(opened):
+    from PySide6.QtCore import Qt
+
+    w = opened
+    assert not w.transparency_action.isEnabled() and not w.transparency_box.isEnabled()
+    pick(w, "vicko")
+    lid = next(i for i in w.session.result.instances if i.ids == ("vicko",))
+    face = max(lid.part.faces(), key=lambda f: f.center().Z)
+    w.viewer.selection_changed.emit([face.wrapped])
+    w.position_edits[0].setText("rozepsaná poloha")
+    before = w.session.assembly.to_dict()
+    history = (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    geometry = list(w.viewer.parts)
+    picks = list(w._picks)
+    w.transparency_action.trigger()
+    assert transparent_ids(w) == {("vicko",)}
+    assert w.transparency_action.isChecked() and w.transparency_box.isChecked()
+    assert w.transparency_box.checkState() == Qt.CheckState.Checked
+    assert visibility_row(w, lid.ids).font(0).italic()
+    assert "Průhlednost: 70 %" in visibility_row(w, lid.ids).toolTip(0)
+    assert "Průhledné díly: 1/6" in w.summary.text()
+    assert w.reset_transparency_action.isEnabled()
+    assert w.viewer.parts == geometry and w._picks == picks
+    assert w._selected == lid.ids and w.position_edits[0].text() == "rozepsaná poloha"
+    w.transparency_box.click()
+    assert not w._transparency and not w.viewer.transparent_parts
+    assert not w.transparency_action.isChecked() and not w.reset_transparency_action.isEnabled()
+    assert not visibility_row(w, lid.ids).font(0).italic()
+    assert w.viewer.parts[-1][0].volume == pytest.approx(w.session.result.volume_mm3)
+    assert w.session.assembly.to_dict() == before
+    assert history == (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    assert w._picks == picks and w.position_edits[0].text() == "rozepsaná poloha"
+
+
+def test_nested_transparency_is_independent_and_mixed_parent_toggle_sets_whole_branch(
+        nested_isolation):
+    from PySide6.QtCore import Qt
+
+    w = nested_isolation
+    w.set_component_transparent(("a",), True)
+    assert transparent_ids(w) == {("a", "deska"), ("a", "druha")}
+    assert sum(p.volume for p in w.viewer.transparent_parts) == pytest.approx(12000)
+    w.set_component_transparent(("a", "deska"), False)
+    w.select(("a",))
+    assert w.transparency_box.checkState() == Qt.CheckState.PartiallyChecked
+    assert not w.transparency_action.isChecked()
+    assert "jen některé díly" in visibility_row(w, ("a",)).toolTip(0)
+    assert not visibility_row(w, ("b",)).font(0).italic()
+    w.transparency_box.click()
+    assert w.transparency_box.checkState() == Qt.CheckState.Checked
+    assert w._transparency == {("a",): True}
+    assert transparent_ids(w) == {("a", "deska"), ("a", "druha")}
+    w.transparency_action.trigger()
+    assert not w._transparency and not w.viewer.transparent_parts
+    assert len(w.viewer.parts[-1][0].solids()) == 4
+    assert w.viewer.parts[-1][0].volume == pytest.approx(24000)
+
+
+def test_transparency_survives_hiding_and_isolation_and_reset_does_not_change_filters(
+        nested_isolation):
+    w = nested_isolation
+    w.set_component_transparent(("a",), True)
+    w.set_component_visible(("a", "deska"), False)
+    assert transparent_ids(w) == {("a", "druha")}
+    w.select(("b",))
+    w.isolate_selected()
+    assert not w.viewer.transparent_parts and w._transparency == {("a",): True}
+    w.show_all()
+    assert transparent_ids(w) == {("a", "deska"), ("a", "druha")}
+    w.set_component_visible(("b",), False)
+    w.select(("a",))
+    w.isolate_selected()
+    shown = list(w.viewer.parts)
+    w.reset_transparency_action.trigger()
+    assert not w._transparency and not w.viewer.transparent_parts
+    assert w._isolated == ("a",) and w._visibility == {("b",): False}
+    assert w.viewer.parts == shown and len(w.visible_instances()) == 2
+    w.set_component_visible(("a",), False)
+    w.set_component_transparent(("a",), True)  # i zcela skrytá větev může mít připravený vzhled
+    assert w.viewer.parts[-1][0] is None and not w.viewer.transparent_parts
+    w.show_all()
+    assert transparent_ids(w) == {("a", "deska"), ("a", "druha")}
+
+
+def test_transparency_lifetime_rebuild_save_remove_undo_cancel_failed_and_successful_open(
+        nested_isolation, dialogs, tmp_path):
+    from test_assembly import component, write
+
+    w = nested_isolation
+    w.set_component_transparent(("a",), True)
+    source = w.session.path.parent / "modul.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data["components"].append(component("treti", "dily/deska.json", position=(80, 0, 0)))
+    write(source, data)
+    w.reload()
+    assert transparent_ids(w) == {("a", "deska"), ("a", "druha"), ("a", "treti")}
+    target = tmp_path / "pruhledna-kopie.json"
+    dialogs["save"] = str(target)
+    assert w.save_as() and w._transparency == {("a",): True}
+    assert json.loads(target.read_text(encoding="utf-8")) == w.session.assembly.to_dict()
+    w.select(("a",))
+    w.remove_selected()
+    assert not w._transparency
+    w.undo()
+    assert not w.viewer.transparent_parts and len(w.visible_instances()) == 6
+    w.set_component_transparent(("a",), True)
+    assert not w.open_assembly(target)  # rozpracovaná změna, zrušené potvrzení
+    assert w._transparency == {("a",): True}
+    w.session.dirty = False
+    assert not w.open_assembly(tmp_path / "chybi.json")
+    assert w._transparency == {("a",): True}
+    assert w.open_assembly(target) and not w._transparency and not w.viewer.transparent_parts
+    w.set_component_transparent(("a",), True)
+    assert w.new_assembly(tmp_path / "nova.json") and not w._transparency
 
 
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):

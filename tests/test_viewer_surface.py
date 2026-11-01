@@ -67,3 +67,54 @@ def test_screen_scale_change_requests_resize_and_paint(viewer, monkeypatch):
     QApplication.sendEvent(viewer._surface, QEvent(QEvent.Type.DevicePixelRatioChange))
     resized.assert_called_once_with()
     update.assert_called_once_with()
+
+
+def test_part_transparency_changes_material_without_replacing_geometry_or_selection(viewer):
+    from build123d import Box, Compound, Location
+
+    viewer._context = Mock()
+    a = Box(30, 20, 10)
+    b = a.moved(Location((100, 0, 0)))
+    compound = Compound([a, b])
+    face = max(a.faces(), key=lambda f: f.center().Z)
+    viewer.show_part(compound, accent=[face], transparent=[a])
+    ais = viewer._ais
+    aspects = ais.CustomAspectsMap()
+    assert aspects.Find(a.wrapped).HasOwnTransparency()
+    assert aspects.Find(a.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency() \
+        == pytest.approx(0.7)
+    assert not aspects.IsBound(b.wrapped)
+    before = Compound(ais.Shape())
+    assert len(before.solids()) == 2 and before.volume == pytest.approx(12000)
+    assert before.bounding_box().max.X == pytest.approx(115)
+    emitted = []
+    viewer.selection_changed.connect(emitted.append)
+    viewer.set_transparent_parts([b])
+    aspects = ais.CustomAspectsMap()  # OCP vrací kopii mapy; nové položky načíst znovu
+    assert viewer._ais is ais and not emitted
+    assert aspects.Find(a.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency() == 0
+    assert aspects.Find(b.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency() \
+        == pytest.approx(0.7)
+    assert aspects.Find(face.wrapped).HasOwnColor()  # barvy řezu se nesmějí smazat resetem vzhledu
+    viewer._context.RecomputePrsOnly.assert_called_with(ais, False)
+    viewer._context.Redisplay.assert_not_called()
+    viewer._context.ClearSelected.assert_not_called()
+    viewer.set_transparent_parts([])
+    assert aspects.Find(b.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency() == 0
+    assert not emitted and Compound(ais.Shape()).volume == pytest.approx(12000)
+    viewer.show_part(b)  # nový díl nemá vzhled předchozího
+    assert not viewer._transparent_parts and viewer._ais.CustomAspectsMap().IsEmpty()
+
+
+def test_transparency_before_surface_ready_updates_pending_presentation(viewer):
+    from build123d import Box
+
+    viewer._view = None
+    part = Box(30, 20, 10)
+    viewer.show_part(part, fit=True)
+    viewer.set_transparent_parts([part])
+    pending_part, fit, accent, transparent = viewer._pending
+    assert pending_part is part and fit and accent is None
+    assert len(transparent) == 1 and transparent[0].IsSame(part.wrapped)
+    viewer.set_transparent_parts([])
+    assert viewer._pending[3] == []

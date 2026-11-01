@@ -360,6 +360,15 @@ jen část jejích dílů. Izolace ruční skrývání respektuje; **Ukončit iz
 receptu; kusovník, kontroly a export stále zahrnují celek.
 [Chování viditelnosti](docs/p7-14-skryvani-dilu.md).
 
+**Průhlednost dílu:** vyber komponentu a zapni **Průhledná komponenta (T)** v pravém
+panelu nebo v nabídce Zobrazení. Díl má průhlednost 70 % a zůstává vybíratelný.
+U podsestavy se přepne celá větev; mezistav označuje jen některé průhledné díly.
+Kopie stejného souboru lze nastavit nezávisle. Skrýt, izolovat i Zobrazit vše
+nastavení zachovají; **Zobrazení → Zrušit průhlednost všech dílů** obnoví plný vzhled.
+Kamera, vybrané plochy a rozepsaná pole se při přepnutí zachovají. Průhlednost
+se neukládá do receptu ani historie a nemění geometrii či export.
+[Chování průhlednosti](docs/p7-15-pruhlednost-dilu.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 
