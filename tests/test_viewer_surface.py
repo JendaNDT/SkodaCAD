@@ -77,7 +77,7 @@ def test_part_transparency_changes_material_without_replacing_geometry_or_select
     b = a.moved(Location((100, 0, 0)))
     compound = Compound([a, b])
     face = max(a.faces(), key=lambda f: f.center().Z)
-    viewer.show_part(compound, accent=[face], transparent=[a])
+    viewer.show_part(compound, accent=[face], transparent=[(a, .7)])
     ais = viewer._ais
     aspects = ais.CustomAspectsMap()
     assert aspects.Find(a.wrapped).HasOwnTransparency()
@@ -89,7 +89,7 @@ def test_part_transparency_changes_material_without_replacing_geometry_or_select
     assert before.bounding_box().max.X == pytest.approx(115)
     emitted = []
     viewer.selection_changed.connect(emitted.append)
-    viewer.set_transparent_parts([b])
+    viewer.set_transparent_parts([(b, .7)])
     aspects = ais.CustomAspectsMap()  # OCP vrací kopii mapy; nové položky načíst znovu
     assert viewer._ais is ais and not emitted
     assert aspects.Find(a.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency() == 0
@@ -112,9 +112,49 @@ def test_transparency_before_surface_ready_updates_pending_presentation(viewer):
     viewer._view = None
     part = Box(30, 20, 10)
     viewer.show_part(part, fit=True)
-    viewer.set_transparent_parts([part])
+    viewer.set_transparent_parts([(part, .4)])
     pending_part, fit, accent, transparent = viewer._pending
     assert pending_part is part and fit and accent is None
-    assert len(transparent) == 1 and transparent[0].IsSame(part.wrapped)
+    assert len(transparent) == 1 and transparent[0][0].IsSame(part.wrapped)
+    assert transparent[0][1] == .4
     viewer.set_transparent_parts([])
     assert viewer._pending[3] == []
+
+
+def test_independent_material_amounts_zero_and_one_keep_same_shape(viewer):
+    from build123d import Box, Compound, Location
+
+    viewer._context = Mock()
+    a = Box(30, 20, 10)
+    b = a.moved(Location((100, 0, 0)))
+    viewer.show_part(Compound([a, b]), transparent=[(a, .25), (b, .85)])
+    ais = viewer._ais
+
+    def alpha(part):
+        aspects = ais.CustomAspectsMap()
+        return aspects.Find(part.wrapped).ShadingAspect().Aspect().FrontMaterial().Transparency()
+
+    assert alpha(a) == pytest.approx(.25) and alpha(b) == pytest.approx(.85)
+    viewer.set_transparent_parts([(a, 0), (b, 1)])
+    assert viewer._ais is ais and alpha(a) == 0 and alpha(b) == 1
+    assert len(viewer._transparent_parts) == 1
+    assert Compound(ais.Shape()).volume == pytest.approx(12000)
+    assert Compound(ais.Shape()).bounding_box().max.X == pytest.approx(115)
+    viewer.set_transparent_parts([(a, 0), (b, 0)])
+    assert not viewer._transparent_parts and alpha(b) == 0
+    assert viewer._context.HighlightStyle.return_value.SetDisplayMode.call_args.args == (1,)
+
+
+@pytest.mark.parametrize("amount", [-.1, 1.1, float("nan")])
+def test_invalid_transparency_does_not_replace_valid_presentation(viewer, amount):
+    from build123d import Box
+
+    viewer._context = Mock()
+    part = Box(30, 20, 10)
+    viewer.show_part(part, transparent=[(part, .4)])
+    ais = viewer._ais
+    with pytest.raises(ValueError, match="průhlednosti"):
+        viewer.set_transparent_parts([(part, amount)])
+    with pytest.raises(ValueError, match="průhlednosti"):
+        viewer.show_part(part, transparent=[(part, amount)])
+    assert viewer._ais is ais and viewer._transparent_parts[0][1] == .4

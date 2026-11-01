@@ -361,13 +361,18 @@ receptu; kusovník, kontroly a export stále zahrnují celek.
 [Chování viditelnosti](docs/p7-14-skryvani-dilu.md).
 
 **Průhlednost dílu:** vyber komponentu a zapni **Průhledná komponenta (T)** v pravém
-panelu nebo v nabídce Zobrazení. Díl má průhlednost 70 % a zůstává vybíratelný.
+panelu nebo v nabídce Zobrazení. V poli **Průhlednost** nastav **0–100 %**:
+0 je plný vzhled, 100 zcela průhledné plochy. Obrysy i výběr zůstávají.
+Klávesa T obnoví poslední nastavenou míru (výchozí je 70 %).
 U podsestavy se přepne celá větev; mezistav označuje jen některé průhledné díly.
-Kopie stejného souboru lze nastavit nezávisle. Skrýt, izolovat i Zobrazit vše
+Kopie stejného souboru lze nastavit nezávisle. Při různých hodnotách dětí pole
+ukáže **Různé**; zadání procent sjednotí celou větev včetně skrytých dílů.
+Skrýt, izolovat i Zobrazit vše
 nastavení zachovají; **Zobrazení → Zrušit průhlednost všech dílů** obnoví plný vzhled.
 Kamera, vybrané plochy a rozepsaná pole se při přepnutí zachovají. Průhlednost
 se neukládá do receptu ani historie a nemění geometrii či export.
 [Chování průhlednosti](docs/p7-15-pruhlednost-dilu.md).
+[Nastavitelná míra a její ověření](docs/p7-16-mira-pruhlednosti.md).
 
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:

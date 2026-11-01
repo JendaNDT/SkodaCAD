@@ -1277,6 +1277,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Přepínač musí poslouchat `checkStateChanged`, nikoli `clicked`: nativní AX
   přepíná checkbox přes toggle bez clicked. Při synchronizaci blokovat signály;
   nativní self-test opravdu provede QAccessible toggle a zkontroluje materiál.
+- P7.16: `_transparency_levels` pamatuje kladné celé míry 1–100 % podle cesty id,
+  nejbližší předek vyhrává, výchozí 70. Vypnutí/0/reset zachová míry; T je obnoví.
+  Zadání kladné míry sjednotí hodnotu i zapnutí celé větve, zruší její výjimky.
+  Pole 0–100 při směsi ukáže jen zobrazovací -1/„Různé“; synchronizovat s blokovanými
+  signály, `keyboardTracking=False`, reagovat na `valueChanged` kvůli AX. Viewer
+  dostává `(část, alfa)` a validuje 0…1 před jakoukoli změnou prezentace.
+  Po aktivaci okna ponechat původní `session.result`, pokud se nezměnil podpis
+  zdrojů ani recept: jinak AIS ukazuje původní tvary a materiál by se nastavoval
+  na jejich nové kopie. Změněné zdroje/recept dál vyvolají `_refresh`.
+  [Evidence](docs/p7-16-mira-pruhlednosti.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

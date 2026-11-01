@@ -636,7 +636,7 @@ def test_hidden_parts_remain_in_saved_recipe_step_and_constraint_values(opened, 
 
     w = opened
     w.set_component_visible(("krabicka",), False)
-    w.set_component_transparent(("vicko",), True)
+    w.set_component_transparency(("vicko",), 35)
     total = w.session.result.volume_mm3
     saved = tmp_path / "cele.json"
     w.session.save(saved)
@@ -662,6 +662,159 @@ def test_hidden_parts_remain_in_saved_recipe_step_and_constraint_values(opened, 
 def transparent_ids(window):
     return {i.ids for i in window.visible_instances() if any(
         p.wrapped.IsSame(i.part.wrapped) for p in window.viewer.transparent_parts)}
+
+
+def transparency_amounts(window):
+    return {i.ids: amount for i in window.visible_instances()
+            for part, amount in window.viewer.transparencies if part.wrapped.IsSame(i.part.wrapped)}
+
+
+def test_transparency_percent_keyboard_commit_keeps_picks_fields_geometry_and_history(opened, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = opened
+    pick(w, "vicko")
+    lid = next(i for i in w.session.result.instances if i.ids == ("vicko",))
+    face = max(lid.part.faces(), key=lambda f: f.center().Z)
+    w.viewer.selection_changed.emit([face.wrapped])
+    w.position_edits[0].setText("rozepsaná poloha")
+    before, result = w.session.assembly.to_dict(), w.session.result
+    history = (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    geometry, picks = list(w.viewer.parts), list(w._picks)
+    field = w.transparency_percent
+    assert field.value() == 0 and field.minimum() == 0 and field.maximum() == 100
+    w.raise_()
+    w.activateWindow()
+    field.setFocus()
+    field.selectAll()
+    app.processEvents()
+    QTest.keyClicks(field, "35")
+    assert not w.viewer.transparent_parts  # rozepsané číslo se potvrdí až Enterem/ztrátou fokusu
+    QTest.keyClick(field, Qt.Key.Key_Return)
+    assert transparency_amounts(w) == {lid.ids: .35}
+    assert field.value() == 35 and w.transparency_box.isChecked()
+    field.stepUp()
+    assert transparency_amounts(w) == {lid.ids: .36}
+    assert "Průhlednost: 36 %" in visibility_row(w, lid.ids).toolTip(0)
+    assert "viditelných (36 %)" in w.summary.text()
+    assert w.viewer.parts == geometry and w._picks == picks
+    assert w.position_edits[0].text() == "rozepsaná poloha" and w._selected == lid.ids
+    assert w.session.result is result and w.session.assembly.to_dict() == before
+    assert history == (len(w.session._undo), len(w.session._redo), w.session.dirty)
+
+
+def test_transparency_zero_full_and_toggle_remember_levels_while_filters_stay(opened):
+    w = opened
+    pick(w, "vicko")
+    w.transparency_percent.setValue(35)
+    w.transparency_percent.setValue(0)
+    assert not w.transparency_box.isChecked() and not w.viewer.transparent_parts
+    w.transparency_action.trigger()
+    assert w.transparency_percent.value() == 35 and transparency_amounts(w) == {("vicko",): .35}
+    w.transparency_percent.setValue(100)
+    assert transparency_amounts(w) == {("vicko",): 1.0}
+    w.isolate_selected()
+    w.set_component_visible(("nozicka_1",), False)
+    w.reset_transparency_action.trigger()
+    assert w._isolated == ("vicko",) and w._visibility == {("nozicka_1",): False}
+    assert w.transparency_percent.value() == 0
+    w.transparency_box.toggle()  # AX obnovení poslední míry
+    assert transparency_amounts(w) == {("vicko",): 1.0}
+    w.show_all()
+    assert transparency_amounts(w) == {("vicko",): 1.0} and len(w.visible_instances()) == 6
+    assert w.viewer.parts[-1][0].volume == pytest.approx(w.session.result.volume_mm3)
+
+
+def test_nested_percentages_show_mixed_value_and_parent_edit_unifies_branch(nested_isolation):
+    from PySide6.QtCore import Qt
+
+    w = nested_isolation
+    w.set_component_transparency(("a",), 25)
+    w.set_component_transparency(("a", "druha"), 85)
+    w.set_component_transparency(("b", "deska"), 55)
+    assert transparency_amounts(w) == {("a", "deska"): .25, ("a", "druha"): .85,
+                                     ("b", "deska"): .55}
+    w.select(("a",))
+    assert w.transparency_box.checkState() == Qt.CheckState.Checked
+    assert w.transparency_percent.value() == -1 and w.transparency_percent.text() == "Různé"
+    assert "různé (25–85 %)" in visibility_row(w, ("a",)).toolTip(0)
+    w.transparency_action.trigger()
+    assert w.transparency_percent.value() == 0
+    w.transparency_action.trigger()  # vypnutí/zapnutí celé větve zachová poměry dětí
+    assert transparency_amounts(w)[("a", "deska")] == .25
+    assert transparency_amounts(w)[("a", "druha")] == .85
+    assert w.transparency_percent.text() == "Různé"
+    w.transparency_percent.setValue(40)
+    assert w._transparency_levels == {("a",): 40, ("b", "deska"): 55}
+    assert w.transparency_percent.minimum() == 0 and w.transparency_percent.value() == 40
+    assert transparency_amounts(w) == {("a", "deska"): .4, ("a", "druha"): .4,
+                                     ("b", "deska"): .55}
+    w.set_component_transparency(("a", "deska"), 0)
+    assert w.transparency_percent.text() == "Různé"
+    assert w.transparency_box.checkState() == Qt.CheckState.PartiallyChecked
+    w.transparency_percent.setValue(0)
+    assert not w._is_transparent(("a", "druha"))
+    assert transparency_amounts(w) == {("b", "deska"): .55}
+
+
+def test_transparency_levels_survive_rebuild_save_and_cancel_but_removed_ids_are_pruned(
+        nested_isolation, dialogs, tmp_path):
+    from test_assembly import component, write
+
+    w = nested_isolation
+    w.set_component_transparency(("a",), 40)
+    w.set_component_transparency(("a", "druha"), 85)
+    w.set_component_transparent(("a",), False)
+    source = w.session.path.parent / "modul.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data["components"].append(component("treti", "dily/deska.json", position=(80, 0, 0)))
+    write(source, data)
+    w.reload()
+    assert not w.viewer.transparent_parts
+    w.set_component_transparent(("a",), True)
+    assert transparency_amounts(w) == {("a", "deska"): .4, ("a", "druha"): .85,
+                                     ("a", "treti"): .4}
+    target = tmp_path / "miry-kopie.json"
+    dialogs["save"] = str(target)
+    assert w.save_as() and w._transparency_levels == {("a",): 40, ("a", "druha"): 85}
+    assert json.loads(target.read_text(encoding="utf-8")) == w.session.assembly.to_dict()
+    w.select(("a",))
+    w.remove_selected()
+    assert not w._transparency_levels
+    w.undo()
+    assert not w._transparency_levels
+    w.set_component_transparency(("a",), 55)
+    assert not w.open_assembly(target)  # zrušené potvrzení rozpracované změny
+    assert w._transparency_levels == {("a",): 55}
+    w.session.dirty = False
+    assert not w.open_assembly(tmp_path / "chybi.json")
+    assert w._transparency_levels == {("a",): 55}
+    assert w.open_assembly(target) and not w._transparency_levels
+    w.set_component_transparency(("a",), 55)
+    assert w.new_assembly(tmp_path / "nova-mira.json") and not w._transparency_levels
+
+
+def test_return_to_window_keeps_shape_identity_until_source_actually_changes(nested_isolation, app):
+    from PySide6.QtCore import QEvent
+
+    from test_assembly import part_data, write
+
+    w = nested_isolation
+    w.raise_()
+    w.activateWindow()
+    app.processEvents()
+    w.set_component_transparency(("a",), 40)
+    before = w.session.result
+    geometry = list(w.viewer.parts)
+    app.sendEvent(w, QEvent(QEvent.Type.ActivationChange))
+    assert w.session.result is before and w.viewer.parts == geometry
+    write(w.session.path.parent / "dily/deska.json", part_data(width=45))
+    app.sendEvent(w, QEvent(QEvent.Type.ActivationChange))
+    assert w.session.result is not before
+    assert w.viewer.parts[-1][0].volume == pytest.approx(36000)
+    assert len(w.viewer.parts[-1][0].solids()) == 4
+    assert transparency_amounts(w) == {("a", "deska"): .4, ("a", "druha"): .4}
 
 
 def test_transparency_controls_preserve_picks_pending_fields_geometry_and_history(opened):
@@ -714,7 +867,7 @@ def test_nested_transparency_is_independent_and_mixed_parent_toggle_sets_whole_b
     w.select(("a",))
     assert w.transparency_box.checkState() == Qt.CheckState.PartiallyChecked
     assert not w.transparency_action.isChecked()
-    assert "jen některé díly" in visibility_row(w, ("a",)).toolTip(0)
+    assert "různé (0–70 %)" in visibility_row(w, ("a",)).toolTip(0)
     assert not visibility_row(w, ("b",)).font(0).italic()
     w.transparency_box.click()
     assert w.transparency_box.checkState() == Qt.CheckState.Checked

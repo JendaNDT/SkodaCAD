@@ -16,6 +16,7 @@ from __future__ import annotations
 import copy
 import ctypes
 import logging
+import math
 import sys
 from typing import Any
 
@@ -116,11 +117,21 @@ PROBE_COLORS = {"ok": (0.13, 0.62, 0.30), "tight": (0.93, 0.55, 0.10),
 TARGET_COLOR = (0.20, 0.45, 0.85)
 TARGET_OUTLINE = (0.35, 0.35, 0.40)
 PLAN_START_COLOR = STEP_COLORS["scan"]  # začátek dráhy sondy (etapa 10)
-PART_TRANSPARENCY = 0.70
 
 
 def _rgb(r: float, g: float, b: float) -> Quantity_Color:
     return Quantity_Color(r, g, b, Quantity_TOC_RGB)
+
+
+def _part_transparencies(parts: list[tuple[Any, float]] | None) -> list[tuple[Any, float]]:
+    """Tvar a míra 0…1; ověřit před změnou prezentace, nulové části jsou plné."""
+    result = []
+    for part, amount in parts or []:
+        if not math.isfinite(amount) or not 0 <= amount <= 1:
+            raise ValueError("Míra průhlednosti musí být od 0 do 1.")
+        if amount:
+            result.append((getattr(part, "wrapped", part), amount))
+    return result
 
 
 def _faces_of(shape: Any) -> list[Any]:
@@ -272,7 +283,7 @@ class OccViewer(QWidget):
         self.probe_drag_enabled = False  # režim „Jezdit sondou myší“
         self._probe_dragging = False
         self._pending: tuple[Any, bool, Any, Any] | None = None
-        self._transparent_parts: list[Any] = []
+        self._transparent_parts: list[tuple[Any, float]] = []
         self._press: QPoint | None = None
         self._last: QPoint | None = None
         self._dragging = False
@@ -288,14 +299,15 @@ class OccViewer(QWidget):
 
     def show_part(self, part: Any | None, fit: bool = False,
                   accent: list[Any] | None = None,
-                  transparent: list[Any] | None = None) -> None:
+                  transparent: list[tuple[Any, float]] | None = None) -> None:
         """Zobrazí díl (build123d ``Part``) nebo nic; ``fit`` = přizpůsobit pohled,
-        ``accent`` = plochy jinou barvou (plochy řezu), ``transparent`` = průhledné části.
+        ``accent`` = plochy jinou barvou (plochy řezu), ``transparent`` = části a míry 0…1.
         Geometrie i výběr ploch/hran zůstávají úplné."""
+        transparencies = _part_transparencies(transparent)
         self.cancel_guide_drag()
         self._guides_data = None
         if not self.ready:
-            self._pending = (part, fit, accent, transparent)
+            self._pending = (part, fit, accent, transparencies)
             self._pending_guides = None
             return
         context = self._context
@@ -329,9 +341,9 @@ class OccViewer(QWidget):
             drawer.SetFaceBoundaryUpperContinuity(GeomAbs_C1)
             drawer.UIsoAspect().SetNumber(0)  # drátěný režim (pod mapou tloušťky) bez izočar
             drawer.VIsoAspect().SetNumber(0)
-            self._transparent_parts = [getattr(p, "wrapped", p) for p in transparent or []]
-            for shape in self._transparent_parts:
-                ais.SetCustomTransparency(shape, PART_TRANSPARENCY)
+            self._transparent_parts = transparencies
+            for shape, amount in self._transparent_parts:
+                ais.SetCustomTransparency(shape, amount)
             context.Display(ais, False)
             context.Deactivate(ais)  # celé těleso ne, jen plochy a hrany
             context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_FACE))
@@ -345,22 +357,22 @@ class OccViewer(QWidget):
         self.selection_changed.emit([])
         self._view.Redraw()
 
-    def set_transparent_parts(self, parts: list[Any]) -> None:
+    def set_transparent_parts(self, parts: list[tuple[Any, float]]) -> None:
         """Změní pouze vzhled částí aktuálního dílu; zachová kameru i vybrané plochy.
 
         Resetuje jen průhlednost, ostatní vlastní barvy (např. řezu) zůstávají.
         Před prvním vykreslením upraví čekající požadavek.
         """
-        shapes = [getattr(p, "wrapped", p) for p in parts]
+        shapes = _part_transparencies(parts)
         if not self.ready:
             if self._pending is not None:
                 part, fit, accent, _transparent = self._pending
                 self._pending = (part, fit, accent, shapes)
         elif self._ais is not None:
-            for shape in self._transparent_parts:
+            for shape, _amount in self._transparent_parts:
                 self._ais.SetCustomTransparency(shape, 0.0)
-            for shape in shapes:
-                self._ais.SetCustomTransparency(shape, PART_TRANSPARENCY)
+            for shape, amount in shapes:
+                self._ais.SetCustomTransparency(shape, amount)
             self._transparent_parts = shapes
             self._highlight_fill(not self._map_objects and not self._coverage_objects)
             self._context.ClearDetected(False)

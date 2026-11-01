@@ -29,6 +29,7 @@ class FakeViewer(QtWidgets.QWidget):
         super().__init__()
         self.parts = []
         self.transparent_parts = []
+        self.transparencies = []
         self.views = []
         self.highlighted = []
         self.guides = None
@@ -50,7 +51,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.guides = None
         self.parts.append((part, fit))
         self.accent = list(accent or [])  # plochy jinou barvou (plochy řezu)
-        self.transparent_parts = list(transparent or [])
+        self.set_transparent_parts(transparent or [])
         self.picked_point = None
         self.measurement = []
         self.thickness_map = None
@@ -63,7 +64,8 @@ class FakeViewer(QtWidgets.QWidget):
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def set_transparent_parts(self, parts):
-        self.transparent_parts = list(parts)
+        self.transparencies = list(parts)
+        self.transparent_parts = [part for part, amount in parts if amount > 0]
 
     def highlight(self, shapes):
         self.highlighted = list(shapes)

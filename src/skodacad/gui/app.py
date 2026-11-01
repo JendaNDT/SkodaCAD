@@ -1057,6 +1057,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok
         ok = _self_test_assembly_transparency(assembly, lines) and ok
+        ok = _self_test_assembly_transparency_levels(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1467,6 +1468,102 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku
         lines.append("✕ Průhlednost sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_transparency_levels(assembly, lines) -> bool:
+    """Číselné pole, nativní AX hodnota, oba konce rozsahu a samostatné materiály."""
+    from build123d import Compound
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QAccessible
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Míra průhlednosti sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        assembly.show_all()
+        assembly.reset_transparency()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(50)
+        before = session.assembly.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        body = next(i for i in session.result.instances if i.ids == ("krabicka",))
+        foot = next(i for i in session.result.instances if i.ids == ("nozicka_1",))
+        front = min(body.part.faces(), key=lambda f: f.center().Y).center()
+        x, y = viewer._view.Convert(float(front.X), float(front.Y), float(front.Z))
+        ratio = viewer._pixels(QPoint(100, 100))[0] / 100
+        pos = QPoint(round(x/ratio), round(y/ratio))
+        QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
+        assert assembly._selected == body.ids and viewer.selected_shapes()
+        picked, picks = list(viewer.selected_shapes()), list(assembly._picks)
+        assembly.position_edits[0].setText("rozepsaná poloha")
+        ais, result = viewer._ais, session.result
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        field = assembly.transparency_percent
+        assembly.component_scroll.ensureWidgetVisible(field)
+
+        def enter(value):
+            field.setFocus()
+            field.selectAll()
+            QTest.keyClicks(field, str(value))
+            QTest.keyClick(field, Qt.Key.Key_Return)
+            QApplication.processEvents()
+
+        def alpha(instance):
+            aspects = viewer._ais.CustomAspectsMap()
+            drawer = (aspects.Find(instance.part.wrapped)
+                      if aspects.IsBound(instance.part.wrapped) else viewer._ais.Attributes())
+            return drawer.ShadingAspect().Aspect().FrontMaterial().Transparency()
+
+        enter(35)
+        assert abs(alpha(body)-.35) < 1e-6 and alpha(foot) == 0
+        assert viewer._ais is ais and session.result is result
+        assert all(a.IsSame(b) for a, b in zip(viewer.selected_shapes(), picked, strict=True))
+        assert assembly._picks == picks and assembly.position_edits[0].text() == "rozepsaná poloha"
+        QApplication.sendEvent(assembly, QEvent(QEvent.Type.ActivationChange))
+        assert session.result is result, "návrat do okna zahodil identitu zobrazené geometrie"
+        enter(0)
+        assert alpha(body) == 0 and not assembly.transparency_box.isChecked()
+        viewer._surface.setFocus()
+        QTest.keyClick(viewer._surface, Qt.Key.Key_T)
+        assert field.value() == 35 and abs(alpha(body)-.35) < 1e-6
+        enter(100)
+        assert alpha(body) == 1 and assembly.transparency_box.isChecked()
+        QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
+        assert viewer.selected_shapes() and assembly._selected == body.ids
+        enter(0)
+        viewer._surface.setFocus()
+        QTest.keyClick(viewer._surface, Qt.Key.Key_T)
+        assert field.value() == 100 and alpha(body) == 1
+        assembly.select(foot.ids)
+        enter(85)
+        assert abs(alpha(foot)-.85) < 1e-6 and alpha(body) == 1
+        accessible = QAccessible.queryAccessibleInterface(field).valueInterface()
+        assert accessible is not None
+        accessible.setCurrentValue(55)
+        QApplication.processEvents()
+        assert field.value() == 55 and abs(alpha(foot)-.55) < 1e-6 and alpha(body) == 1
+        assert viewer._ais is ais and viewer._view.Proj() == direction
+        assert abs(viewer._view.Scale()-scale) < 1e-9
+        assembly.set_component_visible(body.ids, False)
+        assembly.show_all()
+        assert alpha(body) == 1 and abs(alpha(foot)-.55) < 1e-6
+        drawn = Compound(viewer._ais.Shape())
+        assert len(drawn.solids()) == 6 and abs(drawn.volume-session.result.volume_mm3) < 1e-5
+        assert session.assembly.to_dict() == before
+        assert history == (len(session._undo), len(session._redo), session.dirty)
+        lines.append("✓ Míra průhlednosti sestavy: Qt/AX 35/85/55/0/100 %, T obnoví míru, "
+                     "samostatné materiály, návrat do okna, kamera/výběr/objem/recept/historie "
+                     "a rozepsané pole beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Míra průhlednosti sestavy:\n" + traceback.format_exc())
         return False
     finally:
         assembly.reset_transparency()
