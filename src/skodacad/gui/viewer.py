@@ -180,7 +180,11 @@ class _NativeSurface(QWidget):
         if event.type() in (QEvent.Type.FocusOut, QEvent.Type.WindowDeactivate,
                             QEvent.Type.Hide, QEvent.Type.UngrabMouse):
             self._owner.cancel_guide_drag()
-        return super().event(event)
+        result = super().event(event)
+        if event.type() == QEvent.Type.DevicePixelRatioChange:
+            self._owner._resized()
+            self.update()
+        return result
 
     def paintEngine(self):  # noqa: N802 – kreslí OpenGL, ne Qt
         return None
@@ -738,8 +742,15 @@ class OccViewer(QWidget):
         width, height = self._known_size or (0, 0)
         ratio = pixel_ratio(sys.platform, width, self._surface.width(),
                             self._surface.devicePixelRatioF())
+        render_width, render_height = self.render_size()
         return (f"okno OCCT {width}×{height}, Qt {self._surface.width()}×"
-                f"{self._surface.height()}, poměr myši {ratio:.2f}")
+                f"{self._surface.height()}, poměr myši {ratio:.2f}, "
+                f"OpenGL {render_width}×{render_height}")
+
+    def render_size(self) -> tuple[int, int]:
+        """Skutečné rozlišení OpenGL, bez překreslení či opravy velikosti (diagnostika)."""
+        window = self._view.View().GlWindow()
+        return window.Width(), window.Height()
 
     def graphics_info(self) -> str:
         """Grafický ovladač OpenGL (výrobce, zařízení, verze) – pro log a self-test."""
@@ -1176,14 +1187,23 @@ class OccViewer(QWidget):
     def _sync_size(self) -> None:
         """OCCT si velikost okna jinak nepřečte znovu – bez toho by výběr myší mířil vedle.
 
-        Ptáme se přímo okna (ne Qt): nativní okno se může zvětšit o chvilku později.
+        Na Macu NeutralWindow zná jen logické rozměry Qt. Nativní NSView a jeho
+        Retina backing store je mohou dohnat až po resizeEvent/showEvent. OCCT proto
+        musí před kreslením zkontrolovat i je, přestože se rozměry Qt nezměnily.
+        OpenGl_Window::Resize samo vynechá práci, pokud se nezměnilo ani nativní okno.
         """
         if sys.platform == "darwin":
             self._window.SetSize(self._surface.width(), self._surface.height())
         size = tuple(self._view.Window().Size())
-        if size != self._known_size:
+        if sys.platform == "darwin" or size != self._known_size:
             self._known_size = size
-            self._view.MustBeResized()
+            # MustBeResized jinak samo kreslí. Finální snímek kreslí volající;
+            # kontrola backing store před každým snímkem ho nesmí kreslit dvakrát.
+            immediate = self._view.SetImmediateUpdate(False)
+            try:
+                self._view.MustBeResized()
+            finally:
+                self._view.SetImmediateUpdate(immediate)
 
     def _pixels(self, pos) -> tuple[int, int]:
         """Qt dává souřadnice v logických bodech, OCCT chce pixely svého okna (150 %, Retina)."""
