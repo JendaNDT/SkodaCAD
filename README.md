@@ -374,6 +374,17 @@ se neukládá do receptu ani historie a nemění geometrii či export.
 [Chování průhlednosti](docs/p7-15-pruhlednost-dilu.md).
 [Nastavitelná míra a její ověření](docs/p7-16-mira-pruhlednosti.md).
 
+**Hromadný výběr:** ve stromu **Ctrl+klik** (na Macu **⌘+klik**) přidá nebo ubere
+komponentu, **Shift+klik** vybere rozsah. **Ctrl/⌘+A** ve stromu vybere všechny
+komponenty a **Esc** výběr zruší. Také ve 3D lze s Ctrl/⌘ přidávat a ubírat
+plochy; jejich díly se vyberou a zvýrazní společně ve stromu i ve 3D.
+**H**, **I**, **T** a procenta průhlednosti pak platí pro celý výběr.
+Smíšené skrytí nebo průhlednost se prvním přepnutím společně zapnou; při vypnutí
+průhlednosti se pamatují jednotlivé míry. Rodič s vybraným potomkem se zpracuje
+jednou. Název, poloha, smazání a otevření dílu jsou dostupné při jediném výběru.
+Výběr je stav okna, nepřidává kroky Zpět a neomezuje export celé sestavy.
+[Chování a ověření hromadného výběru](docs/p7-17-hromadny-vyber.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

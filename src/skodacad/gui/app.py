@@ -1058,6 +1058,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_visibility(assembly, lines) and ok
         ok = _self_test_assembly_transparency(assembly, lines) and ok
         ok = _self_test_assembly_transparency_levels(assembly, lines) and ok
+        ok = _self_test_assembly_multi_selection(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1232,7 +1233,7 @@ def _self_test_assembly_isolation(assembly, lines) -> bool:
         assert button.isVisible() and button.isEnabled()
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
         QApplication.processEvents()
-        assert assembly._isolated == lid.ids and assembly._selected == lid.ids
+        assert assembly._isolated == (lid.ids,) and assembly._selected == lid.ids
         assert len(assembly.visible_instances()) == 1
         drawn = Compound(viewer._ais.Shape())
         assert len(drawn.solids()) == 1 and abs(drawn.volume - lid.volume_mm3) < 1e-5
@@ -1459,7 +1460,7 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
         assembly.isolate_action.trigger()
         assert len(Compound(viewer._ais.Shape()).solids()) == 1 and abs(alpha(body)-.7) < 1e-6
         assembly.reset_transparency_action.trigger()
-        assert alpha(body) == 0 and assembly._isolated == body.ids
+        assert alpha(body) == 0 and assembly._isolated == (body.ids,)
         assert assembly.position_edits[0].text() == "rozepsaná poloha"
         assert session.assembly.to_dict() == before
         assert history == (len(session._undo), len(session._redo), session.dirty)
@@ -1564,6 +1565,109 @@ def _self_test_assembly_transparency_levels(assembly, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
         lines.append("✕ Míra průhlednosti sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_multi_selection(assembly, lines) -> bool:
+    """Nativní strom i OCCT: rozsah, přidání/ubrání ploch a společné příkazy."""
+    from build123d import Compound
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Hromadný výběr sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        assembly.show_all()
+        assembly.reset_transparency()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(50)
+        before = session.assembly.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        result = session.result
+        body = next(i for i in result.instances if i.ids == ("krabicka",))
+        lid = next(i for i in result.instances if i.ids == ("vicko",))
+
+        def row_click(index, modifiers=Qt.KeyboardModifier.NoModifier):
+            item = assembly.tree.topLevelItem(index)
+            assembly.tree.scrollToItem(item)
+            rect = assembly.tree.visualItemRect(item)
+            QTest.mouseClick(assembly.tree.viewport(), Qt.MouseButton.LeftButton,
+                            modifiers, QPoint(rect.left()+100, rect.center().y()))
+
+        row_click(0)
+        row_click(1, Qt.KeyboardModifier.ControlModifier)
+        expected = (body.ids, lid.ids)
+        assert assembly._selection == expected and len(assembly.tree.selectedItems()) == 2
+        assert not assembly.apply_button.isEnabled() and not assembly.remove_action.isEnabled()
+        assert "Vybrané komponenty: 2" in assembly.form_note.text()
+        assembly.component_scroll.ensureWidgetVisible(assembly.transparency_percent)
+        field = assembly.transparency_percent
+        field.setFocus()
+        field.selectAll()
+        QTest.keyClicks(field, "60")
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert [assembly._transparency_value(ids) for ids in expected] == [60, 60]
+        for instance in (body, lid):
+            drawer = viewer._ais.CustomAspectsMap().Find(instance.part.wrapped)
+            assert abs(drawer.ShadingAspect().Aspect().FrontMaterial().Transparency()-.6) < 1e-6
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        assembly.tree.setFocus()
+        QTest.keyClick(assembly.tree, Qt.Key.Key_H)
+        assert len(Compound(viewer._ais.Shape()).solids()) == 4
+        assert assembly._selection == expected and len(assembly.tree.selectedItems()) == 2
+        QTest.keyClick(assembly.tree, Qt.Key.Key_H)
+        assert len(Compound(viewer._ais.Shape()).solids()) == 6
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        QTest.keyClick(assembly.tree, Qt.Key.Key_I)
+        drawn = Compound(viewer._ais.Shape())
+        assert assembly._isolated == expected and len(drawn.solids()) == 2
+        assert abs(drawn.volume-body.part.volume-lid.part.volume) < 1e-5
+        assembly.show_all()
+        row_click(0)
+        row_click(2, Qt.KeyboardModifier.ShiftModifier)
+        assert len(assembly._selection) == 3
+        QTest.keyClick(assembly.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+        assert len(assembly._selection) == 6
+        QTest.keyClick(assembly.tree, Qt.Key.Key_Escape)
+        assert not assembly._selection and not assembly.tree.selectedItems()
+
+        assembly.reset_transparency()
+        assembly.view_actions["front"].trigger()
+
+        def surface_click(instance, modifiers=Qt.KeyboardModifier.NoModifier):
+            front = min(instance.part.faces(), key=lambda f: f.center().Y).center()
+            x, y = viewer._view.Convert(float(front.X), float(front.Y), float(front.Z))
+            ratio = viewer._pixels(QPoint(100, 100))[0] / 100
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, modifiers,
+                            QPoint(round(x/ratio), round(y/ratio)))
+
+        surface_click(body)
+        surface_click(lid, Qt.KeyboardModifier.ControlModifier)
+        assert assembly._selection == expected and len(viewer.selected_shapes()) == 2
+        assert len(assembly._picks) == 2 and assembly.constraint_action.isEnabled()
+        picked = list(assembly._picks)
+        viewer._surface.setFocus()
+        QTest.keyClick(viewer._surface, Qt.Key.Key_T)
+        assert assembly._picks == picked and len(viewer.selected_shapes()) == 2
+        surface_click(lid, Qt.KeyboardModifier.ControlModifier)
+        assert assembly._selected == body.ids and len(viewer.selected_shapes()) == 1
+        QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        assert not assembly._selection and not assembly._picks
+        assert session.result is result and session.assembly.to_dict() == before
+        assert history == (len(session._undo), len(session._redo), session.dirty)
+        assert abs(Compound(viewer._ais.Shape()).volume-result.volume_mm3) < 1e-5
+        lines.append("✓ Hromadný výběr sestavy: strom Ctrl/⌘/Shift/A/Esc, 3D přidat/ubrat, "
+                     "H 6→4→6, I 2/6, společná míra 60 %, plochy pro vazby, kamera, "
+                     "objem/recept/historie beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Hromadný výběr sestavy:\n" + traceback.format_exc())
         return False
     finally:
         assembly.reset_transparency()

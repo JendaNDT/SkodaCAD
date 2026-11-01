@@ -1287,6 +1287,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   zdrojů ani recept: jinak AIS ukazuje původní tvary a materiál by se nastavoval
   na jejich nové kopie. Změněné zdroje/recept dál vyvolají `_refresh`.
   [Evidence](docs/p7-16-mira-pruhlednosti.md).
+- P7.17: `_selection` je uspořádaná n-tice cest kopií; `_selected` vrací cestu jen
+  při jediném výběru (ochrana editačních příkazů). Strom používá ExtendedSelection,
+  synchronizace blokuje signály a mění currentItem s NoUpdate, aby nerozbila rozsah
+  Shift. Ctrl/⌘+A a Esc jsou zkratky pouze stromu, ne textových polí. Výběr vazby
+  je výlučný. `_picked` mapuje všechny plochy, deduplikuje kopie a zachová místa pro
+  vazby; prázdný klik ruší výběr. Při `show_part` blokovat signály vieweru, jinak by
+  technické vymazání ploch zrušilo výběr komponent po H/I/přepočtu.
+  `_isolated` nyní obsahuje n-tici kořenů větví (nebo None); vykresluje jejich sjednocení
+  protnuté ruční viditelností. H/T/procenta nejprve normalizují výběr (vybraný rodič
+  překryje potomka), upraví pravidla všech větví a překreslí jen jednou.
+  [Evidence](docs/p7-17-hromadny-vyber.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
