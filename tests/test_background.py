@@ -240,7 +240,8 @@ def test_feature_added_while_computing_is_in_tree_and_editor(window):
     assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
 
 
-def test_new_command_preview_has_own_worker_and_recovers_from_failure(window):
+@pytest.mark.parametrize("editing", [False, True])
+def test_command_preview_has_own_worker_and_recovers_from_failure(window, editing):
     from PySide6.QtTest import QTest
 
     window.new_model()
@@ -249,7 +250,13 @@ def test_new_command_preview_has_own_worker_and_recovers_from_failure(window):
     settle(window)
     before, result = window.session.document.to_dict(), window.session.result
     count = len(window.session._undo)
-    window.add_feature_actions["hole"].trigger()
+    if editing:
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        panel.editor.form.widget("distance").setText("12")
+        panel.refresh()
+    else:
+        window.add_feature_actions["hole"].trigger()
     panel = window.feature_preview
     assert panel is not None and panel.preview.session.computing
     assert window._feature_preview_runner is not window._runner
@@ -271,7 +278,8 @@ def test_new_command_preview_has_own_worker_and_recovers_from_failure(window):
     assert window.session.document.to_dict() == before
     panel.accept_button.click()
     assert window.feature_preview is None and not window.session.computing
-    assert window.session.properties.volume_mm3 == pytest.approx(12000-250*math.pi/4)
+    expected = 14400 if editing else 12000-250*math.pi/4
+    assert window.session.properties.volume_mm3 == pytest.approx(expected)
     assert len(window.session._undo) == count+1
 
 

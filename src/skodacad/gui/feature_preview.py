@@ -1,4 +1,4 @@
-"""Pravý panel nového prvku; rozepsaný návrh patří oddělené ModelSession."""
+"""Náhled vložení i úpravy prvku; návrh patří oddělené ModelSession."""
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -34,9 +34,13 @@ class FeaturePreviewPanel(QWidget):
         self._last_result = None
         self._listened = set()
         layout = QVBoxLayout(self)
-        heading = QLabel("<b>Nový prvek · náhled</b>")
+        heading = QLabel("<b>Úprava prvku · náhled</b>" if preview.editing
+                         else "<b>Nový prvek · náhled</b>")
         layout.addWidget(heading)
-        hint = QLabel("Uprav hodnoty a prohlédni si náhled. Potvrdit přidá prvek do stromu; "
+        hint = QLabel("Uprav hodnoty a prohlédni si celý výsledek. Potvrdit přijme úpravu "
+                      "včetně navazujících prvků; Zrušit ponechá původní díl."
+                      if preview.editing else
+                      "Uprav hodnoty a prohlédni si náhled. Potvrdit přidá prvek do stromu; "
                       "Zrušit ponechá původní díl.")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -49,6 +53,18 @@ class FeaturePreviewPanel(QWidget):
                                  [(f["id"], short_label(f)) for f in before
                                   if f["type"] in REPEATABLE_FEATURES])
         self.editor.wall_panel.hide()
+        if session.feature(preview.feature_id)["type"] == "guided_loft":
+            guides = self.editor.form.widget("guides")
+            guides.set_selection(window._guide_edit_corner, window._guide_edit_handle)
+            guides.drag_step.setValue(window._guide_drag_step)
+            guides.drag_direction.setCurrentIndex(
+                guides.drag_direction.findData(window._guide_drag_direction))
+        self.editor.guide_selected.connect(
+            lambda row: setattr(window, "_guide_edit_corner", row))
+        self.editor.guide_handle_selected.connect(
+            lambda handle: setattr(window, "_guide_edit_handle", handle))
+        self.editor.guide_step_changed.connect(window._guide_step_changed)
+        self.editor.guide_direction_changed.connect(window._guide_direction_changed)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.editor)

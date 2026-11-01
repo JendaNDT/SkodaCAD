@@ -1038,12 +1038,15 @@ def test_add_clicked_edges_to_selected_fillet(empty_window):
     add = action(w, "Přidat vybrané hrany do: Sražení „Sražení 1“")
     assert add.isEnabled()
     add.trigger()
+    assert w.feature_preview.preview.editing
+    w.feature_preview.accept_button.click()
     edges = w.session.feature("chamfer1")["edges"]
     assert edges == [{"between": ["front", "right"]}, {"face": "left", "parallel": "Z"}]
     assert "hrany na levé ploše, rovnoběžné s osou Z" in form_field(w, "edges").text()
     assert len(w.viewer.highlighted) == 3
     w.viewer.click([edge_at(shown_part(w), 0, 15, 0)])
     action(w, "Nahradit hrany vybraného prvku výběrem").trigger()
+    w.feature_preview.accept_button.click()
     assert w.session.feature("chamfer1")["edges"] == {"between": ["bottom", "back"]}
 
 
@@ -1456,6 +1459,8 @@ def test_hole_on_shaft_surface_from_click(empty_window):
     w.viewer.click([face_at(shown_part(w), -20, 0, 10)], point=(-20, 0, 10))
     assert w.add_to_feature_action.text().startswith("Přidat díru v místě kliknutí do:")
     w.add_to_feature_action.trigger()  # na horní přímce hřídele = stejná tečná rovina → další díra
+    assert session.feature("hole1")["positions"] == [[0.0, 0.0]]
+    w.feature_preview.accept_button.click()
     assert session.feature("hole1")["positions"] == [[0.0, 0.0], [-25.0, 0.0]]
     w.viewer.click([face_at(shown_part(w), 0, -10, 0)], point=(0, -10, 0))
     w.add_to_feature_action.trigger()  # na boku hřídele je jiná tečná rovina → jen hláška
@@ -3198,7 +3203,7 @@ def test_ribbon_overflow_keeps_commands_available(window):
     assert scroll.horizontalScrollBar().maximum() > 0
     scroll.horizontalScrollBar().setValue(scroll.horizontalScrollBar().maximum())
     button = next(b for b in window.ribbon.buttons
-                  if b.defaultAction() is window.workspace.actions['editor'])
+                  if b.defaultAction() is window.edit_feature_action)
     center = button.mapTo(scroll.viewport(), button.rect().center())
     assert scroll.viewport().rect().contains(center)
 
@@ -3348,3 +3353,122 @@ def test_cancelled_window_close_keeps_unconfirmed_feature(empty_window, monkeypa
     assert not w.close() and w.feature_preview is panel
     assert len(w.session.document.features) == 2 and not panel.preview.closed
     panel.cancel_button.click()
+
+
+def test_existing_feature_is_inspected_readonly_and_edited_explicitly(empty_window):
+    import copy
+
+    from PySide6.QtTest import QTest
+
+    w = empty_window
+    build_box(w)
+    w.show()
+    w.workspace.show_panel("editor")
+    field = form_field(w, "distance")
+    assert field.isReadOnly()
+    field.setFocus()
+    QTest.keyClicks(field, "999")
+    assert field.text() == "10" and w.session.properties.volume_mm3 == pytest.approx(12000)
+    before, result = copy.deepcopy(w.session.document), w.session.result
+    count = len(w.session._undo)
+    QTest.mouseClick(w.edit_feature_button, Qt.MouseButton.LeftButton)
+    panel = w.feature_preview
+    assert panel.preview.editing and not panel.editor.form.widget("distance").isReadOnly()
+    for value in ("12", "15"):
+        field = panel.editor.form.widget("distance")
+        field.setText(value)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert panel.preview.session.properties.volume_mm3 == pytest.approx(1200*float(value))
+        assert w.session.document == before and w.session.result is result
+    QTest.mouseClick(panel.accept_button, Qt.MouseButton.LeftButton)
+    assert w.feature_preview is None and len(w.session._undo) == count+1
+    assert w.session.properties.size_mm == pytest.approx((40, 30, 15))
+    assert w.session.result.part.is_valid
+    w.undo_action.trigger()
+    assert w.session.document == before
+    w.redo_action.trigger()
+    assert w.session.properties.volume_mm3 == pytest.approx(18000)
+
+
+def test_double_click_edit_cancel_and_invalid_pending_input(empty_window, tmp_path):
+    import copy
+
+    w = empty_window
+    build_box(w)
+    w.session.save(tmp_path/"puvodni.json")
+    before, result = copy.deepcopy(w.session.document), w.session.result
+    count = len(w.session._undo)
+    item = w.tree.currentItem()
+    w.tree.itemDoubleClicked.emit(item, 0)
+    panel = w.feature_preview
+    field = panel.editor.form.widget("distance")
+    field.setText("15")
+    panel.refresh()
+    assert panel.accept_button.isEnabled()
+    field.setText("1+")
+    panel.accept()
+    assert not panel.accept_button.isEnabled() and w.feature_preview is panel
+    assert w.session.document == before and w.session.result is result
+    w.cancel_feature_preview_action.trigger()
+    assert w.feature_preview is None and w.session.document == before
+    assert w.session.result is result and len(w.session._undo) == count and not w.session.dirty
+
+
+def test_edit_checks_later_features_and_can_repair_bad_source(window, examples_dir):
+    assert window.open_model(examples_dir/"deska_workflow.json", template=True)
+    window.start_feature_edit("sketch1")
+    panel = window.feature_preview
+    shape = panel.editor.form.widget("elements")._form
+    shape.widget("width").setText("5")
+    panel.refresh()
+    assert not panel.accept_button.isEnabled()
+    assert panel.preview.session.result.first_error.id == "hole1"
+    assert window.session.properties.volume_mm3 == pytest.approx(39840-320*math.pi)
+    panel.cancel_button.click()
+    f = window.session.feature("extrude1")
+    f["distance"] = "neznamy"
+    window.session.update_feature("extrude1", f)
+    window._reload_all()
+    window.start_feature_edit("extrude1")
+    panel = window.feature_preview
+    assert not panel.accept_button.isEnabled()
+    panel.editor.form.widget("distance").setText("10")
+    panel.refresh()
+    panel.accept_button.click()
+    assert window.feature_preview is None and window.session.result.part.is_valid
+    assert window.session.properties.volume_mm3 == pytest.approx(39840-320*math.pi)
+
+
+def test_guides_inspection_preserves_view_controls_and_edit_is_cancelable(window, examples_dir):
+    assert window.open_model(examples_dir/"rizeny_prechod.json", template=True)
+    window._selected_id = "rizeny"
+    window._reload_all()
+    guides = window.feature_editor.form.widget("guides")
+    assert guides.edits[0, 0, 0].isReadOnly()
+    assert guides.drag_step.isEnabled() and not guides.drag_step.lineEdit().isReadOnly()
+    guides.corner_picker.setCurrentIndex(3)
+    guides.handle_buttons.button(1).click()
+    window.edit_feature_action.trigger()
+    panel = window.feature_preview
+    guides = panel.editor.form.widget("guides")
+    assert guides.selected_index == 3 and guides.selected_handle == 1
+    assert not guides.edits[3, 1, 0].isReadOnly()
+    guides.edits[0, 0, 0].setText("12")
+    panel.refresh()
+    assert panel.accept_button.isEnabled()
+    assert window.session.properties.volume_mm3 == pytest.approx(77760)
+    panel.cancel_button.click()
+    assert window.session.properties.volume_mm3 == pytest.approx(77760)
+
+
+def test_shapes_cannot_recreate_editable_form_while_inspecting(empty_window):
+    w = empty_window
+    w.add_feature("sketch")
+    shapes = form_field(w, "elements")
+    assert not shapes.list.isEnabled() and not shapes.add_button.isEnabled()
+    assert shapes._form.widget("width").isReadOnly()
+    w.edit_feature_action.trigger()
+    shapes = w.feature_preview.editor.form.widget("elements")
+    assert shapes.list.isEnabled() and shapes.add_button.isEnabled()
+    assert not shapes._form.widget("width").isReadOnly()
+    w.feature_preview.cancel_button.click()

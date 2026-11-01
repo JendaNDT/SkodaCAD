@@ -1565,6 +1565,15 @@ zrušení bez změny zdroje. Všechny uživatelské příkazy nového prvku vedo
 Interní okamžité metody okna slouží pro přípravu hotových modelů v regresích;
 nové příkazy ověřují zvláštní interakční testy a self-test „Náhled nového prvku“.
 P7.4 přijetí autorem zůstává otevřené. Formát 34.
+**P7.6 — náhled úprav hotových prvků:** [provedení](docs/p7-6-nahled-uprav-prvku.md).
+`begin_feature_edit` sdílí potvrzovací postup s novým prvkem; může opravit i
+aktuálně chybný model. Potvrzení vyžaduje platnost celého přepočtu následníků,
+shodu zdroje a změnu právě cílového prvku. Běžný formulář je jen pro čtení,
+Upravit prvek / dvojklik / Ctrl+E otevře pracovní kopii. Výběr hran pro existující
+prvek také vede do náhledu. Interní `_feature_edited` zůstává pro programovou
+přípravu regresí; uživatelský tok ověřuje self-test „Úprava prvku“ a interakční
+testy. Tažení ve 3D si ponechává potvrzení puštěním myši; parametry, mazání
+a pořadí prvků mají dosavadní ovládání. Bez změny formátu 34 a bez nové závislosti.
 Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,

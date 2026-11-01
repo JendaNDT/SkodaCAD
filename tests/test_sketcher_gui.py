@@ -238,9 +238,14 @@ def test_edit_profile_from_shape_form(window, monkeypatch, answers):
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", widen)
-    shapes = window.feature_editor.form.widget("elements")
+    window.edit_feature_action.trigger()
+    panel = window.feature_preview
+    shapes = panel.editor.form.widget("elements")
     button = shapes._form.findChild(QtWidgets.QPushButton, "open_sketcher")
     button.click()
+    assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
+    assert panel.preview.session.properties.volume_mm3 == pytest.approx(60 * 30 * 10)
+    panel.accept_button.click()
     assert window.session.properties.volume_mm3 == pytest.approx(60 * 30 * 10)
     window.undo()
     assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)

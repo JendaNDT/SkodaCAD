@@ -264,6 +264,7 @@ class FeaturePreview:
     session: ModelSession
     feature_id: str
     closed: bool = False
+    editing: bool = False
 
     @property
     def ready(self) -> bool:
@@ -862,6 +863,12 @@ class ModelSession:
         return feature["id"]
 
     def update_feature(self, feature_id: str, feature: dict[str, Any]) -> BuildResult:
+        self._validate_feature_update(feature_id, feature)
+        index = self.feature_index(feature_id)
+        updated = copy.deepcopy(feature)
+        return self._change(lambda doc: doc.features.__setitem__(index, updated))
+
+    def _validate_feature_update(self, feature_id: str, feature: dict[str, Any]) -> None:
         index = self.feature_index(feature_id)
         original = self._require().features[index]
         if feature.get("id") != feature_id or feature.get("type") != original["type"]:
@@ -870,8 +877,6 @@ class ModelSession:
             keys = ("data", "sha256", "size_bytes", "encoding", "source_name")
             if any(feature.get(key) != original.get(key) for key in keys):
                 raise DocumentError("Zdroj STEP lze obnovit jen z totožného souboru.")
-        updated = copy.deepcopy(feature)
-        return self._change(lambda doc: doc.features.__setitem__(index, updated))
 
     def begin_feature_preview(self, feature_type: str, after_id: str | None = None,
                               values: dict[str, Any] | None = None, *, runner=None,
@@ -881,10 +886,20 @@ class ModelSession:
         Asynchronní návrh musí mít vlastní runner, aby nerušil úlohy zdroje.
         Výsledek zdroje lze sdílet jen ke čtení, další přepočty už patří návrhu.
         """
+        draft = self._copy_for_feature_preview(runner, require_valid=True)
+        original = self._require()
+        if shapes is None:
+            fid = draft.add_feature(feature_type, after_id=after_id, values=values)
+        else:
+            fid = draft.add_from_selection(feature_type, shapes, point)
+        return FeaturePreview(copy.deepcopy(original), draft, fid)
+
+    def _copy_for_feature_preview(self, runner, *, require_valid: bool) -> ModelSession:
         self._require_computed("vytvoření náhledu")
         original = self._require()
-        if self._computed != original or self.result is None or not self.result.ok:
-            raise DocumentError("Nejdřív oprav a přepočítej původní model.")
+        if (self._computed != original or self.result is None
+                or (require_valid and not self.result.ok)):
+            raise DocumentError("Nejdřív přepočítej původní model a zkontroluj jeho chyby.")
         if runner is not None and runner is self._runner:
             raise DocumentError("Náhled potřebuje vlastní pomocný proces.")
         draft = ModelSession(runner)
@@ -893,14 +908,16 @@ class ModelSession:
         draft.result = self.result
         draft.map_visible = self.map_visible
         draft.section_settings = copy.deepcopy(self.section_settings)
-        if shapes is None:
-            fid = draft.add_feature(feature_type, after_id=after_id, values=values)
-        else:
-            fid = draft.add_from_selection(feature_type, shapes, point)
-        return FeaturePreview(copy.deepcopy(original), draft, fid)
+        return draft
+
+    def begin_feature_edit(self, feature_id: str, *, runner=None) -> FeaturePreview:
+        """Náhled úpravy hotového i chybného prvku, včetně všech jeho následníků."""
+        self.feature_index(feature_id)
+        draft = self._copy_for_feature_preview(runner, require_valid=False)
+        return FeaturePreview(copy.deepcopy(self._require()), draft, feature_id, editing=True)
 
     def apply_feature_preview(self, preview: FeaturePreview) -> str:
-        """Přijme aktuální, úplný návrh právě jednoho prvku jako jeden krok Zpět."""
+        """Přijme aktuální vložení nebo úpravu jednoho prvku jako jeden krok Zpět."""
         if preview.closed:
             raise DocumentError("Tento náhled už byl ukončen – vytvoř nový.")
         if self.computing or self._require() != preview.original:
@@ -916,10 +933,17 @@ class ModelSession:
         feature = draft.feature(preview.feature_id)
         index = draft.feature_index(preview.feature_id)
         candidate = copy.deepcopy(preview.original)
-        candidate.features.insert(index, feature)
+        if preview.editing:
+            if index != self.feature_index(preview.feature_id):
+                raise DocumentError("Pořadí prvků v náhledu se změnilo – vytvoř jej znovu.")
+            self._validate_feature_update(preview.feature_id, feature)
+            candidate.features[index] = feature
+        else:
+            candidate.features.insert(index, feature)
         if candidate != draft.document:
             raise DocumentError("Náhled obsahuje další změny – vytvoř jej znovu.")
-        self._change(lambda doc: doc.features.insert(index, feature), computed_result=result)
+        self._change(lambda doc: setattr(doc, "features", candidate.features),
+                     computed_result=result)
         preview.closed = True
         return feature["id"]
 
