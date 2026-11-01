@@ -282,6 +282,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_plate_workflow(window, lines) and ok
     ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
@@ -313,11 +314,13 @@ def _self_test_plate_workflow(window, lines) -> bool:
             field.setText(value)
             QTest.keyClick(field, Qt.Key.Key_Return)
 
-        shapes = window.feature_editor.form.widget("elements")
+        shapes = window.feature_preview.editor.form.widget("elements")
         enter(shapes._form.widget("width"), "delka")
         enter(shapes._form.widget("height"), "sirka")
+        window.feature_preview.accept_button.click()
         window.add_feature_actions["extrude"].trigger()
-        enter(window.feature_editor.form.widget("distance"), "tloustka")
+        enter(window.feature_preview.editor.form.widget("distance"), "tloustka")
+        window.feature_preview.accept_button.click()
         assert window.session.result.ok
         assert abs(window.session.properties.volume_mm3 - 40000) < 1e-5
         viewer = window.viewer
@@ -340,11 +343,12 @@ def _self_test_plate_workflow(window, lines) -> bool:
             window.workspace.show_panel("measure")
             window.selection_actions["sketch"].trigger()
             assert window.workspace.active == "editor"
+            window.feature_preview.accept_button.click()
             assert window.session.document.features[-1]["type"] == "sketch"
             window.undo_action.trigger()  # selection test must leave the plate unchanged
 
         window.add_feature_actions["hole"].trigger()
-        form = window.feature_editor.form
+        form = window.feature_preview.editor.form
         kind = form.widget("kind")
         kind.setCurrentIndex(kind.findData("clearance"))
         enter(form.widget("diameter"), "6")
@@ -355,7 +359,9 @@ def _self_test_plate_workflow(window, lines) -> bool:
         count = len(window.session._undo)
         QTest.keyClick(points, Qt.Key.Key_Tab)
         QApplication.processEvents()
-        assert not points.hasFocus() and len(window.session._undo) == count+1
+        assert not points.hasFocus() and len(window.session._undo) == count
+        window.feature_preview.accept_button.click()
+        assert len(window.session._undo) == count+1
         assert window.session.result.ok
         assert abs(window.session.properties.volume_mm3 - (40000-360*math.pi)) < 1e-5
 
@@ -370,9 +376,10 @@ def _self_test_plate_workflow(window, lines) -> bool:
             window.workspace.show_panel("measure")
             window.selection_actions["fillet"].trigger()
             assert window.workspace.active == "editor"
+            window.feature_preview.accept_button.click()
         else:
             for side in ("front", "back"):
-                window.add_feature_actions["fillet"].trigger()
+                window.add_feature("fillet")
                 fid = window._selected_id
                 feature = window.session.feature(fid)
                 feature["edges"] = {"face": side, "parallel": "Z"}
@@ -412,6 +419,63 @@ def _self_test_plate_workflow(window, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- include the exact assertion in the package report
         lines.append("✕ Modelování desky:\n" + traceback.format_exc())
+        return False
+
+
+def _self_test_feature_preview(window, lines) -> bool:
+    """Real command buttons, pending invalid input, cancel and atomic confirmation."""
+    import copy
+    import math
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        window.session.new_document("Náhled nového prvku")
+        window._selected_id = None
+        window._reload_all()
+        window.add_feature("sketch")
+        window.add_feature("extrude")
+        window.resize(1280, 760)
+        before, result = copy.deepcopy(window.session.document), window.session.result
+        count = len(window.session._undo)
+        window.add_feature_actions["hole"].trigger()
+        panel = window.feature_preview
+        assert panel is not None
+        field = panel.editor.form.widget("positions")
+        field.setFocus()
+        field.setPlainText("1+; 0")
+        panel.accept()
+        assert not panel.accept_button.isEnabled() and window.session.document == before
+        panel.cancel_button.click()
+        assert window.feature_preview is None and window.session.result is result
+        assert window.session.document == before and len(window.session._undo) == count
+        window.add_feature_actions["hole"].trigger()
+        panel = window.feature_preview
+        kind = panel.editor.form.widget("kind")
+        kind.setCurrentIndex(kind.findData("clearance"))
+        field = panel.editor.form.widget("diameter")
+        field.setFocus()
+        field.setText("6")
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert panel.accept_button.isVisibleTo(window) and panel.accept_button.isEnabled()
+        assert not window.save_action.isEnabled() and not window.undo_action.isEnabled()
+        assert window.session.document == before and window.session.result is result
+        QTest.mouseClick(panel.accept_button, Qt.MouseButton.LeftButton)
+        assert window.feature_preview is None and len(window.session._undo) == count+1
+        assert abs(window.session.properties.volume_mm3-(12000-90*math.pi)) < 1e-5
+        window.undo_action.trigger()
+        assert window.session.document == before
+        window.redo_action.trigger()
+        assert abs(window.session.properties.volume_mm3-(12000-90*math.pi)) < 1e-5
+        window.session.save(user_dir()/"self-test-nahled-prvku.json")
+        lines.append("✓ Náhled nového prvku: izolovaný díl a historie, neplatný rozepsaný "
+                     "vstup, Zrušit, Qt klik Potvrdit, jeden krok Zpět/Znovu, "
+                     "12000 → 11717,256661 mm³ a uložení")
+        return True
+    except Exception:  # noqa: BLE001 -- native package report includes the failing assertion
+        lines.append("✕ Náhled nového prvku:\n" + traceback.format_exc())
+        window.cancel_feature_preview()
         return False
 
 

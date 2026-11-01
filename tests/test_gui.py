@@ -45,6 +45,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.plan = None  # ({barva: [(od, do)]}, začátek, zóny) plánu dráhy sondy
 
     def show_part(self, part, fit=False, accent=None):
+        self.model_selection_disabled = False
         self.guides = None
         self.parts.append((part, fit))
         self.accent = list(accent or [])  # plochy jinou barvou (plochy řezu)
@@ -64,6 +65,9 @@ class FakeViewer(QtWidgets.QWidget):
 
     def show_design_ghost(self, original):
         self.design_ghost = original
+
+    def disable_model_selection(self):
+        self.model_selection_disabled = True
 
     def set_guide_drag_step(self, step):
         self.guide_drag_step = step
@@ -767,7 +771,7 @@ def test_variable_fillet_selection_form_end_labels_reverse_and_undo(empty_window
     edge, = select_edges(w.session.result.part, {"parallel": "Z", "near": [20, 15, 5]}, float)
     w._selection_changed([edge.wrapped])
     assert w.selection_actions["variable_fillet"].isEnabled()
-    w.selection_actions["variable_fillet"].trigger()
+    w.add_from_selection("variable_fillet")
     fid = w._selected_id
     persistent = QPersistentModelIndex(w.tree.currentIndex())
     assert w.session.feature(fid)["type"] == "variable_fillet"
@@ -793,8 +797,8 @@ def set_text(widget, text):
 
 
 def build_box(w):
-    action(w, "Skica").trigger()
-    action(w, "Vysunutí").trigger()
+    w.add_feature("sketch")
+    w.add_feature("extrude")
 
 
 def test_new_part_from_scratch(empty_window):
@@ -823,7 +827,7 @@ def test_edit_feature_value_in_form(empty_window):
 def test_invalid_form_value_is_red_and_model_unchanged(empty_window):
     w = empty_window
     build_box(w)
-    action(w, "Zaoblení").trigger()
+    w.add_feature("fillet")
     radius = form_field(w, "radius")
     set_text(radius, "")
     assert "c0392b" in radius.styleSheet()
@@ -837,10 +841,10 @@ def test_invalid_form_value_is_red_and_model_unchanged(empty_window):
 def test_cut_with_choice_field(empty_window):
     w = empty_window
     build_box(w)
-    action(w, "Skica").trigger()  # druhá skica – automaticky na horní ploše
+    w.add_feature("sketch")  # druhá skica – automaticky na horní ploše
     sketch = w.session.feature("sketch2")
     assert sketch["plane"] == "top"
-    action(w, "Vysunutí").trigger()
+    w.add_feature("extrude")
     operation = form_field(w, "operation")
     operation.setCurrentIndex(operation.findData("cut"))
     assert w.session.feature("extrude2")["operation"] == "cut"
@@ -892,7 +896,7 @@ def test_delete_move_and_undo(empty_window, no_dialogs):
 def test_undo_redo_enabled_states(empty_window):
     w = empty_window
     assert not action(w, "Zpět").isEnabled()
-    action(w, "Skica").trigger()
+    w.add_feature("sketch")
     assert action(w, "Zpět").isEnabled() and not action(w, "Znovu").isEnabled()
     action(w, "Zpět").trigger()
     assert w.tree.topLevelItemCount() == 0
@@ -959,6 +963,8 @@ def test_fillet_from_clicked_edge(empty_window):
     assert fillet.isEnabled()
     fillet.trigger()
     assert w.workspace.active == "editor"
+    assert w.session.properties.volume_mm3 == pytest.approx(12000)
+    w.feature_preview.accept_button.click()
     assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
     assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
@@ -982,7 +988,9 @@ def test_drawn_profile_opens_editor_after_confirm_but_keeps_panel_on_cancel(
     monkeypatch.setattr(w, "edit_profile", lambda *a, **k: new_shape("profile"))
     w.profile_sketch_action.trigger()
     assert w.workspace.active == "editor"
-    w.add_feature_actions["extrude"].trigger()
+    assert w.session.document.features == []
+    w.feature_preview.accept_button.click()
+    w.add_feature("extrude")
     assert w.session.result.ok and w.session.properties.volume_mm3 == pytest.approx(12000)
 
 
@@ -991,7 +999,7 @@ def test_tab_commits_four_hole_positions_once(empty_window):
 
     w = empty_window
     build_box(w)
-    w.add_feature_actions["hole"].trigger()
+    w.add_feature("hole")
     w.show()
     QtWidgets.QApplication.processEvents()
     points = form_field(w, "positions")
@@ -1025,7 +1033,7 @@ def test_add_clicked_edges_to_selected_fillet(empty_window):
     w = empty_window
     build_box(w)
     w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
-    action(w, "Srazit vybrané hrany").trigger()
+    w.add_from_selection("chamfer")
     w.viewer.click([edge_at(shown_part(w), -20, 15, 5), edge_at(shown_part(w), -20, -15, 5)])
     add = action(w, "Přidat vybrané hrany do: Sražení „Sražení 1“")
     assert add.isEnabled()
@@ -1045,6 +1053,8 @@ def test_sketch_on_clicked_face(empty_window):
     sketch = action(w, "Skica na vybrané ploše")
     w.viewer.click([face_at(shown_part(w), 0, -15, 5)], point=(8, -15, 4))
     sketch.trigger()
+    assert w.feature_preview is not None
+    w.feature_preview.accept_button.click()
     feature = w.session.feature("sketch2")
     assert feature["plane"] == "front"
     assert feature["elements"][0]["center"] == [8, 4]  # na přední ploše: x a výška z
@@ -1071,7 +1081,7 @@ def test_direct_edit_preview_cancel_and_apply(empty_window, monkeypatch):
         return QtWidgets.QDialog.DialogCode.Rejected
 
     monkeypatch.setattr(w, "_exec_dialog", cancel)
-    action(w, "Posunout vybranou plochu…").trigger()
+    w.add_from_selection("move_face")
     assert w.session.document.to_dict() == before
     assert w.viewer.parts[-1][0].volume == pytest.approx(40 * 30 * 10)
     w.viewer.click([face_at(shown_part(w), 0, 0, 10)], point=(0, 0, 10))
@@ -1083,7 +1093,7 @@ def test_direct_edit_preview_cancel_and_apply(empty_window, monkeypatch):
         return QtWidgets.QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(w, "_exec_dialog", accept)
-    action(w, "Posunout vybranou plochu…").trigger()
+    w.add_from_selection("move_face")
     assert w.session.result.part.volume == pytest.approx(40 * 30 * 12)
     w.session.undo()
     assert w.session.document.to_dict() == before
@@ -1124,7 +1134,7 @@ def test_direct_edit_accepts_parameter_expression(empty_window, monkeypatch):
         return QtWidgets.QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(w, "_exec_dialog", confirm)
-    action(w, "Posunout vybranou plochu…").trigger()
+    w.add_from_selection("move_face")
     assert w.session.document.features[-1]["distance"] == "zmena * 2"
     w.session.set_parameter("zmena", "3")
     assert w.session.result.part.volume == pytest.approx(40 * 30 * 16)
@@ -1181,7 +1191,7 @@ def test_hole_from_clicked_face_and_size_change(empty_window):
     w = empty_window
     build_box(w)
     w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
-    action(w, "Díra na vybrané ploše").trigger()
+    w.add_from_selection("hole")
     assert selected_text(w) == "✓  Díra „Díra 1“ – M6 závit"
     size = form_field(w, "size")
     assert size.currentData() == "M6"
@@ -1199,7 +1209,7 @@ def test_modeled_thread_checkbox(empty_window):
     w = empty_window
     build_box(w)
     w.viewer.click([face_at(shown_part(w), 5, 5, 10)], point=(5, 5, 10))
-    action(w, "Díra na vybrané ploše").trigger()
+    w.add_from_selection("hole")
     size = form_field(w, "size")
     size.setCurrentIndex(size.findData("M12"))  # velké stoupání = málo závitů = rychlý test
     before = w.session.properties.volume_mm3
@@ -1214,12 +1224,12 @@ def test_modeled_thread_checkbox(empty_window):
 def test_pattern_and_mirror_from_tree(empty_window):
     w = empty_window
     build_box(w)  # kvádr 40 × 30 × 10
-    action(w, "Díra").trigger()
+    w.add_feature("hole")
     positions = form_field(w, "positions")
     positions.setPlainText("-10; 5")
     positions.editingFinished.emit()
     one = 40 * 30 * 10 - w.session.properties.volume_mm3
-    action(w, "Pole").trigger()  # vybraná je díra → pole ji rovnou opakuje
+    w.add_feature("pattern")  # vybraná je díra → pole ji rovnou opakuje
     assert selected_text(w) == "✓  Pole „Pole 1“ – v řadě, 3 ks"
     form = w.feature_editor.form
     assert form.widget("features").findChild(QtWidgets.QCheckBox, "feature_hole1").isChecked()
@@ -1235,7 +1245,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
     assert w.session.feature("pattern1")["center"] == [0, 0, 4]
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - 3 * one)
 
-    action(w, "Zrcadlení").trigger()  # zrcadlí pole podle YZ
+    w.add_feature("mirror")  # zrcadlí pole podle YZ
     assert w.session.feature("mirror1")["features"] == ["pattern1"]
     box = form_field(w, "features").findChild(QtWidgets.QCheckBox, "feature_pattern1")
     box.setChecked(False)  # nic nezaškrtnuto → zrcadlí se celý díl
@@ -1249,7 +1259,7 @@ def test_pattern_and_mirror_from_tree(empty_window):
 def test_pattern_needs_a_checked_feature(empty_window):
     w = empty_window
     build_box(w)
-    action(w, "Pole").trigger()  # před ním je jen základní těleso → nic zaškrtnuté
+    w.add_feature("pattern")  # před ním je jen základní těleso → nic zaškrtnuté
     assert w.session.result.first_error.id == "pattern1"
     assert "vyber prvky" in w.session.result.first_error.message
     form = form_field(w, "features")
@@ -1260,7 +1270,7 @@ def test_pattern_needs_a_checked_feature(empty_window):
 
 def test_sweep_form_path_and_profile(empty_window):
     w = empty_window
-    action(w, "Tažení").trigger()  # nové tažení = trubkové koleno Ø30 × 2, R40
+    w.add_feature("sweep")  # nové tažení = trubkové koleno Ø30 × 2, R40
     form = w.feature_editor.form
     length = 2 * 60 + math.pi / 2 * 40
     assert w.session.properties.volume_mm3 == pytest.approx(math.pi * 56 * length)
@@ -1296,7 +1306,7 @@ def test_standard_part_form_switches_sizes_by_kind(empty_window):
     from skodacad.standards import BEARING, SOCKET_HEAD
 
     w = empty_window
-    action(w, "Normalizovaný díl").trigger()  # bez dílu: samotný imbus M6 × 20
+    w.add_feature("standard")  # bez dílu: samotný imbus M6 × 20
     form = w.feature_editor.form
     dk, k, s, t = SOCKET_HEAD["M6"]
     hexagon = math.sqrt(3) / 2
@@ -1321,7 +1331,7 @@ def test_nut_pocket_from_form(empty_window):
 
     w = empty_window
     build_box(w)  # kvádr 40 × 30 × 10
-    action(w, "Normalizovaný díl").trigger()  # na horní ploše dílu
+    w.add_feature("standard")  # na horní ploše dílu
     assert w.session.feature("standard1")["plane"] == "top"
     form = w.feature_editor.form
     kind = form_field(w, "kind")
@@ -1342,10 +1352,10 @@ def test_nut_pocket_from_form(empty_window):
 
 def test_loft_form_picks_sketches_in_order(empty_window):
     w = empty_window
-    action(w, "Skica").trigger()  # obdélník 40 × 30 v XY
-    action(w, "Skica").trigger()
+    w.add_feature("sketch")  # obdélník 40 × 30 v XY
+    w.add_feature("sketch")
     set_text(form_field(w, "offset"), "30")
-    action(w, "Přechod").trigger()  # spojí dvě poslední skici
+    w.add_feature("loft")  # spojí dvě poslední skici
     form = form_field(w, "sketches")
     first = form.findChild(QtWidgets.QCheckBox, "sketch_sketch1")
     assert first.isChecked() and form.findChild(QtWidgets.QCheckBox, "sketch_sketch2").isChecked()
@@ -1414,7 +1424,7 @@ def test_sketch_on_inclined_face_from_click(empty_window):
     slope = face_at(shown_part(w), 0, -12.5, 7.5)  # šikmá plocha sražení
     w.viewer.click([slope], point=(4, -12.5, 7.5))
     assert action(w, "Skica na vybrané ploše").isEnabled()
-    action(w, "Skica na vybrané ploše").trigger()
+    w.add_from_selection("sketch")
     sketch = w.session.feature("sketch2")
     assert sketch["plane"]["at"] == pytest.approx([4, -12.5, 7.5])
     assert sketch["elements"][0]["center"] == [0.0, 0.0]  # počátek skici = místo kliknutí
@@ -1438,7 +1448,7 @@ def test_hole_on_shaft_surface_from_click(empty_window):
     shaft = face_at(shown_part(w), 5, 0, 10)
     assert shaft.geom_type.name == "CYLINDER"
     w.viewer.click([shaft], point=(5, 0, 10))
-    action(w, "Díra na vybrané ploše").trigger()
+    w.add_from_selection("hole")
     hole = session.feature("hole1")
     assert hole["plane"] == {"at": [5.0, 0.0, 10.0], "normal": [0.0, 0.0, 1.0]}
     assert hole["positions"] == [[0.0, 0.0]] and session.result.ok
@@ -3059,6 +3069,8 @@ def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors
                    is window.add_feature_actions['extrude'])
     window.workspace.show_panel('measure')
     extrude.click()
+    assert window.feature_preview is not None
+    window.feature_preview.accept_button.click()
     assert window.session.document.features[-1]['type'] == 'extrude'
     assert window.workspace.active == 'editor'
     assert len(window.session._undo) == 1
@@ -3189,3 +3201,150 @@ def test_ribbon_overflow_keeps_commands_available(window):
                   if b.defaultAction() is window.workspace.actions['editor'])
     center = button.mapTo(scroll.viewport(), button.rect().center())
     assert scroll.viewport().rect().contains(center)
+
+
+def test_new_feature_preview_keeps_source_until_one_confirmation(empty_window, tmp_path):
+    import copy
+
+    from PySide6.QtTest import QTest
+
+    w = empty_window
+    w.add_feature("sketch")
+    w.session.save(tmp_path / "puvodni.json")
+    original, result = copy.deepcopy(w.session.document), w.session.result
+    history = len(w.session._undo)
+    w.show()
+    QtWidgets.QApplication.processEvents()
+    w.add_feature_actions["extrude"].trigger()
+    panel = w.feature_preview
+    assert panel is not None and panel.accept_button.isEnabled()
+    field = panel.editor.form.widget("distance")
+    for value in ("20", "25"):
+        field.setFocus()
+        field.setText(value)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert panel.preview.session.properties.volume_mm3 == pytest.approx(1200*float(value))
+        assert w.session.document == original and w.session.result is result
+        assert not w.session.dirty and len(w.session._undo) == history
+    assert not w.save_action.isEnabled() and not w.undo_action.isEnabled()
+    assert not w.new_action.isEnabled() and not any(a.isEnabled() for a in w.export_actions)
+    assert w.fit_action.isEnabled()
+    assert w.viewer.model_selection_disabled
+    assert not w.model_dock.widget().isEnabled()
+    panel.accept_button.click()
+    assert w.feature_preview is None and len(w.session._undo) == history+1
+    assert w.session.result.part.is_valid
+    assert w.session.properties.volume_mm3 == pytest.approx(30000)
+    w.undo_action.trigger()
+    assert w.session.document == original
+    w.redo_action.trigger()
+    assert w.session.properties.volume_mm3 == pytest.approx(30000)
+
+
+def test_new_preview_invalid_pending_text_never_accepts_previous_result(empty_window):
+    from PySide6.QtTest import QTest
+
+    w = empty_window
+    w.add_feature("sketch")
+    before = w.session.document.to_dict()
+    w.show()
+    QtWidgets.QApplication.processEvents()
+    w.add_feature_actions["extrude"].trigger()
+    panel = w.feature_preview
+    field = panel.editor.form.widget("distance")
+    field.setFocus()
+    field.setText("1+")
+    assert not panel.accept_button.isEnabled()
+    panel.accept()  # public slot must also validate, even if bypassing a disabled button
+    assert w.session.document.to_dict() == before and w.feature_preview is panel
+    field.setText("neznamy")
+    QTest.keyClick(field, Qt.Key.Key_Return)
+    assert not panel.accept_button.isEnabled() and "neznamy" in panel.message.text()
+    field.setText("12")
+    QTest.keyClick(field, Qt.Key.Key_Return)
+    assert panel.accept_button.isEnabled()
+    panel.accept_button.click()
+    assert w.session.properties.volume_mm3 == pytest.approx(14400)
+
+
+@pytest.mark.parametrize("method", ["button", "escape", "panel", "close"])
+def test_cancel_preview_restores_saved_source_history_and_overlays(empty_window, tmp_path, method):
+    import copy
+
+    w = empty_window
+    build_box(w)
+    w.session.set_info(name="Změněno")
+    w.session.undo()
+    w.session.save(tmp_path / "puvodni.json")
+    before, result = copy.deepcopy(w.session.document), w.session.result
+    undo, redo = list(w.session._undo), list(w.session._redo)
+    w.workspace.show_panel("measure")
+    w.add_feature_actions["hole"].trigger()
+    assert w.feature_preview is not None
+    assert w.feature_preview.preview.session.properties.volume_mm3 < 12000
+    if method == "button":
+        w.feature_preview.cancel_button.click()
+    elif method == "escape":
+        w.cancel_feature_preview_action.trigger()
+    elif method == "panel":
+        w.workspace.close_panel()
+    else:
+        assert w.close()
+    assert w.feature_preview is None and w.session.document == before
+    assert w.session.result is result and not w.session.dirty
+    assert w.session._undo == undo and w.session._redo == redo
+    assert w.viewer.parts[-1][0] is result.part
+    assert w.model_dock.widget().isEnabled()
+    assert not w.viewer.model_selection_disabled
+    if method in ("button", "escape"):
+        assert w.workspace.active == "measure"
+
+
+def test_preview_nested_invalid_shape_and_controls_remain_available(empty_window):
+    w = empty_window
+    w.resize(1024, 720)
+    w.show()
+    QtWidgets.QApplication.processEvents()
+    w.add_feature_actions["sketch"].trigger()
+    panel = w.feature_preview
+    shapes = panel.editor.form.widget("elements")
+    width = shapes._form.widget("width")
+    width.setText("1+")
+    panel.accept()
+    assert w.feature_preview is panel and not w.session.document.features
+    assert not panel.accept_button.isEnabled()
+    assert panel.cancel_button.isVisibleTo(w)
+    point = panel.cancel_button.mapTo(w.editor_dock, panel.cancel_button.rect().center())
+    assert w.editor_dock.rect().contains(point)
+    width.setText("80")
+    panel.refresh_button.click()
+    assert panel.accept_button.isEnabled()
+    panel.accept_button.click()
+    w.add_feature("extrude")
+    assert w.session.properties.volume_mm3 == pytest.approx(80*30*10)
+
+
+def test_selection_creates_only_preview_and_accepts_selected_corner(empty_window):
+    w = empty_window
+    build_box(w)
+    part = w.session.result.part
+    w.viewer.click([edge_at(part, 20, -15, 5)])
+    count = len(w.session._undo)
+    w.selection_actions["fillet"].trigger()
+    assert w.session.result.part is part and len(w.session._undo) == count
+    assert w.feature_preview.preview.session.properties.volume_mm3 == pytest.approx(
+        12000-(4-math.pi)*10)
+    w.feature_preview.accept_button.click()
+    assert len(w.session._undo) == count+1
+    assert w.session.properties.volume_mm3 == pytest.approx(12000-(4-math.pi)*10)
+
+
+def test_cancelled_window_close_keeps_unconfirmed_feature(empty_window, monkeypatch):
+    w = empty_window
+    build_box(w)
+    w.add_feature_actions["hole"].trigger()
+    panel = w.feature_preview
+    monkeypatch.setattr(w, "_confirm_discard", lambda: False)
+    assert not w.close() and w.feature_preview is panel
+    assert len(w.session.document.features) == 2 and not panel.preview.closed
+    panel.cancel_button.click()

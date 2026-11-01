@@ -1557,6 +1557,14 @@ Oprava Cocoa AX, potvrzení souřadnic Tabem, editor po vytvoření z výběru/s
 plochu a čtyři hrany přes Qt a OCCT projekci. Úplné výsledky v implementačním PR;
 nejde o autorskou přejímku P7.4.
 **P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P7.5 — náhled nového prvku:** autor schválil Potvrdit/Zrušit.
+[Provedení a evidence](docs/p7-5-nahled-noveho-prvku.md): pracovní ModelSession,
+vlastní runner, potvrzení přes `_change(computed_result=…)`, jediný krok historie,
+zrušení bez změny zdroje. Všechny uživatelské příkazy nového prvku vedou přes
+`start_feature_preview` / `start_selection_preview` / `start_profile_preview`.
+Interní okamžité metody okna slouží pro přípravu hotových modelů v regresích;
+nové příkazy ověřují zvláštní interakční testy a self-test „Náhled nového prvku“.
+P7.4 přijetí autorem zůstává otevřené. Formát 34.
 Historické fáze níže nejsou etapy P0–P8.
 
 - [x] **Fáze 0** – jádro bez GUI: JSON model, parametry a výrazy, skica, vysunutí, rotace,

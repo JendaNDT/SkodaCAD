@@ -647,7 +647,15 @@ class FieldsForm(QWidget):
 
     # --- přečtení a odeslání ---------------------------------------------------------
 
-    def _commit(self) -> None:
+    def commit_pending(self) -> bool:
+        """Přečte i rozepsané vnořené tvary před náhledem nebo potvrzením."""
+        valid = True
+        for form in reversed(self.findChildren(FieldsForm)):
+            if form.isVisibleTo(self):
+                valid = form._commit() and valid
+        return self._commit() and valid
+
+    def _commit(self) -> bool:
         new = copy.deepcopy(self._data)
         problems = []
         defaults = {field.key: field.default for field, _, _ in self._rows}
@@ -673,11 +681,12 @@ class FieldsForm(QWidget):
                 new[field.key] = value
         if problems:
             self.invalid.emit(problems[0])
-            return
+            return False
         if new != self._data:
             self._data = new
             self._update_visibility()
             self.edited.emit(copy.deepcopy(new))
+        return True
 
 
 def _profile_summary(data: dict[str, Any]) -> str:

@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QStackedWidget,
     QStyle,
     QToolButton,
     QTreeWidget,
@@ -61,6 +62,7 @@ from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.feature_preview import FeaturePreviewPanel
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
@@ -148,6 +150,9 @@ class MainWindow(QMainWindow):
         install_macos_accessibility()
         # S ``runner`` se model přepočítává na pozadí v pomocném procesu (okno je živé).
         self._runner = runner
+        self.feature_preview = None
+        self._feature_preview_runner = None
+        self._preview_action_states = []
         self.session = ModelSession(runner)
         self._pending_shown = False  # okno ukazuje „Přepočítávám…“
         self._shown_key: tuple | None = None  # (výsledek, řez) právě v prohlížeči
@@ -236,11 +241,11 @@ class MainWindow(QMainWindow):
         self.redo_action = self._action("Znovu", self.redo, "Ctrl+Y")
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
-            key: self._action(schema.label, lambda k=key: self.add_feature(k))
+            key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))
             for key, schema in FEATURE_SCHEMAS.items() if schema.menu
         }
         self.profile_sketch_action = self._action("Skica – nakreslit obrys…",
-                                                  self.add_profile_sketch)
+                                                  self.start_profile_preview)
         self.profile_sketch_action.setToolTip(
             "Skicář: obrys z úseček a oblouků s vazbami a kótami")
         self.delete_feature_action = self._action("Smazat prvek", self.delete_feature, "Delete")
@@ -257,7 +262,7 @@ class MainWindow(QMainWindow):
             action.setToolTip(action.text())
         self.fit_action = self._action("Celý díl", lambda: self.viewer.fit_all(), "F")
         self.selection_actions = {
-            key: self._action(text, lambda k=key: self.add_from_selection(k))
+            key: self._action(text, lambda k=key: self.start_selection_preview(k))
             for key, text in SELECTION_ACTIONS.items()
         }
         self.add_to_feature_action = self._action("Přidat výběr do vybraného prvku",
@@ -266,6 +271,11 @@ class MainWindow(QMainWindow):
             "Nahradit hrany vybraného prvku výběrem", lambda: self.apply_selection(replace=True))
         self.clear_selection_action = self._action("Zrušit výběr ve 3D",
                                                    lambda: self.viewer.clear_selection(), "Esc")
+        self.cancel_feature_preview_action = self._action(
+            "Zrušit náhled nového prvku", self.cancel_feature_preview, "Esc")
+        self.cancel_feature_preview_action.setShortcutContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.cancel_feature_preview_action.setEnabled(False)
         self.stop_action = self._action("Zastavit přepočet", self.stop_rebuild)
         self.stop_action.setToolTip("Zastaví pomalý přepočet a vrátí model do posledního "
                                     "spočítaného stavu (Znovu změnu vrátí)")
@@ -418,6 +428,9 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 10000))
         self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
                                           Qt.DockWidgetArea.RightDockWidgetArea)
+        self.editor_stack = QStackedWidget()
+        self.editor_stack.addWidget(self.editor_dock.widget())
+        self.editor_dock.setWidget(self.editor_stack)
 
     def _build_measure_panel(self) -> None:
         panel = QWidget()
@@ -657,9 +670,12 @@ class MainWindow(QMainWindow):
         """Panel NDT: studie nedestruktivní kontroly (stav po každém přepočtu)."""
         self.ndt_panel = NdtPanel(self)
         if hasattr(self.viewer, "probe_dragged"):
-            self.viewer.probe_dragged.connect(self.ndt_panel.on_probe_dragged)
+            self.viewer.probe_dragged.connect(lambda shapes, point:
+                self.ndt_panel.on_probe_dragged(shapes, point)
+                if self.feature_preview is None else None)
         if hasattr(self.viewer, "probe_rotated"):
-            self.viewer.probe_rotated.connect(self.ndt_panel.on_probe_rotated)
+            self.viewer.probe_rotated.connect(lambda steps:
+                self.ndt_panel.on_probe_rotated(steps) if self.feature_preview is None else None)
         self.ndt_dock = self._add_dock("NDT", "ndt_dock", self.ndt_panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
         self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
@@ -1437,7 +1453,7 @@ class MainWindow(QMainWindow):
 
     def _apply(self, change: Callable[[], object], structural: bool = True) -> bool:
         """Provede úpravu přes ModelSession; chybu ukáže česky a model nechá beze změny."""
-        if self.session.document is None:
+        if self.feature_preview is not None or self.session.document is None:
             return False
         try:
             self._busy(change)
@@ -1451,6 +1467,7 @@ class MainWindow(QMainWindow):
         return True
 
     def add_feature(self, feature_type: str) -> None:
+        """Interní přidání; uživatelské příkazy vstupují přes start_feature_preview."""
         if self.session.document is None:
             self.session.new_document()
         new_id: list[str] = []
@@ -1460,6 +1477,109 @@ class MainWindow(QMainWindow):
             self._selected_id = new_id[0]
             self._reload_all()
             self.workspace.show_panel("editor")
+
+    def start_feature_preview(self, feature_type: str, values=None, *, shapes=None, point=None):
+        if self.feature_preview is not None or self.ai_busy:
+            return
+        focus = self.focusWidget()
+        if focus is not None:
+            focus.clearFocus()  # nejdřív dokončit rozpracovanou úpravu původního dílu
+        if self.session.computing:
+            self.statusBar().showMessage("Počkej na dokončení přepočtu původního dílu.", 8000)
+            return
+        if self.session.document is None:
+            self.session.new_document()
+            self._reload_all()
+            if self.session.computing:
+                self.statusBar().showMessage(
+                    "Připravuji nový díl – příkaz bude dostupný za chvíli.")
+                return
+        if self._runner is not None and self._feature_preview_runner is None:
+            from skodacad.worker import BackgroundRebuilder
+
+            self._feature_preview_runner = BackgroundRebuilder()
+        try:
+            preview = self.session.begin_feature_preview(
+                feature_type, after_id=self._selected_id, values=values,
+                runner=self._feature_preview_runner, shapes=shapes, point=point)
+        except DocumentError as exc:
+            self._error("Náhled nejde vytvořit", str(exc))
+            return
+        self._preview_previous_panel = self.workspace.active
+        self._preview_action_states = [(action, action.isEnabled())
+                                       for action in self.findChildren(QAction)]
+        # Register before rendering: show_part emits selection_changed synchronously.
+        panel = self.feature_preview = FeaturePreviewPanel(self, preview)
+        panel.finished.connect(self._finish_feature_preview)
+        self.editor_stack.addWidget(panel)
+        self.editor_stack.setCurrentWidget(panel)
+        self.workspace.show_panel("editor")
+        self.editor_dock.addAction(self.cancel_feature_preview_action)
+        self.viewer.addAction(self.cancel_feature_preview_action)
+        panel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        panel.setFocus()
+        self.model_dock.widget().setEnabled(False)
+        self._preview_probe_drag = self.viewer.probe_drag_enabled
+        self.viewer.probe_drag_enabled = False
+        self.viewer.show_guides(None)
+        self._lock_preview_actions()
+        panel.show_result()
+        self.statusBar().showMessage("Náhled nového prvku · Potvrdit / Zrušit · Esc zruší")
+
+    def _lock_preview_actions(self):
+        allowed = [self.fit_action, *self._view_actions]
+        for action, _enabled in self._preview_action_states:
+            if action not in allowed:
+                action.setEnabled(False)
+        self.cancel_feature_preview_action.setEnabled(True)
+
+    def cancel_feature_preview(self):
+        if self.feature_preview is not None:
+            self._finish_feature_preview(False)
+
+    def _finish_feature_preview(self, accepted):
+        panel = self.feature_preview
+        if panel is None:
+            return
+        panel.shutdown()
+        self.feature_preview = None
+        self.editor_dock.removeAction(self.cancel_feature_preview_action)
+        self.viewer.removeAction(self.cancel_feature_preview_action)
+        if accepted:
+            self._selected_id = panel.preview.feature_id
+        self.editor_stack.setCurrentIndex(0)
+        self.editor_stack.removeWidget(panel)
+        panel.hide()
+        panel.deleteLater()
+        self.model_dock.widget().setEnabled(True)
+        self.viewer.probe_drag_enabled = self._preview_probe_drag
+        for action, enabled in self._preview_action_states:
+            action.setEnabled(enabled)
+        self._preview_action_states = []
+        self.cancel_feature_preview_action.setEnabled(False)
+        self._shown_key = None  # obnovit také řez, mapy, skicu a zvýraznění původního dílu
+        self._reload_all()
+        self.workspace.show_panel("editor" if accepted else self._preview_previous_panel)
+        self.statusBar().showMessage("Prvek potvrzen." if accepted else "Náhled zrušen.", 8000)
+
+    def start_profile_preview(self):
+        if self.feature_preview is not None or self.session.computing or self.ai_busy:
+            return
+        if self.session.document is None:
+            self.session.new_document()
+            self._reload_all()
+        profile = self.edit_profile(empty_profile(), new=True)
+        if profile is not None and profile["segments"]:
+            self.start_feature_preview("sketch", values={"elements": [profile]})
+
+    def start_selection_preview(self, feature_type):
+        if self.feature_preview is not None:
+            return
+        if feature_type in ("move_face", "face_diameter"):
+            self.direct_edit_dialog(feature_type)
+            return
+        self.start_feature_preview(feature_type, shapes=list(self._picked),
+                                   point=self.viewer.picked_point)
 
     def edit_profile(self, profile: dict, new: bool = False) -> dict | None:
         """Otevře skicář nad obrysem; vrátí upravený obrys, nebo None (Zrušit).
@@ -1677,6 +1797,9 @@ class MainWindow(QMainWindow):
         self._load_editor()
 
     def _refresh_all(self, fit: bool = False) -> None:
+        if self.feature_preview is not None:
+            self._lock_preview_actions()
+            return
         self._refresh_title()
         self._refresh_tree()
         self._refresh_properties()
@@ -1731,6 +1854,9 @@ class MainWindow(QMainWindow):
 
     def _poll(self) -> None:
         """Časovač: převezme hotový přepočet z pozadí, nebo obnoví ukazatel průběhu."""
+        if self.feature_preview is not None:
+            self.feature_preview.poll()
+            return
         if self.session.poll():
             if self.session.computing:  # průběžná zpráva návrhu poloh – výpočet běží dál
                 self.ndt_panel._show_access()
@@ -1913,12 +2039,17 @@ class MainWindow(QMainWindow):
         self.error_label.setVisible(bool(problem))
 
     def _refresh_actions(self) -> None:
+        if self.feature_preview is not None:
+            self._lock_preview_actions()
+            return
         for action in self.export_actions:
             action.setEnabled(not self.session.model_problem and not self.ai_busy)
         has_document = self.session.document is not None
         selected = self._selected_id is not None
         self.undo_action.setEnabled(self.session.can_undo)
         self.redo_action.setEnabled(self.session.can_redo)
+        for action in (*self.add_feature_actions.values(), self.profile_sketch_action):
+            action.setEnabled(not self.session.computing and not self.ai_busy)
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
             action.setEnabled(selected)
         for action in (self.save_action, self.save_as_action, self.add_parameter_action):
@@ -2028,6 +2159,8 @@ class MainWindow(QMainWindow):
         self._guide_drag_direction = direction
 
     def _guide_handle_moved(self, request: dict) -> None:
+        if self.feature_preview is not None:
+            return
         if self.ai_busy or request.get("feature_id") != self._selected_id:
             self.statusBar().showMessage("Vyber řízený přechod a uchop rukojeť znovu.", 10000)
             return
@@ -2099,6 +2232,8 @@ class MainWindow(QMainWindow):
 
     def _selection_changed(self, shapes: list) -> None:
         """Prohlížeč hlásí nový výběr ve 3D: popis do stavového řádku, měření, akce povolit."""
+        if self.feature_preview is not None:
+            return  # geometrie náhledu nepatří původnímu dílu ani jeho měřením
         self._picked = list(shapes)
         self._refresh_selection_actions()
         self.ndt_panel.refresh_actions()
@@ -2817,6 +2952,8 @@ class MainWindow(QMainWindow):
 
     def _show_context_menu(self, position: QPoint | None = None) -> None:
         """Pravý klik do 3D: co jde s výběrem udělat."""
+        if self.feature_preview is not None:
+            return
         menu = QMenu(self)
         if not self._picked:
             title = menu.addAction("Nic není vybrané – klikni na hranu nebo plochu")
@@ -2875,6 +3012,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._confirm_discard():
+            self.cancel_feature_preview()
             self.workspace.save()
             self.assistant_panel.shutdown()  # rozpracovaná odpověď AI se zastaví
             self._poll_timer.stop()
@@ -2882,6 +3020,8 @@ class MainWindow(QMainWindow):
                 self._runner.close()  # pomocné procesy přepočtu
             if self._assembly_runner is not None:
                 self._assembly_runner.close()
+            if self._feature_preview_runner is not None:
+                self._feature_preview_runner.close()
             event.accept()
         else:
             event.ignore()
