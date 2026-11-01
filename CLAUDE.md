@@ -1201,6 +1201,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   v Dokumentech a čtení čekalo v `open`. Výběr konkrétního souboru musí proběhnout
   systémovým panelem; nepřidávat plošná oprávnění ani vracet DontUseNativeDialog
   kvůli omezení automatizačního klienta. [Evidence](docs/p7-7-otevirani-dokumentu-macos.md).
+- P7.8: výběr JSONu sestavy nezpřístupní složky komponent. Interaktivní Otevřít
+  na Macu proto přes `gui/assembly_access.py` nejdřív vyžádá společnou složku
+  projektu; před panelem nesmí vypisovat adresáře ani číst díly (`locate` by
+  čekalo v `os_listdir` / `opendir`). Zrušení nepřepíše model, souhlas se pamatuje
+  jen v procesu. U podsestav vybrat celý projekt včetně jejich zdrojů.
 - Běžný přepočet nesmí plošně mazat strom položek:
   Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
   i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.

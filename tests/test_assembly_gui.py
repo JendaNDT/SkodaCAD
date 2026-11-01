@@ -22,10 +22,14 @@ def app():
 @pytest.fixture
 def dialogs(monkeypatch):
     """Dialogy by v testu čekaly – odpovědi se nastaví předem (výchozí = zrušit)."""
-    answers = {"open": "", "save": "", "question": QMessageBox.StandardButton.Cancel}
+    answers = {"open": "", "save": "", "directory": None,
+               "question": QMessageBox.StandardButton.Cancel}
     shown = []
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (answers["open"], ""))
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (answers["save"], ""))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory",
+                        lambda parent, title, start, **kw:
+                        start if answers["directory"] is None else answers["directory"])
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[1:3]))
     monkeypatch.setattr(QMessageBox, "question",
                         lambda *a, **k: shown.append(a[1]) or answers["question"])
@@ -99,6 +103,41 @@ def test_open_from_main_window_shows_tree_3d_and_summary(main_window, opened, pr
     # I Otevřít v hlavním okně pozná sestavu podle „kind“, ne přípony.
     again = main_window.open_model(project / "sestavy" / "krabicka_s_vickem.json")
     assert again and len(main_window.assembly_windows) == 2
+
+
+@pytest.mark.parametrize("from_assembly", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_native_project_selection_precedes_open_and_cancel_preserves_window(
+        main_window, project, dialogs, monkeypatch, from_assembly, cancel):
+    from skodacad.gui import assembly_access
+
+    monkeypatch.setattr(assembly_access, "IS_MACOS", True)
+    monkeypatch.setattr(assembly_access, "_granted_projects", set())
+    source = project / "sestavy" / "krabicka_s_vickem.json"
+    original = source.read_bytes()
+    window = main_window.open_assembly(source) if from_assembly else main_window
+    old_session = window.session
+    old_path = old_session.path
+    old_result = old_session.result
+    count = len(main_window.assembly_windows)
+    dialogs["open"] = str(source)
+    dialogs["directory"] = "" if cancel else str(project)
+    window.open_dialog()
+    assert source.read_bytes() == original
+    assert not dialogs["shown"]
+    if cancel:
+        assert len(main_window.assembly_windows) == count
+        assert window.session is old_session and window.session.path == old_path
+        assert window.session.result is old_result
+    else:
+        result_window = window if from_assembly else main_window.assembly_windows[-1]
+        result = result_window.session.result
+        assert result.complete and len(result.instances) == 6
+        assert all(i.part.is_valid for i in result.instances)
+        assert result.volume_mm3 == pytest.approx(31309.29, abs=0.01)
+        lo, hi = result.bounds()
+        assert tuple(lo) == pytest.approx((-40, -25, -3), abs=1e-6)
+        assert tuple(hi) == pytest.approx((40, 25, 32), abs=1e-6)
 
 
 def test_form_changes_position_name_as_one_undo_step(opened):
