@@ -1067,17 +1067,24 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
     from PySide6.QtTest import QTest
 
     try:
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)  # native window activation/layout is asynchronous, notably on Windows
         before = assembly.session.assembly.to_dict()
         widths = []
         for width, minimum in ((1200, 600), (1024, 440)):
             assembly.resize(width, 720)
             assembly.reset_layout()
-            QApplication.processEvents()
-            assert assembly.viewer.width() >= minimum
-            assert assembly.tree.columnWidth(0) >= 140
-            assert all(e.width() >= 90 for e in
-                       [*assembly.position_edits, *assembly.rotation_edits])
-            assert assembly.checks_dock.isHidden()
+            QTest.qWait(100)
+            fields = [e.width() for e in [*assembly.position_edits, *assembly.rotation_edits]]
+            assert assembly.viewer.width() >= minimum, (
+                f"3D {assembly.viewer.width()} < {minimum}; požadované okno {width}, "
+                f"skutečné {assembly.width()}, panely "
+                f"{assembly.tree_dock.width()}/{assembly.component_dock.width()}")
+            assert assembly.tree.columnWidth(0) >= 140, (
+                f"sloupec názvu {assembly.tree.columnWidth(0)}")
+            assert all(w >= 90 for w in fields), f"šířky polí {fields}"
+            assert assembly.checks_dock.isHidden(), "kontroly zůstaly viditelné po resetu"
             if assembly.viewer.ready:
                 _check_render_size(assembly.viewer)
             widths.append(assembly.viewer.width())
@@ -1090,23 +1097,26 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
         original = lid_x()
         field = assembly.position_edits[0]
         field.setFocus()
+        QTest.qWait(100)
         field.setText("1,5")
         QTest.keyClick(field, Qt.Key.Key_Return)
         QApplication.processEvents()
         moved = lid_x()
-        assert abs(moved - original - 1.5) < 1e-7
+        assert abs(moved - original - 1.5) < 1e-7, (
+            f"Enter: X {original} → {moved}, pole {field.text()!r}, "
+            f"fokus {field.hasFocus()}, historie {assembly.session.can_undo}")
         assembly.undo_action.trigger()
-        assert assembly.session.assembly.to_dict() == before
+        assert assembly.session.assembly.to_dict() == before, "Zpět neobnovilo původní sestavu"
         assembly.checks_dock.toggleViewAction().trigger()
-        assert not assembly.checks_dock.isHidden()
+        assert not assembly.checks_dock.isHidden(), "přepínač kontrol panel neotevřel"
         assembly.reset_layout_action.trigger()
-        assert assembly.checks_dock.isHidden()
+        assert assembly.checks_dock.isHidden(), "akce resetu kontroly neskryla"
         lines.append(f"✓ Panely sestavy: 3D šířka {widths[0]}/{widths[1]} při okně "
                      "1200/1024, šest polí ≥90, Enter posun 1,5 mm a Zpět, "
                      "skrytí/obnova kontrol bez změny sestavy")
         return True
-    except Exception as exc:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku
-        lines.append(f"✕ Panely sestavy: {type(exc).__name__}: {exc}")
+    except Exception:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku
+        lines.append("✕ Panely sestavy:\n" + traceback.format_exc())
         return False
 
 
