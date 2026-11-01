@@ -221,6 +221,59 @@ def test_form_changes_position_name_as_one_undo_step(opened):
     assert opened.session.assembly.component("nozicka_1").name == "Přední levá"
 
 
+@pytest.mark.parametrize("width, view_width", [(1200, 620), (1024, 450), (960, 390)])
+def test_compact_panels_leave_space_for_model_and_readable_coordinates(opened, app,
+                                                                     width, view_width):
+    opened.resize(width, 720)
+    opened.reset_layout_action.trigger()
+    pick(opened, "nozicka_1")
+    app.processEvents()
+    assert opened.viewer.width() >= view_width
+    assert opened.tree.visualRect(opened.tree.indexFromItem(
+        opened.tree.topLevelItem(0), 0)).width() >= 130
+    assert opened.viewer.height() >= 600
+    assert all(edit.width() >= 90 for edit in
+               [*opened.position_edits, *opened.rotation_edits])
+    assert not opened.component_scroll.horizontalScrollBar().isVisible()
+    assert opened.checks_dock.isHidden()
+    assert "krabicka" in opened.tree.topLevelItem(0).toolTip(0).lower()
+
+
+def test_view_controls_preserve_unapplied_values_history_selection_and_view(opened, app):
+    pick(opened, "nozicka_1")
+    document = opened.session.assembly.to_dict()
+    current = opened.tree.currentItem()
+    parts, views = list(opened.viewer.parts), list(opened.viewer.views)
+    opened.position_edits[0].setText("x0 + rozepsano")
+    for dock in (opened.tree_dock, opened.component_dock, opened.checks_dock):
+        dock.toggleViewAction().trigger()
+    opened.files_action.setChecked(True)
+    assert not opened.tree.isColumnHidden(1)
+    opened.tree.setColumnWidth(0, 30)
+    opened.reset_layout_action.trigger()
+    app.processEvents()
+    assert opened.tree_dock.isVisible() and opened.component_dock.isVisible()
+    assert opened.checks_dock.isHidden() and opened.tree.isColumnHidden(1)
+    assert opened.tree.columnWidth(0) >= 140
+    assert opened.position_edits[0].text() == "x0 + rozepsano"
+    assert opened.session.assembly.to_dict() == document and not opened.session.can_undo
+    assert opened._selected == ("nozicka_1",) and opened.tree.currentItem() is current
+    assert opened.viewer.parts == parts and opened.viewer.views == views
+
+
+def test_check_command_reopens_panel_and_layout_reset_preserves_results(opened, app):
+    before = opened.session.assembly.to_dict()
+    opened.checks_dock.close()
+    opened.check_action.trigger()
+    app.processEvents()
+    assert opened.checks_dock.isVisible() and opened.check_tabs.currentIndex() == 0
+    result = opened.session.last_check()
+    assert result is not None
+    opened.reset_layout_action.trigger()
+    assert opened.checks_dock.isHidden() and opened.session.last_check() == result
+    assert opened.session.assembly.to_dict() == before and not opened.session.can_undo
+
+
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):
     pick(opened, "vicko")
     opened.position_edits[2].setText("H + neznamy")

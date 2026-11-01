@@ -1052,12 +1052,62 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
     if ok:
         lines.append(f"✓ Sestava: {result.volume_mm3:.0f} mm³, 6 komponent, víčko z = 26…32"
                      f"{drawn}")
+        ok = _self_test_assembly_layout(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
     assembly.close()
     ok = _self_test_constraints(window, lines, folder) and ok
     return _self_test_checks(window, lines, folder) and ok
+
+
+def _self_test_assembly_layout(assembly, lines) -> bool:
+    """Prostor pro 3D, čitelná pole a Enter v novém rozložení, bez ztráty historie."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        before = assembly.session.assembly.to_dict()
+        widths = []
+        for width, minimum in ((1200, 600), (1024, 440)):
+            assembly.resize(width, 720)
+            assembly.reset_layout()
+            QApplication.processEvents()
+            assert assembly.viewer.width() >= minimum
+            assert assembly.tree.columnWidth(0) >= 140
+            assert all(e.width() >= 90 for e in
+                       [*assembly.position_edits, *assembly.rotation_edits])
+            assert assembly.checks_dock.isHidden()
+            if assembly.viewer.ready:
+                _check_render_size(assembly.viewer)
+            widths.append(assembly.viewer.width())
+        assembly.select(("vicko",))
+
+        def lid_x():
+            return next(i.part.bounding_box().min.X for i in assembly.session.result.instances
+                        if i.ids == ("vicko",))
+
+        original = lid_x()
+        field = assembly.position_edits[0]
+        field.setFocus()
+        field.setText("1,5")
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QApplication.processEvents()
+        moved = lid_x()
+        assert abs(moved - original - 1.5) < 1e-7
+        assembly.undo_action.trigger()
+        assert assembly.session.assembly.to_dict() == before
+        assembly.checks_dock.toggleViewAction().trigger()
+        assert not assembly.checks_dock.isHidden()
+        assembly.reset_layout_action.trigger()
+        assert assembly.checks_dock.isHidden()
+        lines.append(f"✓ Panely sestavy: 3D šířka {widths[0]}/{widths[1]} při okně "
+                     "1200/1024, šest polí ≥90, Enter posun 1,5 mm a Zpět, "
+                     "skrytí/obnova kontrol bez změny sestavy")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku
+        lines.append(f"✕ Panely sestavy: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
