@@ -138,6 +138,7 @@ class AssemblyWindow(QMainWindow):
             viewer_factory = OccViewer
         self.viewer = viewer_factory()
         self.viewer.selection_changed.connect(self._picked)
+        self.viewer.selection_cleared.connect(lambda: self.select(None))
         self.setCentralWidget(self.viewer)
         self._build_tree()
         self._build_form()
@@ -1086,7 +1087,6 @@ class AssemblyWindow(QMainWindow):
     def _picked(self, shapes: list) -> None:
         """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří; vybrané
         plochy (s místem kliknutí) si okno pamatuje pro *Přidat vazbu…*."""
-        clicked = bool(shapes)
         if self._isolated is not None or self._visibility:
             visible = [p.wrapped for i in self.visible_instances()
                        for p in (*i.part.faces(), *i.part.edges())]
@@ -1099,7 +1099,10 @@ class AssemblyWindow(QMainWindow):
                                 else getattr(self.viewer, "picked_point", None)))
         self._refresh_pick_note()
         result = self.session.result
-        if result is None or (clicked and not shapes):
+        if result is None:
+            return
+        if not shapes:
+            self._refresh_highlight()  # i první paint přehraje dříve zvolenou komponentu
             return
         selected = []
         for instance in self.visible_instances():
@@ -1381,13 +1384,9 @@ class AssemblyWindow(QMainWindow):
         result = self.session.result
         visible = self.visible_instances()
         part = result.compound(visible_ids={i.ids for i in visible}) if visible else None
-        blocked = self.viewer.blockSignals(True)
-        try:
-            self.viewer.show_part(part, fit=fit,
-                                  transparent=[(i.part, self._transparency_level(i.ids)/100)
-                                               for i in visible if self._is_transparent(i.ids)])
-        finally:
-            self.viewer.blockSignals(blocked)
+        self.viewer.show_part(part, fit=fit,
+                              transparent=[(i.part, self._transparency_level(i.ids)/100)
+                                           for i in visible if self._is_transparent(i.ids)])
 
     def _refresh_isolation_actions(self) -> None:
         result, roots = self.session.result, self._selection_roots()

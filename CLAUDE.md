@@ -1292,8 +1292,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   synchronizace blokuje signály a mění currentItem s NoUpdate, aby nerozbila rozsah
   Shift. Ctrl/⌘+A a Esc jsou zkratky pouze stromu, ne textových polí. Výběr vazby
   je výlučný. `_picked` mapuje všechny plochy, deduplikuje kopie a zachová místa pro
-  vazby; prázdný klik ruší výběr. Při `show_part` blokovat signály vieweru, jinak by
-  technické vymazání ploch zrušilo výběr komponent po H/I/přepočtu.
+  vazby; prázdný klik ruší výběr přes `selection_cleared`. Tento signál vysílá jen
+  klik/uživatelské vyčištění, nikoli `show_part`: blokování signálů jen při volání
+  nestačí, protože před prvním paintem se model teprve uloží do `_pending`.
+  Přehraje se později už mimo blokaci; i tehdy musí výběr komponent přežít.
   `_isolated` nyní obsahuje n-tici kořenů větví (nebo None); vykresluje jejich sjednocení
   protnuté ruční viditelností. H/T/procenta nejprve normalizují výběr (vybraný rodič
   překryje potomka), upraví pravidla všech větví a překreslí jen jednou.

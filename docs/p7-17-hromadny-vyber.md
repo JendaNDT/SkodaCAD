@@ -48,7 +48,10 @@ nezměněnou historii/recept, opakované použití řádků a stávající výb�
 
 Nativní self-test aplikace navíc provede Ctrl/⌘, Shift, A/Esc, společných 60 %,
 H **6→4→6**, I **2/6**, skutečné přidání a ubrání ploch přes OCCT, zachování
-ploch pro vazby po T a stálou kameru/objem/recept/historii.
+ploch pro vazby po T a stálou kameru/objem/recept/historii. Samostatné nativní
+okno otevře a vybere oba díly ještě před prvním paintem: pozdější inicializace
+3D musí zachovat výběr komponent. `selection_cleared` se vysílá jen pro prázdný
+klik nebo výslovné zrušení; technické vyčištění ploch při vykreslení jej nevysílá.
 Nativní ověření se vyžaduje také ze stažených balíčků Windows i macOS.
 Protokoly a snímek: `out/p7-multi-selection/`; konečné výsledky CI patří do PR.
 P7.4 (autorská přejímka celého prostředí) zůstává otevřená.

@@ -19,6 +19,7 @@ from skodacad.inspection import number  # noqa: E402
 
 class FakeViewer(QtWidgets.QWidget):
     selection_changed = Signal(list)
+    selection_cleared = Signal()
     context_menu_requested = Signal(QPoint)
     probe_dragged = Signal(list, object)
     probe_rotated = Signal(int)
@@ -132,11 +133,14 @@ class FakeViewer(QtWidgets.QWidget):
     def clear_selection(self):
         self.picked_point = None
         self.selection_changed.emit([])
+        self.selection_cleared.emit()
 
     def click(self, shapes, point=None):
         """Jako by uživatel klikl (s Ctrl) na tyto plochy/hrany."""
         self.picked_point = point
         self.selection_changed.emit([shape.wrapped for shape in shapes])
+        if not shapes:
+            self.selection_cleared.emit()
 
     def drag_probe(self, shapes, point):
         """Jako by uživatel táhl sondou (režim Jezdit sondou myší / Alt+tah) po ploše."""
