@@ -182,7 +182,9 @@ class AssemblyWindow(QMainWindow):
         self.form_note = self._wrapped_label()
         layout.addWidget(self.form_note)
         self.transparency_box = QCheckBox("Průhledná komponenta (T)")
-        self.transparency_box.clicked.connect(lambda _checked: self.toggle_selected_transparency())
+        # Nativní přístupnost volá toggle(), které nevysílá clicked.
+        self.transparency_box.checkStateChanged.connect(
+            lambda _state: self.toggle_selected_transparency())
         layout.addWidget(self.transparency_box)
         layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()

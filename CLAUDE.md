@@ -1274,6 +1274,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   zachování skutečného výběru a porovnává plný/průhledný obraz. Skutečná alfa je
   v `ShadingAspect().Aspect().FrontMaterial().Transparency()`, ne v
   `Prs3d_Drawer.Transparency()`. [Evidence](docs/p7-15-pruhlednost-dilu.md).
+  Přepínač musí poslouchat `checkStateChanged`, nikoli `clicked`: nativní AX
+  přepíná checkbox přes toggle bez clicked. Při synchronizaci blokovat signály;
+  nativní self-test opravdu provede QAccessible toggle a zkontroluje materiál.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

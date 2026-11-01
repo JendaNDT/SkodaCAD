@@ -1,0 +1,43 @@
+name: Průhlednost – nativní Windows
+on:
+  push:
+    branches: [codex/assembly-transparency-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: "1"
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 7c941e9f625a41c4790b5621efe7cc1e85fabbc3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui,build]" pefile
+      - name: Cílené regrese
+        timeout-minutes: 3
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_assembly_gui.py tests/test_viewer_surface.py -k "transparency or view_shortcuts"
+      - name: Nativní balíček
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+      - name: Nativní zkouška Windows
+        timeout-minutes: 5
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/skodacad-transparency-probe
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt || true
+          if [ $code -ne 0 ]; then cat "$SKODACAD_HOME/skodacad.log" || true; fi
+          exit $code

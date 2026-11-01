@@ -61,6 +61,9 @@ výběr a rozepsané pole. Vybere také průhlednou plochu. Přes checkbox projd
 70→0→70 % a porovná oba vykreslené obrazy při stejné kameře. Ověří objem,
 skrývání, izolaci a reset vzhledu bez zrušení izolace. Stávající kontrola
 lišty při 1024/960 zůstává aktivní.
+Také přepne checkbox přes QAccessible toggle a ověří skutečný materiál.
+Průchod macOS odhalil, že AX přepínání nevysílá clicked; propojení proto
+používá změnu stavu a blokuje signály při synchronizaci ovládacích prvků.
 
 Protokoly a snímky patří do `out/p7-assembly-transparency/`. Úplné výsledky
 macOS/Windows a stažených balíčků patří do implementačního PR.

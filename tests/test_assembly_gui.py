@@ -692,6 +692,10 @@ def test_transparency_controls_preserve_picks_pending_fields_geometry_and_histor
     assert not w._transparency and not w.viewer.transparent_parts
     assert not w.transparency_action.isChecked() and not w.reset_transparency_action.isEnabled()
     assert not visibility_row(w, lid.ids).font(0).italic()
+    w.transparency_box.toggle()  # nativní AX přepíná stav bez signálu clicked
+    assert transparent_ids(w) == {lid.ids} and w.transparency_action.isChecked()
+    w.transparency_box.toggle()
+    assert not w._transparency and not w.viewer.transparent_parts
     assert w.viewer.parts[-1][0].volume == pytest.approx(w.session.result.volume_mm3)
     assert w.session.assembly.to_dict() == before
     assert history == (len(w.session._undo), len(w.session._redo), w.session.dirty)

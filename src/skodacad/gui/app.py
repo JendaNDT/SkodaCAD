@@ -1364,7 +1364,7 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
     from build123d import Compound
     from OCP.Prs3d import Prs3d_TypeOfHighlight_LocalSelected
     from PySide6.QtCore import QPoint, Qt
-    from PySide6.QtGui import QImage
+    from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QImage
     from PySide6.QtTest import QTest
 
     viewer, session = assembly.viewer, assembly.session
@@ -1441,6 +1441,15 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
         assert not image_a.isNull() and image_a.size() == image_b.size()
         assert image_a != image_b, "změna materiálu se neprojevila v obrazu"
         assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        accessible = QAccessible.queryAccessibleInterface(box).actionInterface()
+        toggle = QAccessibleActionInterface.toggleAction()
+        assert accessible is not None and toggle in accessible.actionNames()
+        accessible.doAction(toggle)
+        QApplication.processEvents()
+        assert alpha(body) == 0 and not box.isChecked(), "AX přepnul jen checkbox, ne 3D"
+        accessible.doAction(toggle)
+        QApplication.processEvents()
+        assert abs(alpha(body)-.7) < 1e-6 and box.isChecked()
         assembly.visibility_action.trigger()
         assert len(Compound(viewer._ais.Shape()).solids()) == 5
         assert not viewer._transparent_parts and assembly._is_transparent(body.ids)
@@ -1453,7 +1462,7 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
         assert assembly.position_edits[0].text() == "rozepsaná poloha"
         assert session.assembly.to_dict() == before
         assert history == (len(session._undo), len(session._redo), session.dirty)
-        lines.append("✓ Průhlednost sestavy: checkbox/T, AIS 70→0→70 %, obraz změněn, "
+        lines.append("✓ Průhlednost sestavy: checkbox/AX/T, AIS 70→0→70 %, obraz změněn, "
                      "skrytí/izolace, výběr/kamera/objem/recept/historie/rozepsané pole beze změny")
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku
