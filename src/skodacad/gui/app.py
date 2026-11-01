@@ -1425,6 +1425,7 @@ def _self_test_assembly_transparency(assembly, lines) -> bool:
         QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
         assert viewer.selected_shapes() and assembly._selected == body.ids
         viewer.clear_selection()  # výplň vybrané plochy nesmí překrýt porovnání materiálu
+        assembly.select(body.ids)  # prázdný výběr nově zruší i výběr komponenty
         viewer._context.ClearDetected(False)
         assembly.position_edits[0].setText("rozepsaná poloha")
         box = assembly.transparency_box
