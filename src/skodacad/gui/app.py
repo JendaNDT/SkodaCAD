@@ -1056,6 +1056,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok
+        ok = _self_test_assembly_transparency(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1355,6 +1356,120 @@ def _self_test_assembly_visibility(assembly, lines) -> bool:
         lines.append("✕ Viditelnost sestavy:\n" + traceback.format_exc())
         return False
     finally:
+        assembly.show_all()
+
+
+def _self_test_assembly_transparency(assembly, lines) -> bool:
+    """Nativní materiál i obraz, T/checkbox a skutečný výběr plochy před i po přepnutí."""
+    from build123d import Compound
+    from OCP.Prs3d import Prs3d_TypeOfHighlight_LocalSelected
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QImage
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Průhlednost sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        assembly.show_all()
+        assembly.reset_transparency()
+        before = session.assembly.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        body = next(i for i in session.result.instances if i.ids == ("krabicka",))
+        lid = next(i for i in session.result.instances if i.ids == ("vicko",))
+        assembly.view_actions["front"].trigger()
+        assembly.fit_action.trigger()
+        QApplication.processEvents()
+        front = min(body.part.faces(), key=lambda f: f.center().Y)
+        point = front.center()
+        x, y = viewer._view.Convert(float(point.X), float(point.Y), float(point.Z))
+        ratio = viewer._pixels(QPoint(100, 100))[0] / 100
+        pos = QPoint(round(x / ratio), round(y / ratio))
+        QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
+        QApplication.processEvents()
+        assert viewer.selected_shapes() and assembly._picks, "klik nevybral plochu"
+        assert assembly._selected == body.ids, "klik nevybral krabičku"
+        picked = list(viewer.selected_shapes())
+        picks = list(assembly._picks)
+        assembly.position_edits[0].setText("rozepsaná poloha")
+        direction, scale, ais = viewer._view.Proj(), viewer._view.Scale(), viewer._ais
+
+        def alpha(instance):
+            aspects = viewer._ais.CustomAspectsMap()
+            drawer = (aspects.Find(instance.part.wrapped)
+                      if aspects.IsBound(instance.part.wrapped) else viewer._ais.Attributes())
+            # Prs3d_Drawer.Transparency() je jiná vlastnost; render používá materiál.
+            return drawer.ShadingAspect().Aspect().FrontMaterial().Transparency()
+
+        viewer._surface.setFocus()
+        QTest.qWait(50)
+        QTest.keyClick(viewer._surface, Qt.Key.Key_T)
+        QApplication.processEvents()
+        assert assembly.transparency_box.checkState() == Qt.CheckState.Checked
+        assert assembly.transparency_action.isChecked()
+        assert viewer._ais is ais and abs(alpha(body)-.7) < 1e-6 and alpha(lid) == 0
+        style = viewer._context.HighlightStyle(Prs3d_TypeOfHighlight_LocalSelected)
+        assert style.DisplayMode() == 0
+        assert len(viewer.selected_shapes()) == len(picked)
+        assert all(a.IsSame(b) for a, b in zip(viewer.selected_shapes(), picked, strict=True))
+        assert assembly._picks == picks, "přepnutí zahodilo plochy pro vazbu"
+        assert assembly.position_edits[0].text() == "rozepsaná poloha"
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        drawn = Compound(ais.Shape())
+        assert len(drawn.solids()) == 6 and abs(drawn.volume-session.result.volume_mm3) < 1e-5
+        # Průhledná plocha se dál dá vybrat skutečným klikem.
+        viewer.clear_selection()
+        QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
+        assert viewer.selected_shapes() and assembly._selected == body.ids
+        viewer.clear_selection()  # výplň vybrané plochy nesmí překrýt porovnání materiálu
+        viewer._context.ClearDetected(False)
+        assembly.position_edits[0].setText("rozepsaná poloha")
+        box = assembly.transparency_box
+        assembly.component_scroll.ensureWidgetVisible(box)
+        QTest.mouseClick(box, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()
+        assert alpha(body) == 0 and not box.isChecked()
+        opaque = user_dir() / "self-test-sestava-plna.png"
+        transparent = user_dir() / "self-test-sestava-pruhledna.png"
+        assert viewer.dump(str(opaque))
+        QTest.mouseClick(box, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()
+        assert abs(alpha(body)-.7) < 1e-6 and box.isChecked()
+        assert viewer.dump(str(transparent))
+        image_a, image_b = QImage(str(opaque)), QImage(str(transparent))
+        assert not image_a.isNull() and image_a.size() == image_b.size()
+        assert image_a != image_b, "změna materiálu se neprojevila v obrazu"
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        accessible = QAccessible.queryAccessibleInterface(box).actionInterface()
+        toggle = QAccessibleActionInterface.toggleAction()
+        assert accessible is not None and toggle in accessible.actionNames()
+        accessible.doAction(toggle)
+        QApplication.processEvents()
+        assert alpha(body) == 0 and not box.isChecked(), "AX přepnul jen checkbox, ne 3D"
+        accessible.doAction(toggle)
+        QApplication.processEvents()
+        assert abs(alpha(body)-.7) < 1e-6 and box.isChecked()
+        assembly.visibility_action.trigger()
+        assert len(Compound(viewer._ais.Shape()).solids()) == 5
+        assert not viewer._transparent_parts and assembly._is_transparent(body.ids)
+        assembly.show_all()
+        assert abs(alpha(body)-.7) < 1e-6
+        assembly.isolate_action.trigger()
+        assert len(Compound(viewer._ais.Shape()).solids()) == 1 and abs(alpha(body)-.7) < 1e-6
+        assembly.reset_transparency_action.trigger()
+        assert alpha(body) == 0 and assembly._isolated == body.ids
+        assert assembly.position_edits[0].text() == "rozepsaná poloha"
+        assert session.assembly.to_dict() == before
+        assert history == (len(session._undo), len(session._redo), session.dirty)
+        lines.append("✓ Průhlednost sestavy: checkbox/AX/T, AIS 70→0→70 %, obraz změněn, "
+                     "skrytí/izolace, výběr/kamera/objem/recept/historie/rozepsané pole beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku
+        lines.append("✕ Průhlednost sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        assembly.reset_transparency()
         assembly.show_all()
 
 

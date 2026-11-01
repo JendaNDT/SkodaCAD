@@ -1264,6 +1264,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   změny checkboxů při překreslení musí mít blokované signály. Zachovat řádky
   stromu a rozepsaná pole. Render používá `compound(visible_ids=...)`, úplný
   výsledek se nefiltruje. [Evidence](docs/p7-14-skryvani-dilu.md).
+- P7.15: `_transparency` je samostatná mapa cesta id → průhlednost (70 %), se
+  stejným děděním a výjimkami jako viditelnost. Skrývání/izolace/Zobrazit vše ji
+  zachovávají, reset průhlednosti nemění filtry. Pravý panel a menu/T sdílejí stav,
+  mezistav podsestavy se při kliknutí sjednotí. Pouhé přepnutí vzhledu nesmí volat
+  `show_part`, `_refresh_selection` ani čistit `_picks`: `set_transparent_parts`
+  mění custom materiál AIS a volá **RecomputePrsOnly**, nikoli Redisplay (ten
+  přepočítává vlastníky výběru). Nativní test vybírá plochu před i po T, ověřuje
+  zachování skutečného výběru a porovnává plný/průhledný obraz. Skutečná alfa je
+  v `ShadingAspect().Aspect().FrontMaterial().Transparency()`, ne v
+  `Prs3d_Drawer.Transparency()`. [Evidence](docs/p7-15-pruhlednost-dilu.md).
+  Přepínač musí poslouchat `checkStateChanged`, nikoli `clicked`: nativní AX
+  přepíná checkbox přes toggle bez clicked. Při synchronizaci blokovat signály;
+  nativní self-test opravdu provede QAccessible toggle a zkontroluje materiál.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

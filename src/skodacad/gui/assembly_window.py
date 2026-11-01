@@ -116,6 +116,7 @@ class AssemblyWindow(QMainWindow):
         self._selected: tuple[str, ...] | None = None
         self._isolated: tuple[str, ...] | None = None  # jen pohled, mimo recept a historii
         self._visibility: dict[tuple[str, ...], bool] = {}  # nejbližší předek určuje stav
+        self._transparency: dict[tuple[str, ...], bool] = {}  # jen vzhled, stejná pravidla id
         self._constraint: str | None = None  # vybraná vazba (místo komponenty)
         self._picks: list[tuple[Any, Any]] = []  # vybrané tvary ve 3D a místo kliknutí
         self._job_source: Any = None
@@ -180,6 +181,11 @@ class AssemblyWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         self.form_note = self._wrapped_label()
         layout.addWidget(self.form_note)
+        self.transparency_box = QCheckBox("Průhledná komponenta (T)")
+        # Nativní přístupnost volá toggle(), které nevysílá clicked.
+        self.transparency_box.checkStateChanged.connect(
+            lambda _state: self.toggle_selected_transparency())
+        layout.addWidget(self.transparency_box)
         layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()
         self.name_edit.setAccessibleName("Název komponenty")
@@ -373,6 +379,11 @@ class AssemblyWindow(QMainWindow):
                                               "H")
         self.restore_visibility_action = self._action("Zobrazit vše", self.show_all,
                                                       "Ctrl+Shift+I")
+        self.transparency_action = self._action("Průhledná vybraná komponenta",
+                                                self.toggle_selected_transparency, "T")
+        self.transparency_action.setCheckable(True)
+        self.reset_transparency_action = self._action("Zrušit průhlednost všech dílů",
+                                                      self.reset_transparency)
         self.view_actions = {
             key: self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
             for key, (label, shortcut) in VIEW_LABELS.items()
@@ -407,6 +418,8 @@ class AssemblyWindow(QMainWindow):
         view_menu.addAction(self.end_isolation_action)
         view_menu.addAction(self.visibility_action)
         view_menu.addAction(self.restore_visibility_action)
+        view_menu.addAction(self.transparency_action)
+        view_menu.addAction(self.reset_transparency_action)
         view_menu.addSeparator()
         for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
                                (self.checks_dock, "F8")):
@@ -460,6 +473,7 @@ class AssemblyWindow(QMainWindow):
             self.session.open(path)
             self._isolated = None
             self._visibility.clear()
+            self._transparency.clear()
 
         if not self._run("Sestavu nejde otevřít", work, fit=True):
             return False
@@ -473,6 +487,7 @@ class AssemblyWindow(QMainWindow):
             self.session.new(path, name)
             self._isolated = None
             self._visibility.clear()
+            self._transparency.clear()
 
         if not self._run("Sestavu nejde založit", work, fit=True):
             return False
@@ -1084,13 +1099,16 @@ class AssemblyWindow(QMainWindow):
         return True
 
     def _manual_check_state(self, ids: tuple[str, ...]) -> Qt.CheckState:
+        return self._branch_check_state(ids, self._manually_visible)
+
+    def _branch_check_state(self, ids: tuple[str, ...], state: Callable) -> Qt.CheckState:
         result = self.session.result
         statuses = result.statuses if result else []
         parents = {s.ids[:-1] for s in statuses}
-        states = [self._manually_visible(s.ids) for s in statuses
+        states = [state(s.ids) for s in statuses
                   if s.ids[:len(ids)] == ids and s.ids not in parents]
         if not states:
-            states = [self._manually_visible(ids)]
+            states = [state(ids)]
         return (Qt.CheckState.Checked if all(states) else Qt.CheckState.PartiallyChecked
                 if any(states) else Qt.CheckState.Unchecked)
 
@@ -1109,6 +1127,41 @@ class AssemblyWindow(QMainWindow):
         if self._selected:
             self.set_component_visible(self._selected,
                 self._manual_check_state(self._selected) != Qt.CheckState.Checked)
+
+    def _is_transparent(self, ids: tuple[str, ...]) -> bool:
+        for length in range(len(ids), 0, -1):
+            if ids[:length] in self._transparency:
+                return self._transparency[ids[:length]]
+        return False
+
+    def set_component_transparent(self, ids: tuple[str, ...], transparent: bool) -> None:
+        result = self.session.result
+        if not ids or result is None or not any(s.ids == ids for s in result.statuses):
+            return
+        inherited = self._is_transparent(ids[:-1])
+        self._transparency = {path: state for path, state in self._transparency.items()
+                              if path[:len(ids)] != ids}
+        if transparent != inherited:
+            self._transparency[ids] = transparent
+        self._refresh_transparency()
+
+    def toggle_selected_transparency(self) -> None:
+        if self._selected:
+            self.set_component_transparent(self._selected,
+                self._branch_check_state(self._selected, self._is_transparent)
+                != Qt.CheckState.Checked)
+
+    def reset_transparency(self) -> None:
+        if self._transparency:
+            self._transparency.clear()
+            self._refresh_transparency()
+
+    def _refresh_transparency(self) -> None:
+        self.viewer.set_transparent_parts(
+            [i.part for i in self.visible_instances() if self._is_transparent(i.ids)])
+        self._refresh_tree_visibility()
+        self._refresh_isolation_actions()
+        self._refresh_summary(self.session.result)
 
     def _tree_visibility_changed(self, item: QTreeWidgetItem, column: int) -> None:
         if column != 0:
@@ -1143,11 +1196,18 @@ class AssemblyWindow(QMainWindow):
             item.setCheckState(0, state)
             item.setForeground(0, QBrush() if ids in shown else QBrush(self.palette().color(
                 QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)))
+            font = item.font(0)
+            appearance = self._branch_check_state(ids, self._is_transparent)
+            font.setItalic(appearance != Qt.CheckState.Unchecked)
+            item.setFont(0, font)
             base = item.data(0, Qt.ItemDataRole.UserRole + 1) or ""
             manual = {Qt.CheckState.Checked: "viditelné", Qt.CheckState.Unchecked: "skryté",
                       Qt.CheckState.PartiallyChecked: "částečně viditelné"}[state]
             actual = f"{shown.get(ids, 0)}/{totals.get(ids, 0)} dílů"
-            item.setToolTip(0, f"{base}\nRuční viditelnost: {manual}. V pohledu: {actual}.")
+            transparent = {Qt.CheckState.Checked: "70 %", Qt.CheckState.Unchecked: "vypnutá",
+                           Qt.CheckState.PartiallyChecked: "jen některé díly"}[appearance]
+            item.setToolTip(0, f"{base}\nRuční viditelnost: {manual}. V pohledu: {actual}."
+                              f"\nPrůhlednost: {transparent}.")
             return state
 
         try:
@@ -1191,7 +1251,8 @@ class AssemblyWindow(QMainWindow):
         result = self.session.result
         visible = self.visible_instances()
         part = result.compound(visible_ids={i.ids for i in visible}) if visible else None
-        self.viewer.show_part(part, fit=fit)
+        self.viewer.show_part(part, fit=fit,
+                              transparent=[i.part for i in visible if self._is_transparent(i.ids)])
 
     def _refresh_isolation_actions(self) -> None:
         result, ids = self.session.result, self._selected
@@ -1200,6 +1261,21 @@ class AssemblyWindow(QMainWindow):
         self.end_isolation_action.setEnabled(self._isolated is not None)
         self.visibility_action.setEnabled(bool(ids and result and any(
             s.ids == ids for s in result.statuses)))
+        state = (self._branch_check_state(ids, self._is_transparent) if ids
+                 else Qt.CheckState.Unchecked)
+        self.transparency_action.setEnabled(self.visibility_action.isEnabled())
+        self.transparency_action.setChecked(state == Qt.CheckState.Checked)
+        self.transparency_box.setEnabled(self.visibility_action.isEnabled())
+        blocked = self.transparency_box.blockSignals(True)
+        self.transparency_box.setCheckState(state)
+        self.transparency_box.blockSignals(blocked)
+        tip = ("Průhlednost 70 % pro vybraný díl nebo celou podsestavu (T). "
+               "Plochy zůstávají vybíratelné. "
+               + ("Průhledné jsou jen některé díly; kliknutí zprůhlední celou větev."
+                  if state == Qt.CheckState.PartiallyChecked else ""))
+        self.transparency_box.setToolTip(tip)
+        self.transparency_action.setToolTip(tip)
+        self.reset_transparency_action.setEnabled(bool(self._transparency))
         hide = bool(ids and self._manual_check_state(ids) == Qt.CheckState.Checked)
         self.visibility_action.setText("Skrýt vybrané" if hide else "Zobrazit vybrané")
         self.visibility_action.setIconText("Skrýt" if hide else "Zobrazit")
@@ -1238,6 +1314,8 @@ class AssemblyWindow(QMainWindow):
         self._start_next()
         valid = {s.ids for s in result.statuses} if result else set()
         self._visibility = {ids: state for ids, state in self._visibility.items() if ids in valid}
+        self._transparency = {ids: state for ids, state in self._transparency.items()
+                              if ids in valid}
         self._fill_tree(result)
         if self._isolated is not None and (result is None or not any(
                 s.ids == self._isolated for s in result.statuses)):
@@ -1485,6 +1563,10 @@ class AssemblyWindow(QMainWindow):
                          f"{len(result.instances)}. "
                          "Součty níže platí pro celou sestavu.")
         mass = result.mass_kg
+        transparent = sum(self._is_transparent(i.ids) for i in self.visible_instances())
+        if transparent:
+            lines.append(f"Průhledné díly: {transparent}/{len(self.visible_instances())} "
+                         "viditelných (70 %).")
         mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
         lines.append(f"Objem: {result.volume_mm3:.2f} mm³, hmotnost: {mass_text}"
                      .replace(".", ","))
