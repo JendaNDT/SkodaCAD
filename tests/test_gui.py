@@ -3472,3 +3472,21 @@ def test_shapes_cannot_recreate_editable_form_while_inspecting(empty_window):
     assert shapes.list.isEnabled() and shapes.add_button.isEnabled()
     assert not shapes._form.widget("width").isReadOnly()
     w.feature_preview.cancel_button.click()
+
+
+def test_unchanged_edit_preserves_implicit_defaults_and_saved_history(empty_window, tmp_path):
+    from skodacad.schema import new_shape
+
+    w = empty_window
+    profile = new_shape("profile")
+    profile.pop("mode", None)  # older documents omit the implicit additive mode
+    w.session.add_feature("sketch", values={"elements": [profile]})
+    w.add_feature("extrude")
+    w.session.save(tmp_path/"puvodni.json")
+    before = w.session.document.to_dict()
+    count = len(w.session._undo)
+    w.start_feature_edit("sketch1")
+    w.feature_preview.accept_button.click()
+    assert w.feature_preview is None and w.session.document.to_dict() == before
+    assert len(w.session._undo) == count and not w.session.dirty
+    assert w.session.properties.volume_mm3 == pytest.approx(12000)

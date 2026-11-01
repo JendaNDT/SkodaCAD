@@ -171,13 +171,14 @@ def window(runner, tmp_path, examples_dir, monkeypatch):
     assert not warnings, warnings
 
 
-def settle(window):
+def settle(window, session=None):
     from PySide6.QtTest import QTest
 
+    session = session or window.session
     end = time.monotonic() + 60
-    while window.session.computing and time.monotonic() < end:
+    while session.computing and time.monotonic() < end:
         QTest.qWait(50)
-    assert not window.session.computing
+    assert not session.computing
 
 
 def test_qt_window_repairs_actual_worker_geometry_by_replacing_the_picked_edge(window, tmp_path,
@@ -199,7 +200,13 @@ def test_qt_window_repairs_actual_worker_geometry_by_replacing_the_picked_edge(w
     window.viewer.click([edge])
     assert window.replace_in_feature_action.isEnabled()
     window.replace_in_feature_action.trigger()
-    settle(window)
+    panel = window.feature_preview
+    assert panel.preview.editing
+    settle(window, panel.preview.session)
+    check(window.session.result, "edge", False)
+    check(panel.preview.session.result, "edge", True)
+    panel.accept_button.click()
+    assert window.feature_preview is None
     check(window.session.result, "edge", True)
     assert all(window.tree.topLevelItem(i).text(0).startswith("✓")
                for i in range(window.tree.topLevelItemCount()))

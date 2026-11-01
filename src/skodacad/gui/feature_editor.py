@@ -679,7 +679,7 @@ class FieldsForm(QWidget):
                 widget.setToolTip(field.help)
             if value is MISSING:
                 new.pop(field.key, None)
-            else:
+            elif field.key in new or value != field.default:
                 new[field.key] = value
         if problems:
             self.invalid.emit(problems[0])

@@ -52,11 +52,17 @@ def test_existing_profile_transfers_projected_references_through_editor_and_hist
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", edit)
-    shapes = window.feature_editor.form.widget("elements")
+    window.edit_feature_action.trigger()
+    panel = window.feature_preview
+    shapes = panel.editor.form.widget("elements")
     button = shapes._form.findChild(QPushButton, "open_sketcher")
     button.click()
-    settle(window)
+    settle(window, panel.preview.session)
     assert len(returned) == 1
+    assert window.session.document.to_dict() == initial
+    check(panel.preview.session.result, "projection", True)
+    panel.accept_button.click()
+    assert window.feature_preview is None
     actual = window.session.feature("bad")["elements"][0]
     assert actual == returned[0]
     check(window.session.result, "projection", True)
