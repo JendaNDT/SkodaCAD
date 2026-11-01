@@ -1153,6 +1153,18 @@ def _self_test_assembly_views(assembly, lines) -> bool:
         assembly.raise_()
         assembly.activateWindow()
         QTest.qWait(100)
+        toolbar_widths = []
+        for width in (1024, 960):
+            assembly.resize(width, 720)
+            QTest.qWait(100)
+            for action in (*[assembly.view_actions[k] for k in ("top", "front", "iso")],
+                           assembly.fit_action):
+                button = assembly.toolbar.widgetForAction(action)
+                assert button.isVisible(), (
+                    f"lišta: {action.text()} skryté při {assembly.width()}, "
+                    f"potřeba {assembly.toolbar.sizeHint().width()}")
+                assert assembly.toolbar.rect().contains(button.geometry()), action.text()
+            toolbar_widths.append(assembly.width())
         for key in ("top", "front", "iso"):
             button = assembly.toolbar.widgetForAction(assembly.view_actions[key])
             assert button.isVisible(), f"tlačítko {key} je skryté"
@@ -1183,7 +1195,8 @@ def _self_test_assembly_views(assembly, lines) -> bool:
         assert assembly.session.assembly.to_dict() == before, "pohled změnil recept"
         assert history == (len(assembly.session._undo), len(assembly.session._redo))
         assert selected == assembly._selected and dirty == assembly.session.dirty
-        lines.append("✓ Pohledy sestavy: tlačítka i klávesy 7/1/0, správné směry kamery, "
+        lines.append(f"✓ Pohledy sestavy: lišta {toolbar_widths[0]}/{toolbar_widths[1]}, "
+                     "tlačítka i klávesy 7/1/0, správné směry kamery, "
                      "F vměstná vrcholy všech kopií, recept/historie/výběr beze změny")
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku

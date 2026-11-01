@@ -294,6 +294,11 @@ def test_standard_views_share_toolbar_and_menu_actions_without_model_changes(ope
     result, selected = opened.session.result, opened._selected
     parts, highlight = list(opened.viewer.parts), list(opened.viewer.highlighted)
     opened.position_edits[0].setText("rozepsaný výraz")
+    for action, label in ((opened.open_action, "Otevřít"),
+                          (opened.constraint_action, "Vazba"),
+                          (opened.check_action, "Kontrola")):
+        assert opened.toolbar.widgetForAction(action).text() == label
+        assert action.toolTip() == action.text()
     for key, (label, shortcut) in VIEW_LABELS.items():
         view = opened.view_actions[key]
         assert view.text() == label and view.shortcut().toString() == shortcut
@@ -304,11 +309,15 @@ def test_standard_views_share_toolbar_and_menu_actions_without_model_changes(ope
         app.processEvents()
         for key in ("top", "front", "iso"):
             button = opened.toolbar.widgetForAction(opened.view_actions[key])
-            assert button.isVisible() and button.defaultAction() is opened.view_actions[key]
+            assert button.isVisible(), (key, width, opened.width(),
+                                        opened.toolbar.sizeHint().width())
+            assert button.defaultAction() is opened.view_actions[key]
+            assert opened.toolbar.rect().contains(button.geometry())
             button.click()
             assert opened.viewer.views[-1] == key
         fit = opened.toolbar.widgetForAction(opened.fit_action)
         assert fit.isVisible() and opened.fit_action.shortcut().toString() == "F"
+        assert opened.toolbar.rect().contains(fit.geometry())
         fit.click()
         assert opened.viewer.views[-1] == "fit"
     assert opened.session.assembly.to_dict() == before and not opened.session.can_undo

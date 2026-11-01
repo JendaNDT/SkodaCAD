@@ -346,6 +346,13 @@ class AssemblyWindow(QMainWindow):
         self.check_action = self._action("Zkontrolovat kolize a vůle", self.run_check, "F7")
         self.bill_action = self._action("Uložit kusovník CSV…", self.save_bill_dialog)
         self.export_action = self._action("Exportovat STEP…", self.export_dialog)
+        # Stručné popisky lišty; menu a bubliny dál vysvětlují celý příkaz.
+        # Windows má širší tlačítka než Cocoa a lišta se musí vejít i do 960 bodů.
+        for action, label in ((self.open_action, "Otevřít"),
+                              (self.constraint_action, "Vazba"),
+                              (self.check_action, "Kontrola")):
+            action.setIconText(label)
+            action.setToolTip(action.text())
         self.fit_action = self._action("Celá sestava", self.viewer.fit_all, "F")
         self.view_actions = {
             key: self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
