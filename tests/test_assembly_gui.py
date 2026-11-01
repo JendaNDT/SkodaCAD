@@ -274,6 +274,18 @@ def test_check_command_reopens_panel_and_layout_reset_preserves_results(opened, 
     assert opened.session.assembly.to_dict() == before and not opened.session.can_undo
 
 
+def test_packaged_panel_check_uses_actual_window_size_when_desktop_caps_width(opened,
+                                                                            monkeypatch):
+    from skodacad.gui.app import _self_test_assembly_layout
+
+    opened.setMaximumWidth(1028)  # stejné omezení jako na Windows runneru
+    monkeypatch.setattr(opened.viewer, "ready", False, raising=False)
+    lines = []
+    assert _self_test_assembly_layout(opened, lines), "\n".join(lines)
+    assert "skutečném okně 1028/1024" in lines[-1]
+    assert "panely a mezery ≤580" in lines[-1]
+
+
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):
     pick(opened, "vicko")
     opened.position_edits[2].setText("H + neznamy")

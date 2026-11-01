@@ -1072,10 +1072,14 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
         QTest.qWait(100)  # native window activation/layout is asynchronous, notably on Windows
         before = assembly.session.assembly.to_dict()
         widths = []
-        for width, minimum in ((1200, 600), (1024, 440)):
+        actual_widths = []
+        for width in (1200, 1024):
             assembly.resize(width, 720)
             assembly.reset_layout()
             QTest.qWait(100)
+            actual_width = assembly.width()  # native Windows can cap windows to its desktop
+            minimum = actual_width - 580  # 250 + 300 for panels, at most 30 for separators
+            assert actual_width >= 960, f"skutečné okno {actual_width} < 960"
             fields = [e.width() for e in [*assembly.position_edits, *assembly.rotation_edits]]
             assert assembly.viewer.width() >= minimum, (
                 f"3D {assembly.viewer.width()} < {minimum}; požadované okno {width}, "
@@ -1088,6 +1092,7 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
             if assembly.viewer.ready:
                 _check_render_size(assembly.viewer)
             widths.append(assembly.viewer.width())
+            actual_widths.append(actual_width)
         assembly.select(("vicko",))
 
         def lid_x():
@@ -1111,8 +1116,9 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
         assert not assembly.checks_dock.isHidden(), "přepínač kontrol panel neotevřel"
         assembly.reset_layout_action.trigger()
         assert assembly.checks_dock.isHidden(), "akce resetu kontroly neskryla"
-        lines.append(f"✓ Panely sestavy: 3D šířka {widths[0]}/{widths[1]} při okně "
-                     "1200/1024, šest polí ≥90, Enter posun 1,5 mm a Zpět, "
+        lines.append(f"✓ Panely sestavy: 3D šířka {widths[0]}/{widths[1]} při skutečném okně "
+                     f"{actual_widths[0]}/{actual_widths[1]} (požadavek 1200/1024), "
+                     "panely a mezery ≤580, šest polí ≥90, Enter posun 1,5 mm a Zpět, "
                      "skrytí/obnova kontrol bez změny sestavy")
         return True
     except Exception:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku

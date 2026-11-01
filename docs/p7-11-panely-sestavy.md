@@ -44,6 +44,14 @@ ověří posunutí obálky o 1,5 mm a přes Zpět obnoví celý původní recept
 Otevře/skryje kontroly bez změny sestavy. Celý místní self-test sestavené
 aplikace skončil **VÝSLEDEK: OK**, podpis je ověřený.
 
+Windows runner má menší virtuální plochu a požadované okno 1200 omezil na
+1028 bodů. První zkouška chybně porovnávala jeho 470bodový náhled s prahem pro
+1200. Nativní kontrola proto používá **skutečnou** šířku okna: boční panely
+a mezery smějí zabrat nejvýše 580 bodů (250 + 300 + rezerva 30 pro styl Qt).
+Okno musí mít alespoň 960 bodů. Zpráva uvádí skutečné i požadované rozměry;
+minimální šířka polí, fyzické rozlišení, posun a Zpět se kontrolují stejně.
+Aktivace okna a krátké čekání na nativní rozložení zůstávají součástí self-testu.
+
 Cílené regrese pokrývají šířky 1200/1024/960, čitelná pole, přepínání a obnovu
 panelů, zachování rozepsaného neplatného výrazu, výběru a řádků Qt, historie
 a volání prohlížeče. Další regrese ověřuje otevření kontrol příkazem a zachování
