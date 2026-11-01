@@ -1223,8 +1223,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Při aktualizaci Qt ověř upstream opravu a shim odstraň; nerozšiřuj slepě
   seznam verzí. Self-test „Přístupnost macOS“ čte skutečnou nativní AX strukturu
   a kontroluje životnost Qt ID. [Evidence](docs/p7-3-overeni-workflow-2026-11-01.md).
-- 3D okno: Qt `winId()` je na Macu **NSView** → `Cocoa_Window(_as_capsule(handle))` (jako HWND
-  ve Windows). Větve podle systému jsou jen v `viewer._initialize` a `pixel_ratio`.
+- 3D okno: Qt `winId()` je na Macu **NSView**, půjčený přes `Aspect_NeutralWindow`;
+  nevracet kapslový `Cocoa_Window` (přeuvolňuje Qt view, viz P7.2).
+- P7.10: logické rozměry `NeutralWindow` mohou být finální dřív než nativní NSView.
+  Na Macu volat `MustBeResized` při každé synchronizaci před kreslením i při stejném
+  Qt rozměru; OCCT ověří skutečné bounds/backing store samo. Jinak zůstane první
+  snímek zvětšený z maličkého bufferu až do změny velikosti okna. Během této kontroly
+  dočasně vypnout immediate update, aby se nekreslilo dvakrát. Změna DPR vyvolá nový
+  paint. `render_size()` pouze čte skutečné OpenGL rozlišení; self-test ho kontroluje
+  po otevření i resize **před** `fit_all`/`dump`, které by problém mohly zakrýt.
+  [Ověření](docs/p7-10-ostry-3d-nahled-macos.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

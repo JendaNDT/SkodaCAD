@@ -259,6 +259,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     app.processEvents()
     ok = True
     if viewer.ready:
+        _check_render_size(viewer)
         image = user_dir() / "self-test-3d.png"
         lines.append(f"✓ Okno a 3D prohlížeč: OK (snímek {image}: {viewer.dump(str(image))}, "
                      f"OpenGL: {viewer.graphics_info()}"
@@ -631,9 +632,11 @@ def _self_test_viewer_lifecycle(window, lines) -> bool:
             viewer.show()
             QApplication.processEvents()
             assert viewer.ready, viewer.error
+            _check_render_size(viewer)
             viewer.show_part(window.session.result.part, fit=True)
             viewer.resize(720, 520)
             QApplication.processEvents()
+            _check_render_size(viewer)
             viewer.fit_all()
             assert viewer.dump(str(user_dir() / "self-test-zivotnost-3d.png"))
             viewer.close()
@@ -642,12 +645,22 @@ def _self_test_viewer_lifecycle(window, lines) -> bool:
             del viewer
             gc.collect()
             QApplication.processEvents()
-        lines.append("✓ Životnost 3D ploch: 4× otevření, změna velikosti, kreslení, "
-                     "zavření a zničení nativního widgetu")
+        lines.append("✓ Životnost 3D ploch: 4× otevření, změna velikosti, plné rozlišení "
+                     "OpenGL před exportem, kreslení, zavření a zničení nativního widgetu")
         return True
     except Exception as exc:  # noqa: BLE001 -- native crashes also fail the process exit code
         lines.append(f"✕ Životnost 3D ploch: {type(exc).__name__}: {exc}")
         return False
+
+
+def _check_render_size(viewer) -> None:
+    """Dump/fit_all nesmí před kontrolou opravit rozlišení nativní plochy."""
+    surface = viewer._surface
+    ratio = surface.devicePixelRatioF()
+    expected = (round(surface.width() * ratio), round(surface.height() * ratio))
+    actual = viewer.render_size()
+    assert all(abs(a - e) <= 1 for a, e in zip(actual, expected, strict=True)), \
+        f"OpenGL {actual}, očekáváno {expected} (Qt {surface.size()}, DPR {ratio})"
 
 
 def _self_test_workspace(window, lines: list[str]) -> bool:
@@ -1033,6 +1046,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
           and abs(result.volume_mm3 - 31309.287) < 0.01)
     drawn = ""
     if ok and assembly.viewer.ready:
+        _check_render_size(assembly.viewer)
         image = user_dir() / "self-test-sestava.png"
         drawn = f", 3D snímek {image}: {assembly.viewer.dump(str(image))}"
     if ok:

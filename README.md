@@ -98,6 +98,10 @@ Když podsestava odkazuje na díly mimo vybranou složku, aplikace si před jeji
 načtením vyžádá širší společnou složku. Zrušením zůstane otevřený model zachovaný.
 [Ověření podsestav v oddělených složkách](docs/p7-9-podsestavy-dokumenty-macos.md).
 
+3D náhled na Macu aktualizuje nativní rozlišení i po dokončení rozložení okna,
+aby byl ostrý hned po otevření dílu nebo sestavy.
+[Ověření vykreslování Retina](docs/p7-10-ostry-3d-nahled-macos.md).
+
 | Akce | Jak |
 |---|---|
 | Otáčení | levé tlačítko + táhnout |
