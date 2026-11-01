@@ -1,0 +1,38 @@
+name: Dočasné ověření izolace sestavy
+on:
+  push:
+    branches: [codex/assembly-native-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: '1'
+  SKODACAD_HOME: ${{ github.workspace }}/isolation-probe-home
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 79ad75203e6fe8f7516f97fba0b6f178473d7dd0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python -m pip install -e '.[dev,gui,build]' pefile
+      - name: Izolace a rozepsaná pole
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_assembly_gui.py -k 'isolation or restore_from_constraint or view_shortcuts' -rA
+      - name: Nativní balíček
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+      - name: Nativní AIS a šest tlačítek při 960
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt
+          exit "$code"

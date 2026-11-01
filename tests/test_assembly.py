@@ -70,6 +70,24 @@ def project(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_display_compound_filters_copy_by_ids_without_changing_full_result(project):
+    session = AssemblySession()
+    session.open(project / "sestava.json")
+    result = session.result
+    before = session.assembly.to_dict()
+    for ids, low, high in ((("a",), (0, 0, 0), (30, 20, 10)),
+                           (("b",), (100, 0, 0), (130, 20, 10))):
+        shown = result.compound(ids)
+        assert shown.is_valid and len(shown.solids()) == 1
+        assert shown.volume == pytest.approx(30*20*10)
+        assert tuple(shown.bounding_box().min) == pytest.approx(low)
+        assert tuple(shown.bounding_box().max) == pytest.approx(high)
+    assert not result.compound(("neexistuje",)).solids()
+    assert result.volume_mm3 == pytest.approx(12000)
+    assert len(result.compound().solids()) == 2
+    assert session.assembly.to_dict() == before and not session.can_undo
+
+
 # --- A01–A06: soubor a jeho kontrola --------------------------------------------------
 
 
