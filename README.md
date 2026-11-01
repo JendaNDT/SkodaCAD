@@ -338,6 +338,13 @@ zapnout přes *Soubory ve stromu*.
 *Obnovit rozložení* vrátí úzké panely. Jejich přepínání nemění sestavu ani
 rozepsané hodnoty. [Ověření rozložení](docs/p7-11-panely-sestavy.md).
 
+Přímo na liště jsou pohledy **Shora (7), Zepředu (1), Izometrie (0)** a
+**Celá sestava (F)** pro návrat celé sestavy do záběru. V nabídce *Zobrazení*
+jsou i Zprava, Zezadu, Zespodu a Izometrie zezadu, stejně jako u dílu.
+Přepínání pohledů nemění polohy komponent ani historii. Když píšeš do pole,
+číslice a písmeno F se dál zapisují do něj.
+[Ověření pohledů sestavy](docs/p7-12-pohledy-sestavy.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 
