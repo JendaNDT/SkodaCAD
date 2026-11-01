@@ -1,0 +1,38 @@
+name: Dočasné ověření lišty sestavy
+on:
+  push:
+    branches: [codex/assembly-native-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: '1'
+  SKODACAD_HOME: ${{ github.workspace }}/probe-home
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 115578c2c8b2ee4d6bcdc2c7ded5a0846e6284ba
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python -m pip install -e '.[dev,gui,build]' pefile
+      - name: Cílené pohledy a šířka lišty
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_assembly_gui.py -k 'standard_views or view_shortcuts' -rA
+      - name: Nativní balíček stejného kódu
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+      - name: Skutečné tlačítko, klávesy a lišta 960
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt
+          exit "$code"

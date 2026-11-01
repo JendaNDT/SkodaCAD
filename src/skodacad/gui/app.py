@@ -1053,6 +1053,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         lines.append(f"✓ Sestava: {result.volume_mm3:.0f} mm³, 6 komponent, víčko z = 26…32"
                      f"{drawn}")
         ok = _self_test_assembly_layout(assembly, lines) and ok
+        ok = _self_test_assembly_views(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1123,6 +1124,83 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku
         lines.append("✕ Panely sestavy:\n" + traceback.format_exc())
+        return False
+
+
+def _self_test_assembly_views(assembly, lines) -> bool:
+    """Skutečná tlačítka, klávesy a směr kamery; F musí vměstnat vrcholy všech kopií."""
+    import math
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    viewer = assembly.viewer
+    if not viewer.ready:
+        lines.append("! Pohledy sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        before = assembly.session.assembly.to_dict()
+        history = (len(assembly.session._undo), len(assembly.session._redo))
+        selected, dirty = assembly._selected, assembly.session.dirty
+        expected = {"top": (0., 0., 1.), "front": (0., -1., 0.),
+                    "iso": (1/math.sqrt(3), -1/math.sqrt(3), 1/math.sqrt(3))}
+
+        def check_direction(key):
+            actual = viewer._view.Proj()
+            assert all(abs(a-b) < 1e-7 for a, b in zip(actual, expected[key], strict=True)), \
+                f"{key}: směr {actual}, očekáváno {expected[key]}"
+
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        toolbar_widths = []
+        for width in (1024, 960):
+            assembly.resize(width, 720)
+            QTest.qWait(100)
+            for action in (*[assembly.view_actions[k] for k in ("top", "front", "iso")],
+                           assembly.fit_action):
+                button = assembly.toolbar.widgetForAction(action)
+                assert button.isVisible(), (
+                    f"lišta: {action.text()} skryté při {assembly.width()}, "
+                    f"potřeba {assembly.toolbar.sizeHint().width()}")
+                assert assembly.toolbar.rect().contains(button.geometry()), action.text()
+            toolbar_widths.append(assembly.width())
+        for key in ("top", "front", "iso"):
+            button = assembly.toolbar.widgetForAction(assembly.view_actions[key])
+            assert button.isVisible(), f"tlačítko {key} je skryté"
+            QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            check_direction(key)
+        viewer._surface.setFocus()
+        QTest.qWait(50)
+        for code, key in ((Qt.Key.Key_7, "top"), (Qt.Key.Key_1, "front"),
+                          (Qt.Key.Key_0, "iso")):
+            QTest.keyClick(viewer._surface, code)
+            QApplication.processEvents()
+            check_direction(key)
+        zoomed = viewer._view.Scale() * 6
+        viewer._view.SetScale(zoomed)
+        viewer._view.Redraw()
+        QTest.keyClick(viewer._surface, Qt.Key.Key_F)
+        QApplication.processEvents()
+        assert viewer._view.Scale() < zoomed, "F nezmenšilo zvětšený pohled"
+        check_direction("iso")
+        width, height = viewer._view.Window().Size()
+        for instance in assembly.session.result.instances:
+            for vertex in instance.part.vertices():
+                point = vertex.center()
+                x, y = viewer._view.Convert(float(point.X), float(point.Y), float(point.Z))
+                assert 0 <= x < width and 0 <= y < height, \
+                    f"vrchol {instance.ids} mimo celý pohled: {x}/{y} v {width}/{height}"
+        assert assembly.session.assembly.to_dict() == before, "pohled změnil recept"
+        assert history == (len(assembly.session._undo), len(assembly.session._redo))
+        assert selected == assembly._selected and dirty == assembly.session.dirty
+        lines.append(f"✓ Pohledy sestavy: lišta {toolbar_widths[0]}/{toolbar_widths[1]}, "
+                     "tlačítka i klávesy 7/1/0, správné směry kamery, "
+                     "F vměstná vrcholy všech kopií, recept/historie/výběr beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku
+        lines.append("✕ Pohledy sestavy:\n" + traceback.format_exc())
         return False
 
 
