@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
@@ -1567,7 +1568,7 @@ class MainWindow(QMainWindow):
     def _lock_preview_actions(self):
         allowed = [self.fit_action, *self._view_actions]
         for action, _enabled in self._preview_action_states:
-            if action not in allowed:
+            if isValid(action) and action not in allowed:
                 action.setEnabled(False)
         self.cancel_feature_preview_action.setEnabled(True)
 
@@ -1592,7 +1593,8 @@ class MainWindow(QMainWindow):
         self.model_dock.widget().setEnabled(True)
         self.viewer.probe_drag_enabled = self._preview_probe_drag
         for action, enabled in self._preview_action_states:
-            action.setEnabled(enabled)
+            if isValid(action):
+                action.setEnabled(enabled)
         self._preview_action_states = []
         self.cancel_feature_preview_action.setEnabled(False)
         self._shown_key = None  # obnovit také řez, mapy, skicu a zvýraznění původního dílu

@@ -359,8 +359,10 @@ def _self_test_plate_workflow(window, lines) -> bool:
                             "delka/2-10; sirka/2-10\n-delka/2+10; sirka/2-10")
         count = len(window.session._undo)
         QTest.keyClick(points, Qt.Key.Key_Tab)
-        QApplication.processEvents()
+        QTest.qWait(300)  # also let the input debounce run when the native window is inactive
         assert not points.hasFocus() and len(window.session._undo) == count
+        assert window.feature_preview.accept_button.isEnabled(), (
+            window.feature_preview.message.text())
         window.feature_preview.accept_button.click()
         assert len(window.session._undo) == count+1
         assert window.session.result.ok
@@ -420,6 +422,7 @@ def _self_test_plate_workflow(window, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- include the exact assertion in the package report
         lines.append("✕ Modelování desky:\n" + traceback.format_exc())
+        window.cancel_feature_preview()
         return False
 
 

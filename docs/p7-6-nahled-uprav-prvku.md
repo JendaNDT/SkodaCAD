@@ -48,6 +48,9 @@ Regrese v `tests/test_feature_preview.py`, `tests/test_gui.py`,
 zdroje, zrušení, jedno potvrzení, neplatný následník, opravu chybného zdroje,
 zastarání, nepovolené další změny, skicář, readonly prohlížení, samostatný
 worker, jeho pád/obnovu a zrušení běžícího výpočtu.
+Regrese ověřují i odložené zničení nabídek předchozího formuláře během náhledu:
+zamykání a obnova příkazů se dotýkají jen stále platných Qt objektů. Pouhé
+potvrzení staršího profilu zachová jeho nezapsané implicitní výchozí hodnoty.
 
 Referenční deska `examples/deska_workflow.json`: změna vysunutí z 10 na 15 mm
 přepočítá čtyři průchozí otvory Ø6 a čtyři svislé rohy R2. Očekávaný objem

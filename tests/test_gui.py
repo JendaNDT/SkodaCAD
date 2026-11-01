@@ -3490,3 +3490,33 @@ def test_unchanged_edit_preserves_implicit_defaults_and_saved_history(empty_wind
     assert w.feature_preview is None and w.session.document.to_dict() == before
     assert len(w.session._undo) == count and not w.session.dirty
     assert w.session.properties.volume_mm3 == pytest.approx(12000)
+
+
+@pytest.mark.parametrize("editing", [False, True])
+@pytest.mark.parametrize("accept", [False, True])
+def test_preview_survives_deferred_deletion_of_previous_form_actions(
+        empty_window, editing, accept):
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtGui import QAction
+    from shiboken6 import isValid
+
+    w = empty_window
+    w.add_feature("sketch")
+    old = w.feature_editor.form.findChildren(QAction)[0]
+    w.add_feature("extrude")  # the sketch form and its menu are scheduled for deletion
+    count = len(w.session._undo)
+    if editing:
+        w.edit_feature_action.trigger()
+    else:
+        w.add_feature_actions["hole"].trigger()
+    panel = w.feature_preview
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert not isValid(old)
+    w._refresh_actions()  # locking must also tolerate disappearing menu actions
+    if accept:
+        panel.accept_button.click()
+    else:
+        panel.cancel_button.click()
+    assert w.feature_preview is None and len(w.session._undo) == count+int(accept and not editing)
+    assert w.save_action.isEnabled() and w.model_dock.widget().isEnabled()
+    assert not w.viewer.model_selection_disabled
