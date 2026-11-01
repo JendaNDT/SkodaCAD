@@ -83,6 +83,11 @@ def test_display_compound_filters_copy_by_ids_without_changing_full_result(proje
         assert tuple(shown.bounding_box().min) == pytest.approx(low)
         assert tuple(shown.bounding_box().max) == pytest.approx(high)
     assert not result.compound(("neexistuje",)).solids()
+    chosen = result.compound(visible_ids={("b",)})
+    assert len(chosen.solids()) == 1 and chosen.volume == pytest.approx(6000)
+    assert tuple(chosen.bounding_box().min) == pytest.approx((100, 0, 0))
+    assert not result.compound(visible_ids=set()).solids()
+    assert not result.compound(("a",), visible_ids={("b",)}).solids()
     assert result.volume_mm3 == pytest.approx(12000)
     assert len(result.compound().solids()) == 2
     assert session.assembly.to_dict() == before and not session.can_undo

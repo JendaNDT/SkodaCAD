@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QBrush, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -46,6 +47,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -113,6 +115,7 @@ class AssemblyWindow(QMainWindow):
         self.open_part = open_part  # hlavní okno otevře soubor dílu
         self._selected: tuple[str, ...] | None = None
         self._isolated: tuple[str, ...] | None = None  # jen pohled, mimo recept a historii
+        self._visibility: dict[tuple[str, ...], bool] = {}  # nejbližší předek určuje stav
         self._constraint: str | None = None  # vybraná vazba (místo komponenty)
         self._picks: list[tuple[Any, Any]] = []  # vybrané tvary ve 3D a místo kliknutí
         self._job_source: Any = None
@@ -161,6 +164,10 @@ class AssemblyWindow(QMainWindow):
         self.tree.setColumnWidth(2, 65)
         self.tree.setColumnHidden(1, True)  # zdroj je v detailu a bublině, lze jej zapnout
         self.tree.itemSelectionChanged.connect(self._tree_selected)
+        self.tree.itemChanged.connect(self._tree_visibility_changed)
+        self.tree.headerItem().setToolTip(0,
+            "Zaškrtnutí ovládá ruční viditelnost dílu nebo podsestavy. "
+            "Izolace ji navíc omezuje na vybranou komponentu.")
         dock = self.tree_dock = QDockWidget("Komponenty", self)
         dock.setObjectName("assembly_components")
         dock.setWidget(self.tree)
@@ -361,6 +368,9 @@ class AssemblyWindow(QMainWindow):
         self.fit_action = self._action("Celá sestava", self.viewer.fit_all, "F")
         self.isolate_action = self._action("Izolovat vybrané", self.isolate_selected, "I")
         self.isolate_action.setIconText("Izolovat")
+        self.end_isolation_action = self._action("Ukončit izolaci", self.end_isolation)
+        self.visibility_action = self._action("Skrýt vybrané", self.toggle_selected_visibility,
+                                              "H")
         self.restore_visibility_action = self._action("Zobrazit vše", self.show_all,
                                                       "Ctrl+Shift+I")
         self.view_actions = {
@@ -394,6 +404,8 @@ class AssemblyWindow(QMainWindow):
             view_menu.addAction(action)
         view_menu.addSeparator()
         view_menu.addAction(self.isolate_action)
+        view_menu.addAction(self.end_isolation_action)
+        view_menu.addAction(self.visibility_action)
         view_menu.addAction(self.restore_visibility_action)
         view_menu.addSeparator()
         for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
@@ -418,6 +430,12 @@ class AssemblyWindow(QMainWindow):
             toolbar.addAction(self.view_actions[key])
         toolbar.addAction(self.fit_action)
         toolbar.addAction(self.isolate_action)
+        isolate_button = toolbar.widgetForAction(self.isolate_action)
+        isolate_menu = QMenu(isolate_button)
+        isolate_menu.addAction(self.end_isolation_action)
+        isolate_button.setMenu(isolate_menu)
+        isolate_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        toolbar.addAction(self.visibility_action)
         toolbar.addAction(self.restore_visibility_action)
 
     def reset_layout(self) -> None:
@@ -441,6 +459,7 @@ class AssemblyWindow(QMainWindow):
         def work():
             self.session.open(path)
             self._isolated = None
+            self._visibility.clear()
 
         if not self._run("Sestavu nejde otevřít", work, fit=True):
             return False
@@ -453,6 +472,7 @@ class AssemblyWindow(QMainWindow):
         def work():
             self.session.new(path, name)
             self._isolated = None
+            self._visibility.clear()
 
         if not self._run("Sestavu nejde založit", work, fit=True):
             return False
@@ -965,7 +985,7 @@ class AssemblyWindow(QMainWindow):
     def _picked(self, shapes: list) -> None:
         """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří; vybrané
         plochy (s místem kliknutí) si okno pamatuje pro *Přidat vazbu…*."""
-        if self._isolated is not None:
+        if self._isolated is not None or self._visibility:
             visible = [p.wrapped for i in self.visible_instances()
                        for p in (*i.part.faces(), *i.part.edges())]
             shapes = [s for s in shapes if any(s.IsSame(p) for p in visible)]
@@ -1054,23 +1074,112 @@ class AssemblyWindow(QMainWindow):
         if result is None:
             return []
         return [i for i in result.instances
-                if self._isolated is None or i.ids[:len(self._isolated)] == self._isolated]
+                if (self._isolated is None or i.ids[:len(self._isolated)] == self._isolated)
+                and self._manually_visible(i.ids)]
+
+    def _manually_visible(self, ids: tuple[str, ...]) -> bool:
+        for length in range(len(ids), 0, -1):
+            if ids[:length] in self._visibility:
+                return self._visibility[ids[:length]]
+        return True
+
+    def _manual_check_state(self, ids: tuple[str, ...]) -> Qt.CheckState:
+        result = self.session.result
+        statuses = result.statuses if result else []
+        parents = {s.ids[:-1] for s in statuses}
+        states = [self._manually_visible(s.ids) for s in statuses
+                  if s.ids[:len(ids)] == ids and s.ids not in parents]
+        if not states:
+            states = [self._manually_visible(ids)]
+        return (Qt.CheckState.Checked if all(states) else Qt.CheckState.PartiallyChecked
+                if any(states) else Qt.CheckState.Unchecked)
+
+    def set_component_visible(self, ids: tuple[str, ...], visible: bool) -> None:
+        result = self.session.result
+        if not ids or result is None or not any(s.ids == ids for s in result.statuses):
+            return
+        inherited = self._manually_visible(ids[:-1])
+        self._visibility = {path: state for path, state in self._visibility.items()
+                            if path[:len(ids)] != ids}
+        if visible != inherited:
+            self._visibility[ids] = visible
+        self._refresh_view(fit=False)
+
+    def toggle_selected_visibility(self) -> None:
+        if self._selected:
+            self.set_component_visible(self._selected,
+                self._manual_check_state(self._selected) != Qt.CheckState.Checked)
+
+    def _tree_visibility_changed(self, item: QTreeWidgetItem, column: int) -> None:
+        if column != 0:
+            return
+        data = json.loads(item.data(0, Qt.ItemDataRole.UserRole))
+        if isinstance(data, list):
+            self.set_component_visible(tuple(data), item.checkState(0) != Qt.CheckState.Unchecked)
+
+    def _refresh_tree_visibility(self) -> None:
+        shown: dict[tuple[str, ...], int] = {}
+        totals: dict[tuple[str, ...], int] = {}
+        for instances, counts in ((self.visible_instances(), shown),
+                (self.session.result.instances if self.session.result else [], totals)):
+            for instance in instances:
+                for n in range(1, len(instance.ids)+1):
+                    key = instance.ids[:n]
+                    counts[key] = counts.get(key, 0) + 1
+        blocked = self.tree.blockSignals(True)
+
+        def update(item):
+            data = json.loads(item.data(0, Qt.ItemDataRole.UserRole))
+            children = [update(item.child(n)) for n in range(item.childCount())]
+            if not isinstance(data, list):
+                return None
+            ids = tuple(data)
+            states = [s for s in children if s is not None]
+            state = (states[0] if states and all(s == states[0] for s in states)
+                     else Qt.CheckState.PartiallyChecked if states
+                     else Qt.CheckState.Checked if self._manually_visible(ids)
+                     else Qt.CheckState.Unchecked)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(0, state)
+            item.setForeground(0, QBrush() if ids in shown else QBrush(self.palette().color(
+                QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)))
+            base = item.data(0, Qt.ItemDataRole.UserRole + 1) or ""
+            manual = {Qt.CheckState.Checked: "viditelné", Qt.CheckState.Unchecked: "skryté",
+                      Qt.CheckState.PartiallyChecked: "částečně viditelné"}[state]
+            actual = f"{shown.get(ids, 0)}/{totals.get(ids, 0)} dílů"
+            item.setToolTip(0, f"{base}\nRuční viditelnost: {manual}. V pohledu: {actual}.")
+            return state
+
+        try:
+            for n in range(self.tree.topLevelItemCount()):
+                update(self.tree.topLevelItem(n))
+        finally:
+            self.tree.blockSignals(blocked)
 
     def isolate_selected(self) -> None:
         result, ids = self.session.result, self._selected
         if not ids or result is None or not any(i.ids[:len(ids)] == ids
-                                               for i in result.instances):
+                and self._manually_visible(i.ids) for i in result.instances):
             return
         self._set_isolation(ids)
 
     def show_all(self) -> None:
-        if self._isolated is None:
+        if self._isolated is None and not self._visibility:
             return
+        self._visibility.clear()
         self._set_isolation(None)
+
+    def end_isolation(self) -> None:
+        if self._isolated is not None:
+            self._set_isolation(None)
 
     def _set_isolation(self, ids: tuple[str, ...] | None) -> None:
         self._isolated = ids
-        self._show_visible(fit=True)
+        self._refresh_view(fit=True)
+
+    def _refresh_view(self, fit: bool) -> None:
+        self._show_visible(fit=fit)
+        self._refresh_tree_visibility()
         self._refresh_highlight()
         self._refresh_isolation_actions()
         self._refresh_summary(self.session.result)
@@ -1080,21 +1189,31 @@ class AssemblyWindow(QMainWindow):
         self._picks = []  # skryté plochy nesmějí zůstat vstupem pro přidání vazby
         self._refresh_pick_note()
         result = self.session.result
-        part = result.compound(self._isolated) if self.visible_instances() else None
+        visible = self.visible_instances()
+        part = result.compound(visible_ids={i.ids for i in visible}) if visible else None
         self.viewer.show_part(part, fit=fit)
 
     def _refresh_isolation_actions(self) -> None:
         result, ids = self.session.result, self._selected
         self.isolate_action.setEnabled(bool(ids and result and any(
-            i.ids[:len(ids)] == ids for i in result.instances)))
-        self.restore_visibility_action.setEnabled(self._isolated is not None)
+            i.ids[:len(ids)] == ids and self._manually_visible(i.ids) for i in result.instances)))
+        self.end_isolation_action.setEnabled(self._isolated is not None)
+        self.visibility_action.setEnabled(bool(ids and result and any(
+            s.ids == ids for s in result.statuses)))
+        hide = bool(ids and self._manual_check_state(ids) == Qt.CheckState.Checked)
+        self.visibility_action.setText("Skrýt vybrané" if hide else "Zobrazit vybrané")
+        self.visibility_action.setIconText("Skrýt" if hide else "Zobrazit")
+        self.visibility_action.setToolTip(f"{self.visibility_action.text()} (H)")
+        self.restore_visibility_action.setEnabled(
+            self._isolated is not None or bool(self._visibility))
         self.constraint_isolation_note.setVisible(
-            self._isolated is not None and self._constraint is not None)
-        self.isolate_action.setToolTip("Izolovat vybraný díl nebo podsestavu (I)")
+            (self._isolated is not None or bool(self._visibility)) and self._constraint is not None)
+        self.isolate_action.setToolTip("Izolovat viditelné díly vybrané komponenty (I)")
         shortcut = self.restore_visibility_action.shortcut().toString(
             QKeySequence.SequenceFormat.NativeText)
         self.restore_visibility_action.setToolTip(f"Zobrazit celou sestavu ({shortcut})")
-        self.fit_action.setText("Vměstnat" if self._isolated is not None else "Celá sestava")
+        self.fit_action.setText("Vměstnat" if self._isolated is not None or self._visibility
+                               else "Celá sestava")
         self.fit_action.setToolTip("Vměstnat viditelné díly (F)")
 
     _fit_after = False
@@ -1117,12 +1236,15 @@ class AssemblyWindow(QMainWindow):
     def _refresh(self, fit: bool = False) -> None:
         result = self.session.result
         self._start_next()
+        valid = {s.ids for s in result.statuses} if result else set()
+        self._visibility = {ids: state for ids, state in self._visibility.items() if ids in valid}
         self._fill_tree(result)
         if self._isolated is not None and (result is None or not any(
                 s.ids == self._isolated for s in result.statuses)):
             self._isolated = None
             fit = True
         self._show_visible(fit=fit)
+        self._refresh_tree_visibility()
         self._refresh_selection()
         self._refresh_summary(result)
         has = self.session.assembly is not None
@@ -1145,6 +1267,9 @@ class AssemblyWindow(QMainWindow):
                      f"{self.session.path.name} – sestava ŠkodaCAD")
         if self._isolated is not None:
             title += (f" – izolace ({len(self.visible_instances())}/"
+                      f"{len(self.session.result.instances)})")
+        elif self._visibility:
+            title += (f" – viditelné díly ({len(self.visible_instances())}/"
                       f"{len(self.session.result.instances)})")
         self.setWindowTitle(title)
 
@@ -1211,6 +1336,7 @@ class AssemblyWindow(QMainWindow):
                              status.reason, *status.warnings]).strip()
             for column in range(3):
                 item.setToolTip(column, tip)
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, tip)
             items[status.ids] = item
         constraints = [c for c in result.constraints if c.depth == 0] if result else []
         chosen = None
@@ -1298,7 +1424,7 @@ class AssemblyWindow(QMainWindow):
         visible = self.visible_instances()
         shapes = []
         if self._constraint is not None and self.session.assembly is not None:
-            if self._isolated is None:
+            if self._isolated is None and not self._visibility:
                 shapes = self.session.constraint_faces(self._constraint)
         elif result is not None and self._selected is not None:
             for instance in visible:
@@ -1311,7 +1437,7 @@ class AssemblyWindow(QMainWindow):
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         self.viewer.highlight(shapes)
         center = self._finding.get("center") if self._finding is not None else None
-        if center and self._isolated is not None:
+        if center and (self._isolated is not None or self._visibility):
             shown = {i.ids for i in visible}
             if not all(tuple(self._finding[k]) in shown for k in ("a", "b")):
                 center = None
@@ -1354,6 +1480,10 @@ class AssemblyWindow(QMainWindow):
                               for n in range(1, len(self._isolated)+1))
             lines.append(f"Izolace: {path} – viditelné díly {len(self.visible_instances())}"
                          f"/{len(result.instances)}. Součty níže platí pro celou sestavu.")
+        elif self._visibility:
+            lines.append(f"Viditelné díly: {len(self.visible_instances())}/"
+                         f"{len(result.instances)}. "
+                         "Součty níže platí pro celou sestavu.")
         mass = result.mass_kg
         mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
         lines.append(f"Objem: {result.volume_mm3:.2f} mm³, hmotnost: {mass_text}"
