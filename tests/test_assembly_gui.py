@@ -1,6 +1,7 @@
 """P5.2B: okno sestavy offscreen – strom, poloha, Zpět, chybějící díl, výpočet na pozadí."""
 
 import json
+import math
 import shutil
 
 import pytest
@@ -138,6 +139,64 @@ def test_native_project_selection_precedes_open_and_cancel_preserves_window(
         lo, hi = result.bounds()
         assert tuple(lo) == pytest.approx((-40, -25, -3), abs=1e-6)
         assert tuple(hi) == pytest.approx((40, 25, 32), abs=1e-6)
+
+
+@pytest.mark.parametrize("from_assembly", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_nested_sources_outside_first_folder_round_trip_or_cancel_preserves_model(
+        main_window, project, tmp_path, dialogs, monkeypatch, from_assembly, cancel):
+    from skodacad.gui import assembly_access
+    from test_assembly import assembly_data, component, part_data, write
+
+    monkeypatch.setattr(assembly_access, "IS_MACOS", True)
+    monkeypatch.setattr(assembly_access, "_granted_projects", set())
+    root = tmp_path / "Vnořený projekt"
+    part = write(root / "dily/deska.json", part_data())
+    cylinder = part_data()
+    cylinder["features"][0]["elements"] = [
+        {"shape": "circle", "diameter": 10, "center": [45, 10]}]
+    write(root / "dily/valecek.json", cylinder)
+    write(root / "sestavy/moduly/pod.json", assembly_data([
+        component("deska", "../../dily/deska.json"),
+        component("valecek", "../../dily/valecek.json")]))
+    source = write(root / "sestavy/hlavni.json", assembly_data([
+        component("a", "moduly/pod.json", position=(100, 0, 0), rotation=(0, 0, 90)),
+        component("b", "moduly/pod.json", position=(0, 80, 20))]))
+    before = {p: p.read_bytes() for p in root.rglob("*.json")}
+    window = (main_window.open_assembly(project / "sestavy/krabicka_s_vickem.json")
+              if from_assembly else main_window)
+    original_path, original_result = window.session.path, window.session.result
+    count = len(main_window.assembly_windows)
+    choices = [str(source.parent), "" if cancel else str(root)]
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **kw: choices.pop(0))
+    dialogs["open"] = str(source)
+    window.open_dialog()
+    assert not choices and not dialogs["shown"]
+    if cancel:
+        assert window.session.path == original_path and window.session.result is original_result
+        assert len(main_window.assembly_windows) == count
+    else:
+        opened = window if from_assembly else main_window.assembly_windows[-1]
+        result = opened.session.result
+        assert result.complete and len(result.statuses) == 6 and len(result.instances) == 4
+        assert all(i.part.is_valid for i in result.instances)
+        assert result.volume_mm3 == pytest.approx(12000 + 500 * math.pi)
+        lo, hi = result.bounds()
+        assert tuple(lo) == pytest.approx((0, 0, 0), abs=1e-6)
+        assert tuple(hi) == pytest.approx((100, 100, 30), abs=1e-6)
+        files = [s.file for s in result.statuses]
+        target = root / "kopie/kopie.json"
+        target.parent.mkdir()
+        dialogs["save"] = str(target)
+        assert opened.save_as()
+        dialogs["open"] = str(target)
+        opened.open_dialog()  # projekt je už schválen; další panel nesmí vzniknout
+        assert opened.session.path == target.resolve()
+        assert opened.session.result.complete
+        assert [s.file for s in opened.session.result.statuses] == files
+        assert opened.session.result.volume_mm3 == pytest.approx(12000 + 500 * math.pi)
+        assert part in files
+    assert all(p.read_bytes() == data for p, data in before.items())
 
 
 def test_form_changes_position_name_as_one_undo_step(opened):
