@@ -1203,9 +1203,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   kvůli omezení automatizačního klienta. [Evidence](docs/p7-7-otevirani-dokumentu-macos.md).
 - P7.8: výběr JSONu sestavy nezpřístupní složky komponent. Interaktivní Otevřít
   na Macu proto přes `gui/assembly_access.py` nejdřív vyžádá společnou složku
-  projektu; před panelem nesmí vypisovat adresáře ani číst díly (`locate` by
+  projektu; před prvním panelem nesmí vypisovat adresáře ani číst díly (`locate` by
   čekalo v `os_listdir` / `opendir`). Zrušení nepřepíše model, souhlas se pamatuje
   jen v procesu. U podsestav vybrat celý projekt včetně jejich zdrojů.
+- P7.9: ani dříve vybraný projekt neznamená, že jsou pokryté nové odkazy
+  podsestav. Před každým Otevřít se ověřují i vnořené recepty; každý výpis složky
+  a čtení zdroje musí ležet ve vybraném rozsahu. Vnější odkaz vyžádá širší složku
+  před pokračováním. Zachovat kontrolu velikosti písmen, skutečných cílů odkazů,
+  cyklů a mezí; nevolat nehlídané `locate` při předběžné kontrole přístupu.
 - Běžný přepočet nesmí plošně mazat strom položek:
   Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
   i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.

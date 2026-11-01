@@ -94,6 +94,9 @@ obsahuje sestavu a její díly (včetně podsestav). Výběr samotného JSONu ne
 pro čtení ostatních souborů. Zrušení nechá otevřený model beze změny; zvolená
 složka se pamatuje jen do ukončení aplikace.
 [Sestavy z Dokumentů](docs/p7-8-sestavy-dokumenty-macos.md).
+Když podsestava odkazuje na díly mimo vybranou složku, aplikace si před jejich
+načtením vyžádá širší společnou složku. Zrušením zůstane otevřený model zachovaný.
+[Ověření podsestav v oddělených složkách](docs/p7-9-podsestavy-dokumenty-macos.md).
 
 | Akce | Jak |
 |---|---|
