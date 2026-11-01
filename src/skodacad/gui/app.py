@@ -1054,6 +1054,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
                      f"{drawn}")
         ok = _self_test_assembly_layout(assembly, lines) and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
+        ok = _self_test_assembly_isolation(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1158,7 +1159,8 @@ def _self_test_assembly_views(assembly, lines) -> bool:
             assembly.resize(width, 720)
             QTest.qWait(100)
             for action in (*[assembly.view_actions[k] for k in ("top", "front", "iso")],
-                           assembly.fit_action):
+                           assembly.fit_action, assembly.isolate_action,
+                           assembly.restore_visibility_action):
                 button = assembly.toolbar.widgetForAction(action)
                 assert button.isVisible(), (
                     f"lišta: {action.text()} skryté při {assembly.width()}, "
@@ -1202,6 +1204,69 @@ def _self_test_assembly_views(assembly, lines) -> bool:
     except Exception:  # noqa: BLE001 -- úplná diagnostika staženého balíčku
         lines.append("✕ Pohledy sestavy:\n" + traceback.format_exc())
         return False
+
+
+def _self_test_assembly_isolation(assembly, lines) -> bool:
+    """Nativní AIS obsahuje jen izolovaný díl; návrat obnoví celou geometrii."""
+    from build123d import Compound
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    if not assembly.viewer.ready:
+        lines.append("! Izolace sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        session, viewer = assembly.session, assembly.viewer
+        before = session.assembly.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        total = session.result.volume_mm3
+        lid = next(i for i in session.result.instances if i.ids == ("vicko",))
+        assembly.select(lid.ids)
+        assembly.position_edits[0].setText("rozepsaný výraz")
+        assembly.view_actions["top"].trigger()
+        direction = viewer._view.Proj()
+        button = assembly.toolbar.widgetForAction(assembly.isolate_action)
+        assert button.isVisible() and button.isEnabled()
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()
+        assert assembly._isolated == lid.ids and assembly._selected == lid.ids
+        assert len(assembly.visible_instances()) == 1
+        drawn = Compound(viewer._ais.Shape())
+        assert len(drawn.solids()) == 1 and abs(drawn.volume - lid.volume_mm3) < 1e-5
+        for actual, expected in ((drawn.bounding_box().min, lid.part.bounding_box().min),
+                                 (drawn.bounding_box().max, lid.part.bounding_box().max)):
+            assert all(abs(a-b) < 1e-6 for a, b in zip(actual, expected, strict=True))
+        assert viewer._view.Proj() == direction
+        assert assembly.position_edits[0].text() == "rozepsaný výraz"
+        assert not assembly._picks and not assembly.constraint_action.isEnabled()
+        assert "izolace (1/6)" in assembly.windowTitle()
+        assert "Součty níže platí pro celou sestavu" in assembly.summary.text()
+        viewer._surface.setFocus()
+        QTest.keyClick(viewer._surface, Qt.Key.Key_F)
+        width, height = viewer._view.Window().Size()
+        for vertex in lid.part.vertices():
+            p = vertex.center()
+            x, y = viewer._view.Convert(float(p.X), float(p.Y), float(p.Z))
+            assert 0 <= x < width and 0 <= y < height
+        button = assembly.toolbar.widgetForAction(assembly.restore_visibility_action)
+        assert button.isVisible() and button.isEnabled()
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()
+        drawn = Compound(viewer._ais.Shape())
+        assert assembly._isolated is None and len(drawn.solids()) == 6
+        assert abs(drawn.volume - total) < 1e-5 and viewer._view.Proj() == direction
+        assert assembly._selected == lid.ids
+        assert assembly.position_edits[0].text() == "rozepsaný výraz"
+        assert session.assembly.to_dict() == before
+        assert history == (len(session._undo), len(session._redo), session.dirty)
+        lines.append("✓ Izolace sestavy: nativní tlačítka, AIS 1/6 → 6/6 těles, "
+                     "objem/obálka, kamera a F, recept/historie/rozepsané pole beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Izolace sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        assembly.show_all()
 
 
 def _self_test_constraints(window, lines: list[str], folder) -> bool:

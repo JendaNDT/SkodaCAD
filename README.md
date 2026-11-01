@@ -345,6 +345,13 @@ Přepínání pohledů nemění polohy komponent ani historii. Když píšeš do
 číslice a písmeno F se dál zapisují do něj.
 [Ověření pohledů sestavy](docs/p7-12-pohledy-sestavy.md).
 
+**Izolace dílu:** vyber díl ve stromu nebo ve 3D a použij **Izolovat (I)**.
+U podsestavy zůstanou viditelné všechny její díly. **Zobrazit vše (Ctrl+Shift+I,
+na Macu Cmd+Shift+I)** vrátí celou sestavu. F v izolaci vměstná viditelné díly;
+samotný výběr jiného řádku stromu izolaci nepřepíná – použij znovu Izolovat.
+Jde o dočasný pohled: součty, kontroly, kusovník i STEP dál zahrnují celou sestavu.
+[Chování a ověření izolace](docs/p7-13-izolace-sestavy.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

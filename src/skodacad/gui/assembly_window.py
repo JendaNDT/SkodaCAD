@@ -112,6 +112,7 @@ class AssemblyWindow(QMainWindow):
         self.user_dir = user_dir or Path.home()
         self.open_part = open_part  # hlavní okno otevře soubor dílu
         self._selected: tuple[str, ...] | None = None
+        self._isolated: tuple[str, ...] | None = None  # jen pohled, mimo recept a historii
         self._constraint: str | None = None  # vybraná vazba (místo komponenty)
         self._picks: list[tuple[Any, Any]] = []  # vybrané tvary ve 3D a místo kliknutí
         self._job_source: Any = None
@@ -250,6 +251,10 @@ class AssemblyWindow(QMainWindow):
         self.constraint_note = QLabel()
         self.constraint_note.setWordWrap(True)
         layout.addWidget(self.constraint_note)
+        self.constraint_isolation_note = self._wrapped_label(
+            "Pro zobrazení obou ploch vazby zvol Zobrazit vše.")
+        self.constraint_isolation_note.hide()
+        layout.addWidget(self.constraint_isolation_note)
         form = QFormLayout()
         self.constraint_name = QLineEdit()
         form.addRow("Název", self.constraint_name)
@@ -354,6 +359,10 @@ class AssemblyWindow(QMainWindow):
             action.setIconText(label)
             action.setToolTip(action.text())
         self.fit_action = self._action("Celá sestava", self.viewer.fit_all, "F")
+        self.isolate_action = self._action("Izolovat vybrané", self.isolate_selected, "I")
+        self.isolate_action.setIconText("Izolovat")
+        self.restore_visibility_action = self._action("Zobrazit vše", self.show_all,
+                                                      "Ctrl+Shift+I")
         self.view_actions = {
             key: self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
             for key, (label, shortcut) in VIEW_LABELS.items()
@@ -384,6 +393,9 @@ class AssemblyWindow(QMainWindow):
         for action in self.view_actions.values():
             view_menu.addAction(action)
         view_menu.addSeparator()
+        view_menu.addAction(self.isolate_action)
+        view_menu.addAction(self.restore_visibility_action)
+        view_menu.addSeparator()
         for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
                                (self.checks_dock, "F8")):
             action = dock.toggleViewAction()
@@ -405,6 +417,8 @@ class AssemblyWindow(QMainWindow):
         for key in ("top", "front", "iso"):
             toolbar.addAction(self.view_actions[key])
         toolbar.addAction(self.fit_action)
+        toolbar.addAction(self.isolate_action)
+        toolbar.addAction(self.restore_visibility_action)
 
     def reset_layout(self) -> None:
         """Kompaktní panely; pouze rozložení, bez změny sestavy, výběru či kamery."""
@@ -424,7 +438,11 @@ class AssemblyWindow(QMainWindow):
         """Otevře sestavu; ``template`` (ukázka) = *Uložit* se zeptá kam, ukázka zůstane."""
         if not self._confirm_discard():
             return False
-        if not self._run("Sestavu nejde otevřít", lambda: self.session.open(path), fit=True):
+        def work():
+            self.session.open(path)
+            self._isolated = None
+
+        if not self._run("Sestavu nejde otevřít", work, fit=True):
             return False
         self.template = template
         return True
@@ -432,8 +450,11 @@ class AssemblyWindow(QMainWindow):
     def new_assembly(self, path: str | Path, name: str = "Nová sestava") -> bool:
         if not self._confirm_discard():
             return False
-        if not self._run("Sestavu nejde založit", lambda: self.session.new(path, name),
-                         fit=True):
+        def work():
+            self.session.new(path, name)
+            self._isolated = None
+
+        if not self._run("Sestavu nejde založit", work, fit=True):
             return False
         self.template = False
         return True
@@ -944,6 +965,10 @@ class AssemblyWindow(QMainWindow):
     def _picked(self, shapes: list) -> None:
         """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří; vybrané
         plochy (s místem kliknutí) si okno pamatuje pro *Přidat vazbu…*."""
+        if self._isolated is not None:
+            visible = [p.wrapped for i in self.visible_instances()
+                       for p in (*i.part.faces(), *i.part.edges())]
+            shapes = [s for s in shapes if any(s.IsSame(p) for p in visible)]
         known = self._picks
         self._picks = []
         for shape in shapes:
@@ -954,7 +979,7 @@ class AssemblyWindow(QMainWindow):
         result = self.session.result
         if not shapes or result is None:
             return
-        for instance in result.instances:
+        for instance in self.visible_instances():
             pieces = [*instance.part.faces(), *instance.part.edges()]
             if any(piece.wrapped.IsSame(shapes[0]) for piece in pieces):
                 self.select(instance.ids)
@@ -1023,6 +1048,55 @@ class AssemblyWindow(QMainWindow):
 
     # --- překreslení -------------------------------------------------------------------
 
+    def visible_instances(self) -> list:
+        """Viditelné kopie podle cesty id, nikoli podle sdíleného zdrojového souboru."""
+        result = self.session.result
+        if result is None:
+            return []
+        return [i for i in result.instances
+                if self._isolated is None or i.ids[:len(self._isolated)] == self._isolated]
+
+    def isolate_selected(self) -> None:
+        result, ids = self.session.result, self._selected
+        if not ids or result is None or not any(i.ids[:len(ids)] == ids
+                                               for i in result.instances):
+            return
+        self._set_isolation(ids)
+
+    def show_all(self) -> None:
+        if self._isolated is None:
+            return
+        self._set_isolation(None)
+
+    def _set_isolation(self, ids: tuple[str, ...] | None) -> None:
+        self._isolated = ids
+        self._show_visible(fit=True)
+        self._refresh_highlight()
+        self._refresh_isolation_actions()
+        self._refresh_summary(self.session.result)
+        self._refresh_title()
+
+    def _show_visible(self, fit: bool = False) -> None:
+        self._picks = []  # skryté plochy nesmějí zůstat vstupem pro přidání vazby
+        self._refresh_pick_note()
+        result = self.session.result
+        part = result.compound(self._isolated) if self.visible_instances() else None
+        self.viewer.show_part(part, fit=fit)
+
+    def _refresh_isolation_actions(self) -> None:
+        result, ids = self.session.result, self._selected
+        self.isolate_action.setEnabled(bool(ids and result and any(
+            i.ids[:len(ids)] == ids for i in result.instances)))
+        self.restore_visibility_action.setEnabled(self._isolated is not None)
+        self.constraint_isolation_note.setVisible(
+            self._isolated is not None and self._constraint is not None)
+        self.isolate_action.setToolTip("Izolovat vybraný díl nebo podsestavu (I)")
+        shortcut = self.restore_visibility_action.shortcut().toString(
+            QKeySequence.SequenceFormat.NativeText)
+        self.restore_visibility_action.setToolTip(f"Zobrazit celou sestavu ({shortcut})")
+        self.fit_action.setText("Vměstnat" if self._isolated is not None else "Celá sestava")
+        self.fit_action.setToolTip("Vměstnat viditelné díly (F)")
+
     _fit_after = False
 
     def _run(self, title: str, work: Callable[[], object], fit: bool = False) -> bool:
@@ -1044,10 +1118,11 @@ class AssemblyWindow(QMainWindow):
         result = self.session.result
         self._start_next()
         self._fill_tree(result)
-        if result is not None and result.instances:
-            self.viewer.show_part(result.compound(), fit=fit)
-        else:
-            self.viewer.show_part(None, fit=fit)
+        if self._isolated is not None and (result is None or not any(
+                s.ids == self._isolated for s in result.statuses)):
+            self._isolated = None
+            fit = True
+        self._show_visible(fit=fit)
         self._refresh_selection()
         self._refresh_summary(result)
         has = self.session.assembly is not None
@@ -1060,10 +1135,17 @@ class AssemblyWindow(QMainWindow):
             self.statusBar().showMessage(self.session.notice, 20000)
         self.undo_action.setEnabled(self.session.can_undo)
         self.redo_action.setEnabled(self.session.can_redo)
+        self._refresh_title()
+
+    def _refresh_title(self) -> None:
+        has = self.session.assembly is not None
         title = "Sestava – ŠkodaCAD"
         if has:
             title = (f"{self.session.assembly.name}{' *' if self.session.dirty else ''} – "
                      f"{self.session.path.name} – sestava ŠkodaCAD")
+        if self._isolated is not None:
+            title += (f" – izolace ({len(self.visible_instances())}/"
+                      f"{len(self.session.result.instances)})")
         self.setWindowTitle(title)
 
     def _fill_tree(self, result: AssemblyResult | None) -> None:
@@ -1208,20 +1290,31 @@ class AssemblyWindow(QMainWindow):
                 else "Vybraná vazba – uprav ji níž." if self._constraint
                 else "Vyber komponentu ve stromu nebo ve 3D.")
         self.fixed_box.blockSignals(False)
+        self._refresh_isolation_actions()
+        self._refresh_highlight()
+
+    def _refresh_highlight(self) -> None:
+        result = self.session.result
+        visible = self.visible_instances()
         shapes = []
         if self._constraint is not None and self.session.assembly is not None:
-            shapes = self.session.constraint_faces(self._constraint)
+            if self._isolated is None:
+                shapes = self.session.constraint_faces(self._constraint)
         elif result is not None and self._selected is not None:
-            for instance in result.instances:
+            for instance in visible:
                 if instance.ids[:len(self._selected)] == self._selected:
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         elif result is not None and self._finding is not None:
             pair = (tuple(self._finding["a"]), tuple(self._finding["b"]))
-            for instance in result.instances:
+            for instance in visible:
                 if instance.ids in pair:
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         self.viewer.highlight(shapes)
         center = self._finding.get("center") if self._finding is not None else None
+        if center and self._isolated is not None:
+            shown = {i.ids for i in visible}
+            if not all(tuple(self._finding[k]) in shown for k in ("a", "b")):
+                center = None
         if center and self._selected is None and self._constraint is None:
             self.viewer.show_points([tuple(center)], [MARK])
         else:
@@ -1256,6 +1349,11 @@ class AssemblyWindow(QMainWindow):
                                  "existující; pak Vložit díl….")
             return
         lines = [f"Komponent: {len(result.statuses)}, dílů ve 3D: {len(result.instances)}"]
+        if self._isolated is not None:
+            path = " / ".join(result.status(self._isolated[:n]).label
+                              for n in range(1, len(self._isolated)+1))
+            lines.append(f"Izolace: {path} – viditelné díly {len(self.visible_instances())}"
+                         f"/{len(result.instances)}. Součty níže platí pro celou sestavu.")
         mass = result.mass_kg
         mass_text = "neznámá (materiál bez hustoty)" if mass is None else f"{mass * 1000:.2f} g"
         lines.append(f"Objem: {result.volume_mm3:.2f} mm³, hmotnost: {mass_text}"
