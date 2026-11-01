@@ -1246,6 +1246,17 @@ class MainWindow(QMainWindow):
         try:
             self._busy(lambda: (self.session.open_template(path) if template
                                 else self.session.open(path)))
+        except PermissionError:
+            self._error("Model nejde otevřít", "K vybranému souboru není přístup. "
+                        "Vyber ho znovu přes Otevřít a ověř, že ho můžeš číst.")
+            return False
+        except UnicodeError:
+            self._error("Model nejde otevřít", "Soubor není text JSON v kódování UTF-8. "
+                        "Vyber soubor modelu ŠkodaCAD (.json).")
+            return False
+        except OSError as exc:
+            self._error("Model nejde otevřít", f"Soubor se nepodařilo přečíst: {exc}")
+            return False
         except DocumentError as exc:
             self._error("Model nejde otevřít", str(exc))
             return False

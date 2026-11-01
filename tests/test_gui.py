@@ -189,6 +189,60 @@ def test_open_shows_parameters_tree_and_properties(window):
     assert part is not None and fit
 
 
+@pytest.mark.parametrize("selection", ["cancel", "invalid", "valid"])
+def test_open_dialog_preserves_source_on_cancel_or_error_and_loads_selected_model(
+        window, tmp_path, examples_dir, monkeypatch, selection):
+    from PySide6.QtWidgets import QFileDialog
+
+    path = tmp_path / "Český název modelu.json"
+    path.write_bytes((examples_dir/"deska_workflow.json").read_bytes()
+                    if selection == "valid" else b"{broken")
+    original = window.session.document.to_dict()
+    result = window.session.result
+    before = path.read_bytes()
+    errors = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        lambda *a, **kw: ("" if selection == "cancel" else str(path), ""))
+    monkeypatch.setattr(window, "_error", lambda *args: errors.append(args))
+    window.open_action.trigger()
+    assert path.read_bytes() == before
+    if selection == "valid":
+        assert not errors
+        assert window.session.path == path and not window.session.dirty
+        assert window.session.result.part.is_valid
+        assert window.session.properties.size_mm == pytest.approx((80, 50, 10))
+        assert window.session.properties.volume_mm3 == pytest.approx(39840-320*math.pi)
+    else:
+        assert window.session.document.to_dict() == original and window.session.result is result
+        assert bool(errors) == (selection == "invalid")
+
+
+@pytest.mark.parametrize("error, message", [
+    (PermissionError("permission denied"), "není přístup"),
+    (OSError("read failed"), "read failed"),
+    (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"), "UTF-8"),
+])
+def test_unreadable_open_selection_reports_error_without_replacing_model(
+        window, examples_dir, monkeypatch, error, message):
+    from PySide6.QtWidgets import QFileDialog
+
+    original, result = window.session.document.to_dict(), window.session.result
+    path = window.session.path
+    seen = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        lambda *a, **kw: (str(examples_dir/"deska_workflow.json"), ""))
+
+    def unreadable(_path):
+        raise error
+
+    monkeypatch.setattr(window.session, "open", unreadable)
+    monkeypatch.setattr(window, "_error", lambda *args: seen.append(args))
+    window.open_action.trigger()
+    assert len(seen) == 1 and seen[0][0] == "Model nejde otevřít" and message in seen[0][1]
+    assert window.session.document.to_dict() == original and window.session.result is result
+    assert window.session.path == path
+
+
 @pytest.mark.parametrize("name", COUNT_CASE_NAMES)
 def test_successful_body_counts_are_visible_in_tree_and_properties(window, tmp_path, name):
     document, volume, count, transitions = body_count_case(name)
