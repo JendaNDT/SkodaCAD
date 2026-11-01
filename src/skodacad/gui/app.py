@@ -1055,6 +1055,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_layout(assembly, lines) and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
+        ok = _self_test_assembly_visibility(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1159,7 +1160,7 @@ def _self_test_assembly_views(assembly, lines) -> bool:
             assembly.resize(width, 720)
             QTest.qWait(100)
             for action in (*[assembly.view_actions[k] for k in ("top", "front", "iso")],
-                           assembly.fit_action, assembly.isolate_action,
+                           assembly.fit_action, assembly.isolate_action, assembly.visibility_action,
                            assembly.restore_visibility_action):
                 button = assembly.toolbar.widgetForAction(action)
                 assert button.isVisible(), (
@@ -1264,6 +1265,94 @@ def _self_test_assembly_isolation(assembly, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
         lines.append("✕ Izolace sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        assembly.show_all()
+
+
+def _self_test_assembly_visibility(assembly, lines) -> bool:
+    """Skutečný checkbox/H/tlačítko a AIS; ruční skrývání zůstává po ukončení izolace."""
+    import json
+
+    from build123d import Compound
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Viditelnost sestavy: chybí grafický prohlížeč")
+        return True
+    try:
+        assembly.show_all()
+        before = session.assembly.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        total = session.result.volume_mm3
+        lid = next(i for i in session.result.instances if i.ids == ("vicko",))
+        foot = next(i for i in session.result.instances if i.ids == ("nozicka_1",))
+
+        def row(item):
+            if json.loads(item.data(0, Qt.ItemDataRole.UserRole)) == ["vicko"]:
+                return item
+            for n in range(item.childCount()):
+                found = row(item.child(n))
+                if found is not None:
+                    return found
+            return None
+
+        item = next(found for n in range(assembly.tree.topLevelItemCount())
+                    if (found := row(assembly.tree.topLevelItem(n))) is not None)
+        assembly.tree.setCurrentItem(item)
+        assembly.position_edits[0].setText("rozepsaná poloha")
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        assembly.tree.setFocus()
+        QTest.keyClick(assembly.tree, Qt.Key.Key_Space)
+        QApplication.processEvents()
+        drawn = Compound(viewer._ais.Shape())
+        assert item.checkState(0) == Qt.CheckState.Unchecked
+        assert len(drawn.solids()) == 5 and abs(drawn.volume-(total-lid.volume_mm3)) < 1e-5
+        assert assembly._selected == lid.ids
+        assert assembly.position_edits[0].text() == "rozepsaná poloha"
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        QTest.keyClick(assembly.tree, Qt.Key.Key_Space)
+        QApplication.processEvents()
+        assert item.checkState(0) == Qt.CheckState.Checked
+        assert len(Compound(viewer._ais.Shape()).solids()) == 6
+        button = assembly.toolbar.widgetForAction(assembly.visibility_action)
+        assert button.isVisible() and assembly.toolbar.rect().contains(button.geometry())
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        assert len(Compound(viewer._ais.Shape()).solids()) == 5
+        viewer._surface.setFocus()
+        QTest.qWait(50)
+        QTest.keyClick(viewer._surface, Qt.Key.Key_H)
+        assert len(Compound(viewer._ais.Shape()).solids()) == 6
+        assert assembly.position_edits[0].text() == "rozepsaná poloha"
+        assembly.set_component_visible(foot.ids, False)
+        assembly.isolate_action.trigger()
+        assert len(Compound(viewer._ais.Shape()).solids()) == 1
+        assembly.end_isolation_action.trigger()
+        drawn = Compound(viewer._ais.Shape())
+        assert assembly._isolated is None and len(drawn.solids()) == 5
+        assert abs(drawn.volume-(total-foot.volume_mm3)) < 1e-5
+        for instance in session.result.instances:
+            assembly.set_component_visible(instance.ids, False)
+        assert not assembly.visible_instances() and viewer._ais is None
+        QTest.keyClick(viewer._surface, Qt.Key.Key_F)  # prázdný pohled není chyba
+        button = assembly.toolbar.widgetForAction(assembly.restore_visibility_action)
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()
+        drawn = Compound(viewer._ais.Shape())
+        assert len(drawn.solids()) == 6 and abs(drawn.volume-total) < 1e-5
+        assert not assembly._visibility and assembly._isolated is None
+        assert assembly._selected == lid.ids
+        assert assembly.position_edits[0].text() == "rozepsaná poloha"
+        assert session.assembly.to_dict() == before
+        assert history == (len(session._undo), len(session._redo), session.dirty)
+        lines.append("✓ Viditelnost sestavy: checkbox/H/tlačítka, AIS 6→5→6, "
+                     "izolace 5→1→5, prázdný pohled 0→6, objem, kamera, "
+                     "recept/historie/rozepsané pole beze změny")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Viditelnost sestavy:\n" + traceback.format_exc())
         return False
     finally:
         assembly.show_all()

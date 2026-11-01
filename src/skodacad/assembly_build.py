@@ -276,15 +276,18 @@ class AssemblyResult:
                 return status
         raise AssemblyError(f"Sestava nemá komponentu {' / '.join(key)}.")
 
-    def compound(self, ids: tuple[str, ...] | None = None) -> Any:
+    def compound(self, ids: tuple[str, ...] | None = None, *,
+                 visible_ids: set[tuple[str, ...]] | None = None) -> Any:
         """Kopie v polohách jako jeden tvar; ``ids`` omezí pohled na komponentu/podsestavu.
 
-        Výsledek ani sdílená tělesa se nemění. Bez filtru jde vždy o celou sestavu.
+        ``visible_ids`` vybírá konkrétní kopie podle úplné cesty id. Výsledek ani
+        sdílená tělesa se nemění. Bez filtrů jde vždy o celou sestavu.
         """
         from build123d import Compound
 
         return Compound([instance.part for instance in self.instances
-                         if ids is None or instance.ids[:len(ids)] == ids])
+                         if (ids is None or instance.ids[:len(ids)] == ids)
+                         and (visible_ids is None or instance.ids in visible_ids)])
 
     def bounds(self) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
         if not self.instances:

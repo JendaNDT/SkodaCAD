@@ -1,0 +1,38 @@
+name: Dočasné ověření viditelnosti sestavy
+on:
+  push:
+    branches: [codex/assembly-native-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: '1'
+  SKODACAD_HOME: ${{ github.workspace }}/visibility-probe-home
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c18f11593abb5b6c464946060d03637323f8219e
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: python -m pip install -e '.[dev,gui,build]' pefile
+      - name: Viditelnost a checkboxy
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_assembly_gui.py -k 'visibility or checkboxes or hide_show or hidden_child or hidden_parts or view_shortcuts or standard_views' -rA
+      - name: Nativní balíček
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+      - name: Nativní checkbox a prázdný pohled
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt
+          exit "$code"
