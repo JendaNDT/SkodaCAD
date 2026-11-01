@@ -13,9 +13,8 @@ sdílených s dílem: Zprava 3, Zezadu Ctrl+1, Zespodu Ctrl+7 a Izometrie
 zezadu Ctrl+0 (na Macu Cmd místo Ctrl).
 
 Na liště jsou stručné příkazy **Otevřít, Vazba a Kontrola**; v menu i bublinách
-zůstává úplný popis. První úplná sada Windows odhalila přetečení nových tlačítek
-v úzkém okně, které se na Macu neprojevilo. Popisky proto šetří místo bez nové
-řádky lišty a bez zmenšení výšky 3D plochy.
+zůstává úplný popis. Popisky šetří místo bez nové řádky lišty a bez zmenšení
+výšky 3D plochy.
 
 Menu, tlačítka a klávesy používají stejné QAction a stejné názvy/zkratky
 z `viewer_views.VIEW_LABELS`. Změní se pouze kamera. Recept, polohy komponent,
@@ -24,8 +23,7 @@ zachytávání kláves: v textovém poli se 0/1/7/F zapisují jako dosud.
 
 ## Ověření
 
-Regrese ověřují všech sedm směrů v menu, sdílení akcí s lištou, viditelnost
-čtyř nových tlačítek při šířkách 1200/1024/960 a zachování modelu, výběru,
+Regrese ověřují všech sedm směrů v menu, sdílení akcí s lištou a zachování modelu, výběru,
 geometrie, historie a rozepsaného výrazu. Druhý případ skutečně píše `107F`
 do pole, pak se přepne do prohlížeče a zkouší stejné klávesy pro pohledy.
 
@@ -36,6 +34,12 @@ Shora/Zepředu/Izometrii. Potom šestinásobně přiblíží, stiskne F a ověř
 Kontroluje také recept, délky obou zásobníků historie, výběr a příznak změny.
 Předtím kontroluje viditelnost i obdélníky všech čtyř tlačítek uvnitř lišty
 při šířkách 1024 a 960 také v nativním zabaleném okně.
+
+První úplná sada Windows odhalila přetečení lišty v testu bez obrazovky.
+Samostatná diagnostika ukázala náhradní písmo s pevnou šířkou znaku 12 bodů:
+lišta potřebovala 1313 bodů. Nativní balíček stejného kódu prošel při 1024 i 960.
+Offscreen test proto přizpůsobí okno skutečnému `sizeHint` a ověřuje funkci akcí;
+požadavek na kompaktní rozměry hlídá self-test se skutečným písmem obou systémů.
 
 Místní sestavená aplikace na MacBooku M4 / Retina 2× prošla celým self-testem
 **VÝSLEDEK: OK**. Cíleně prošlo **181 testů**, ruff i kontrola podpisu.
