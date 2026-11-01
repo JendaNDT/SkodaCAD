@@ -1256,6 +1256,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   zvýraznění, akce a souhrn. Vyčistit `_picks` i při nepřipraveném prohlížeči.
   Skryté řádky stromu nesmějí přes zvýraznění odkrýt geometrii; plochy vazby se
   v izolaci nezvýrazňují. [Evidence](docs/p7-13-izolace-sestavy.md).
+- P7.14: `_visibility` je mapa cesta id → ruční viditelnost; nejbližší předek
+  určuje stav, výjimka potomka jej přebije. Nastavení rodiče smaže jeho výjimky.
+  Izolace a ruční viditelnost se protínají, `end_isolation` zachová ruční stav,
+  `show_all` vyčistí oba. Checkboxy reprezentují ruční stav (mezistav rodičů),
+  šedá barva a bublina počet skutečně zobrazených dílů. Nepoužívat AutoTristate:
+  změny checkboxů při překreslení musí mít blokované signály. Zachovat řádky
+  stromu a rozepsaná pole. Render používá `compound(visible_ids=...)`, úplný
+  výsledek se nefiltruje. [Evidence](docs/p7-14-skryvani-dilu.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

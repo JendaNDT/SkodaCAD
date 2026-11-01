@@ -338,9 +338,10 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
     field.setFocus()
     field.selectAll()
     app.processEvents()
-    QTest.keyClicks(field, "107FI")
-    assert field.text() == "107FI" and opened.viewer.views == []
+    QTest.keyClicks(field, "107FIH")
+    assert field.text() == "107FIH" and opened.viewer.views == []
     assert opened._isolated is None
+    assert not opened._visibility
     assert not opened.session.can_undo
     opened.viewer.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     opened.viewer.setFocus()
@@ -354,7 +355,11 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
     QTest.keyClick(opened.viewer, Qt.Key.Key_I,
                    Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
     assert opened._isolated is None
-    assert field.text() == "107FI" and not opened.session.can_undo
+    QTest.keyClick(opened.viewer, Qt.Key.Key_H)
+    assert len(opened.visible_instances()) == 5
+    QTest.keyClick(opened.viewer, Qt.Key.Key_H)
+    assert len(opened.visible_instances()) == 6
+    assert field.text() == "107FIH" and not opened.session.can_undo
 
 
 def test_isolation_preserves_pending_fields_model_history_and_restores_all(opened):
@@ -488,6 +493,161 @@ def test_restore_from_constraint_keeps_unfinished_distance_and_restores_faces(
     assert len(w.viewer.highlighted) == 2 and not w.constraint_isolation_note.isVisible()
     assert w.constraint_value.text() == "rozepsaná vzdálenost"
     assert w.session.assembly.to_dict() == before and not w.session.can_undo
+
+
+def visibility_row(window, ids):
+    def walk(item):
+        if item.data(0, 256) == json.dumps(list(ids)):
+            return item
+        for n in range(item.childCount()):
+            found = walk(item.child(n))
+            if found is not None:
+                return found
+        return None
+
+    for n in range(window.tree.topLevelItemCount()):
+        found = walk(window.tree.topLevelItem(n))
+        if found is not None:
+            return found
+    raise AssertionError(ids)
+
+
+def test_hide_show_preserve_pending_fields_selection_history_and_clear_hidden_picks(opened):
+    from PySide6.QtCore import Qt
+
+    w = opened
+    pick(w, "vicko")
+    before = w.session.assembly.to_dict()
+    history = (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    lid = next(i for i in w.session.result.instances if i.ids == ("vicko",))
+    w.position_edits[0].setText("rozepsaná poloha")
+    w.visibility_action.trigger()
+    shown, fit = w.viewer.parts[-1]
+    assert not fit and len(shown.solids()) == 5
+    assert shown.volume == pytest.approx(w.session.result.volume_mm3 - lid.volume_mm3)
+    assert visibility_row(w, lid.ids).checkState(0) == Qt.CheckState.Unchecked
+    assert w.visibility_action.iconText() == "Zobrazit"
+    assert w.restore_visibility_action.isEnabled()
+    assert "viditelné díly (5/6)" in w.windowTitle()
+    assert w.position_edits[0].text() == "rozepsaná poloha" and w._selected == lid.ids
+    face = max(lid.part.faces(), key=lambda f: f.center().Z)
+    w.viewer.selection_changed.emit([face.wrapped, face.wrapped])
+    assert not w._picks and not w.constraint_action.isEnabled()
+    assert not w.viewer.highlighted
+    w.visibility_action.trigger()
+    assert not w._visibility and len(w.viewer.parts[-1][0].solids()) == 6
+    assert w.position_edits[0].text() == "rozepsaná poloha"
+    assert w.session.assembly.to_dict() == before
+    assert history == (len(w.session._undo), len(w.session._redo), w.session.dirty)
+
+
+def test_nested_checkboxes_show_child_of_hidden_parent_without_other_copies(nested_isolation, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = nested_isolation
+    parent = visibility_row(w, ("a",))
+    child = visibility_row(w, ("a", "deska"))
+    parent.setCheckState(0, Qt.CheckState.Unchecked)
+    assert {i.ids for i in w.visible_instances()} == {("b", "deska"), ("b", "druha")}
+    assert child.checkState(0) == Qt.CheckState.Unchecked
+    assert visibility_row(w, ("b",)).checkState(0) == Qt.CheckState.Checked
+    w.tree.setCurrentItem(child)
+    w.tree.setFocus()
+    app.processEvents()
+    QTest.keyClick(w.tree, Qt.Key.Key_Space)
+    assert child.checkState(0) == Qt.CheckState.Checked
+    assert parent.checkState(0) == Qt.CheckState.PartiallyChecked
+    shown = w.viewer.parts[-1][0]
+    assert len(shown.solids()) == 3 and shown.volume == pytest.approx(18000)
+    assert "V pohledu: 1/2 dílů" in parent.toolTip(0)
+    parent.setCheckState(0, Qt.CheckState.Checked)
+    assert len(w.visible_instances()) == 4 and parent.checkState(0) == Qt.CheckState.Checked
+    assert not w._visibility
+
+
+def test_isolation_intersects_manual_visibility_and_exit_preserves_hidden_parts(opened):
+    w = opened
+    w.set_component_visible(("nozicka_1",), False)
+    pick(w, "vicko")
+    w.isolate_selected()
+    assert len(w.visible_instances()) == 1 and w.end_isolation_action.isEnabled()
+    w.end_isolation_action.trigger()
+    assert w._isolated is None and len(w.visible_instances()) == 5
+    assert w._visibility == {("nozicka_1",): False}
+    w.isolate_selected()
+    w.toggle_selected_visibility()
+    assert w._isolated == ("vicko",) and not w.visible_instances()
+    assert w.viewer.parts[-1][0] is None and not w.isolate_action.isEnabled()
+    assert w.end_isolation_action.isEnabled() and w.restore_visibility_action.isEnabled()
+    w.show_all()
+    assert not w._visibility and w._isolated is None and len(w.visible_instances()) == 6
+
+
+def test_hidden_child_stays_hidden_when_isolating_parent(nested_isolation):
+    w = nested_isolation
+    w.set_component_visible(("a", "deska"), False)
+    w.select(("a",))
+    w.isolate_selected()
+    assert [i.ids for i in w.visible_instances()] == [("a", "druha")]
+    assert w.viewer.parts[-1][0].volume == pytest.approx(6000)
+    w.end_isolation()
+    assert len(w.visible_instances()) == 3
+    w.select(("a", "deska"))
+    assert not w.isolate_action.isEnabled() and w.visibility_action.isEnabled()
+    w.toggle_selected_visibility()
+    assert w.isolate_action.isEnabled() and len(w.visible_instances()) == 4
+
+
+def test_manual_visibility_survives_rebuild_new_children_and_save_but_not_removal_or_open(
+        nested_isolation, dialogs, tmp_path):
+    from test_assembly import component, write
+
+    w = nested_isolation
+    w.set_component_visible(("a",), False)
+    source = w.session.path.parent / "modul.json"
+    data = json.loads(source.read_text(encoding="utf-8"))
+    data["components"].append(component("treti", "dily/deska.json", position=(80, 0, 0)))
+    write(source, data)
+    w.reload()
+    assert {i.ids for i in w.visible_instances()} == {
+        ("b", "deska"), ("b", "druha"), ("b", "treti")}
+    target = tmp_path / "kopie.json"
+    dialogs["save"] = str(target)
+    assert w.save_as() and w._visibility == {("a",): False}
+    w.select(("a",))
+    w.remove_selected()
+    assert not w._visibility and len(w.visible_instances()) == 3
+    w.undo()
+    assert len(w.visible_instances()) == 6
+    w.set_component_visible(("a",), False)
+    assert w.save()
+    assert w.open_assembly(target)
+    assert not w._visibility and len(w.visible_instances()) == 6
+
+
+def test_hidden_parts_remain_in_saved_recipe_step_and_constraint_values(opened, project, tmp_path):
+    from build123d import import_step
+
+    w = opened
+    w.set_component_visible(("krabicka",), False)
+    total = w.session.result.volume_mm3
+    saved = tmp_path / "cele.json"
+    w.session.save(saved)
+    assert len(json.loads(saved.read_text(encoding="utf-8"))["components"]) == 6
+    step = tmp_path / "cele.step"
+    w.session.export_step(step)
+    shape = import_step(step)
+    assert len(shape.solids()) == 6 and shape.volume == pytest.approx(total)
+    assert len(w.visible_instances()) == 5
+    assert w.open_assembly(project / "sestavy/krabicka_s_vazbami.json")
+    w.set_component_visible(("krabicka",), False)
+    w.select_constraint("v1")
+    w.constraint_value.setText("rozepsaná vazba")
+    assert not w.viewer.highlighted and w.constraint_isolation_note.isVisible()
+    w.show_all()
+    assert len(w.viewer.highlighted) == 2 and not w.constraint_isolation_note.isVisible()
+    assert w.constraint_value.text() == "rozepsaná vazba"
 
 
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):
