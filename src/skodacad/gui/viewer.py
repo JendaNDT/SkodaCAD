@@ -238,6 +238,7 @@ class OccViewer(QWidget):
     """3D prohlížeč dílu. Když se OpenGL nepodaří spustit, ukáže místo pádu zprávu."""
 
     selection_changed = Signal(list)  # vybrané plochy a hrany (TopoDS), [] = nic
+    selection_cleared = Signal()  # uživatel zrušil výběr; nikoli přehrání čekajícího modelu
     context_menu_requested = Signal(QPoint)  # pravý klik bez tažení, globální souřadnice
     probe_dragged = Signal(list, object)  # plocha a bod [x, y, z] při jízdě sondou
     guide_handle_moved = Signal(dict)  # jediný návrh po dokončeném tahu
@@ -431,6 +432,7 @@ class OccViewer(QWidget):
             self._view.Redraw()
         self.picked_point = None
         self.selection_changed.emit([])
+        self.selection_cleared.emit()
 
     def highlight(self, shapes: list[Any]) -> None:
         """Zvýrazní tvary (hrany/plochy, které používá vybraný prvek); [] = nic.
@@ -1381,7 +1383,10 @@ class OccViewer(QWidget):
         else:
             context.SelectDetected(AIS_SelectionScheme_Replace)
         context.UpdateCurrentViewer()
-        self.selection_changed.emit(self.selected_shapes())
+        shapes = self.selected_shapes()
+        self.selection_changed.emit(shapes)
+        if not shapes:
+            self.selection_cleared.emit()
 
     def _select_for_menu(self, x: int, y: int) -> None:
         """Pravý klik na nevybraný prvek ho vybere (jako běžně v programech), na vybraný

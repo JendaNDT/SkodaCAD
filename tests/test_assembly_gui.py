@@ -352,7 +352,7 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
         QTest.keyClick(opened.viewer, key)
         assert opened.viewer.views[-1] == view
     QTest.keyClick(opened.viewer, Qt.Key.Key_I)
-    assert opened._isolated == ("vicko",)
+    assert opened._isolated == (("vicko",),)
     QTest.keyClick(opened.viewer, Qt.Key.Key_I,
                    Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
     assert opened._isolated is None
@@ -377,7 +377,7 @@ def test_isolation_preserves_pending_fields_model_history_and_restores_all(opene
     history = (opened.session.can_undo, opened.session.can_redo, opened.session.dirty)
     opened.position_edits[0].setText("rozepsaný výraz")
     opened.isolate_action.trigger()
-    assert opened._isolated == lid.ids and opened._selected == lid.ids
+    assert opened._isolated == (lid.ids,) and opened._selected == lid.ids
     shown, fit = opened.viewer.parts[-1]
     assert fit and len(shown.solids()) == 1
     assert shown.volume == pytest.approx(lid.volume_mm3)
@@ -424,7 +424,7 @@ def test_nested_isolation_uses_instance_path_and_hidden_picks_do_not_select(nest
     assert w._selected == ("a", "deska")
     assert not w._picks
     w.select(("b",))  # strom zůstává celý; samotný výběr neodkryje skryté těleso
-    assert w._isolated == ("a", "deska") and not w.viewer.highlighted
+    assert w._isolated == (("a", "deska"),) and not w.viewer.highlighted
     assert len(w.viewer.parts[-1][0].solids()) == 1
     w.isolate_selected()
     assert [i.ids for i in w.visible_instances()] == [("b", "deska"), ("b", "druha")]
@@ -443,7 +443,7 @@ def test_isolation_save_and_step_export_keep_full_assembly(opened, tmp_path, dia
     total = opened.session.result.volume_mm3
     target = tmp_path / "kopie.json"
     dialogs["save"] = str(target)
-    assert opened.save_as() and opened._isolated == ("vicko",)
+    assert opened.save_as() and opened._isolated == (("vicko",),)
     saved = json.loads(target.read_text(encoding="utf-8"))
     assert len(saved["components"]) == 6 and "isolation" not in saved
     step = tmp_path / "cela.step"
@@ -459,12 +459,12 @@ def test_isolation_survives_edit_undo_and_missing_source_then_removal_restores_a
     opened.isolate_selected()
     opened.position_edits[0].setText("10")
     opened.apply_form()
-    assert opened._isolated == ("vicko",) and len(opened.visible_instances()) == 1
+    assert opened._isolated == (("vicko",),) and len(opened.visible_instances()) == 1
     opened.undo()
-    assert opened._isolated == ("vicko",)
+    assert opened._isolated == (("vicko",),)
     (project / "sestavy/dily/vicko.json").unlink()
     opened.reload()
-    assert opened._isolated == ("vicko",) and not opened.visible_instances()
+    assert opened._isolated == (("vicko",),) and not opened.visible_instances()
     assert opened.viewer.parts[-1][0] is None
     assert opened.restore_visibility_action.isEnabled()
     opened.remove_selected()
@@ -476,7 +476,7 @@ def test_isolation_keeps_constraint_and_collision_overlays_from_revealing_hidden
     opened.isolate_selected()
     opened._finding = {"kind": "collision", "a": ["vicko"], "b": ["krabicka"],
                        "center": [0, 0, 20]}
-    opened._selected = None
+    opened._selection = ()
     opened._refresh_highlight()
     assert opened.viewer.highlighted and opened.viewer.points is None
     opened._finding = None
@@ -515,6 +515,244 @@ def visibility_row(window, ids):
         if found is not None:
             return found
     raise AssertionError(ids)
+
+
+def tree_click(window, ids, modifiers=None):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    row = visibility_row(window, ids)
+    window.tree.scrollToItem(row)
+    rect = window.tree.visualItemRect(row)
+    QTest.mouseClick(window.tree.viewport(), Qt.MouseButton.LeftButton,
+                    modifiers or Qt.KeyboardModifier.NoModifier,
+                    QPoint(rect.left()+100, rect.center().y()))  # mimo checkbox
+
+
+def test_multi_tree_ctrl_shift_select_all_escape_and_single_edit_guard(opened, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = opened
+    w.show()
+    app.processEvents()
+    before = w.session.assembly.to_dict()
+    tree_click(w, ("krabicka",))
+    tree_click(w, ("vicko",), Qt.KeyboardModifier.ControlModifier)
+    assert w._selection == (("krabicka",), ("vicko",))
+    assert len(w.tree.selectedItems()) == 2 and w._selected is None
+    assert "Vybrané komponenty: 2" in w.form_note.text()
+    assert not w.apply_button.isEnabled() and not w.remove_action.isEnabled()
+    assert not w.open_part_button.isEnabled() and w.transparency_percent.isEnabled()
+    w.apply_form()
+    w.remove_selected()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    tree_click(w, ("vicko",))
+    tree_click(w, ("nozicka_2",), Qt.KeyboardModifier.ShiftModifier)
+    assert set(w._selection) == {("vicko",), ("nozicka_1",), ("nozicka_2",)}
+    QTest.keyClick(w.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert len(w._selection) == len(w.tree.selectedItems()) == 6
+    QTest.keyClick(w.tree, Qt.Key.Key_Escape)
+    assert not w._selection and not w.tree.selectedItems() and not w.viewer.highlighted
+    tree_click(w, ("vicko",))
+    assert w._selected == ("vicko",) and w.apply_button.isEnabled()
+
+
+def test_multi_3d_maps_all_unique_copies_preserves_face_picks_and_clears_on_empty(opened):
+    w = opened
+    body, lid = w.session.result.instances[:2]
+    faces = [min(i.part.faces(), key=lambda f: f.center().Y) for i in (body, lid)]
+    w.viewer.click(faces, (0, -25, 29))
+    assert w._selection == (body.ids, lid.ids) and len(w.tree.selectedItems()) == 2
+    assert len(w._picks) == 2 and w.constraint_action.isEnabled()
+    # Dvě plochy stejného dílu nesmějí duplikovat komponentu.
+    w.viewer.click([*faces, max(body.part.faces(), key=lambda f: f.center().Z)])
+    assert len(w._selection) == 2 and len(w._picks) == 3
+    picks = list(w._picks)
+    shown = len(w.viewer.parts)
+    w.transparency_action.trigger()
+    assert w._picks == picks and len(w.viewer.parts) == shown
+    assert len(w.viewer.transparent_parts) == 2
+    w.viewer.click([faces[0]])
+    assert w._selected == body.ids and len(w.tree.selectedItems()) == 1
+    w.viewer.click([])
+    assert not w._selection and not w._picks and not w.viewer.highlighted
+    assert not w.constraint_action.isEnabled()
+
+
+def test_multi_late_presentation_clears_faces_but_keeps_component_selection(opened):
+    w = opened
+    body, lid = w.session.result.instances[:2]
+    w.viewer.click([min(i.part.faces(), key=lambda f: f.center().Y) for i in (body, lid)])
+    assert len(w._picks) == 2
+    selection = w._selection
+    w.position_edits[0].setText("rozepsaná hodnota")
+    # Stejný signál přijde z prvního paintu při přehrání OccViewer._pending,
+    # tedy dlouho po skončení volání _show_visible.
+    w.viewer.highlight([])  # nový AIS odstraní staré zvýraznění
+    w.viewer.show_part(w.session.result.compound())
+    assert w._selection == selection and not w._picks
+    assert len(w.tree.selectedItems()) == 2 and w.viewer.highlighted
+    assert w.position_edits[0].text() == "rozepsaná hodnota"
+    w.viewer.clear_selection()  # výslovné uživatelské zrušení se chová jinak
+    assert not w._selection and not w.tree.selectedItems() and not w.viewer.highlighted
+
+
+def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
+    w = opened
+    before, result = w.session.assembly.to_dict(), w.session.result
+    ids = (("nozicka_1",), ("nozicka_3",))
+    chosen = [i for i in result.instances if i.ids in ids]
+    volume = sum(i.part.volume for i in chosen)
+    w.select_many(ids)
+    shown = len(w.viewer.parts)
+    w.visibility_action.trigger()
+    assert len(w.viewer.parts) == shown+1 and len(w.visible_instances()) == 4
+    assert w._selection == ids and len(w.tree.selectedItems()) == 2
+    assert not w.viewer.highlighted and not w._picks
+    w.visibility_action.trigger()
+    assert len(w.visible_instances()) == 6
+    w.isolate_action.trigger()
+    assert w._isolated == ids and {i.ids for i in w.visible_instances()} == set(ids)
+    part = w.viewer.parts[-1][0]
+    assert len(part.solids()) == 2 and part.volume == pytest.approx(volume)
+    assert len(w.viewer.highlighted) == sum(len(i.part.edges()) for i in chosen)
+    w.set_component_visible(ids[0], False)
+    w.end_isolation()
+    assert len(w.visible_instances()) == 5 and not w._isolated
+    w.show_all()
+    assert len(w.visible_instances()) == 6 and w._selection == ids
+    assert w.session.result is result and result.volume_mm3 == pytest.approx(31309.287, abs=.01)
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+
+
+def test_multi_transparency_mixed_toggle_remembers_each_level_and_percent_unifies(opened):
+    from PySide6.QtCore import Qt
+
+    w = opened
+    ids = (("vicko",), ("nozicka_1",))
+    w.set_component_transparency(ids[0], 35)
+    w.set_component_transparency(ids[1], 85)
+    w.select_many(ids)
+    assert w.transparency_percent.value() == -1
+    assert w.transparency_percent.text() == "Různé"
+    assert w.transparency_box.checkState() == Qt.CheckState.Checked
+    w.toggle_selected_transparency()
+    assert all(w._transparency_value(path) == 0 for path in ids)
+    w.toggle_selected_transparency()
+    assert [w._transparency_value(path) for path in ids] == [35, 85]
+    w.set_component_transparent(ids[0], False)
+    assert w.transparency_box.checkState() == Qt.CheckState.PartiallyChecked
+    w.toggle_selected_transparency()
+    assert [w._transparency_value(path) for path in ids] == [35, 85]
+    w.position_edits[0].setText("rozepsaná hodnota")
+    parts = len(w.viewer.parts)
+    w.transparency_percent.setValue(55)
+    assert [w._transparency_value(path) for path in ids] == [55, 55]
+    assert all(w._transparency_value(i.ids) == 0 for i in w.session.result.instances
+               if i.ids not in ids)
+    assert w.position_edits[0].text() == "rozepsaná hodnota" and len(w.viewer.parts) == parts
+    w.toggle_selected_visibility()
+    w.toggle_selected_visibility()
+    assert [w._transparency_value(path) for path in ids] == [55, 55]
+    assert w._selection == ids and not w.session.dirty
+
+
+def test_multi_nested_parent_child_overlap_and_independent_copies(nested_isolation):
+    w = nested_isolation
+    w.select_many((("a",), ("a", "deska"), ("b", "deska")))
+    assert w._selection_roots() == (("a",), ("b", "deska"))
+    w.transparency_percent.setValue(45)
+    assert w._transparency == {("a",): True, ("b", "deska"): True}
+    assert w._transparency_levels == {("a",): 45, ("b", "deska"): 45}
+    assert w._transparency_value(("b", "druha")) == 0
+    w.isolate_selected()
+    assert len(w.visible_instances()) == 3
+    assert w.viewer.parts[-1][0].volume == pytest.approx(18000)
+    w.toggle_selected_visibility()
+    assert not w.visible_instances()
+    assert w._visibility == {("a",): False, ("b", "deska"): False}
+    w.end_isolation()
+    assert [i.ids for i in w.visible_instances()] == [("b", "druha")]
+    assert w.viewer.parts[-1][0].volume == pytest.approx(6000)
+    w.toggle_selected_visibility()
+    assert len(w.visible_instances()) == 4 and len(w._selection) == 3
+    assert w.session.result.volume_mm3 == pytest.approx(24000)
+
+
+def test_multi_selection_rebuild_prune_isolation_and_document_lifetime(opened, project, dialogs):
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    rows = list(w.tree.selectedItems())
+    w.session.rebuild()
+    w._refresh()
+    assert w._selection == ids and w.tree.selectedItems() == rows
+    assert not w.open_assembly(project / "chybi.json") and w._selection == ids
+    w.isolate_selected()
+    w.session.remove("nozicka_1")
+    w._refresh()
+    assert w._selected == ids[1] and w._isolated == (ids[1],)
+    assert len(w.visible_instances()) == 1
+    assert not w.open_assembly(w.session.path) and w._selected == ids[1]  # zrušit změny
+    w.session.remove("nozicka_2")
+    w._refresh()
+    assert not w._selection and w._isolated is None and len(w.visible_instances()) == 4
+    w.session.undo()
+    w._refresh()
+    assert not w._selection and len(w.visible_instances()) == 5
+    dialogs["question"] = QMessageBox.StandardButton.Discard
+    assert w.open_assembly(w.session.path)
+    assert not w._selection and len(w.visible_instances()) == 6
+
+
+def test_multi_constraint_rows_are_exclusive_and_select_all_only_components(constrained, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = constrained
+    w.show()
+    app.processEvents()
+    w.select_many((("krabicka",), ("vicko",)))
+    pick_constraint(w, "v1")
+    assert w._constraint == "v1" and not w._selection and len(w.tree.selectedItems()) == 1
+    tree_click(w, ("krabicka",), Qt.KeyboardModifier.ControlModifier)
+    assert w._selected == ("krabicka",) and w._constraint is None
+    constraint_row = next(w.tree.topLevelItem(n).child(0)
+                          for n in range(w.tree.topLevelItemCount())
+                          if w.tree.topLevelItem(n).childCount())
+    rect = w.tree.visualItemRect(constraint_row)
+    QTest.mouseClick(w.tree.viewport(), Qt.MouseButton.LeftButton,
+                    Qt.KeyboardModifier.ControlModifier, rect.center())
+    assert w._constraint is not None and not w._selection and len(w.tree.selectedItems()) == 1
+    w.tree.setFocus()
+    QTest.keyClick(w.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert w._constraint is None and len(w._selection) == 6
+    assert len(w.tree.selectedItems()) == 6 and not w.constraint_box.isVisible()
+    assert not w.remove_action.isEnabled()
+    assert len(w.session.assembly.constraints) == 7 and not w.session.can_undo
+
+
+def test_multi_isolated_save_and_step_are_complete_and_open_clears_selection(
+        opened, tmp_path, dialogs):
+    from build123d import import_step
+
+    w = opened
+    ids = (("vicko",), ("nozicka_1",))
+    w.select_many(ids)
+    w.isolate_selected()
+    w.transparency_percent.setValue(65)
+    dialogs["save"] = str(tmp_path / "hromadny-vyber.json")
+    assert w.save_as() and w._selection == ids and w._isolated == ids
+    data = json.loads(w.session.path.read_text())
+    assert len(data["components"]) == 6
+    assert not any(k in data for k in ("selection", "isolation", "transparency"))
+    step = tmp_path / "cela-sestava.step"
+    w.session.export_step(step)
+    part = import_step(step)
+    assert len(part.solids()) == 6 and part.volume == pytest.approx(w.session.result.volume_mm3)
+    assert w.open_assembly(w.session.path)
+    assert not w._selection and w._isolated is None and not w._transparency
 
 
 def test_hide_show_preserve_pending_fields_selection_history_and_clear_hidden_picks(opened):
@@ -582,7 +820,7 @@ def test_isolation_intersects_manual_visibility_and_exit_preserves_hidden_parts(
     assert w._visibility == {("nozicka_1",): False}
     w.isolate_selected()
     w.toggle_selected_visibility()
-    assert w._isolated == ("vicko",) and not w.visible_instances()
+    assert w._isolated == (("vicko",),) and not w.visible_instances()
     assert w.viewer.parts[-1][0] is None and not w.isolate_action.isEnabled()
     assert w.end_isolation_action.isEnabled() and w.restore_visibility_action.isEnabled()
     w.show_all()
@@ -717,7 +955,7 @@ def test_transparency_zero_full_and_toggle_remember_levels_while_filters_stay(op
     w.isolate_selected()
     w.set_component_visible(("nozicka_1",), False)
     w.reset_transparency_action.trigger()
-    assert w._isolated == ("vicko",) and w._visibility == {("nozicka_1",): False}
+    assert w._isolated == (("vicko",),) and w._visibility == {("nozicka_1",): False}
     assert w.transparency_percent.value() == 0
     w.transparency_box.toggle()  # AX obnovení poslední míry
     assert transparency_amounts(w) == {("vicko",): 1.0}
@@ -896,7 +1134,7 @@ def test_transparency_survives_hiding_and_isolation_and_reset_does_not_change_fi
     shown = list(w.viewer.parts)
     w.reset_transparency_action.trigger()
     assert not w._transparency and not w.viewer.transparent_parts
-    assert w._isolated == ("a",) and w._visibility == {("b",): False}
+    assert w._isolated == (("a",),) and w._visibility == {("b",): False}
     assert w.viewer.parts == shown and len(w.visible_instances()) == 2
     w.set_component_visible(("a",), False)
     w.set_component_transparent(("a",), True)  # i zcela skrytá větev může mít připravený vzhled

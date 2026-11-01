@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QBrush, QKeySequence, QPalette
+from PySide6.QtCore import QItemSelectionModel, Qt, QTimer
+from PySide6.QtGui import QAction, QBrush, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -51,6 +51,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QVBoxLayout,
     QWidget,
 )
@@ -114,8 +115,8 @@ class AssemblyWindow(QMainWindow):
         self.session = AssemblySession(Cache(builder=None if runner is not None else build_part))
         self.user_dir = user_dir or Path.home()
         self.open_part = open_part  # hlavní okno otevře soubor dílu
-        self._selected: tuple[str, ...] | None = None
-        self._isolated: tuple[str, ...] | None = None  # jen pohled, mimo recept a historii
+        self._selection: tuple[tuple[str, ...], ...] = ()
+        self._isolated: tuple[tuple[str, ...], ...] | None = None  # jen pohled
         self._visibility: dict[tuple[str, ...], bool] = {}  # nejbližší předek určuje stav
         self._transparency: dict[tuple[str, ...], bool] = {}  # jen vzhled, stejná pravidla id
         self._transparency_levels: dict[tuple[str, ...], int] = {}  # pamatuje míru i při vypnutí
@@ -137,6 +138,7 @@ class AssemblyWindow(QMainWindow):
             viewer_factory = OccViewer
         self.viewer = viewer_factory()
         self.viewer.selection_changed.connect(self._picked)
+        self.viewer.selection_cleared.connect(lambda: self.select(None))
         self.setCentralWidget(self.viewer)
         self._build_tree()
         self._build_form()
@@ -160,6 +162,14 @@ class AssemblyWindow(QMainWindow):
 
     def _build_tree(self) -> None:
         self.tree = QTreeWidget()
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree.setToolTip("Klik vybere díl, Ctrl/⌘ přidá nebo ubere, Shift vybere rozsah. "
+                             "Ctrl/⌘+A vybere všechny komponenty, Esc zruší výběr.")
+        for key, slot in ((QKeySequence.StandardKey.SelectAll, self.select_all_components),
+                          ("Escape", self.clear_component_selection)):
+            shortcut = QShortcut(QKeySequence(key), self.tree)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(slot)
         self.tree.setHeaderLabels(["Komponenta", "Soubor", "Stav"])
         self.tree.setMinimumWidth(220)
         self.tree.setColumnWidth(0, 180)
@@ -486,6 +496,8 @@ class AssemblyWindow(QMainWindow):
             return False
         def work():
             self.session.open(path)
+            self._selection = ()
+            self._constraint = None
             self._isolated = None
             self._visibility.clear()
             self._transparency.clear()
@@ -501,6 +513,8 @@ class AssemblyWindow(QMainWindow):
             return False
         def work():
             self.session.new(path, name)
+            self._selection = ()
+            self._constraint = None
             self._isolated = None
             self._visibility.clear()
             self._transparency.clear()
@@ -586,7 +600,7 @@ class AssemblyWindow(QMainWindow):
             return
         component = self._editable()
         if component is not None:
-            self._selected = None
+            self._selection = ()
             self._run("Komponentu nejde smazat", lambda: self.session.remove(component))
 
     # --- vazby (P5.3B) ------------------------------------------------------------------
@@ -663,7 +677,7 @@ class AssemblyWindow(QMainWindow):
     def select_constraint(self, constraint_id: str | None) -> None:
         self._constraint = constraint_id
         if constraint_id is not None:
-            self._selected = None
+            self._selection = ()
         self._fill_tree(self.session.result)
         self._refresh_selection()
 
@@ -869,7 +883,7 @@ class AssemblyWindow(QMainWindow):
             return
         self._finding = finding
         if finding is not None:
-            self._selected, self._constraint = None, None
+            self._selection, self._constraint = (), None
             self.tree.blockSignals(True)
             self.tree.clearSelection()
             self.tree.blockSignals(False)
@@ -988,12 +1002,67 @@ class AssemblyWindow(QMainWindow):
 
     # --- výběr ---------------------------------------------------------------------------
 
+    @property
+    def _selected(self) -> tuple[str, ...] | None:
+        """Jediná komponenta pro editační příkazy; hromadný výběr se neupravuje omylem."""
+        return self._selection[0] if len(self._selection) == 1 else None
+
     def select(self, ids: tuple[str, ...] | None) -> None:
-        self._selected = ids
-        if ids is not None:
-            self._constraint = None
+        self.select_many((ids,) if ids else ())
+
+    def select_many(self, paths: Iterable[tuple[str, ...]]) -> None:
+        valid = {s.ids for s in self.session.result.statuses} if self.session.result else set()
+        selected = set(paths)
+        selection = tuple(s.ids for s in self.session.result.statuses
+                          if s.ids in selected and s.ids in valid) if valid else ()
+        if selection == self._selection and self._constraint is None:
+            self._sync_tree_selection()
+            return
+        self._selection, self._constraint = selection, None
+        if selection:
             self._clear_finding()
+        self._sync_tree_selection()
         self._refresh_selection()
+
+    def select_all_components(self) -> None:
+        result = self.session.result
+        self.select_many(s.ids for s in result.statuses) if result else self.select(None)
+
+    def clear_component_selection(self) -> None:
+        self.viewer.clear_selection()
+        self.select(None)
+
+    def _selection_roots(self) -> tuple[tuple[str, ...], ...]:
+        """Rodič a jeho potomek se pro společnou operaci počítají jen jednou."""
+        selected = set(self._selection)
+        return tuple(ids for ids in self._selection
+                     if not any(ids[:n] in selected for n in range(1, len(ids))))
+
+    def _selected_values(self, value: Callable) -> list:
+        result = self.session.result
+        statuses = result.statuses if result else []
+        parents = {s.ids[:-1] for s in statuses}
+        selected = set(self._selection)
+        return [value(s.ids) for s in statuses if s.ids not in parents
+                and any(s.ids[:n] in selected for n in range(1, len(s.ids)+1))]
+
+    def _sync_tree_selection(self) -> None:
+        blocked = self.tree.blockSignals(True)
+        iterator = QTreeWidgetItemIterator(self.tree)
+        chosen = []
+        paths = set(self._selection)
+        while item := iterator.value():
+            data = json.loads(item.data(0, Qt.ItemDataRole.UserRole))
+            selected = (tuple(data) in paths if isinstance(data, list)
+                        else isinstance(data, dict) and data.get("constraint") == self._constraint)
+            item.setSelected(selected)
+            if selected:
+                chosen.append(item)
+            iterator += 1
+        if self.tree.currentItem() not in chosen:
+            self.tree.setCurrentItem(chosen[0] if chosen else None, 0,
+                                     QItemSelectionModel.SelectionFlag.NoUpdate)
+        self.tree.blockSignals(blocked)
 
     def _clear_finding(self) -> None:
         self._finding = None
@@ -1005,14 +1074,15 @@ class AssemblyWindow(QMainWindow):
     def _tree_selected(self) -> None:
         items = self.tree.selectedItems()
         # Id jako JSON text: Qt by n-tici v datech položky převedl na seznam.
-        data = json.loads(items[0].data(0, Qt.ItemDataRole.UserRole)) if items else None
+        current = self.tree.currentItem()
+        focus = current if current in items else items[-1] if items else None
+        data = json.loads(focus.data(0, Qt.ItemDataRole.UserRole)) if focus else None
         constraint = data.get("constraint") if isinstance(data, dict) else None
-        ids = tuple(data) if isinstance(data, list) else None
-        if ids != self._selected or constraint != self._constraint:
-            self._selected, self._constraint = ids, constraint
-            if ids is not None or constraint is not None:
-                self._clear_finding()
-            self._refresh_selection()
+        if constraint is not None:
+            self.select_constraint(constraint)
+        else:
+            paths = [json.loads(item.data(0, Qt.ItemDataRole.UserRole)) for item in items]
+            self.select_many(tuple(path) for path in paths if isinstance(path, list))
 
     def _picked(self, shapes: list) -> None:
         """Klik ve 3D vybere komponentu, které kliknutá plocha nebo hrana patří; vybrané
@@ -1029,13 +1099,17 @@ class AssemblyWindow(QMainWindow):
                                 else getattr(self.viewer, "picked_point", None)))
         self._refresh_pick_note()
         result = self.session.result
-        if not shapes or result is None:
+        if result is None:
             return
+        if not shapes:
+            self._refresh_highlight()  # i první paint přehraje dříve zvolenou komponentu
+            return
+        selected = []
         for instance in self.visible_instances():
             pieces = [*instance.part.faces(), *instance.part.edges()]
-            if any(piece.wrapped.IsSame(shapes[0]) for piece in pieces):
-                self.select(instance.ids)
-                return
+            if any(piece.wrapped.IsSame(shape) for shape in shapes for piece in pieces):
+                selected.append(instance.ids)
+        self.select_many(selected)
 
     def _refresh_pick_note(self) -> None:
         count = len(self._picks)
@@ -1106,7 +1180,8 @@ class AssemblyWindow(QMainWindow):
         if result is None:
             return []
         return [i for i in result.instances
-                if (self._isolated is None or i.ids[:len(self._isolated)] == self._isolated)
+                if (self._isolated is None or any(i.ids[:len(ids)] == ids
+                                                for ids in self._isolated))
                 and self._manually_visible(i.ids)]
 
     def _manually_visible(self, ids: tuple[str, ...]) -> bool:
@@ -1131,21 +1206,29 @@ class AssemblyWindow(QMainWindow):
                   if s.ids[:len(ids)] == ids and s.ids not in parents]
         return values or [value(ids)]
 
+    @staticmethod
+    def _set_branch_rule(rules: dict, ids: tuple[str, ...], value, default) -> None:
+        inherited = next((rules[ids[:n]] for n in range(len(ids)-1, 0, -1)
+                          if ids[:n] in rules), default)
+        for path in list(rules):
+            if path[:len(ids)] == ids:
+                del rules[path]
+        if value != inherited:
+            rules[ids] = value
+
     def set_component_visible(self, ids: tuple[str, ...], visible: bool) -> None:
         result = self.session.result
         if not ids or result is None or not any(s.ids == ids for s in result.statuses):
             return
-        inherited = self._manually_visible(ids[:-1])
-        self._visibility = {path: state for path, state in self._visibility.items()
-                            if path[:len(ids)] != ids}
-        if visible != inherited:
-            self._visibility[ids] = visible
+        self._set_branch_rule(self._visibility, ids, visible, True)
         self._refresh_view(fit=False)
 
     def toggle_selected_visibility(self) -> None:
-        if self._selected:
-            self.set_component_visible(self._selected,
-                self._manual_check_state(self._selected) != Qt.CheckState.Checked)
+        if self._selection:
+            visible = not all(self._selected_values(self._manually_visible))
+            for ids in self._selection_roots():
+                self._set_branch_rule(self._visibility, ids, visible, True)
+            self._refresh_view(fit=False)
 
     def _is_transparent(self, ids: tuple[str, ...]) -> bool:
         for length in range(len(ids), 0, -1):
@@ -1169,34 +1252,33 @@ class AssemblyWindow(QMainWindow):
         result = self.session.result
         if not ids or result is None or not any(s.ids == ids for s in result.statuses):
             return
+        self._set_transparency_value(ids, percent)
+        self._refresh_transparency()
+
+    def _set_transparency_value(self, ids: tuple[str, ...], percent: int) -> None:
         if percent:
-            inherited = self._transparency_level(ids[:-1])
-            self._transparency_levels = {path: value for path, value
-                in self._transparency_levels.items() if path[:len(ids)] != ids}
-            if percent != inherited:
-                self._transparency_levels[ids] = percent
-        self.set_component_transparent(ids, percent > 0)
+            self._set_branch_rule(self._transparency_levels, ids, percent, 70)
+        self._set_branch_rule(self._transparency, ids, percent > 0, False)
 
     def _transparency_percent_changed(self, percent: int) -> None:
-        if self._selected and percent >= 0:  # -1 je pouze zobrazení smíšených hodnot
-            self.set_component_transparency(self._selected, percent)
+        if self._selection and percent >= 0:  # -1 je pouze zobrazení smíšených hodnot
+            for ids in self._selection_roots():
+                self._set_transparency_value(ids, percent)
+            self._refresh_transparency()
 
     def set_component_transparent(self, ids: tuple[str, ...], transparent: bool) -> None:
         result = self.session.result
         if not ids or result is None or not any(s.ids == ids for s in result.statuses):
             return
-        inherited = self._is_transparent(ids[:-1])
-        self._transparency = {path: state for path, state in self._transparency.items()
-                              if path[:len(ids)] != ids}
-        if transparent != inherited:
-            self._transparency[ids] = transparent
+        self._set_branch_rule(self._transparency, ids, transparent, False)
         self._refresh_transparency()
 
     def toggle_selected_transparency(self) -> None:
-        if self._selected:
-            self.set_component_transparent(self._selected,
-                self._branch_check_state(self._selected, self._is_transparent)
-                != Qt.CheckState.Checked)
+        if self._selection:
+            transparent = not all(self._selected_values(self._is_transparent))
+            for ids in self._selection_roots():
+                self._set_branch_rule(self._transparency, ids, transparent, False)
+            self._refresh_transparency()
 
     def reset_transparency(self) -> None:
         if self._transparency:
@@ -1267,11 +1349,12 @@ class AssemblyWindow(QMainWindow):
             self.tree.blockSignals(blocked)
 
     def isolate_selected(self) -> None:
-        result, ids = self.session.result, self._selected
-        if not ids or result is None or not any(i.ids[:len(ids)] == ids
+        roots = self._selection_roots()
+        result = self.session.result
+        if not roots or result is None or not any(any(i.ids[:len(ids)] == ids for ids in roots)
                 and self._manually_visible(i.ids) for i in result.instances):
             return
-        self._set_isolation(ids)
+        self._set_isolation(roots)
 
     def show_all(self) -> None:
         if self._isolated is None and not self._visibility:
@@ -1283,8 +1366,8 @@ class AssemblyWindow(QMainWindow):
         if self._isolated is not None:
             self._set_isolation(None)
 
-    def _set_isolation(self, ids: tuple[str, ...] | None) -> None:
-        self._isolated = ids
+    def _set_isolation(self, roots: tuple[tuple[str, ...], ...] | None) -> None:
+        self._isolated = roots
         self._refresh_view(fit=True)
 
     def _refresh_view(self, fit: bool) -> None:
@@ -1306,21 +1389,27 @@ class AssemblyWindow(QMainWindow):
                                            for i in visible if self._is_transparent(i.ids)])
 
     def _refresh_isolation_actions(self) -> None:
-        result, ids = self.session.result, self._selected
-        self.isolate_action.setEnabled(bool(ids and result and any(
-            i.ids[:len(ids)] == ids and self._manually_visible(i.ids) for i in result.instances)))
+        result, roots = self.session.result, self._selection_roots()
+        self.isolate_action.setEnabled(bool(roots and result and any(
+            any(i.ids[:len(ids)] == ids for ids in roots) and self._manually_visible(i.ids)
+            for i in result.instances)))
         self.end_isolation_action.setEnabled(self._isolated is not None)
-        self.visibility_action.setEnabled(bool(ids and result and any(
-            s.ids == ids for s in result.statuses)))
-        state = (self._branch_check_state(ids, self._is_transparent) if ids
-                 else Qt.CheckState.Unchecked)
+        self.visibility_action.setEnabled(bool(roots and result))
+        values = self._selected_values(self._is_transparent)
+        state = (Qt.CheckState.Checked if values and all(values)
+                 else Qt.CheckState.PartiallyChecked if any(values) else Qt.CheckState.Unchecked)
         self.transparency_action.setEnabled(self.visibility_action.isEnabled())
         self.transparency_action.setChecked(state == Qt.CheckState.Checked)
         self.transparency_box.setEnabled(self.visibility_action.isEnabled())
         blocked = self.transparency_box.blockSignals(True)
         self.transparency_box.setCheckState(state)
         self.transparency_box.blockSignals(blocked)
-        values = self._branch_values(ids, self._transparency_value) if ids else [0]
+        multiple = len(self._selection) > 1
+        self.transparency_box.setText("Průhledné vybrané (T)" if multiple
+                                      else "Průhledná komponenta (T)")
+        self.transparency_action.setText("Průhledné vybrané komponenty" if multiple
+                                         else "Průhledná vybraná komponenta")
+        values = self._selected_values(self._transparency_value) or [0]
         mixed = min(values) != max(values)
         self.transparency_percent.setEnabled(self.visibility_action.isEnabled())
         blocked = self.transparency_percent.blockSignals(True)
@@ -1328,7 +1417,7 @@ class AssemblyWindow(QMainWindow):
         self.transparency_percent.setSpecialValueText("Různé" if mixed else "")
         self.transparency_percent.setValue(-1 if mixed else values[0])
         self.transparency_percent.blockSignals(blocked)
-        tip = ("Přepnout průhlednost vybraného dílu nebo celé podsestavy (T). "
+        tip = ("Přepnout průhlednost všech vybraných dílů a podsestav (T). "
                "Zapnutí obnoví naposledy nastavené míry jednotlivých dílů. "
                "Plochy zůstávají vybíratelné. "
                + ("Průhledné jsou jen některé díly; kliknutí zprůhlední celou větev."
@@ -1336,7 +1425,7 @@ class AssemblyWindow(QMainWindow):
         self.transparency_box.setToolTip(tip)
         self.transparency_action.setToolTip(tip)
         self.reset_transparency_action.setEnabled(bool(self._transparency))
-        hide = bool(ids and self._manual_check_state(ids) == Qt.CheckState.Checked)
+        hide = bool(roots and all(self._selected_values(self._manually_visible)))
         self.visibility_action.setText("Skrýt vybrané" if hide else "Zobrazit vybrané")
         self.visibility_action.setIconText("Skrýt" if hide else "Zobrazit")
         self.visibility_action.setToolTip(f"{self.visibility_action.text()} (H)")
@@ -1344,7 +1433,7 @@ class AssemblyWindow(QMainWindow):
             self._isolated is not None or bool(self._visibility))
         self.constraint_isolation_note.setVisible(
             (self._isolated is not None or bool(self._visibility)) and self._constraint is not None)
-        self.isolate_action.setToolTip("Izolovat viditelné díly vybrané komponenty (I)")
+        self.isolate_action.setToolTip("Izolovat viditelné díly všech vybraných komponent (I)")
         shortcut = self.restore_visibility_action.shortcut().toString(
             QKeySequence.SequenceFormat.NativeText)
         self.restore_visibility_action.setToolTip(f"Zobrazit celou sestavu ({shortcut})")
@@ -1379,10 +1468,10 @@ class AssemblyWindow(QMainWindow):
         self._transparency_levels = {ids: value for ids, value in self._transparency_levels.items()
                                      if ids in valid}
         self._fill_tree(result)
-        if self._isolated is not None and (result is None or not any(
-                s.ids == self._isolated for s in result.statuses)):
-            self._isolated = None
-            fit = True
+        if self._isolated is not None:
+            roots = tuple(ids for ids in self._isolated if ids in valid) or None
+            fit = fit or roots != self._isolated
+            self._isolated = roots
         self._show_visible(fit=fit)
         self._refresh_tree_visibility()
         self._refresh_selection()
@@ -1501,19 +1590,10 @@ class AssemblyWindow(QMainWindow):
                 self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(item))
             else:
                 parent.takeChild(parent.indexOfChild(item))
-        selected = items.get(self._selected) if self._selected else None
-        if selected is None:
-            self._selected = None
+        self._selection = tuple(ids for ids in self._selection if ids in items)
         if chosen is None:
             self._constraint = None
-        target = chosen if chosen is not None else selected
-        for item in self.tree.selectedItems():
-            if item is not target:
-                item.setSelected(False)
-        if self.tree.currentItem() is not target:
-            self.tree.setCurrentItem(target)
-        if target is not None:
-            target.setSelected(True)
+        self._sync_tree_selection()
         self.tree.blockSignals(False)
 
     def _refresh_selection(self) -> None:
@@ -1552,7 +1632,11 @@ class AssemblyWindow(QMainWindow):
                 edit.clear()
             self.fixed_box.setChecked(False)
             self.form_note.setText(
-                "Komponenta podsestavy – uprav ji v souboru podsestavy." if self._selected
+                f"Vybrané komponenty: {len(self._selection)}. "
+                "Společně lze skrýt, izolovat a nastavit průhlednost. "
+                "Pro úpravu polohy nebo názvu vyber jedinou komponentu."
+                if len(self._selection) > 1
+                else "Komponenta podsestavy – uprav ji v souboru podsestavy." if self._selected
                 else "Vybraná vazba – uprav ji níž." if self._constraint
                 else "Vyber komponentu ve stromu nebo ve 3D.")
         self.fixed_box.blockSignals(False)
@@ -1562,13 +1646,14 @@ class AssemblyWindow(QMainWindow):
     def _refresh_highlight(self) -> None:
         result = self.session.result
         visible = self.visible_instances()
+        roots = self._selection_roots()
         shapes = []
         if self._constraint is not None and self.session.assembly is not None:
             if self._isolated is None and not self._visibility:
                 shapes = self.session.constraint_faces(self._constraint)
-        elif result is not None and self._selected is not None:
+        elif result is not None and self._selection:
             for instance in visible:
-                if instance.ids[:len(self._selected)] == self._selected:
+                if any(instance.ids[:len(ids)] == ids for ids in roots):
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         elif result is not None and self._finding is not None:
             pair = (tuple(self._finding["a"]), tuple(self._finding["b"]))
@@ -1581,7 +1666,7 @@ class AssemblyWindow(QMainWindow):
             shown = {i.ids for i in visible}
             if not all(tuple(self._finding[k]) in shown for k in ("a", "b")):
                 center = None
-        if center and self._selected is None and self._constraint is None:
+        if center and not self._selection and self._constraint is None:
             self.viewer.show_points([tuple(center)], [MARK])
         else:
             self.viewer.hide_points()
@@ -1616,8 +1701,8 @@ class AssemblyWindow(QMainWindow):
             return
         lines = [f"Komponent: {len(result.statuses)}, dílů ve 3D: {len(result.instances)}"]
         if self._isolated is not None:
-            path = " / ".join(result.status(self._isolated[:n]).label
-                              for n in range(1, len(self._isolated)+1))
+            path = ", ".join(" / ".join(result.status(ids[:n]).label
+                                      for n in range(1, len(ids)+1)) for ids in self._isolated)
             lines.append(f"Izolace: {path} – viditelné díly {len(self.visible_instances())}"
                          f"/{len(result.instances)}. Součty níže platí pro celou sestavu.")
         elif self._visibility:
