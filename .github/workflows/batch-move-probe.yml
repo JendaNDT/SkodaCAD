@@ -1,0 +1,43 @@
+name: Hromadný posun sestavy – nativní Windows
+on:
+  push:
+    branches: [codex/batch-move-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: "1"
+jobs:
+  native:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: de657d489d4869d3b232242b13dadf1d444a8e36
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui,build]" pefile
+      - name: Cílené regrese
+        timeout-minutes: 3
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_assembly_batch_move.py tests/test_assembly_gui.py tests/test_viewer_surface.py -k "batch or multi or transparency or b20_constraints or view_shortcuts or presentation_reset"
+      - name: Nativní balíček
+        run: pyinstaller packaging/skodacad.spec --noconfirm --distpath dist --workpath build
+      - name: Nativní zkouška Windows
+        timeout-minutes: 5
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/skodacad-batch-move-probe
+        run: |
+          set +e
+          ./dist/SkodaCAD/SkodaCAD.exe --self-test self-test.txt
+          code=$?
+          cat self-test.txt || true
+          if [ $code -ne 0 ]; then cat "$SKODACAD_HOME/skodacad.log" || true; fi
+          exit $code
