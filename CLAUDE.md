@@ -1240,6 +1240,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   výchozí skryté, `run_check` je otevře. Nativní self-test „Panely sestavy“ hlídá
   minimální šířku 3D/polí při 1200/1024 a skutečný Enter → posun 1,5 mm → Zpět.
   [Evidence](docs/p7-11-panely-sestavy.md).
+- P7.12: sestava sdílí `VIEW_LABELS` a zkratky dílu. Tytéž QAction jsou v menu
+  a na liště (Shora/Zepředu/Izometrie/Celá sestava). Nepřidávat globální filtr
+  kláves; QLineEdit musí dál přijímat 0/1/7/F. Self-test „Pohledy sestavy“
+  kontroluje skutečné Qt kliky/klávesy, směr OCCT kamery a po F projekci vrcholů
+  všech kopií uvnitř okna. [Evidence](docs/p7-12-pohledy-sestavy.md).
+- Windows `offscreen` používá náhradní písmo se stejně širokými znaky (12 bodů;
+  lišta P7.12 má 1313 bodů), zatímco nativní balíček se vejde do 960. Funkční test
+  akcí přizpůsobí okno `toolbar.sizeHint()`; rozměry 1024/960 musí hlídat nativní
+  self-test obou systémů, nikoli zmenšení písma produktu podle offscreen náhrady.
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

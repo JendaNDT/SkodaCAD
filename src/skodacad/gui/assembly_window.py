@@ -66,6 +66,7 @@ from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.file_dialogs import FILE_OPTIONS
+from skodacad.gui.viewer_views import VIEW_LABELS
 
 log = logging.getLogger(__name__)
 
@@ -345,6 +346,20 @@ class AssemblyWindow(QMainWindow):
         self.check_action = self._action("Zkontrolovat kolize a vůle", self.run_check, "F7")
         self.bill_action = self._action("Uložit kusovník CSV…", self.save_bill_dialog)
         self.export_action = self._action("Exportovat STEP…", self.export_dialog)
+        # Stručné popisky lišty; menu a bubliny dál vysvětlují celý příkaz.
+        # Windows má širší tlačítka než Cocoa a lišta se musí vejít i do 960 bodů.
+        for action, label in ((self.open_action, "Otevřít"),
+                              (self.constraint_action, "Vazba"),
+                              (self.check_action, "Kontrola")):
+            action.setIconText(label)
+            action.setToolTip(action.text())
+        self.fit_action = self._action("Celá sestava", self.viewer.fit_all, "F")
+        self.view_actions = {
+            key: self._action(label, lambda k=key: self.viewer.set_standard_view(k), shortcut)
+            for key, (label, shortcut) in VIEW_LABELS.items()
+        }
+        for action in (*self.view_actions.values(), self.fit_action):
+            action.setToolTip(f"{action.text()} ({action.shortcut().toString()})")
 
     def _build_menus(self) -> None:
         bar = self.menuBar()
@@ -365,6 +380,10 @@ class AssemblyWindow(QMainWindow):
         check_menu.addAction(self.check_action)
         check_menu.addAction(self.bill_action)
         view_menu = bar.addMenu("&Zobrazení")
+        view_menu.addAction(self.fit_action)
+        for action in self.view_actions.values():
+            view_menu.addAction(action)
+        view_menu.addSeparator()
         for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
                                (self.checks_dock, "F8")):
             action = dock.toggleViewAction()
@@ -375,13 +394,17 @@ class AssemblyWindow(QMainWindow):
         self.files_action.toggled.connect(lambda checked: self.tree.setColumnHidden(1, not checked))
         self.reset_layout_action = self._action("Obnovit rozložení", self.reset_layout)
         view_menu.addAction(self.reset_layout_action)
-        toolbar = self.addToolBar("Sestava")
+        toolbar = self.toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
         for action in (self.open_action, self.save_action, self.insert_action,
                        self.constraint_action, self.check_action, self.undo_action,
                        self.redo_action):
             toolbar.addAction(action)
+        toolbar.addSeparator()
+        for key in ("top", "front", "iso"):
+            toolbar.addAction(self.view_actions[key])
+        toolbar.addAction(self.fit_action)
 
     def reset_layout(self) -> None:
         """Kompaktní panely; pouze rozložení, bez změny sestavy, výběru či kamery."""

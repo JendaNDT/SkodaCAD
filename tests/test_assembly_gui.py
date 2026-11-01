@@ -286,6 +286,71 @@ def test_packaged_panel_check_uses_actual_window_size_when_desktop_caps_width(op
     assert "panely a mezery ≤580" in lines[-1]
 
 
+def test_standard_views_share_toolbar_and_menu_actions_without_model_changes(opened, app):
+    from skodacad.gui.viewer_views import VIEW_LABELS
+
+    pick(opened, "vicko")
+    before = opened.session.assembly.to_dict()
+    result, selected = opened.session.result, opened._selected
+    parts, highlight = list(opened.viewer.parts), list(opened.viewer.highlighted)
+    opened.position_edits[0].setText("rozepsaný výraz")
+    for action, label in ((opened.open_action, "Otevřít"),
+                          (opened.constraint_action, "Vazba"),
+                          (opened.check_action, "Kontrola")):
+        assert opened.toolbar.widgetForAction(action).text() == label
+        assert action.toolTip() == action.text()
+    for key, (label, shortcut) in VIEW_LABELS.items():
+        view = opened.view_actions[key]
+        assert view.text() == label and view.shortcut().toString() == shortcut
+        view.trigger()
+        assert opened.viewer.views[-1] == key
+    # Windows offscreen používá náhradní stejně široké znaky (lišta 1313 bodů).
+    # Skutečné šířky 1024/960 ověřuje nativní self-test, zde funkci stejných akcí.
+    opened.resize(max(1200, opened.toolbar.sizeHint().width()), 720)
+    app.processEvents()
+    for key in ("top", "front", "iso"):
+        button = opened.toolbar.widgetForAction(opened.view_actions[key])
+        assert button.isVisible(), (key, opened.width(), opened.toolbar.sizeHint().width())
+        assert button.defaultAction() is opened.view_actions[key]
+        assert opened.toolbar.rect().contains(button.geometry())
+        button.click()
+        assert opened.viewer.views[-1] == key
+    fit = opened.toolbar.widgetForAction(opened.fit_action)
+    assert fit.isVisible() and opened.fit_action.shortcut().toString() == "F"
+    assert opened.toolbar.rect().contains(fit.geometry())
+    fit.click()
+    assert opened.viewer.views[-1] == "fit"
+    assert opened.session.assembly.to_dict() == before and not opened.session.can_undo
+    assert opened.session.result.volume_mm3 == pytest.approx(result.volume_mm3)
+    assert opened._selected == selected
+    assert opened.viewer.parts == parts and opened.viewer.highlighted == highlight
+    assert opened.position_edits[0].text() == "rozepsaný výraz"
+
+
+def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    pick(opened, "vicko")
+    opened.raise_()
+    opened.activateWindow()
+    field = opened.position_edits[0]
+    field.setFocus()
+    field.selectAll()
+    app.processEvents()
+    QTest.keyClicks(field, "107F")
+    assert field.text() == "107F" and opened.viewer.views == []
+    assert not opened.session.can_undo
+    opened.viewer.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    opened.viewer.setFocus()
+    app.processEvents()
+    for key, view in ((Qt.Key.Key_7, "top"), (Qt.Key.Key_1, "front"),
+                      (Qt.Key.Key_0, "iso"), (Qt.Key.Key_F, "fit")):
+        QTest.keyClick(opened.viewer, key)
+        assert opened.viewer.views[-1] == view
+    assert field.text() == "107F" and not opened.session.can_undo
+
+
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):
     pick(opened, "vicko")
     opened.position_edits[2].setText("H + neznamy")
