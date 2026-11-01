@@ -330,7 +330,16 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   se dotýkají dna. Přepiš u vazby *Víčko na okraji* vzdálenost `mezera` třeba na 15 a víčko
   se nadzvedne.
 
-**Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*):
+Okno sestavy má úzký strom vlevo a editor vpravo; posun a otočení jsou v řádcích
+**X, Y, Z**, aby pole zůstala čitelná. **Zobrazení** umožňuje zavřít/obnovit strom
+(F9), editor (F4) a kontroly (F8). Cesta k souboru a úplný stav jsou v bublině
+stromu; soubor a volnost horní komponenty také v detailu. Sloupec *Soubor* lze
+zapnout přes *Soubory ve stromu*.
+*Obnovit rozložení* vrátí úzké panely. Jejich přepínání nemění sestavu ani
+rozepsané hodnoty. [Ověření rozložení](docs/p7-11-panely-sestavy.md).
+
+**Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
+zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 
 - *Zkontrolovat kolize a vůle* (F7, i v nabídce *Kontrola*) projde každou dvojici kopií dílů
   (i v podsestavách) a počítá na pozadí – okno mezitím jde používat, *Zastavit* výpočet

@@ -1233,6 +1233,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   paint. `render_size()` pouze čte skutečné OpenGL rozlišení; self-test ho kontroluje
   po otevření i resize **před** `fit_all`/`dump`, které by problém mohly zakrýt.
   [Ověření](docs/p7-10-ostry-3d-nahled-macos.md).
+- P7.11: sestava používá strom 250 a pravý editor 300 bodů, soubor ve stromu je
+  výchozí skrytý (data/bublina zůstávají). Souřadnice jsou v řádcích X/Y/Z; editor
+  je svisle posuvný. Zobrazení → panely F9/F4/F8 a Obnovit rozložení nesmějí volat
+  přepočet, přepisovat rozepsaná pole, historii, výběr ani kameru. Kontroly jsou
+  výchozí skryté, `run_check` je otevře. Nativní self-test „Panely sestavy“ hlídá
+  minimální šířku 3D/polí při 1200/1024 a skutečný Enter → posun 1,5 mm → Zpět.
+  [Evidence](docs/p7-11-panely-sestavy.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

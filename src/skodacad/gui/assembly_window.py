@@ -41,6 +41,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -133,7 +135,9 @@ class AssemblyWindow(QMainWindow):
         self._build_checks()
         self._create_actions()
         self._build_menus()
+        self.setMinimumSize(960, 600)
         self.resize(1200, 760)
+        self.reset_layout()
         self._refresh()
 
     # --- stavba okna -----------------------------------------------------------------
@@ -149,37 +153,49 @@ class AssemblyWindow(QMainWindow):
     def _build_tree(self) -> None:
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Komponenta", "Soubor", "Stav"])
-        self.tree.setColumnWidth(0, 140)
-        self.tree.setColumnWidth(1, 110)
-        self.tree.setMinimumWidth(440)  # stav „✓ volná: 2 posuny, 1 otočení“ se vejde
+        self.tree.setMinimumWidth(220)
+        self.tree.setColumnWidth(0, 180)
+        self.tree.setColumnWidth(1, 180)
+        self.tree.setColumnWidth(2, 65)
+        self.tree.setColumnHidden(1, True)  # zdroj je v detailu a bublině, lze jej zapnout
         self.tree.itemSelectionChanged.connect(self._tree_selected)
-        dock = QDockWidget("Komponenty", self)
+        dock = self.tree_dock = QDockWidget("Komponenty", self)
         dock.setObjectName("assembly_components")
         dock.setWidget(self.tree)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
     def _build_form(self) -> None:
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        self.form_note = QLabel()
-        self.form_note.setWordWrap(True)
+        self.form_note = self._wrapped_label()
         layout.addWidget(self.form_note)
-        form = QFormLayout()
+        layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()
-        form.addRow("Název", self.name_edit)
+        self.name_edit.setAccessibleName("Název komponenty")
+        layout.addWidget(self.name_edit)
         self.position_edits = [QLineEdit() for _ in AXES]
         self.rotation_edits = [QLineEdit() for _ in AXES]
-        for label, edits in (("Posun X / Y / Z [mm]", self.position_edits),
-                             ("Otočení X / Y / Z [°]", self.rotation_edits)):
-            row = QHBoxLayout()
-            for edit in edits:
+        coordinates = QGridLayout()
+        coordinates.addWidget(QLabel("Osa"), 0, 0)
+        coordinates.addWidget(QLabel("Posun [mm]"), 0, 1)
+        coordinates.addWidget(QLabel("Otočení [°]"), 0, 2)
+        for row, axis in enumerate(AXES, 1):
+            coordinates.addWidget(QLabel(axis.upper()), row, 0)
+            for column, edits in ((1, self.position_edits), (2, self.rotation_edits)):
+                edit = edits[row - 1]
+                edit.setMinimumWidth(90)
+                edit.setAccessibleName(f"{'Posun' if column == 1 else 'Otočení'} {axis.upper()}")
                 edit.returnPressed.connect(self.apply_form)
-                row.addWidget(edit)
-            form.addRow(label, row)
-        self.fixed_box = QCheckBox("Pevná (nehne ji tažení ani vazby)")
+                coordinates.addWidget(edit, row, column)
+        coordinates.setColumnStretch(1, 1)
+        coordinates.setColumnStretch(2, 1)
+        layout.addLayout(coordinates)
+        self.fixed_box = QCheckBox("Pevná komponenta")
+        self.fixed_box.setToolTip("Pevnou komponentu nepřesune tažení ani vazby.")
         self.fixed_box.toggled.connect(self._fixed_toggled)
-        form.addRow("", self.fixed_box)
-        layout.addLayout(form)
+        layout.addWidget(self.fixed_box)
         turns = QGridLayout()
         self.turn_buttons: list[QPushButton] = []
         for column, axis in enumerate(AXES):
@@ -188,7 +204,7 @@ class AssemblyWindow(QMainWindow):
                 button.clicked.connect(lambda _c=False, a=axis, d=degrees: self.turn(a, d))
                 turns.addWidget(button, row, column)
                 self.turn_buttons.append(button)
-        layout.addWidget(QLabel("Otočit kolem osy sestavy vedené počátkem dílu:"))
+        layout.addWidget(self._wrapped_label("Otočit kolem osy sestavy vedené počátkem dílu:"))
         layout.addLayout(turns)
         self.apply_button = QPushButton("Použít polohu a název")
         self.apply_button.clicked.connect(self.apply_form)
@@ -201,20 +217,31 @@ class AssemblyWindow(QMainWindow):
         buttons.addWidget(self.relink_button)
         buttons.addWidget(self.open_part_button)
         layout.addLayout(buttons)
-        self.pick_note = QLabel()
-        self.pick_note.setWordWrap(True)
+        self.pick_note = self._wrapped_label()
         layout.addWidget(self.pick_note)
         layout.addWidget(self._build_constraint_box())
-        self.summary = QLabel()
-        self.summary.setWordWrap(True)
+        self.summary = self._wrapped_label()
         self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.summary)
         layout.addStretch(1)
-        panel.setMaximumWidth(430)
-        dock = QDockWidget("Komponenta", self)
+        panel.setMinimumWidth(280)
+        scroll = self.component_scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(panel)
+        dock = self.component_dock = QDockWidget("Komponenta", self)
         dock.setObjectName("assembly_component")
-        dock.setWidget(panel)
+        dock.setWidget(scroll)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+    @staticmethod
+    def _wrapped_label(text: str = "") -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        return label
 
     def _build_constraint_box(self) -> QGroupBox:
         self.constraint_box = QGroupBox("Vazba")
@@ -283,9 +310,11 @@ class AssemblyWindow(QMainWindow):
         self.bill_button.clicked.connect(self.save_bill_dialog)
         layout.addWidget(self.bill_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.check_tabs.addTab(page, "Kusovník")
-        dock = QDockWidget("Kontrola sestavy", self)
+        dock = self.checks_dock = QDockWidget("Kontrola sestavy", self)
         dock.setObjectName("assembly_checks")
         dock.setWidget(self.check_tabs)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
         self.resizeDocks([dock], [230], Qt.Orientation.Vertical)  # 3D pohled zůstane velký
 
@@ -335,6 +364,17 @@ class AssemblyWindow(QMainWindow):
         check_menu = bar.addMenu("&Kontrola")
         check_menu.addAction(self.check_action)
         check_menu.addAction(self.bill_action)
+        view_menu = bar.addMenu("&Zobrazení")
+        for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
+                               (self.checks_dock, "F8")):
+            action = dock.toggleViewAction()
+            action.setShortcut(QKeySequence(shortcut))
+            view_menu.addAction(action)
+        self.files_action = view_menu.addAction("Soubory ve stromu")
+        self.files_action.setCheckable(True)
+        self.files_action.toggled.connect(lambda checked: self.tree.setColumnHidden(1, not checked))
+        self.reset_layout_action = self._action("Obnovit rozložení", self.reset_layout)
+        view_menu.addAction(self.reset_layout_action)
         toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
@@ -342,6 +382,18 @@ class AssemblyWindow(QMainWindow):
                        self.constraint_action, self.check_action, self.undo_action,
                        self.redo_action):
             toolbar.addAction(action)
+
+    def reset_layout(self) -> None:
+        """Kompaktní panely; pouze rozložení, bez změny sestavy, výběru či kamery."""
+        self.tree_dock.show()
+        self.component_dock.show()
+        self.checks_dock.hide()
+        self.files_action.setChecked(False)
+        self.tree.setColumnWidth(0, 180)
+        self.tree.setColumnWidth(1, 180)
+        self.tree.setColumnWidth(2, 65)
+        self.resizeDocks([self.tree_dock, self.component_dock], [250, 300],
+                         Qt.Orientation.Horizontal)
 
     # --- soubor -------------------------------------------------------------------------
 
@@ -623,6 +675,8 @@ class AssemblyWindow(QMainWindow):
                         "nejdřív oprav chybějící komponenty, chyby dílů a vazby ve sporu.")
             return
         self.check_tabs.setCurrentIndex(0)
+        self.checks_dock.show()
+        self.resizeDocks([self.checks_dock], [230], Qt.Orientation.Vertical)
         if self.runner is None:
             self._run("Kontrola se nepodařila", self.session.check)
             return
@@ -1048,7 +1102,8 @@ class AssemblyWindow(QMainWindow):
             index = positions.get(parent_ids, 0)
             positions[parent_ids] = index + 1
             item = row(list(status.ids), [name, status.source, state], parent, index)
-            tip = "\n".join([status.reason, *status.warnings]).strip()
+            tip = "\n".join([status.label, f"Soubor: {status.source}", state,
+                             status.reason, *status.warnings]).strip()
             for column in range(3):
                 item.setToolTip(column, tip)
             items[status.ids] = item
