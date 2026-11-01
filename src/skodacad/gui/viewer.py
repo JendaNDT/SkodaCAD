@@ -332,6 +332,11 @@ class OccViewer(QWidget):
         self.selection_changed.emit([])
         self._view.Redraw()
 
+    def disable_model_selection(self) -> None:
+        """Pracovní náhled lze prohlížet, jeho geometrii však nelze převzít do modelu."""
+        if self.ready and self._ais is not None:
+            self._context.Deactivate(self._ais)
+
     def show_design_ghost(self, original: Any) -> None:
         """Původní díl jako průhledný překryv nad variantou, bez možnosti výběru."""
         if not self.ready or original is None:

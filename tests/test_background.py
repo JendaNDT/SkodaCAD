@@ -207,11 +207,11 @@ def test_stop_button_returns_to_computed_model(window):
     from PySide6.QtTest import QTest
 
     window.new_model()
-    window.add_feature_actions["sketch"].trigger()
-    window.add_feature_actions["extrude"].trigger()
+    window.add_feature("sketch")
+    window.add_feature("extrude")
     settle(window)
     computed = window.session.document
-    window.add_feature_actions["hole"].trigger()  # díra je vybraná ve stromu i ve formuláři
+    window.add_feature("hole")  # díra je vybraná ve stromu i ve formuláři
     settle(window)
     form = window.feature_editor.form
     size = form.widget("size")
@@ -230,14 +230,49 @@ def test_stop_button_returns_to_computed_model(window):
 
 def test_feature_added_while_computing_is_in_tree_and_editor(window):
     window.new_model()
-    window.add_feature_actions["sketch"].trigger()
-    window.add_feature_actions["extrude"].trigger()
+    window.add_feature("sketch")
+    window.add_feature("extrude")
     assert window.session.computing
     assert [window.tree.topLevelItem(i).data(0, 256) for i in range(2)] == ["sketch1",
                                                                            "extrude1"]
     assert window.feature_editor.feature_id == "extrude1"
     settle(window)
     assert window.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10)
+
+
+def test_new_command_preview_has_own_worker_and_recovers_from_failure(window):
+    from PySide6.QtTest import QTest
+
+    window.new_model()
+    window.add_feature("sketch")
+    window.add_feature("extrude")
+    settle(window)
+    before, result = window.session.document.to_dict(), window.session.result
+    count = len(window.session._undo)
+    window.add_feature_actions["hole"].trigger()
+    panel = window.feature_preview
+    assert panel is not None and panel.preview.session.computing
+    assert window._feature_preview_runner is not window._runner
+    assert not panel.accept_button.isEnabled() and not window.session.computing
+    window._feature_preview_runner._active.process.kill()
+
+    def finish_preview():
+        end = time.monotonic()+45
+        while panel.preview.session.computing and time.monotonic() < end:
+            QTest.qWait(20)
+        assert not panel.preview.session.computing
+
+    finish_preview()
+    assert panel.preview.session.failure and not panel.accept_button.isEnabled()
+    assert window.session.result is result and window.session.document.to_dict() == before
+    panel.refresh_button.click()
+    finish_preview()
+    assert panel.accept_button.isEnabled()
+    assert window.session.document.to_dict() == before
+    panel.accept_button.click()
+    assert window.feature_preview is None and not window.session.computing
+    assert window.session.properties.volume_mm3 == pytest.approx(12000-250*math.pi/4)
+    assert len(window.session._undo) == count+1
 
 
 def test_window_audit_in_background_with_progress_and_stop(window, examples_dir):

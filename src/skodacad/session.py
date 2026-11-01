@@ -258,6 +258,26 @@ ON_SURFACE_MM = 0.01  # RT dialog: zaměřený bod leží na ploše, je-li k ní
 PREVIEW_REACH = {"faces": 0.45, "volume": 0.75}
 
 
+@dataclass
+class FeaturePreview:
+    original: Document
+    session: ModelSession
+    feature_id: str
+    closed: bool = False
+
+    @property
+    def ready(self) -> bool:
+        s = self.session
+        return (not self.closed and not s.computing and not s.failure
+                and s.document == s._computed and s.result is not None and s.result.ok
+                and any(f["id"] == self.feature_id for f in s.document.features))
+
+    def cancel(self) -> None:
+        if not self.closed:
+            self.session.cancel()
+            self.closed = True
+
+
 class ModelSession:
     def __init__(self, runner: BackgroundRebuilder | None = None) -> None:
         self.path: Path | None = None
@@ -852,6 +872,56 @@ class ModelSession:
                 raise DocumentError("Zdroj STEP lze obnovit jen z totožného souboru.")
         updated = copy.deepcopy(feature)
         return self._change(lambda doc: doc.features.__setitem__(index, updated))
+
+    def begin_feature_preview(self, feature_type: str, after_id: str | None = None,
+                              values: dict[str, Any] | None = None, *, runner=None,
+                              shapes: list[Any] | None = None, point=None) -> FeaturePreview:
+        """Oddělený návrh jednoho nového prvku; zdroj ani jeho historie se nemění.
+
+        Asynchronní návrh musí mít vlastní runner, aby nerušil úlohy zdroje.
+        Výsledek zdroje lze sdílet jen ke čtení, další přepočty už patří návrhu.
+        """
+        self._require_computed("vytvoření náhledu")
+        original = self._require()
+        if self._computed != original or self.result is None or not self.result.ok:
+            raise DocumentError("Nejdřív oprav a přepočítej původní model.")
+        if runner is not None and runner is self._runner:
+            raise DocumentError("Náhled potřebuje vlastní pomocný proces.")
+        draft = ModelSession(runner)
+        draft.document = copy.deepcopy(original)
+        draft._computed = draft.document
+        draft.result = self.result
+        draft.map_visible = self.map_visible
+        draft.section_settings = copy.deepcopy(self.section_settings)
+        if shapes is None:
+            fid = draft.add_feature(feature_type, after_id=after_id, values=values)
+        else:
+            fid = draft.add_from_selection(feature_type, shapes, point)
+        return FeaturePreview(copy.deepcopy(original), draft, fid)
+
+    def apply_feature_preview(self, preview: FeaturePreview) -> str:
+        """Přijme aktuální, úplný návrh právě jednoho prvku jako jeden krok Zpět."""
+        if preview.closed:
+            raise DocumentError("Tento náhled už byl ukončen – vytvoř nový.")
+        if self.computing or self._require() != preview.original:
+            raise DocumentError("Původní model se změnil – vytvoř náhled znovu.")
+        draft = preview.session
+        if draft.computing or draft.failure or draft._computed != draft.document:
+            raise DocumentError("Náhled ještě není aktuálně spočítaný.")
+        result = draft.result
+        if result is None or not result.ok:
+            error = (result.first_error.message if result and result.first_error
+                     else "Chybí výsledek.")
+            raise DocumentError(f"Náhled nejde potvrdit: {error}")
+        feature = draft.feature(preview.feature_id)
+        index = draft.feature_index(preview.feature_id)
+        candidate = copy.deepcopy(preview.original)
+        candidate.features.insert(index, feature)
+        if candidate != draft.document:
+            raise DocumentError("Náhled obsahuje další změny – vytvoř jej znovu.")
+        self._change(lambda doc: doc.features.insert(index, feature), computed_result=result)
+        preview.closed = True
+        return feature["id"]
 
     def delete_feature(self, feature_id: str) -> BuildResult:
         index = self.feature_index(feature_id)

@@ -150,6 +150,8 @@ class Workspace:
             self._changing = False
 
     def close_panel(self):
+        if self.window.feature_preview is not None:
+            self.window.cancel_feature_preview()
         self._changing = True
         try:
             for key, dock in self.docks.items():

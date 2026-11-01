@@ -32,7 +32,7 @@ class DirectEditDialog(QDialog):
         self.preview = None
         self.setWindowTitle("Náhled přímé úpravy")
         layout = QVBoxLayout(self)
-        self.info = QLabel("Náhled změní jen zobrazení. Model se změní až tlačítkem Použít.")
+        self.info = QLabel("Náhled změní jen zobrazení. Model se změní až tlačítkem Potvrdit.")
         self.info.setWordWrap(True)
         layout.addWidget(self.info)
         if kind == "face_diameter":
@@ -57,7 +57,7 @@ class DirectEditDialog(QDialog):
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Apply
                                         | QDialogButtonBox.StandardButton.Cancel)
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Apply)
-        self.apply_button.setText("Použít")
+        self.apply_button.setText("Potvrdit")
         self.apply_button.setEnabled(False)
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Zrušit")
         self.apply_button.clicked.connect(self.accept)

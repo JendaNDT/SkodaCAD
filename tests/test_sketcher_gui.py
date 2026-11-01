@@ -202,10 +202,10 @@ def test_new_sketch_from_sketcher_then_extrude(window, monkeypatch, answers):
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", draw)
-    window.profile_sketch_action.trigger()
+    window.add_profile_sketch()
     sketch = window.session.feature("sketch1")
     assert sketch["elements"][0]["shape"] == "profile"
-    window.add_feature_actions["extrude"].trigger()
+    window.add_feature("extrude")
     assert window.session.properties.volume_mm3 == pytest.approx(30 * 20 * 10)
     window.undo()
     window.undo()
@@ -215,7 +215,7 @@ def test_new_sketch_from_sketcher_then_extrude(window, monkeypatch, answers):
 def test_cancelled_sketcher_changes_nothing(window, monkeypatch):
     monkeypatch.setattr(type(window), "_exec_dialog",
                         lambda self, dialog: QDialog.DialogCode.Rejected)
-    window.profile_sketch_action.trigger()
+    window.add_profile_sketch()
     assert window.session.document.features == []
 
 
@@ -404,8 +404,8 @@ def test_hole_from_sketcher_is_cut_in_the_part(window, monkeypatch, answers):
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", draw)
-    window.profile_sketch_action.trigger()
-    window.add_feature_actions["extrude"].trigger()
+    window.add_profile_sketch()
+    window.add_feature("extrude")
     assert window.session.properties.volume_mm3 == pytest.approx((40 * 30 - math.pi * 25) * 10)
 
 
@@ -449,8 +449,8 @@ def test_boss_around_projected_hole_follows_hole(window, monkeypatch, answers):
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", draw)
-    window.profile_sketch_action.trigger()
-    window.add_feature_actions["extrude"].trigger()
+    window.add_profile_sketch()
+    window.add_feature("extrude")
     session = window.session
     assert session.result.ok
     expected = 40 * 30 * 10 - math.pi * 9 * 10 + math.pi * 36 * 10
@@ -479,8 +479,8 @@ def test_convert_projected_outline_into_profile(window, monkeypatch):
         return QDialog.DialogCode.Accepted
 
     monkeypatch.setattr(type(window), "_exec_dialog", draw)
-    window.profile_sketch_action.trigger()
-    window.add_feature_actions["extrude"].trigger()
+    window.add_profile_sketch()
+    window.add_feature("extrude")
     assert window.session.properties.volume_mm3 == pytest.approx(
         40 * 30 * 10 - math.pi * 9 * 10 + 40 * 30 * 10)
 
@@ -493,7 +493,7 @@ def test_projection_tool_is_off_without_part(window, monkeypatch):
         return QDialog.DialogCode.Rejected
 
     monkeypatch.setattr(type(window), "_exec_dialog", draw)
-    window.profile_sketch_action.trigger()
+    window.add_profile_sketch()
     assert seen == {"enabled": False}
 
 

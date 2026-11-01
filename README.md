@@ -69,6 +69,14 @@ pokrývá parametry, vysunutí, čtyři průchozí otvory Ø6, R2 a historii. Ho
 recept je v **Příklady → deska_workflow**. V souřadnicích otvorů Enter přidává
 řádek a Tab opouští pole a potvrzuje platný vstup.
 
+Nové prvky se nejprve zobrazují v pravém panelu **Nový prvek · náhled**.
+Uprav hodnoty, prohlédni výsledek a stiskni **Potvrdit**; celý nový prvek pak
+vrátíš jedním krokem Zpět. **Zrušit** nebo Esc návrh zahodí. Hrany/plochy pro
+příkaz z výběru označ před jeho spuštěním. Ve skicáři **Hotovo** dokončí obrys,
+potom ještě potvrď náhled skici vpravo. Během náhledu lze ovládat pohled;
+uložení, export a další změny počkají na ukončení příkazu.
+[Podrobný postup a ověření P7.5](docs/p7-5-nahled-noveho-prvku.md).
+
 ### Ovládání
 
 | Akce | Jak |
