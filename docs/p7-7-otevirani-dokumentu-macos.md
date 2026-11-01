@@ -15,6 +15,9 @@ Sdílené `gui/file_dialogs.FILE_OPTIONS` už na macOS nevynucuje
 systémové Open/Save panely. Ty předávají aplikaci přístup k uživatelem
 vybranému souboru. Formát JSON, kontroly obsahu, přípony a historie modelu
 se nemění; Windows už používal stejnou nulovou volbu.
+Zamítnutý přístup a neplatné kódování při načítání se hlásí česky; další
+chyby čtení mají stejný nadpis „Model nejde otevřít“. Neúspěšné načtení
+nepřepíše stávající model.
 
 Starší náhrada dialogem Qt vznikla při P5.5 kvůli omezení ovládání nativního
 panelu přes přístupnost. Nemá se obnovovat jako plošné řešení automatizačních

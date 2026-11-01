@@ -217,6 +217,32 @@ def test_open_dialog_preserves_source_on_cancel_or_error_and_loads_selected_mode
         assert bool(errors) == (selection == "invalid")
 
 
+@pytest.mark.parametrize("error, message", [
+    (PermissionError("permission denied"), "není přístup"),
+    (OSError("read failed"), "read failed"),
+    (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"), "UTF-8"),
+])
+def test_unreadable_open_selection_reports_error_without_replacing_model(
+        window, examples_dir, monkeypatch, error, message):
+    from PySide6.QtWidgets import QFileDialog
+
+    original, result = window.session.document.to_dict(), window.session.result
+    path = window.session.path
+    seen = []
+    monkeypatch.setattr(QFileDialog, "getOpenFileName",
+                        lambda *a, **kw: (str(examples_dir/"deska_workflow.json"), ""))
+
+    def unreadable(_path):
+        raise error
+
+    monkeypatch.setattr(window.session, "open", unreadable)
+    monkeypatch.setattr(window, "_error", lambda *args: seen.append(args))
+    window.open_action.trigger()
+    assert len(seen) == 1 and seen[0][0] == "Model nejde otevřít" and message in seen[0][1]
+    assert window.session.document.to_dict() == original and window.session.result is result
+    assert window.session.path == path
+
+
 @pytest.mark.parametrize("name", COUNT_CASE_NAMES)
 def test_successful_body_counts_are_visible_in_tree_and_properties(window, tmp_path, name):
     document, volume, count, transitions = body_count_case(name)
