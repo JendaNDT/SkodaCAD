@@ -13,6 +13,7 @@ polohy změní při sestavení (změněný soubor dílu), sestava je neuložená
 from __future__ import annotations
 
 import copy
+import math
 import os
 import re
 import shutil
@@ -146,8 +147,10 @@ class AssemblySession:
 
     # --- úpravy ---------------------------------------------------------------------
 
-    def _change(self, mutate: Callable[[Assembly], None],
-                require: Sequence[str] = ()) -> AssemblyResult:
+    def _change(
+        self, mutate: Callable[[Assembly], None], require: Sequence[str] = (),
+        validate: Callable[[Assembly, AssemblyResult], None] | None = None,
+    ) -> AssemblyResult:
         """Úprava = kopie, kontrola, sestavení s vazbami, přijetí (jeden krok Zpět).
 
         Nepřijme se úprava, po které by nějaká vazba byla ve sporu, jež předtím nebyla
@@ -165,6 +168,8 @@ class AssemblySession:
         result = build(candidate, self._require_path(), self.cache)
         self._check_constraints(result, require)
         _apply_solved(candidate, result)
+        if validate is not None:
+            validate(candidate, result)
         if candidate == current:  # vazby komponentu vrátily (plně určená)
             self.result = result
             return result
@@ -511,6 +516,80 @@ class AssemblySession:
         moved = [tidy(v + float(d)) for v, d in zip(values, delta, strict=True)]
         return self.set_placement(component_id, position=moved)
 
+    def move_many_by(self, component_ids: Sequence[str], delta: Sequence[Any]) -> AssemblyResult:
+        """Společný posun v osách sestavy, atomicky a bez pohybu nevybraných kopií.
+
+        Posouvají se komponenty této úrovně (i celé podsestavy). Vazby musí dovolit
+        přesně zadaný posun všem, bez otočení. Původní výrazy poloh zůstávají výrazy;
+        výraz přírůstku se jednou vyhodnotí v parametrech sestavy.
+        """
+        import numpy as np
+
+        current = self._require()
+        if (isinstance(component_ids, (str, bytes)) or not component_ids
+                or any(not isinstance(cid, str) or not cid for cid in component_ids)):
+            raise AssemblyError("Vyber komponenty této sestavy; díly uvnitř podsestavy "
+                                "posouvej výběrem celé nadřazené podsestavy.")
+        chosen = set(component_ids)
+        components = [current.component(cid) for cid in dict.fromkeys(component_ids)]
+        result = self.result
+        if result is None or not result.complete:
+            raise AssemblyError("Sestava ještě není úplně připravená. Dokonči přepočet "
+                                "a oprav chybějící díly nebo vazby; pak posun zopakuj.")
+        fixed = [c.label for c in components if c.fixed]
+        if fixed:
+            raise AssemblyError("Výběr obsahuje pevné komponenty: " + ", ".join(fixed)
+                                + ". Zruš u nich volbu Pevná nebo je odeber z výběru. "
+                                "Žádná komponenta se neposunula.")
+        if isinstance(delta, (str, bytes)) or not isinstance(delta, Sequence) or len(delta) != 3:
+            raise AssemblyError("Společný posun musí být trojice [x, y, z] v mm.")
+        try:
+            offset = [evaluate(value, result.parameters) for value in delta]
+        except ExpressionError as exc:
+            raise AssemblyError(f"Společný posun: {exc}") from None
+        except OverflowError:
+            raise AssemblyError("Společný posun je příliš velký; zadej menší číslo.") from None
+        if not all(math.isfinite(value) for value in offset):
+            raise AssemblyError("Společný posun musí obsahovat konečná čísla.")
+        if not any(offset):
+            return result
+        before = {c.id: self._pose(c.id) for c in current.components}
+        expected = {cid: (rotation, [float(v) + (d if cid in chosen else 0)
+                                    for v, d in zip(position, offset, strict=True)])
+                    for cid, (rotation, position) in before.items()}
+        if any(not all(math.isfinite(v) for v in position)
+               for _rotation, position in expected.values()):
+            raise AssemblyError("Výsledná poloha není konečné číslo; zadej menší posun.")
+        sources = {s.ids: s.fingerprint for s in result.statuses}
+
+        def mutate(candidate: Assembly) -> None:
+            for cid in chosen:
+                component = candidate.component(cid)
+                component.position = [_offset_value(value, amount)
+                                      for value, amount in zip(component.position, offset,
+                                                               strict=True)]
+
+        def validate(candidate: Assembly, built: AssemblyResult) -> None:
+            if not built.complete:
+                problem = built.problems[0] if built.problems else "neúplný výsledek"
+                raise AssemblyError(f"Po společném posunu by sestava nebyla úplná: {problem}. "
+                                    "Obnov sestavu a oprav příčinu; žádná komponenta "
+                                    "se neposunula.")
+            if {s.ids: s.fingerprint for s in built.statuses} != sources:
+                raise AssemblyError("Během posunu se změnil zdroj dílu nebo podsestavy. "
+                                    "Obnov sestavu a posun zopakuj; změna se nepřijala.")
+            for component in candidate.components:
+                rotation, position = expected[component.id]
+                actual = [evaluate(value, built.parameters) for value in component.position]
+                angles = [evaluate(value, built.parameters) for value in component.rotation]
+                if (not np.allclose(actual, position, atol=1e-6, rtol=0)
+                        or not np.allclose(rotation_matrix(angles), rotation, atol=1e-10, rtol=0)):
+                    raise AssemblyError("Vazby nedovolují přesně tento společný posun bez "
+                                        "otočení nebo pohybu dalších dílů. Uprav posun, "
+                                        "výběr nebo vazby. Žádná komponenta se neposunula.")
+
+        return self._change(mutate, validate=validate)
+
     def turn(self, component_id: str, axis: str, degrees: float) -> AssemblyResult:
         """Otočí komponentu kolem osy sestavy vedené jejím počátkem (tlačítka ±90°);
         posun zůstane."""
@@ -613,6 +692,18 @@ class AssemblySession:
         component = self._require().component(component_id)
         file, _warning = locate(self._require_path().parent, component.path)
         return file
+
+
+def _offset_value(value: Any, amount: float) -> Any:
+    """Posune souřadnici; další posuny sloučí s konstantou, výraz zbytečně nenarůstá."""
+    if not amount:
+        return value
+    if not isinstance(value, str):
+        return tidy(value + amount)
+    match = re.fullmatch(r"\((.*)\) \+ \(([-+.0-9eE]+)\)", value)
+    base = match[1] if match else value
+    total = tidy(amount + (float(match[2]) if match else 0))
+    return base if total == 0 else f"({base}) + ({total})"
 
 
 def _copy_part(file: Path, target: Path, copied: dict[Path, str]) -> str:

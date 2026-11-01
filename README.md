@@ -381,9 +381,23 @@ plochy; jejich díly se vyberou a zvýrazní společně ve stromu i ve 3D.
 **H**, **I**, **T** a procenta průhlednosti pak platí pro celý výběr.
 Při smíšené viditelnosti H vše vybrané zobrazí; při smíšené průhlednosti T vše
 vybrané zprůhlední. Vypnutí průhlednosti pamatuje jednotlivé míry. Rodič s vybraným potomkem se zpracuje
-jednou. Název, poloha, smazání a otevření dílu jsou dostupné při jediném výběru.
-Výběr je stav okna, nepřidává kroky Zpět a neomezuje export celé sestavy.
+jednou. Absolutní poloha, název, smazání a otevření dílu jsou dostupné při jediném výběru.
+Samotný výběr je stav okna, nepřidává kroky Zpět a neomezuje export celé sestavy.
 [Chování a ověření hromadného výběru](docs/p7-17-hromadny-vyber.md).
+
+**Hromadný posun:** při výběru více komponent se vpravo zobrazí **Společný posun [mm]**.
+Zadej přírůstky **X/Y/Z v osách celé sestavy** a stiskni **Posunout vybrané** nebo Enter.
+Posunou se všechny vybrané komponenty stejně, včetně skrytých, a zachovají vzájemné
+polohy i otočení. **Zpět** vrátí celý přesun jedním krokem, **Znovu** jej zopakuje.
+Nulový posun historii nepřidává. Úspěšný posun vynuluje vstupní pole.
+
+Pevná komponenta blokuje celý přesun; odeber ji z výběru nebo jí jednotlivě zruš
+volbu Pevná. Díly uvnitř podsestavy se přesouvají výběrem celé nadřazené podsestavy.
+Vazby musí dovolit celý zadaný posun, bez přitažení sousedních dílů nebo pootočení.
+Pokud to nejde, nepřijme se nic a zadaný vektor zůstane k opravě.
+Původní výrazy poloh zůstávají parametrické; výraz zadaný jako přírůstek se vyhodnotí
+jednou při posunu. Soubory zdrojových dílů a podsestav se nemění.
+[Pravidla a ověření hromadného posunu](docs/p7-18-hromadny-posun.md).
 
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:

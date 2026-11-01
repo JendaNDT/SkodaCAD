@@ -598,6 +598,123 @@ def test_multi_late_presentation_clears_faces_but_keeps_component_selection(open
     assert not w._selection and not w.tree.selectedItems() and not w.viewer.highlighted
 
 
+def test_batch_move_panel_enter_translates_expression_feet_and_undoes_once(opened, app):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_3",))
+    w.select_many(ids)
+    w.set_component_transparency(ids[0], 35)
+    w.set_component_transparency(ids[1], 85)
+    w.set_component_visible(("vicko",), False)
+    w.isolate_selected()
+    before = w.session.assembly.to_dict()
+    old = {i.ids: tuple(i.part.center()) for i in w.session.result.instances}
+    assert w.move_box.isVisibleTo(w) and w.move_button.isEnabled()
+    assert not w.apply_button.isEnabled()
+    for field, text in zip(w.move_edits, ("1,5", "-2", "h"), strict=True):
+        field.setText(text)
+    w.show()
+    w.component_scroll.ensureWidgetVisible(w.move_edits[-1])
+    w.move_edits[-1].setFocus()
+    app.processEvents()
+    QTest.keyClick(w.move_edits[-1], Qt.Key.Key_Return)
+    for instance in w.session.result.instances:
+        expected = tuple(v+d for v, d in zip(old[instance.ids], (1.5, -2, 3), strict=True))
+        assert tuple(instance.part.center()) == pytest.approx(
+            expected if instance.ids in ids else old[instance.ids])
+    assert w._selection == ids and w._isolated == ids
+    assert w._visibility == {("vicko",): False}
+    assert [w._transparency_value(path) for path in ids] == [35, 85]
+    assert [field.text() for field in w.move_edits] == ["0", "0", "0"]
+    assert not w._picks and len(w.session._undo) == 1
+    assert w.session.result.complete and w.session.result.volume_mm3 == pytest.approx(31309.287,
+                                                                                      abs=.01)
+    w.undo_action.trigger()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    assert w._selection == ids and w._isolated == ids
+    w.redo_action.trigger()
+    assert len(w.session._undo) == 1 and w._selection == ids
+
+
+@pytest.mark.parametrize("text", ["", "neznamy", "1/0"])
+def test_batch_move_invalid_field_keeps_recipe_selection_and_input(opened, dialogs, text):
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.move_edits[0].setText(text)
+    w.move_button.click()
+    assert dialogs["shown"][-1][0] == "Výběr nejde posunout"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and not w.session.dirty and w._selection == ids
+    assert w.move_edits[0].text() == text
+
+
+def test_batch_move_fixed_selection_is_explicitly_blocked_without_skipping_body(opened):
+    w = opened
+    w.select_many((("krabicka",), ("vicko",)))
+    assert w.move_box.isVisibleTo(w) and not w.move_button.isEnabled()
+    assert "Pevné komponenty: Krabička" in w.move_note.text()
+    before = w.session.assembly.to_dict()
+    w.move_edits[0].setText("5")
+    w.apply_batch_move()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    w.select(("vicko",))
+    assert not w.move_box.isVisibleTo(w) and w.apply_button.isEnabled()
+
+
+def test_batch_move_constraint_failure_keeps_entire_selection_and_delta(constrained, dialogs):
+    w = constrained
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    before, result = w.session.assembly.to_dict(), w.session.result
+    centers = {i.ids: tuple(i.part.center()) for i in result.instances}
+    w.move_edits[2].setText("5")
+    w.move_button.click()
+    assert dialogs["shown"][-1][0] == "Výběr nejde posunout"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and w._selection == ids
+    assert w.move_edits[2].text() == "5" and w.session.result.complete
+    assert {i.ids: tuple(i.part.center()) for i in w.session.result.instances} == centers
+
+
+def test_batch_move_nested_selection_requires_parents_then_moves_each_branch_once(nested_isolation):
+    w = nested_isolation
+    w.select_many((("a", "deska"), ("b", "deska")))
+    assert not w.move_button.isEnabled() and "nadřazené podsestavy" in w.move_note.text()
+    w.select_many((("a",), ("a", "deska"), ("b",)))
+    assert w.move_button.isEnabled()
+    old = {i.ids: tuple(i.part.center()) for i in w.session.result.instances}
+    w.move_edits[0].setText("5")
+    w.move_button.click()
+    assert len(w.session._undo) == 1 and len(w._selection) == 3
+    for instance in w.session.result.instances:
+        assert tuple(instance.part.center()) == pytest.approx(
+            (old[instance.ids][0]+5, *old[instance.ids][1:]))
+    assert w.session.result.volume_mm3 == pytest.approx(24000)
+
+
+def test_batch_move_pending_delta_survives_views_rebuild_and_resets_on_new_selection(opened):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.move_edits[0].setText("2,5")
+    w.toggle_selected_visibility()
+    w.toggle_selected_transparency()
+    w.show_all()
+    w.isolate_selected()
+    w.reset_layout()
+    w.session.rebuild()
+    w._refresh()
+    assert w.move_edits[0].text() == "2,5" and not w.session.can_undo
+    w.select_many((("nozicka_3",), ("nozicka_4",)))
+    assert [f.text() for f in w.move_edits] == ["0", "0", "0"]
+    before = w.session.assembly.to_dict()
+    w.move_button.click()  # nulový posun nepřidá historii
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result
