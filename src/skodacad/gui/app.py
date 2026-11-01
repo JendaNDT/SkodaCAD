@@ -1593,6 +1593,25 @@ def _self_test_assembly_multi_selection(assembly, lines) -> bool:
         result = session.result
         body = next(i for i in result.instances if i.ids == ("krabicka",))
         lid = next(i for i in result.instances if i.ids == ("vicko",))
+        expected = (body.ids, lid.ids)
+        from skodacad.gui.assembly_window import AssemblyWindow
+
+        deferred = AssemblyWindow()
+        try:
+            assert deferred.open_assembly(session.path, template=True)
+            deferred.select_many(expected)
+            assert not deferred.viewer.ready
+            deferred.show()
+            QTest.qWait(150)
+            assert deferred.viewer.ready and deferred._selection == expected
+            assert deferred.viewer._highlight is not None
+            assert len(Compound(deferred.viewer._ais.Shape()).solids()) == 6
+        finally:
+            deferred.session.dirty = False
+            deferred.close()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(50)
 
         def row_click(index, modifiers=Qt.KeyboardModifier.NoModifier):
             item = assembly.tree.topLevelItem(index)
@@ -1603,7 +1622,6 @@ def _self_test_assembly_multi_selection(assembly, lines) -> bool:
 
         row_click(0)
         row_click(1, Qt.KeyboardModifier.ControlModifier)
-        expected = (body.ids, lid.ids)
         assert assembly._selection == expected and len(assembly.tree.selectedItems()) == 2
         assert not assembly.apply_button.isEnabled() and not assembly.remove_action.isEnabled()
         assert "Vybrané komponenty: 2" in assembly.form_note.text()
@@ -1663,7 +1681,8 @@ def _self_test_assembly_multi_selection(assembly, lines) -> bool:
         assert session.result is result and session.assembly.to_dict() == before
         assert history == (len(session._undo), len(session._redo), session.dirty)
         assert abs(Compound(viewer._ais.Shape()).volume-result.volume_mm3) < 1e-5
-        lines.append("✓ Hromadný výběr sestavy: strom Ctrl/⌘/Shift/A/Esc, 3D přidat/ubrat, "
+        lines.append("✓ Hromadný výběr sestavy: první paint zachová výběr, "
+                     "strom Ctrl/⌘/Shift/A/Esc, 3D přidat/ubrat, "
                      "H 6→4→6, I 2/6, společná míra 60 %, plochy pro vazby, kamera, "
                      "objem/recept/historie beze změny")
         return True

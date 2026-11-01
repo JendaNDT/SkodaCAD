@@ -580,6 +580,24 @@ def test_multi_3d_maps_all_unique_copies_preserves_face_picks_and_clears_on_empt
     assert not w.constraint_action.isEnabled()
 
 
+def test_multi_late_presentation_clears_faces_but_keeps_component_selection(opened):
+    w = opened
+    body, lid = w.session.result.instances[:2]
+    w.viewer.click([min(i.part.faces(), key=lambda f: f.center().Y) for i in (body, lid)])
+    assert len(w._picks) == 2
+    selection = w._selection
+    w.position_edits[0].setText("rozepsaná hodnota")
+    # Stejný signál přijde z prvního paintu při přehrání OccViewer._pending,
+    # tedy dlouho po skončení volání _show_visible.
+    w.viewer.highlight([])  # nový AIS odstraní staré zvýraznění
+    w.viewer.show_part(w.session.result.compound())
+    assert w._selection == selection and not w._picks
+    assert len(w.tree.selectedItems()) == 2 and w.viewer.highlighted
+    assert w.position_edits[0].text() == "rozepsaná hodnota"
+    w.viewer.clear_selection()  # výslovné uživatelské zrušení se chová jinak
+    assert not w._selection and not w.tree.selectedItems() and not w.viewer.highlighted
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result

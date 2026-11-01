@@ -121,6 +121,29 @@ def test_transparency_before_surface_ready_updates_pending_presentation(viewer):
     assert viewer._pending[3] == []
 
 
+def test_presentation_reset_is_distinct_from_explicit_clear_and_empty_click(viewer, monkeypatch):
+    from build123d import Box
+
+    changed, cleared = [], []
+    viewer.selection_changed.connect(changed.append)
+    viewer.selection_cleared.connect(lambda: cleared.append(True))
+    view = viewer._view
+    viewer._view = None
+    viewer.show_part(Box(30, 20, 10))
+    assert not changed and not cleared
+    pending, viewer._pending = viewer._pending, None
+    viewer._view, viewer._context = view, Mock()
+    part, fit, accent, transparent = pending
+    viewer.show_part(part, fit, accent, transparent)  # jako přehrání po inicializaci
+    assert changed == [[]] and not cleared
+    viewer.clear_selection()
+    assert changed == [[], []] and cleared == [True]
+    monkeypatch.setattr(viewer, "_remember_point", lambda: None)
+    monkeypatch.setattr(viewer, "selected_shapes", lambda: [])
+    viewer._select_at(5, 5)
+    assert changed == [[], [], []] and cleared == [True, True]
+
+
 def test_independent_material_amounts_zero_and_one_keep_same_shape(viewer):
     from build123d import Box, Compound, Location
 
