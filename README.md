@@ -86,6 +86,10 @@ Přidání či nahrazení hran vybraného prvku výběrem ve 3D také otevře te
 
 ### Ovládání
 
+Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
+předává také přístup ke zvolenému souboru ve složce Dokumenty.
+[Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).
+
 | Akce | Jak |
 |---|---|
 | Otáčení | levé tlačítko + táhnout |

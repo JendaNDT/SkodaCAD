@@ -1196,8 +1196,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 ## Známé pasti (macOS)
 
 - Souborové dialogy dílu a sestavy používají sdílené `gui/file_dialogs.FILE_OPTIONS`:
-  na Macu Qt dialog (`DontUseNativeDialog`). V macOS 27.2 přes přístupnost nativní
-  panel nepovolil platný JSON/CSV. Běžný přepočet nesmí plošně mazat strom položek:
+  **systémové panely**, včetně macOS (`FILE_OPTIONS = 0`). P7.7 ruší starší
+  náhradu dialogem Qt: nepředávala systémové oprávnění k vybranému souboru
+  v Dokumentech a čtení čekalo v `open`. Výběr konkrétního souboru musí proběhnout
+  systémovým panelem; nepřidávat plošná oprávnění ani vracet DontUseNativeDialog
+  kvůli omezení automatizačního klienta. [Evidence](docs/p7-7-otevirani-dokumentu-macos.md).
+- Běžný přepočet nesmí plošně mazat strom položek:
   Cocoa přístupnost drží odkazy na buňky a `tree.clear()` vedlo k pádu `libqcocoa`
   i v Qt 6.11.3. Hlavní okno i sestava proto opakovaně používají řádky podle id.
 - P7.3 zopakovalo pád Cocoa AX i v seznamu tvarů skici. Příčina odpovídá
@@ -1298,8 +1302,9 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - P5.5 na macOS 27.2 odhalilo pády v Cocoa přístupnosti při obnově stromu a zadávání
   souboru. Zachovávat řádky a buňky při běžné obnově, nerozbalovat celý strom znovu;
   regrese drží trvalý index vazby i sbalenou skupinu. PySide6 je zamčené na 6.11.3.
-  Dialogy souborů sestavy na Macu používají Qt (nativní panely při ovládání přes
-  přístupnost odmítaly platné JSON/CSV); Windows používá původní systémové dialogy.
+  P5.5 použilo na Macu dialogy Qt kvůli potížím nativních panelů s přístupnostním
+  klientem. P7.7 je vrací na systémové panely kvůli předání přístupu k souborům
+  v Dokumentech; Windows stále používá původní systémové dialogy.
 - Řešič vazeb: rovnice směrů se násobí ramenem (`scale`), krok je nejmenší normy (SVD)
   v měřítku mm s **jednotným** útlumem a na konci se vrátí volné pohyby (`_pull_back`).
   Marquardtův útlum podle sloupců zlevnil téměř volný pohyb (krabička ujela o 43 mm), bez
