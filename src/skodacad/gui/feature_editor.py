@@ -570,6 +570,7 @@ class FieldsForm(QWidget):
 
     def _build_points(self, field: Field, value: Any, axes: tuple[str, ...] = ("x", "y")):
         edit = _PlainTextEdit()
+        edit.setTabChangesFocus(True)
         valid = [p for p in (value or []) if isinstance(p, list | tuple) and len(p) == len(axes)]
         lines = ["; ".join(_number_text(v) for v in point) for point in valid]
         edit.setPlainText("\n".join(lines))

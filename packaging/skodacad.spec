@@ -2,6 +2,7 @@
 # macOS: SkodaCAD.app). Spuštění z kořene repozitáře:
 #   pyinstaller packaging/skodacad.spec --noconfirm
 # -*- mode: python ; coding: utf-8 -*-
+import runpy
 import sys
 import tomllib
 from pathlib import Path
@@ -21,6 +22,9 @@ datas += [(str(path), path.parent.relative_to(ROOT).as_posix())  # ukázková se
           for path in sorted((ROOT / "examples" / "sestavy").rglob("*.json"))]
 datas.append((str(ROOT / "README.md"), "."))  # popis formátu modelu pro AI asistenta
 binaries = []
+if sys.platform == "darwin":
+    builder = runpy.run_path(str(ROOT / "packaging" / "build_macos_accessibility.py"))
+    binaries.append((str(builder["build"](ROOT)), "skodacad/gui"))
 # AI asistent: knihovna anthropic načítá části API až při použití – přibalit všechny.
 hiddenimports = collect_submodules("anthropic") + collect_submodules("httpx2")
 # Commit a datum sestavení (zapíše GitHub Actions; zpráva NDT auditu, O aplikaci).

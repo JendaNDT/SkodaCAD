@@ -952,11 +952,13 @@ def shown_part(w):
 def test_fillet_from_clicked_edge(empty_window):
     w = empty_window
     build_box(w)
+    w.workspace.show_panel("measure")
     fillet = action(w, "Zaoblit vybrané hrany")
     assert not fillet.isEnabled()  # nic nevybráno
     w.viewer.click([edge_at(shown_part(w), 20, -15, 5)])
     assert fillet.isEnabled()
     fillet.trigger()
+    assert w.workspace.active == "editor"
     assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
     assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
@@ -966,6 +968,57 @@ def test_fillet_from_clicked_edge(empty_window):
     set_text(form_field(w, "radius"), "4")  # poloměr dál jde měnit ve formuláři
     loss = (4 ** 2 - math.pi * 4 ** 2 / 4) * 10
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
+
+
+def test_drawn_profile_opens_editor_after_confirm_but_keeps_panel_on_cancel(
+        empty_window, monkeypatch):
+    from skodacad.schema import new_shape
+
+    w = empty_window
+    w.workspace.show_panel("measure")
+    monkeypatch.setattr(w, "edit_profile", lambda *a, **k: None)
+    w.profile_sketch_action.trigger()
+    assert w.workspace.active == "measure" and not w.session.can_undo
+    monkeypatch.setattr(w, "edit_profile", lambda *a, **k: new_shape("profile"))
+    w.profile_sketch_action.trigger()
+    assert w.workspace.active == "editor"
+    w.add_feature_actions["extrude"].trigger()
+    assert w.session.result.ok and w.session.properties.volume_mm3 == pytest.approx(12000)
+
+
+def test_tab_commits_four_hole_positions_once(empty_window):
+    from PySide6.QtTest import QTest
+
+    w = empty_window
+    build_box(w)
+    w.add_feature_actions["hole"].trigger()
+    w.show()
+    QtWidgets.QApplication.processEvents()
+    points = form_field(w, "positions")
+    points.setFocus()
+    points.setPlainText("-10; -5\n10; -5\n10; 5\n-10; 5")
+    before = len(w.session._undo)
+    QTest.keyClick(points, Qt.Key.Key_Tab)
+    QtWidgets.QApplication.processEvents()
+    assert not points.hasFocus() and "\t" not in points.toPlainText()
+    assert w.session.feature("hole1")["positions"] == [[-10, -5], [10, -5], [10, 5], [-10, 5]]
+    assert w.session.result.ok and len(w.session._undo) == before + 1
+    diameter = 5  # výchozí závit M6: vrták Ø5, nikoli vymodelovaný závit
+    assert w.session.properties.volume_mm3 == pytest.approx(12000 - 4*math.pi*(diameter/2)**2*10)
+    w.undo_action.trigger()
+    assert len(w.session.feature("hole1")["positions"]) == 1
+
+
+def test_expanded_properties_keep_tree_readable_in_compact_window(window):
+    window.resize(1100, 720)
+    window.show()
+    window.workspace.model_action.setChecked(True)
+    window.sidebar_sections["info"].set_expanded(True)
+    window.sidebar_sections["properties"].set_expanded(True)
+    QtWidgets.QApplication.processEvents()
+    row = window.tree.visualItemRect(window.tree.topLevelItem(0))
+    assert window.tree.viewport().height() >= row.height()*4
+    assert window.props_label.wordWrap()
 
 
 def test_add_clicked_edges_to_selected_fillet(empty_window):

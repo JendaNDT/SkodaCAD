@@ -63,6 +63,7 @@ from skodacad.gui.direct_edit_dialog import DirectEditDialog
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
+from skodacad.gui.macos_accessibility import install as install_macos_accessibility
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
@@ -144,6 +145,7 @@ class MainWindow(QMainWindow):
                  examples_dir: Path | None = None, user_dir: Path | None = None,
                  runner: BackgroundRebuilder | None = None) -> None:
         super().__init__()
+        install_macos_accessibility()
         # S ``runner`` se model přepočítává na pozadí v pomocném procesu (okno je živé).
         self._runner = runner
         self.session = ModelSession(runner)
@@ -353,6 +355,7 @@ class MainWindow(QMainWindow):
         tree_box = QGroupBox("Strom prvků")
         tree_layout = QVBoxLayout(tree_box)
         self.tree = QTreeWidget()
+        self.tree.setMinimumHeight(150)
         self.tree.setHeaderLabels(["Prvek", "Tělesa"])
         self.tree.setColumnWidth(1, 65)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -393,6 +396,7 @@ class MainWindow(QMainWindow):
         props_box = QWidget()
         props_layout = QVBoxLayout(props_box)
         self.props_label = QLabel()
+        self.props_label.setWordWrap(True)
         self.props_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         props_layout.addWidget(self.props_label)
         self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box)
@@ -1491,6 +1495,7 @@ class MainWindow(QMainWindow):
                 structural=False):
             self._selected_id = new_id[0]
             self._reload_all()
+            self.workspace.show_panel("editor")
             self.statusBar().showMessage(
                 "Skica s obrysem přidána – teď ji vysuň (Přidat prvek → Vysunutí).", 10000)
 
@@ -1506,6 +1511,7 @@ class MainWindow(QMainWindow):
                 structural=False):
             self._selected_id = new_id[0]
             self._reload_all()
+            self.workspace.show_panel("editor")
             self.statusBar().showMessage(
                 f"Přidáno: {describe(self.session.feature(new_id[0]))} – hodnoty uprav vpravo.",
                 10000)

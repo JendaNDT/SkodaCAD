@@ -1,0 +1,86 @@
+{
+  "format": "skodacad",
+  "version": 24,
+  "name": "Deska 80 x 50 – ověření workflow",
+  "description": "",
+  "units": "mm",
+  "material": "ocel",
+  "parameters": {
+    "delka": 80,
+    "sirka": 50,
+    "tloustka": 10
+  },
+  "features": [
+    {
+      "elements": [
+        {
+          "height": "sirka",
+          "mode": "add",
+          "shape": "rectangle",
+          "width": "delka"
+        }
+      ],
+      "id": "sketch1",
+      "name": "Skica 1",
+      "plane": "XY",
+      "type": "sketch"
+    },
+    {
+      "distance": "tloustka",
+      "id": "extrude1",
+      "name": "Vysunutí 1",
+      "sketch": "sketch1",
+      "type": "extrude"
+    },
+    {
+      "diameter": 6,
+      "fit": "medium",
+      "id": "hole1",
+      "kind": "clearance",
+      "name": "Díra 1",
+      "plane": "top",
+      "positions": [
+        [
+          "-delka/2+10",
+          "-sirka/2+10"
+        ],
+        [
+          "delka/2-10",
+          "-sirka/2+10"
+        ],
+        [
+          "delka/2-10",
+          "sirka/2-10"
+        ],
+        [
+          "-delka/2+10",
+          "sirka/2-10"
+        ]
+      ],
+      "size": "M6",
+      "through_all": true,
+      "type": "hole"
+    },
+    {
+      "edges": {
+        "face": "front",
+        "parallel": "Z"
+      },
+      "id": "fillet1",
+      "name": "Zaoblení 1",
+      "radius": 2,
+      "type": "fillet"
+    },
+    {
+      "edges": {
+        "face": "back",
+        "parallel": "Z"
+      },
+      "id": "fillet2",
+      "name": "Zaoblení 2",
+      "radius": 2,
+      "type": "fillet"
+    }
+  ],
+  "measurements": []
+}
