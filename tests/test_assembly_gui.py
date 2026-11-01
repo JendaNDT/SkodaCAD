@@ -338,8 +338,9 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
     field.setFocus()
     field.selectAll()
     app.processEvents()
-    QTest.keyClicks(field, "107F")
-    assert field.text() == "107F" and opened.viewer.views == []
+    QTest.keyClicks(field, "107FI")
+    assert field.text() == "107FI" and opened.viewer.views == []
+    assert opened._isolated is None
     assert not opened.session.can_undo
     opened.viewer.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     opened.viewer.setFocus()
@@ -348,7 +349,145 @@ def test_view_shortcuts_do_not_steal_characters_from_position_input(opened, app)
                       (Qt.Key.Key_0, "iso"), (Qt.Key.Key_F, "fit")):
         QTest.keyClick(opened.viewer, key)
         assert opened.viewer.views[-1] == view
-    assert field.text() == "107F" and not opened.session.can_undo
+    QTest.keyClick(opened.viewer, Qt.Key.Key_I)
+    assert opened._isolated == ("vicko",)
+    QTest.keyClick(opened.viewer, Qt.Key.Key_I,
+                   Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+    assert opened._isolated is None
+    assert field.text() == "107FI" and not opened.session.can_undo
+
+
+def test_isolation_preserves_pending_fields_model_history_and_restores_all(opened):
+    assert not opened.isolate_action.isEnabled()
+    assert not opened.restore_visibility_action.isEnabled()
+    pick(opened, "vicko")
+    result = opened.session.result
+    lid = next(i for i in result.instances if i.ids == ("vicko",))
+    before = opened.session.assembly.to_dict()
+    history = (opened.session.can_undo, opened.session.can_redo, opened.session.dirty)
+    opened.position_edits[0].setText("rozepsaný výraz")
+    opened.isolate_action.trigger()
+    assert opened._isolated == lid.ids and opened._selected == lid.ids
+    shown, fit = opened.viewer.parts[-1]
+    assert fit and len(shown.solids()) == 1
+    assert shown.volume == pytest.approx(lid.volume_mm3)
+    assert opened.position_edits[0].text() == "rozepsaný výraz"
+    assert "izolace (1/6)" in opened.windowTitle()
+    assert "Součty níže platí pro celou sestavu" in opened.summary.text()
+    opened.fit_action.trigger()
+    assert opened.viewer.views[-1] == "fit"
+    opened.restore_visibility_action.trigger()
+    shown, fit = opened.viewer.parts[-1]
+    assert opened._isolated is None and fit and len(shown.solids()) == 6
+    assert shown.volume == pytest.approx(result.volume_mm3)
+    assert opened._selected == lid.ids
+    assert opened.position_edits[0].text() == "rozepsaný výraz"
+    assert opened.session.assembly.to_dict() == before
+    assert history == (opened.session.can_undo, opened.session.can_redo, opened.session.dirty)
+
+
+@pytest.fixture
+def nested_isolation(main_window, tmp_path):
+    from test_assembly import assembly_data, component, part_data, write
+
+    root = tmp_path / "nested"
+    write(root / "dily/deska.json", part_data())
+    write(root / "modul.json", assembly_data([
+        component("deska", "dily/deska.json"),
+        component("druha", "dily/deska.json", position=(40, 0, 0))]))
+    source = write(root / "sestava.json", assembly_data([
+        component("a", "modul.json", position=(100, 0, 0), rotation=(0, 0, 90)),
+        component("b", "modul.json", position=(0, 80, 20))]))
+    return main_window.open_assembly(source)
+
+
+def test_nested_isolation_uses_instance_path_and_hidden_picks_do_not_select(nested_isolation):
+    w = nested_isolation
+    w.select(("a", "deska"))
+    w.isolate_selected()
+    assert [i.ids for i in w.visible_instances()] == [("a", "deska")]
+    assert w.viewer.parts[-1][0].volume == pytest.approx(6000)
+    assert tuple(w.viewer.parts[-1][0].bounding_box().min) == pytest.approx((80, 0, 0))
+    hidden = next(i for i in w.session.result.instances if i.ids == ("b", "deska"))
+    face = max(hidden.part.faces(), key=lambda f: f.center().Z)
+    w.viewer.selection_changed.emit([face.wrapped])
+    assert w._selected == ("a", "deska")
+    assert not w._picks
+    w.select(("b",))  # strom zůstává celý; samotný výběr neodkryje skryté těleso
+    assert w._isolated == ("a", "deska") and not w.viewer.highlighted
+    assert len(w.viewer.parts[-1][0].solids()) == 1
+    w.isolate_selected()
+    assert [i.ids for i in w.visible_instances()] == [("b", "deska"), ("b", "druha")]
+    assert w.viewer.parts[-1][0].volume == pytest.approx(12000)
+    assert len(w.viewer.parts[-1][0].solids()) == 2
+    assert not w._picks and not w.constraint_action.isEnabled()
+    w.show_all()
+    assert len(w.visible_instances()) == 4 and w.session.result.volume_mm3 == pytest.approx(24000)
+
+
+def test_isolation_save_and_step_export_keep_full_assembly(opened, tmp_path, dialogs):
+    from build123d import import_step
+
+    pick(opened, "vicko")
+    opened.isolate_selected()
+    total = opened.session.result.volume_mm3
+    target = tmp_path / "kopie.json"
+    dialogs["save"] = str(target)
+    assert opened.save_as() and opened._isolated == ("vicko",)
+    saved = json.loads(target.read_text(encoding="utf-8"))
+    assert len(saved["components"]) == 6 and "isolation" not in saved
+    step = tmp_path / "cela.step"
+    opened.session.export_step(step)
+    exported = import_step(step)
+    assert len(exported.solids()) == 6 and exported.volume == pytest.approx(total)
+    assert opened.open_assembly(target)
+    assert opened._isolated is None and len(opened.viewer.parts[-1][0].solids()) == 6
+
+
+def test_isolation_survives_edit_undo_and_missing_source_then_removal_restores_all(opened, project):
+    pick(opened, "vicko")
+    opened.isolate_selected()
+    opened.position_edits[0].setText("10")
+    opened.apply_form()
+    assert opened._isolated == ("vicko",) and len(opened.visible_instances()) == 1
+    opened.undo()
+    assert opened._isolated == ("vicko",)
+    (project / "sestavy/dily/vicko.json").unlink()
+    opened.reload()
+    assert opened._isolated == ("vicko",) and not opened.visible_instances()
+    assert opened.viewer.parts[-1][0] is None
+    assert opened.restore_visibility_action.isEnabled()
+    opened.remove_selected()
+    assert opened._isolated is None and len(opened.visible_instances()) == 5
+
+
+def test_isolation_keeps_constraint_and_collision_overlays_from_revealing_hidden_parts(opened):
+    pick(opened, "vicko")
+    opened.isolate_selected()
+    opened._finding = {"kind": "collision", "a": ["vicko"], "b": ["krabicka"],
+                       "center": [0, 0, 20]}
+    opened._selected = None
+    opened._refresh_highlight()
+    assert opened.viewer.highlighted and opened.viewer.points is None
+    opened._finding = None
+    opened._constraint = "v1"
+    opened._refresh_highlight()  # v izolaci se plochy vazby vůbec nevytvářejí
+    assert not opened.viewer.highlighted
+
+
+def test_restore_from_constraint_keeps_unfinished_distance_and_restores_faces(
+        main_window, project):
+    w = main_window.open_assembly(project / "sestavy/krabicka_s_vazbami.json")
+    before = w.session.assembly.to_dict()
+    pick(w, "vicko")
+    w.isolate_selected()
+    w.select_constraint("v1")
+    w.constraint_value.setText("rozepsaná vzdálenost")
+    assert not w.viewer.highlighted and w.constraint_isolation_note.isVisible()
+    w.show_all()
+    assert len(w.viewer.highlighted) == 2 and not w.constraint_isolation_note.isVisible()
+    assert w.constraint_value.text() == "rozepsaná vzdálenost"
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
 
 
 def test_bad_expression_in_form_is_czech_error_and_nothing_changes(opened, dialogs):

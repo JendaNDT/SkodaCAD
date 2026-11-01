@@ -1249,6 +1249,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   lišta P7.12 má 1313 bodů), zatímco nativní balíček se vejde do 960. Funkční test
   akcí přizpůsobí okno `toolbar.sizeHint()`; rozměry 1024/960 musí hlídat nativní
   self-test obou systémů, nikoli zmenšení písma produktu podle offscreen náhrady.
+- P7.13: izolace sestavy je pouze `AssemblyWindow._isolated` (cesta id, nikdy soubor).
+  `AssemblyResult.compound(ids)` čte podmnožinu kopií; `result.instances`, kontroly,
+  kusovník, STEP i JSON vždy zůstávají úplné. Přepnutí pohledu nesmí volat
+  `_refresh_selection` (zahodilo by rozepsaná pole); překreslí jen viditelné těleso,
+  zvýraznění, akce a souhrn. Vyčistit `_picks` i při nepřipraveném prohlížeči.
+  Skryté řádky stromu nesmějí přes zvýraznění odkrýt geometrii; plochy vazby se
+  v izolaci nezvýrazňují. [Evidence](docs/p7-13-izolace-sestavy.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
