@@ -283,6 +283,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
+    ok = _self_test_feature_edit(window, lines) and ok
     ok = _self_test_plate_workflow(window, lines) and ok
     ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
@@ -358,8 +359,10 @@ def _self_test_plate_workflow(window, lines) -> bool:
                             "delka/2-10; sirka/2-10\n-delka/2+10; sirka/2-10")
         count = len(window.session._undo)
         QTest.keyClick(points, Qt.Key.Key_Tab)
-        QApplication.processEvents()
+        QTest.qWait(300)  # also let the input debounce run when the native window is inactive
         assert not points.hasFocus() and len(window.session._undo) == count
+        assert window.feature_preview.accept_button.isEnabled(), (
+            window.feature_preview.message.text())
         window.feature_preview.accept_button.click()
         assert len(window.session._undo) == count+1
         assert window.session.result.ok
@@ -419,6 +422,7 @@ def _self_test_plate_workflow(window, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- include the exact assertion in the package report
         lines.append("✕ Modelování desky:\n" + traceback.format_exc())
+        window.cancel_feature_preview()
         return False
 
 
@@ -475,6 +479,86 @@ def _self_test_feature_preview(window, lines) -> bool:
         return True
     except Exception:  # noqa: BLE001 -- native package report includes the failing assertion
         lines.append("✕ Náhled nového prvku:\n" + traceback.format_exc())
+        window.cancel_feature_preview()
+        return False
+
+
+def _self_test_feature_edit(window, lines) -> bool:
+    """Native edit command, dependent geometry, cancel, confirm and save/reopen."""
+    import copy
+    import math
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir()/"deska_workflow.json", template=True)
+        window._selected_id = "extrude1"
+        window._reload_all()
+        available = window.screen().availableGeometry()
+        window.resize(min(1280, available.width()), min(800, available.height()-30))
+        window.move(available.topLeft())
+        window.workspace.show_panel("editor")
+        QApplication.processEvents()
+        assert window.feature_editor.form.widget("distance").isReadOnly()
+        original, result = copy.deepcopy(window.session.document), window.session.result
+        count = len(window.session._undo)
+        QTest.mouseClick(window.edit_feature_button, Qt.MouseButton.LeftButton)
+        panel = window.feature_preview
+        assert panel.preview.editing
+        field = panel.editor.form.widget("distance")
+        for value in ("12", "15"):
+            field.setFocus()
+            field.selectAll()
+            QTest.keyClicks(field, value)
+            QTest.keyClick(field, Qt.Key.Key_Return)
+            assert panel.preview.session.result.part.is_valid
+            assert abs(panel.preview.session.properties.volume_mm3
+                       - (3984-32*math.pi)*float(value)) < 2e-5
+            assert window.session.document == original and window.session.result is result
+        window.viewer.fit_all()
+        QApplication.processEvents()
+        assert panel.accept_button.isVisibleTo(window)
+        _screenshot(window, user_dir()/"self-test-uprava-prvku.png")
+        field.setText("1+")
+        panel.accept()
+        assert not panel.accept_button.isEnabled()
+        QTest.mouseClick(panel.cancel_button, Qt.MouseButton.LeftButton)
+        assert window.session.document == original and window.session.result is result
+        assert len(window.session._undo) == count and not window.session.dirty
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        field = panel.editor.form.widget("distance")
+        field.setText("tloustka+5")
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QTest.mouseClick(panel.accept_button, Qt.MouseButton.LeftButton)
+        expected = 59760-480*math.pi
+        assert window.feature_preview is None and len(window.session._undo) == count+1
+        assert abs(window.session.properties.volume_mm3-expected) < 2e-5
+        assert all(abs(a-b) < 1e-6 for a, b in
+                   zip(window.session.properties.size_mm, (80, 50, 15), strict=True))
+        window.undo_action.trigger()
+        assert window.session.document == original
+        window.redo_action.trigger()
+        path = window.session.save(user_dir()/"self-test-uprava-prvku.json")
+        assert window.open_model(path) and window.session.result.part.is_valid
+        assert abs(window.session.properties.volume_mm3-expected) < 2e-5
+        window.start_feature_edit("sketch1")
+        panel = window.feature_preview
+        panel.editor.form.widget("elements")._form.widget("width").setText("5")
+        panel.refresh()
+        assert not panel.accept_button.isEnabled()
+        assert panel.preview.session.result.first_error.id == "hole1"
+        panel.cancel_button.click()
+        assert abs(window.session.properties.volume_mm3-expected) < 2e-5
+        lines.append("✓ Úprava prvku: Qt vstup a klik, izolovaný náhled, neplatný rozepsaný "
+                     "vstup, navazující otvory/R2 a blokace při jejich chybě, Zrušit, "
+                     "Potvrdit, jeden krok Zpět/Znovu, 80×50×15 mm / 58252,035526 mm³, "
+                     "platné těleso, uložení/otevření a nativní snímek")
+        return True
+    except Exception:  # noqa: BLE001 -- report the exact assertion in the downloaded package
+        lines.append("✕ Úprava prvku:\n" + traceback.format_exc())
         window.cancel_feature_preview()
         return False
 
@@ -599,13 +683,19 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
             assert {k for k, dock in window.workspace.docks.items() if dock.isVisible()} == {key}
         assert window.session.document.to_dict() == original and not window.session.can_undo
         window.workspace.show_panel("editor")
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        guides = panel.editor.form.widget("guides")
         guides.set_selection(0, 0)
         field = guides.edits[0, 0, 0]
         field.setText("4*Bx/3+1")
         field.setFocus()
         QTest.keyClick(field, Qt.Key.Key_Return)
+        assert not window.session.can_undo
+        panel.accept_button.click()
         assert window.session.result.ok and len(window.session._undo) == 1
         assert abs(window.session.result.part.volume - 78009) < 2e-5
+        guides = window.feature_editor.form.widget("guides")
         guides.corner_picker.setCurrentIndex(3)
         guides.handle_buttons.button(1).click()
         window.undo_action.trigger()
@@ -696,9 +786,12 @@ def _self_test_guided_loft(window, lines: list[str]) -> bool:
             assert window.viewer._guide_objects
             QApplication.processEvents()
             window.viewer.dump(str(user_dir() / "self-test-rizeny-prechod.png"))
-        edit = editor.edits[0, 0, 0]
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        edit = panel.editor.form.widget("guides").edits[0, 0, 0]
         edit.setText("12")
         edit.editingFinished.emit()
+        panel.accept_button.click()
         assert window.session.result.ok
         assert abs(window.session.guided_loft_display("rizeny")["guides"][0]["curve"][20][0]
                    - 24) < 1e-6

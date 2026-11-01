@@ -17,7 +17,9 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -677,7 +679,7 @@ class FieldsForm(QWidget):
                 widget.setToolTip(field.help)
             if value is MISSING:
                 new.pop(field.key, None)
-            else:
+            elif field.key in new or value != field.default:
                 new[field.key] = value
         if problems:
             self.invalid.emit(problems[0])
@@ -871,3 +873,20 @@ class FeatureEditor(QWidget):
         self.form.guide_step_changed.connect(self.guide_step_changed)
         self.form.guide_direction_changed.connect(self.guide_direction_changed)
         self._layout.insertWidget(2, self.form)
+
+    def set_readonly(self) -> None:
+        """Prohlížení hodnot; volby pohledu na rukojeti zůstávají ovladatelné."""
+        if self.form is None:
+            return
+        views = []
+        for guides in self.form.findChildren(GuidesEditor):
+            views.extend([guides.corner_picker, guides.drag_step, guides.drag_direction,
+                          *guides.buttons.buttons(), *guides.handle_buttons.buttons()])
+        for widget in self.form.findChildren(QWidget):
+            view = any(widget is item or item.isAncestorOf(widget) for item in views)
+            if isinstance(widget, QLineEdit | QPlainTextEdit):
+                widget.setReadOnly(not view)
+            elif isinstance(widget, QAbstractButton | QComboBox | QDoubleSpinBox | QListWidget):
+                widget.setEnabled(view)
+        for action in self.form.findChildren(QAction):
+            action.setEnabled(False)

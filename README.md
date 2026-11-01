@@ -60,9 +60,9 @@ přepíná editor, **F9** strom, **Ctrl+F1** (na Macu Cmd+F1) sbalí pás.
 strom, aby zůstal prostor pro 3D. **Zobrazení → Vzhled** přepíná světlý/tmavý
 režim. Rozložení se pamatuje v `~/SkodaCAD/okno.json`, odděleně od dílu.
 
-U vodítek nejprve vyber roh A–D a rukojeť 1/2, pak uprav X/Y v širokých polích.
-Enter nebo opuštění platného pole změnu potvrdí; Zpět ji vrátí. Přepnutí panelu
-formulář zachová. Podrobný rozsah, ověření a meze: [P7.2](docs/p7-2-nativni-prostredi.md).
+U vodítek vyber roh A–D a rukojeť 1/2. Pro změnu X/Y spusť **Upravit prvek**,
+uprav široká pole v náhledu a stiskni **Potvrdit**. Podrobný rozsah prostředí:
+[P7.2](docs/p7-2-nativni-prostredi.md).
 
 [Ověření modelování desky od nuly](docs/p7-3-overeni-workflow-2026-11-01.md)
 pokrývá parametry, vysunutí, čtyři průchozí otvory Ø6, R2 a historii. Hotový
@@ -76,6 +76,13 @@ příkaz z výběru označ před jeho spuštěním. Ve skicáři **Hotovo** doko
 potom ještě potvrď náhled skici vpravo. Během náhledu lze ovládat pohled;
 uložení, export a další změny počkají na ukončení příkazu.
 [Podrobný postup a ověření P7.5](docs/p7-5-nahled-noveho-prvku.md).
+
+Existující prvek otevři dvojklikem ve stromu nebo tlačítkem **Upravit prvek**
+(Ctrl+E, na Macu Cmd+E). Panel **Úprava prvku · náhled** přepočítá i všechny
+navazující prvky. **Potvrdit** přijme celou úpravu jako jeden krok Zpět;
+**Zrušit** nebo Esc zachová původní díl. Běžný panel hodnot slouží k prohlížení.
+Přidání či nahrazení hran vybraného prvku výběrem ve 3D také otevře tento náhled.
+[Postup, ověření a meze P7.6](docs/p7-6-nahled-uprav-prvku.md).
 
 ### Ovládání
 

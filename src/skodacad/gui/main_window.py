@@ -50,6 +50,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
@@ -239,6 +240,7 @@ class MainWindow(QMainWindow):
         self.save_as_action = self._action("Uložit jako…", self.save_as, "Ctrl+Shift+S")
         self.undo_action = self._action("Zpět", self.undo, "Ctrl+Z")
         self.redo_action = self._action("Znovu", self.redo, "Ctrl+Y")
+        self.edit_feature_action = self._action("Upravit prvek", self.start_feature_edit, "Ctrl+E")
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))
@@ -272,7 +274,7 @@ class MainWindow(QMainWindow):
         self.clear_selection_action = self._action("Zrušit výběr ve 3D",
                                                    lambda: self.viewer.clear_selection(), "Esc")
         self.cancel_feature_preview_action = self._action(
-            "Zrušit náhled nového prvku", self.cancel_feature_preview, "Esc")
+            "Zrušit náhled prvku", self.cancel_feature_preview, "Esc")
         self.cancel_feature_preview_action.setShortcutContext(
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.cancel_feature_preview_action.setEnabled(False)
@@ -373,8 +375,7 @@ class MainWindow(QMainWindow):
         self.tree.header().setStretchLastSection(False)
         self.tree.setRootIsDecorated(False)
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
-        self.tree.itemDoubleClicked.connect(lambda _item, _column:
-                                           self.workspace.show_panel("editor"))
+        self.tree.itemDoubleClicked.connect(lambda _item, _column: self.start_feature_edit())
         tree_layout.addWidget(self.tree)
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
@@ -429,7 +430,14 @@ class MainWindow(QMainWindow):
         self.editor_dock = self._add_dock("Úprava prvku", "editor_dock", self.feature_editor,
                                           Qt.DockWidgetArea.RightDockWidgetArea)
         self.editor_stack = QStackedWidget()
-        self.editor_stack.addWidget(self.editor_dock.widget())
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.editor_dock.widget(), 1)
+        self.edit_feature_button = self._tool_button(self.edit_feature_action)
+        self.edit_feature_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        layout.addWidget(self.edit_feature_button)
+        self.editor_stack.addWidget(page)
         self.editor_dock.setWidget(self.editor_stack)
 
     def _build_measure_panel(self) -> None:
@@ -956,6 +964,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         edit_menu = bar.addMenu("Ú&pravy")
+        edit_menu.addAction(self.edit_feature_action)
         for action in (self.undo_action, self.redo_action):
             edit_menu.addAction(action)
             toolbar.addAction(action)
@@ -1058,6 +1067,7 @@ class MainWindow(QMainWindow):
         self._icon_actions = [(action, kinds.get(key, "box"))
                               for key, action in self.add_feature_actions.items()]
         self._icon_actions += [(self.profile_sketch_action, "sketch"),
+                               (self.edit_feature_action, "params"),
                                (self.rebuild_action, "box"),
                                (self.new_assembly_action, "pattern"),
                                (self.import_action, "document"),
@@ -1125,12 +1135,12 @@ class MainWindow(QMainWindow):
             ("Uspořádat", [feature("pattern", "Pole"), feature("mirror", "Zrcadlit")]),
             ("Další", [command(self.add_feature_button.menu().menuAction(), "Další prvky",
                                self.add_feature_button.menu()),
-                       command(workspace.actions["editor"], "Prvek")]),
+                       command(self.edit_feature_action, "Upravit")]),
         ])
         self.ribbon.add_page("sketch", "Skica", [
             ("Skica", [command(self.profile_sketch_action, "Nakreslit obrys"),
                        feature("sketch", "Tvary a rozměry")]),
-            ("Úprava", [command(workspace.actions["editor"], "Prvek"),
+            ("Úprava", [command(self.edit_feature_action, "Upravit"),
                         command(self.add_parameter_action, "Parametry")]),
         ])
         self.ribbon.add_page("drawing", "Výkres", [
@@ -1505,6 +1515,35 @@ class MainWindow(QMainWindow):
         except DocumentError as exc:
             self._error("Náhled nejde vytvořit", str(exc))
             return
+        self._show_feature_preview(preview)
+
+    def start_feature_edit(self, feature_id=None, *, values=None, shapes=None,
+                           replace=False, point=None):
+        if self.feature_preview is not None or self.ai_busy or self.session.computing:
+            return
+        feature_id = feature_id or self._selected_id
+        if feature_id is None:
+            return
+        if self._runner is not None and self._feature_preview_runner is None:
+            from skodacad.worker import BackgroundRebuilder
+
+            self._feature_preview_runner = BackgroundRebuilder()
+        preview = None
+        try:
+            preview = self.session.begin_feature_edit(feature_id,
+                                                      runner=self._feature_preview_runner)
+            if values is not None:
+                preview.session.update_feature(feature_id, values)
+            if shapes is not None:
+                preview.session.apply_selection(feature_id, shapes, replace, point=point)
+        except DocumentError as exc:
+            if preview is not None:
+                preview.cancel()
+            self._error("Úpravu nejde připravit", str(exc))
+            return
+        self._show_feature_preview(preview)
+
+    def _show_feature_preview(self, preview):
         self._preview_previous_panel = self.workspace.active
         self._preview_action_states = [(action, action.isEnabled())
                                        for action in self.findChildren(QAction)]
@@ -1524,12 +1563,12 @@ class MainWindow(QMainWindow):
         self.viewer.show_guides(None)
         self._lock_preview_actions()
         panel.show_result()
-        self.statusBar().showMessage("Náhled nového prvku · Potvrdit / Zrušit · Esc zruší")
+        self.statusBar().showMessage("Náhled prvku · Potvrdit / Zrušit · Esc zruší")
 
     def _lock_preview_actions(self):
         allowed = [self.fit_action, *self._view_actions]
         for action, _enabled in self._preview_action_states:
-            if action not in allowed:
+            if isValid(action) and action not in allowed:
                 action.setEnabled(False)
         self.cancel_feature_preview_action.setEnabled(True)
 
@@ -1554,7 +1593,8 @@ class MainWindow(QMainWindow):
         self.model_dock.widget().setEnabled(True)
         self.viewer.probe_drag_enabled = self._preview_probe_drag
         for action, enabled in self._preview_action_states:
-            action.setEnabled(enabled)
+            if isValid(action):
+                action.setEnabled(enabled)
         self._preview_action_states = []
         self.cancel_feature_preview_action.setEnabled(False)
         self._shown_key = None  # obnovit také řez, mapy, skicu a zvýraznění původního dílu
@@ -1651,9 +1691,7 @@ class MainWindow(QMainWindow):
             return
         picked = list(self._picked)
         point = getattr(self.viewer, "picked_point", None)
-        if self._apply(lambda: self.session.apply_selection(self._selected_id, picked, replace,
-                                                            point=point), structural=False):
-            self._load_editor()
+        self.start_feature_edit(shapes=picked, replace=replace, point=point)
 
     def direct_edit_dialog(self, kind: str, value: float | None = None,
                            feature_id: str | None = None,
@@ -2046,6 +2084,8 @@ class MainWindow(QMainWindow):
             action.setEnabled(not self.session.model_problem and not self.ai_busy)
         has_document = self.session.document is not None
         selected = self._selected_id is not None
+        self.edit_feature_action.setEnabled(selected and not self.session.computing
+                                            and not self.ai_busy)
         self.undo_action.setEnabled(self.session.can_undo)
         self.redo_action.setEnabled(self.session.can_redo)
         for action in (*self.add_feature_actions.values(), self.profile_sketch_action):
@@ -2117,6 +2157,7 @@ class MainWindow(QMainWindow):
                       if f["type"] in REPEATABLE_FEATURES]
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)
+        self.feature_editor.set_readonly()
         form = self.feature_editor.form
         if form is not None and form.data.get("type") == "guided_loft":
             form.widget("guides").set_selection(self._guide_edit_corner, self._guide_edit_handle)
