@@ -1,0 +1,44 @@
+name: P7.21 nativni Windows probe
+on:
+  push:
+    branches: [codex/p7-rotation-handles-probe]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: "1"
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui]"
+      - name: Rotacni interakce
+        timeout-minutes: 4
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_rotation_drag.py tests/test_assembly_gui.py -k "rotation_drag or rotation_handles or rotation_mouse_request or mode_switch" --junitxml=probe-tests.xml
+      - name: Nativni self-test
+        timeout-minutes: 6
+        env:
+          SKODACAD_HOME: ${{ runner.temp }}/p721-probe-home
+        run: |
+          python -m skodacad.gui.app --self-test probe-native.txt
+          cat probe-native.txt
+      - name: Protokoly
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p721-native-probe-windows
+          path: |
+            probe-tests.xml
+            probe-native.txt
+          retention-days: 7
