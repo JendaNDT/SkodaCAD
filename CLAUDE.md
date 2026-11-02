@@ -28,7 +28,10 @@
   shromažďuj v jedné pracovní větvi a rozpracovaném PR (draft). Po každé úpravě
   proveď cílené místní ověření; dlouhé kontroly GitHubu spouštěj až nad hotovou
   ucelenou dávkou před sloučením a sestavením. Nevytvářej hotové PR pro každou
-  drobnost. Potřebuje-li dávka další práci, vrať PR do draftu; po dokončení jej
+  drobnost. Konec jedné odpovědi automaticky neuzavírá dávku; další drobné
+  požadavky přidávej do stejného draftu. Dávku uzavři při uceleném výsledku nebo
+  na výslovný pokyn k novému sestavení. Potřebuje-li dávka další práci, vrať PR
+  do draftu; po dokončení jej
   znovu označ jako připravené. Kontroly obou systémů před sloučením platí dál.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
