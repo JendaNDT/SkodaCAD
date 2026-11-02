@@ -52,3 +52,5 @@ směr s natočeným lokálním +Z. Ověří zachování AIS výběru, podkladů 
 polí a historie, tři kliky Obrátit směr osy, Enter90, myš30, transformační matici
 náhledu, těžiště a jeden Zpět/Znovu. Současně zůstávají scénáře válce a přímé hrany.
 Evidence je v `out/p7-plane-normal-axis/`; úplné výsledky patří do PR.
+
+Doplnění: [P7.28 – osa ze dvou vrcholů](p7-28-osa-dvou-vrcholu.md).

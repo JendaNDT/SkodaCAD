@@ -1425,6 +1425,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   nezávislým průsečíkem pixelového paprsku s rovinou ověří kotvu i kladnou normálu.
   Pak jako u dalších os ověří tři obrácení, přesný AIS náhled, Enter90, myš30 a Zpět/Znovu.
   [Evidence](docs/p7-27-kolmice-k-plose.md).
+- P7.28: `vertices` / Dva vrcholy je dvoufázový VERTEX výběr. První přesný světový
+  BRep bod určí kotvu, druhý normalizovaný směr druhý minus první. Vzdálenost ≤1e-7 mm
+  odmítnout i při odlišné topologii. První klik nesmí přijmout osu; oranžová značka
+  je neselektovatelná a vždy se odstraní. Zrušení ponechá předchozí snímek. Okno musí
+  ověřit oba tvary proti viditelným kopiím, generaci/revizi i kind. Čtvrtý samostatný
+  snímek sdílí obrácení, prstenec, omezení výrazů a historii s ostatními osami.
+  Nativní test klikne na vrcholy dvou různých dílů (jeden šikmý), odmítne stejný bod,
+  ověří oba přesné body známým umístěním, pak Enter90, myš30, náhled a jeden Zpět/Znovu.
+  [Evidence](docs/p7-28-osa-dvou-vrcholu.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

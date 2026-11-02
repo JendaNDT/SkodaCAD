@@ -134,6 +134,18 @@ def _rotation_pick_point(shape, kind, hit=None, ray=None):
     return tuple(values) if all(math.isfinite(v) for v in values) else None
 
 
+def _rotation_pick_vertices(first, second):
+    """Osa od prvního přesného světového vrcholu ke druhému; minimum 1e-7 mm."""
+    p, q = (_rotation_pick_point(s, "vertex") for s in (first, second))
+    if p is None or q is None:
+        return None
+    delta = tuple(b-a for a, b in zip(p, q, strict=True))
+    length = math.hypot(*delta)
+    if not math.isfinite(length) or length <= 1e-7:
+        return None
+    return p, tuple(v/length for v in delta)
+
+
 def _rotation_pick_cylinder(shape):
     """Přesná osa umístěné válcové plochy, kotva uprostřed jejího V intervalu."""
     if shape.ShapeType() != TopAbs_FACE:
@@ -722,7 +734,8 @@ class OccViewer(QWidget):
     def start_rotation_center_pick(self, kind: str, token) -> bool:
         """Jednorázový výběr bodu. Vlastníci běžného výběru AIS se nemění."""
         modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE,
-                 "cylinder": TopAbs_FACE, "line": TopAbs_EDGE, "plane": TopAbs_FACE}
+                 "cylinder": TopAbs_FACE, "line": TopAbs_EDGE, "plane": TopAbs_FACE,
+                 "vertices": TopAbs_VERTEX}
         if not self.ready or self._ais is None or kind not in modes:
             return False
         self.cancel_rotation_center_pick()
@@ -753,6 +766,8 @@ class OccViewer(QWidget):
         self._dragging = self._probe_dragging = False
         self._surface.setCursor(Qt.CursorShape.ArrowCursor)
         if self.ready:
+            if data.get("marker") is not None:
+                self._context.Remove(data["marker"], False)
             if self._ais is data["ais"]:
                 self._context.Deactivate(self._ais)
                 for mode in data["modes"]:
@@ -776,7 +791,32 @@ class OccViewer(QWidget):
             selector = context.MainSelector()
             hit = selector.PickedPoint(1).Coord() if selector.NbPicked() else None
             try:
-                if data["kind"] in ("cylinder", "line", "plane"):
+                if data["kind"] == "vertices":
+                    point = _rotation_pick_point(shape, "vertex")
+                    if point is not None:
+                        if "first" not in data:
+                            marker = AIS_Shape(BRepBuilderAPI_MakeVertex(gp_Pnt(*point)).Vertex())
+                            color = _rgb(1., .55, .05)
+                            marker.SetColor(color)
+                            marker.Attributes().SetPointAspect(
+                                Prs3d_PointAspect(Aspect_TOM_BALL, color, 7.))
+                            context.Display(marker, False)
+                            context.Deactivate(marker)
+                            context.SetZLayer(marker, Graphic3d_ZLayerId_Topmost)
+                            data.update(first=shape, marker=marker)
+                            self._view.Redraw()
+                            self.selection_drag_message.emit(
+                                "První vrchol převzat (oranžový bod). Klikni na druhý vrchol; "
+                                "směr osy povede od prvního ke druhému. Esc = zrušit.")
+                            return
+                        axis = _rotation_pick_vertices(data["first"], shape)
+                        if axis is None:
+                            self.selection_drag_message.emit(
+                                "Vrcholy jsou ve stejném místě nebo příliš blízko. "
+                                "Vyber jiný druhý vrchol; Esc = zrušit.")
+                            return
+                        point, direction = axis
+                elif data["kind"] in ("cylinder", "line", "plane"):
                     if data["kind"] == "plane":
                         axis = _rotation_pick_plane(shape, hit, self._view.ConvertWithProj(x, y))
                     else:
@@ -795,6 +835,8 @@ class OccViewer(QWidget):
             return
         self.cancel_rotation_center_pick(notify=False)
         request = {"token": data["token"], "kind": data["kind"], "point": point, "shape": shape}
+        if data["kind"] == "vertices":
+            request["shapes"] = (data["first"], shape)
         if direction is not None:
             request["direction"] = direction
         self.rotation_center_picked.emit(request)
@@ -918,7 +960,8 @@ class OccViewer(QWidget):
 
     def _rotation_axis_label(self, axis):
         if axis == 3:
-            return {"line": "Osa hrany", "plane": "Kolmice k ploše"}.get(
+            return {"line": "Osa hrany", "plane": "Kolmice k ploše",
+                    "vertices": "Osa dvou vrcholů"}.get(
                 self._move_data.get("axis_kind"), "Osa válce")
         return "XYZ"[axis]
 
