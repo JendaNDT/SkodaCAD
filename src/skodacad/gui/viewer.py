@@ -634,7 +634,8 @@ class OccViewer(QWidget):
             tip[axis] += length
             projected = self._view.Convert(*map(float, tip))
             # Osa mířící do kamery není bezpečně uchopitelná.
-            if math.dist(origin, projected)/self._pixel_scale() < 20:
+            screen_length = math.dist(origin, projected)/self._pixel_scale()
+            if screen_length < 20:
                 continue
             rgb = _rgb(*color)
             compound = TopoDS_Compound()
@@ -648,9 +649,13 @@ class OccViewer(QWidget):
             line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, rgb, 5.))
             label = AIS_TextLabel()
             label.SetText(TCollection_ExtendedString("XYZ"[axis]))
-            label.SetPosition(gp_Pnt(*tip))
+            label_point = list(tip)
+            label_point[axis] += length*18/screen_length  # 18 bodů od kulového úchopu
+            label.SetPosition(gp_Pnt(*label_point))
             label.SetColor(rgb)
             label.SetHeight(16.)
+            label.SetFont("Arial")
+            label.SetFontAspect(Font_FA_Bold)
             for shown in (line, label):
                 self._context.Display(shown, False)
                 self._context.Deactivate(shown)
