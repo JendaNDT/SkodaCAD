@@ -1181,7 +1181,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
-- Krok *Testy* má časový limit (Windows 30 min, macOS 35 min – proti zaseknutému dialogu).
+- Krok *Testy* má časový limit (Windows i macOS 35 min – proti zaseknutému dialogu).
   Etapa 09 původní 10 min na Windows překročila (testy 7:55 → přes 10 min, sestavení
   selhalo „timed out“). Při etapě 14 trvaly testy na Windows 15:42 (14A.1) a 18:25 (14A.2)
   při limitu 20 min – rozptyl běžců GitHubu je několik minut, proto 20. 10. 2026 limit
@@ -1192,6 +1192,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   NDT a zrychlení dvou testů (PR #59, #60) Windows 14:53, macOS 19:30, cloud 18:56.
   Nejdelší testy jsou teď konstrukční návrhy, audit a návrh poloh (20–35 s, poctivý
   výpočet paprsků a kolizí).
+- 2. 11. 2026 při P7.25 Windows dvakrát dokončil všech 2 614 testů (29:34 a 29:21),
+  ale nativní ukončování po souhrnu překročilo 30minutový limit. Testovací krok má
+  nově rezervu do 35 min, stejně jako macOS; příkaz celé sady, běžný návratový kód,
+  ruff i kontroly stažených aplikací zůstávají povinné. Celková úloha má dál 55 min.
 
 ## Známé pasti (macOS)
 
@@ -1388,6 +1392,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Nativní self-test kliká na šikmou nožičku, odmítne rovinu, zachová AIS výběr a vazby,
   otočí Enterem i myší se skutečnou kontrolou těžišť a jedním Zpět/Znovu.
   [Evidence](docs/p7-24-osa-valcove-plochy.md).
+- P7.25: výběr `line` používá EDGE režim a přesný `BRepAdaptor_Curve` umístěné hrany,
+  pouze `GeomAbs_Line`. Degenerované, nulové a nekonečné úsečky odmítnout; kotva je
+  `Value(first/2 + last/2)` v konečném intervalu, směr z `Line.Direction`, bez obálky
+  či aproximace křivky. Znaménko z nosné přímky, nikoli pořadí vrcholů; rozhoduje šipka.
+  `_geometry_axis_kind` volí nezávislý snímek hrany nebo válce. Přepnutí nesmí použít
+  bod/směr druhého druhu; pole vlastního středu zůstanou pro návrat k XYZ zachovaná.
+  Rukojeť má v datech `axis_kind`; potvrzení hlásí právě tento druh a controller jej
+  kontroluje vedle revize/generace. Směr, matematika, krok i životní cyklus z P7.24.
+  Nativní self-test sdílí scénář obou referencí: přímý šev šikmé nožičky je o poloměr
+  mimo osu válce. Skutečně klikne na kruhovou hranu a odmítne ji, pak na přímou hranu;
+  po převzetí nesmí změnit kameru ani výběr/vazby. Pro tah vědomě přepne zadní pohled
+  na izometrii, ověří Enter 90° i myš 30° a jeden Zpět/Znovu.
+  [Evidence](docs/p7-25-osa-prime-hrany.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

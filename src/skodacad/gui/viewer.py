@@ -47,7 +47,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.collections import Array1_gp_Pnt, List_int
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
-from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle, GeomAbs_Cylinder
+from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle, GeomAbs_Cylinder, GeomAbs_Line
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Lin, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
@@ -148,6 +148,25 @@ def _rotation_pick_cylinder(shape):
         return None
     point = tuple(p+d*(v0/2+v1/2) for p, d in
                   zip(cylinder.Location().Coord(), direction, strict=True))
+    return (point, direction) if all(math.isfinite(v) for v in (*point, *direction)) else None
+
+
+def _rotation_pick_line(shape):
+    """Nosná přímka umístěné úsečky; kotva uprostřed skutečného konečného intervalu."""
+    if shape.ShapeType() != TopAbs_EDGE:
+        return None
+    edge = TopoDS.Edge(shape)
+    if BRep_Tool.Degenerated_s(edge):
+        return None
+    curve = BRepAdaptor_Curve(edge)
+    if curve.GetType() != GeomAbs_Line:
+        return None
+    first, last = curve.FirstParameter(), curve.LastParameter()
+    if (not all(math.isfinite(v) and abs(v) < 1e100 for v in (first, last))
+            or last <= first):
+        return None
+    point = tuple(curve.Value(first/2+last/2).Coord())
+    direction = tuple(curve.Line().Direction().Coord())
     return (point, direction) if all(math.isfinite(v) for v in (*point, *direction)) else None
 
 # Klíče odpovídají viewer_views.VIEW_LABELS (názvy a zkratky pro menu).
@@ -683,7 +702,7 @@ class OccViewer(QWidget):
     def start_rotation_center_pick(self, kind: str, token) -> bool:
         """Jednorázový výběr bodu. Vlastníci běžného výběru AIS se nemění."""
         modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE,
-                 "cylinder": TopAbs_FACE}
+                 "cylinder": TopAbs_FACE, "line": TopAbs_EDGE}
         if not self.ready or self._ais is None or kind not in modes:
             return False
         self.cancel_rotation_center_pick()
@@ -737,10 +756,11 @@ class OccViewer(QWidget):
             selector = context.MainSelector()
             hit = selector.PickedPoint(1).Coord() if selector.NbPicked() else None
             try:
-                if data["kind"] == "cylinder":
-                    cylinder = _rotation_pick_cylinder(shape)
-                    if cylinder is not None:
-                        point, direction = cylinder
+                if data["kind"] in ("cylinder", "line"):
+                    axis = (_rotation_pick_cylinder(shape) if data["kind"] == "cylinder"
+                            else _rotation_pick_line(shape))
+                    if axis is not None:
+                        point, direction = axis
                 else:
                     point = _rotation_pick_point(shape, data["kind"], hit,
                                                  self._view.ConvertWithProj(x, y))
@@ -873,9 +893,10 @@ class OccViewer(QWidget):
     def _rotation_frame_axis(self, axis):
         return self._move_data["axis_direction"] if axis == 3 else axis
 
-    @staticmethod
-    def _rotation_axis_label(axis):
-        return "Osa válce" if axis == 3 else "XYZ"[axis]
+    def _rotation_axis_label(self, axis):
+        if axis == 3:
+            return "Osa hrany" if self._move_data.get("axis_kind") == "line" else "Osa válce"
+        return "XYZ"[axis]
 
     def _move_handle_at(self, pos):
         if not self._move_tips:
@@ -1778,7 +1799,8 @@ class OccViewer(QWidget):
                 if drag is not None:
                     rotating = drag["data"].get("mode") == "rotate"
                     request = ({"token": drag["data"]["token"],
-                                "axis": "cylinder" if drag["axis"] == 3 else "xyz"[drag["axis"]],
+                                "axis": (drag["data"].get("axis_kind", "cylinder")
+                                         if drag["axis"] == 3 else "xyz"[drag["axis"]]),
                                 "angle": drag["angle"]} if rotating else
                                {"token": drag["data"]["token"], "delta": drag["delta"]})
                     moved = self._dragging and (math.remainder(drag["angle"], 360.) != 0
