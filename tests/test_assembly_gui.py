@@ -867,7 +867,8 @@ def test_batch_rotation_explains_fixed_nested_and_expressions(opened, nested_iso
     w.batch_rotation_axis.setCurrentText("Z")
     assert w.batch_rotation_button.isEnabled()
     w.select(("nozicka_1",))
-    assert not w.batch_rotation_box.isVisibleTo(w)
+    assert w.batch_rotation_box.isVisibleTo(w)
+    assert w.batch_rotation_button.isEnabled()
 
 
 def test_batch_rotation_constraint_failure_is_atomic_and_keeps_selection(constrained, dialogs):

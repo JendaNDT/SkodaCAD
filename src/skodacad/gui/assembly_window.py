@@ -569,7 +569,7 @@ class AssemblyWindow(QMainWindow):
                 kind or self.rotation_pick_kind.currentData())
 
     def _refresh_rotation_pick_button(self) -> None:
-        eligible = (len(self._selection) > 1 and bool(self._selection_roots())
+        eligible = (bool(self._selection) and bool(self._selection_roots())
                     and not self._move_problem() and bool(self.visible_instances()))
         self.rotation_pick_button.setEnabled(eligible and not self._geometry_axis_kind())
         self.rotation_axis_pick_button.setEnabled(eligible and bool(self._geometry_axis_kind()))
@@ -689,8 +689,10 @@ class AssemblyWindow(QMainWindow):
             self.statusBar().showMessage(str(exc))
 
     def _refresh_batch_rotation_box(self) -> None:
-        multiple = len(self._selection) > 1
-        self.batch_rotation_box.setVisible(multiple)
+        has_selection = bool(self._selection)
+        self.batch_rotation_box.setVisible(has_selection)
+        self.batch_rotation_box.setTitle(
+            "Otočení [°]" if len(self._selection) == 1 else "Společné otočení [°]")
         problem = self._move_problem()
         roots = self._selection_roots()
         geometry = self._geometry_axis_kind()
@@ -704,7 +706,7 @@ class AssemblyWindow(QMainWindow):
                         self.rotation_pick_row, self.batch_rotation_center):
             control.setVisible(not geometry)
         self.rotation_center_copy.setEnabled(
-            multiple and bool(roots) and not problem and not geometry)
+            has_selection and bool(roots) and not problem and not geometry)
         picked = self._picked_rotation_axis()
         if picked is not None:
             p, d = picked
@@ -732,12 +734,12 @@ class AssemblyWindow(QMainWindow):
                if geometry == "plane" else ""))
         self._refresh_rotation_pick_button()
         center = None
-        if multiple and not problem:
+        if has_selection and not problem:
             try:
                 center = self._chosen_rotation_center()
             except AssemblyError as exc:
                 problem = str(exc)
-        eligible = multiple and bool(roots) and not problem
+        eligible = has_selection and bool(roots) and not problem
         self.rotation_handles.setEnabled(eligible and bool(self._rotation_axes()))
         self.rotation_step.setEnabled(eligible and self.rotation_handles.isChecked())
         if eligible:
@@ -747,7 +749,7 @@ class AssemblyWindow(QMainWindow):
                     for v in self.session.assembly.component(ids[0]).rotation):
                 problem = ("Natočení některých dílů je zadané výrazem. Zvol světovou osu Z "
                            "nebo uprav natočení jednotlivých dílů na čísla.")
-        self.batch_rotation_button.setEnabled(multiple and bool(roots) and not problem)
+        self.batch_rotation_button.setEnabled(has_selection and bool(roots) and not problem)
         self.batch_rotation_center.setText(
             "Použitý střed [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", center,
                                                                          strict=True))
@@ -797,7 +799,8 @@ class AssemblyWindow(QMainWindow):
                                       and self.rotation_handles.isChecked())
         data = None
         rotating = self.rotation_handles.isChecked()
-        if (len(self._selection) > 1 and (self.move_handles.isChecked() or rotating)
+        if (self._selection and (rotating or (len(self._selection) > 1
+                                             and self.move_handles.isChecked()))
                 and not self._move_problem()):
             roots = self._selection_roots()
             selected = [i for i in self.visible_instances()
@@ -836,7 +839,7 @@ class AssemblyWindow(QMainWindow):
 
     def _rotation_dragged(self, request: dict) -> None:
         if (not self.rotation_handles.isChecked() or not self.rotation_handles.isEnabled()
-                or len(self._selection) < 2 or self._move_problem()
+                or not self._selection or self._move_problem()
                 or request["token"] != self._rotation_token()
                 or request["axis"] not in [self._geometry_axis_kind() if axis == 3 else "xyz"[axis]
                                            for axis in self._rotation_axes()]):
