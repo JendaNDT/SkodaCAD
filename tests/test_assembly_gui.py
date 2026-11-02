@@ -662,7 +662,8 @@ def test_batch_move_fixed_selection_is_explicitly_blocked_without_skipping_body(
     w.apply_batch_move()
     assert w.session.assembly.to_dict() == before and not w.session.can_undo
     w.select(("vicko",))
-    assert not w.move_box.isVisibleTo(w) and w.apply_button.isEnabled()
+    assert w.move_box.isVisibleTo(w) and w.apply_button.isEnabled()
+    assert w.move_button.isEnabled()
 
 
 def test_batch_move_constraint_failure_keeps_entire_selection_and_delta(constrained, dialogs):

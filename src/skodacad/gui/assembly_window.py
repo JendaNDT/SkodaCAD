@@ -310,7 +310,7 @@ class AssemblyWindow(QMainWindow):
         self.move_button = QPushButton("Posunout vybrané")
         self.move_button.clicked.connect(self.apply_batch_move)
         grid.addWidget(self.move_button, 4, 0, 1, 2)
-        self.move_handles = QCheckBox("Rukojeti ve 3D")
+        self.move_handles = QCheckBox("Posouvací rukojeti ve 3D")
         self.move_handles.setChecked(True)
         self.move_handles.setToolTip("Táhni barevný konec osy X, Y nebo Z. Esc zruší náhled. "
                                     "Posune se celý výběr včetně jeho skrytých dílů.")
@@ -336,10 +336,12 @@ class AssemblyWindow(QMainWindow):
             for field in self.move_edits:
                 field.setText("0")
             self._move_selection = selection
-        self.move_box.setVisible(len(selection) > 1)
+        self.move_box.setVisible(bool(selection))
+        self.move_box.setTitle(
+            "Posun [mm]" if len(selection) == 1 else "Společný posun [mm]")
         roots = self._selection_roots()
         problem = self._move_problem()
-        enabled = len(selection) > 1 and bool(roots) and not problem
+        enabled = bool(selection) and bool(roots) and not problem
         self.move_button.setEnabled(enabled)
         self.move_handles.setEnabled(enabled)
         self.move_step.setEnabled(enabled and self.move_handles.isChecked())
@@ -799,8 +801,7 @@ class AssemblyWindow(QMainWindow):
                                       and self.rotation_handles.isChecked())
         data = None
         rotating = self.rotation_handles.isChecked()
-        if (self._selection and (rotating or (len(self._selection) > 1
-                                             and self.move_handles.isChecked()))
+        if (self._selection and (rotating or self.move_handles.isChecked())
                 and not self._move_problem()):
             roots = self._selection_roots()
             selected = [i for i in self.visible_instances()
@@ -827,7 +828,8 @@ class AssemblyWindow(QMainWindow):
         self.viewer.set_move_selection(data)
 
     def _selection_dragged(self, request: dict) -> None:
-        if (not self.move_handles.isChecked() or len(self._selection) < 2 or self._move_problem()
+        if (not self.move_handles.isChecked() or not self.move_handles.isEnabled()
+                or not self._selection or self._move_problem()
                 or request["token"] != self._move_token()):
             self.statusBar().showMessage("Výběr nebo sestava se změnily; tažení bylo zrušeno.")
             self._refresh_move_handles()

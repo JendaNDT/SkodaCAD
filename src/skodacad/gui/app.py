@@ -1061,6 +1061,8 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_multi_selection(assembly, lines) and ok
         ok = _self_test_assembly_batch_move(assembly, lines) and ok
         ok = _self_test_assembly_selection_drag(assembly, lines) and ok
+        ok = _self_test_assembly_batch_move(assembly, lines, single=True) and ok
+        ok = _self_test_assembly_selection_drag(assembly, lines, single=True) and ok
         ok = _self_test_assembly_batch_rotation(assembly, lines) and ok
         ok = _self_test_assembly_rotation_handles(assembly, lines) and ok
         ok = _self_test_assembly_rotation_handles(assembly, lines, custom=True) and ok
@@ -1710,7 +1712,7 @@ def _self_test_assembly_multi_selection(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_assembly_batch_move(assembly, lines) -> bool:
+def _self_test_assembly_batch_move(assembly, lines, *, single=False) -> bool:
     """Skutečný Enter/tlačítka, dva parametrické díly, jeden krok Zpět/Znovu."""
     import numpy as np
     from build123d import Compound
@@ -1718,8 +1720,9 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
     from PySide6.QtTest import QTest
 
     viewer, session = assembly.viewer, assembly.session
+    label = "Posun jednoho dílu" if single else "Hromadný posun sestavy"
     if not viewer.ready:
-        lines.append("! Hromadný posun sestavy: chybí grafický prohlížeč")
+        lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
     steps = len(session._undo)
     try:
@@ -1731,7 +1734,7 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
         assembly.select_many((("krabicka",), ("vicko",)))
         assert assembly.move_box.isVisible() and not assembly.move_button.isEnabled()
         assert "Pevné komponenty: Krabička" in assembly.move_note.text()
-        ids = (("nozicka_1",), ("nozicka_2",))
+        ids = (("nozicka_1",),) if single else (("nozicka_1",), ("nozicka_2",))
         assembly.select_many(ids)
         assert assembly.move_button.isEnabled()
         before = session.assembly.to_dict()
@@ -1740,7 +1743,8 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
         expressions = {cid: list(session.assembly.component(cid).position) for cid, in ids}
         assert all(isinstance(v, str) for pos in expressions.values() for v in pos)
         assembly.set_component_transparency(ids[0], 35)
-        assembly.set_component_transparency(ids[1], 85)
+        if not single:
+            assembly.set_component_transparency(ids[1], 85)
         assembly.set_component_visible(("vicko",), False)
         assembly.isolate_selected()
         for field, value in zip(assembly.move_edits, ("2,5", "-1", "-4"), strict=True):
@@ -1770,7 +1774,7 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
         assert all(isinstance(v, str) for cid, in ids
                    for v in session.assembly.component(cid).position)
         drawn = Compound(viewer._ais.Shape())
-        assert len(drawn.solids()) == 2 and session.result.complete
+        assert len(drawn.solids()) == len(ids) and session.result.complete
         assert len(session.result.instances) == 6 and abs(session.result.volume_mm3-31309.287) < .01
         after = session.assembly.to_dict()
         assembly.undo_action.trigger()
@@ -1778,12 +1782,12 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
         assembly.redo_action.trigger()
         assert session.assembly.to_dict() == after and len(session._undo) == steps+1
         assert assembly._selection == ids
-        lines.append("✓ Hromadný posun sestavy: nativní Enter, 2 díly o [2,5; −1; −4] mm, "
+        lines.append(f"✓ {label}: nativní Enter, posun [2,5; −1; −4] mm, "
                      "pevná komponenta blokována, výrazy poloh zachovány, H a izolace, "
                      "kamera/otočení/ostatní díly/objem beze změny, jeden krok Zpět/Znovu")
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
-        lines.append("✕ Hromadný posun sestavy:\n" + traceback.format_exc())
+        lines.append(f"✕ {label}:\n" + traceback.format_exc())
         return False
     finally:
         while len(session._undo) > steps:
@@ -1793,18 +1797,19 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_assembly_selection_drag(assembly, lines) -> bool:
+def _self_test_assembly_selection_drag(assembly, lines, *, single=False) -> bool:
     """Nativní myš přes OCCT projekci: náhled XYZ, materiály, Esc a historie."""
     import numpy as np
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtTest import QTest
 
     viewer, session = assembly.viewer, assembly.session
+    label = "Tažení jednoho dílu" if single else "Tažení výběru sestavy"
     if not viewer.ready:
-        lines.append("! Tažení výběru sestavy: chybí grafický prohlížeč")
+        lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
     steps = len(session._undo)
-    ids = (("nozicka_1",), ("nozicka_2",))
+    ids = (("nozicka_1",),) if single else (("nozicka_1",), ("nozicka_2",))
     try:
         assembly.show_all()
         assembly.raise_()
@@ -1813,7 +1818,8 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
         assembly.select_many(ids)
         assembly.move_step.setValue(.5)
         assembly.set_component_transparency(ids[0], 35)
-        assembly.set_component_transparency(ids[1], 85)
+        if not single:
+            assembly.set_component_transparency(ids[1], 85)
         assembly.move_edits[0].setText("2,5")
         viewer.set_standard_view("iso")
         QApplication.processEvents()
@@ -1851,7 +1857,8 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
             assert all(viewer._ais.CustomAspects(s).IsHidden() for s in drag["data"]["shapes"])
             assert np.allclose([
                 drag["preview"].CustomAspects(s).ShadingAspect().Aspect().FrontMaterial()
-                .Transparency() for s in drag["data"]["shapes"]], [.35, .85], atol=1e-6)
+                .Transparency() for s in drag["data"]["shapes"]],
+                [.35] if single else [.35, .85], atol=1e-6)
             QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
             assert viewer._selection_drag is None and len(session._undo) == steps+1
             assert assembly._selection == ids and assembly.move_edits[0].text() == "2,5"
@@ -1890,12 +1897,13 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
             assert assembly.move_edits[0].text() == "2,5"
         assembly.select_many((("krabicka",), ("vicko",)))
         assert not viewer._move_tips and not assembly.move_handles.isEnabled()
-        lines.append("✓ Tažení výběru sestavy: nativní myš XYZ, oba díly stejný posun, "
-                     "náhled bez změny modelu, 35/85 % průhlednost, jeden krok Zpět/Znovu, "
+        parts = "jeden díl, 35 %" if single else "oba díly, 35/85 %"
+        lines.append(f"✓ {label}: nativní myš XYZ, {parts}, "
+                     "náhled bez změny modelu, stejný posun, jeden krok Zpět/Znovu, "
                      "Esc/krok/fokus zachovají historii i rozepsaná pole, pevný díl blokován")
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
-        lines.append("✕ Tažení výběru sestavy:\n" + traceback.format_exc())
+        lines.append(f"✕ {label}:\n" + traceback.format_exc())
         return False
     finally:
         viewer.cancel_selection_drag()
