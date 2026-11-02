@@ -47,7 +47,7 @@ from OCP.collections import Array1_gp_Pnt
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
 from OCP.GeomAbs import GeomAbs_C1
-from OCP.gp import gp_Pnt
+from OCP.gp import gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
     Graphic3d_MaterialAspect,
@@ -192,6 +192,7 @@ class _NativeSurface(QWidget):
         if event.type() in (QEvent.Type.FocusOut, QEvent.Type.WindowDeactivate,
                             QEvent.Type.Hide, QEvent.Type.UngrabMouse):
             self._owner.cancel_guide_drag()
+            self._owner.cancel_selection_drag()
         result = super().event(event)
         if event.type() == QEvent.Type.DevicePixelRatioChange:
             self._owner._resized()
@@ -225,7 +226,8 @@ class _NativeSurface(QWidget):
         self._owner.fit_all()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape and self._owner.cancel_guide_drag():
+        if event.key() == Qt.Key.Key_Escape and (self._owner.cancel_selection_drag()
+                                                or self._owner.cancel_guide_drag()):
             event.accept()
             return
         super().keyPressEvent(event)
@@ -243,6 +245,8 @@ class OccViewer(QWidget):
     probe_dragged = Signal(list, object)  # plocha a bod [x, y, z] při jízdě sondou
     guide_handle_moved = Signal(dict)  # jediný návrh po dokončeném tahu
     guide_drag_message = Signal(str)
+    selection_moved = Signal(dict)  # náhled celého výběru, jediný požadavek po puštění
+    selection_drag_message = Signal(str)
     probe_rotated = Signal(int)  # otočení sondy kolečkem (±15°)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -272,6 +276,10 @@ class OccViewer(QWidget):
         self._guide_drag = None
         self._guide_drag_step = DEFAULT_STEP
         self._guide_drag_direction = DEFAULT_DIRECTION
+        self._move_data = None
+        self._move_objects = []
+        self._move_tips = []
+        self._selection_drag = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
@@ -305,6 +313,7 @@ class OccViewer(QWidget):
         ``accent`` = plochy jinou barvou (plochy řezu), ``transparent`` = části a míry 0…1.
         Geometrie i výběr ploch/hran zůstávají úplné."""
         transparencies = _part_transparencies(transparent)
+        self.set_move_selection(None)
         self.cancel_guide_drag()
         self._guides_data = None
         if not self.ready:
@@ -365,6 +374,7 @@ class OccViewer(QWidget):
         Před prvním vykreslením upraví čekající požadavek.
         """
         shapes = _part_transparencies(parts)
+        self.cancel_selection_drag()
         if not self.ready:
             if self._pending is not None:
                 part, fit, accent, _transparent = self._pending
@@ -425,7 +435,7 @@ class OccViewer(QWidget):
         return shapes
 
     def clear_selection(self) -> None:
-        if self.cancel_guide_drag():
+        if self.cancel_selection_drag() or self.cancel_guide_drag():
             return
         if self.ready:
             self._context.ClearSelected(False)
@@ -597,6 +607,145 @@ class OccViewer(QWidget):
         if self.ready:
             self._draw_guides(self._guides_data)
         self.guide_drag_message.emit("Tažení zrušeno; model se nezměnil.")
+        return True
+
+    def set_move_selection(self, data: dict | None) -> None:
+        """Rukojeti sestavy; tvary už jsou umístěné. Nikdy nemění jejich geometrii."""
+        self.cancel_selection_drag()
+        self._move_data = data
+        self._draw_move_handles()
+
+    def _remove_move_handles(self) -> None:
+        for shown in self._move_objects:
+            self._context.Remove(shown, False)
+        self._move_objects = []
+        self._move_tips = []
+
+    def _draw_move_handles(self, delta=(0., 0., 0.)) -> None:
+        self._remove_move_handles()
+        if not self.ready or self._move_data is None or self._ais is None:
+            return
+        anchor = [a+d for a, d in zip(self._move_data["anchor"], delta, strict=True)]
+        length = self._view.Convert(round(90*self._pixel_scale()))
+        origin = self._view.Convert(*map(float, anchor))
+        colors = ((.90, .12, .10), (.12, .65, .18), (.10, .35, .95))
+        for axis, color in enumerate(colors):
+            tip = list(anchor)
+            tip[axis] += length
+            projected = self._view.Convert(*map(float, tip))
+            # Osa mířící do kamery není bezpečně uchopitelná.
+            if math.dist(origin, projected)/self._pixel_scale() < 20:
+                continue
+            rgb = _rgb(*color)
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            builder.Add(compound, BRepBuilderAPI_MakeEdge(gp_Pnt(*anchor), gp_Pnt(*tip)).Edge())
+            builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(*tip)).Vertex())
+            line = AIS_Shape(compound)
+            line.SetColor(rgb)
+            line.SetWidth(3.)
+            line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, rgb, 5.))
+            label = AIS_TextLabel()
+            label.SetText(TCollection_ExtendedString("XYZ"[axis]))
+            label.SetPosition(gp_Pnt(*tip))
+            label.SetColor(rgb)
+            label.SetHeight(16.)
+            for shown in (line, label):
+                self._context.Display(shown, False)
+                self._context.Deactivate(shown)
+                self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+                self._move_objects.append(shown)
+            self._move_tips.append((axis, tuple(tip)))
+        self._view.Redraw()
+
+    def _move_handle_at(self, pos):
+        if not self._move_tips:
+            return None
+        ratio = self._pixel_scale()
+        points = [tuple(v/ratio for v in self._view.Convert(*tip))
+                  for _axis, tip in self._move_tips]
+        return nearest_handle(points, (pos.x(), pos.y()))
+
+    def _begin_selection_drag(self, pos) -> bool:
+        hit = self._move_handle_at(pos)
+        if hit is None:
+            return False
+        if hit == -1:
+            self._press = None
+            self.selection_drag_message.emit("Rukojeti se překrývají – natoč pohled.")
+            return True
+        axis, tip = self._move_tips[hit]
+        start = axis_parameter(self._view.ConvertWithProj(*self._pixels(pos)), tip, "XYZ"[axis])
+        if start is None:
+            self._press = None
+            self.selection_drag_message.emit("Osa v pohledu zaniká – natoč pohled.")
+            return True
+        # Vlastníci výběru původního AIS zůstávají platní. Skrytí je pouze prezentace.
+        data = self._move_data
+        compound = TopoDS_Compound()
+        builder = BRep_Builder()
+        builder.MakeCompound(compound)
+        for shape in data["shapes"]:
+            builder.Add(compound, shape)
+            self._ais.CustomAspects(shape).SetHidden(True)
+        preview = AIS_ColoredShape(compound)
+        preview.SetAttributes(self._ais.Attributes())
+        for shape, amount in self._transparent_parts:
+            preview.SetCustomTransparency(shape, amount)
+        self._context.Display(preview, False)
+        self._context.Deactivate(preview)
+        self._context.UnhilightSelected(False)
+        self._context.ClearDetected(False)
+        self._context.RecomputePrsOnly(self._ais, False)
+        self._selection_drag = {"data": data, "axis": axis, "tip": tip, "start": start,
+                                "preview": preview, "delta": [0., 0., 0.]}
+        self._surface.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.selection_drag_message.emit(
+            f"Náhled posunu v ose {'XYZ'[axis]} · puštění = potvrdit · Esc = zrušit")
+        self._view.Redraw()
+        return True
+
+    def _move_selection_drag(self, pos) -> None:
+        drag = self._selection_drag
+        if not self._dragging and (pos.toPoint()-self._press).manhattanLength() <= _DRAG_THRESHOLD:
+            return
+        self._dragging = True
+        value = axis_parameter(self._view.ConvertWithProj(*self._pixels(pos)), drag["tip"],
+                               "XYZ"[drag["axis"]])
+        if value is None:
+            self.cancel_selection_drag()
+            return
+        delta = [0., 0., 0.]
+        delta[drag["axis"]] = snapped_delta((value-drag["start"],), drag["data"]["step"])[0]
+        drag["delta"] = delta
+        transform = gp_Trsf()
+        transform.SetTranslation(gp_Vec(*delta))
+        drag["preview"].SetLocalTransformation(transform)
+        if self._highlight is not None:
+            self._highlight.SetLocalTransformation(transform)
+        self._draw_move_handles(delta)
+        self.selection_drag_message.emit(
+            f"Posun {'XYZ'[drag['axis']]}: {delta[drag['axis']]:g} mm · "
+            "puštění = potvrdit · Esc = zrušit")
+
+    def cancel_selection_drag(self) -> bool:
+        drag = self._selection_drag
+        if drag is None:
+            return False
+        self._selection_drag = None
+        self._press = self._last = None
+        self._dragging = False
+        self._surface.unsetCursor()
+        self._context.Remove(drag["preview"], False)
+        for shape in drag["data"]["shapes"]:
+            self._ais.CustomAspects(shape).SetHidden(False)
+        if self._highlight is not None:
+            self._highlight.ResetTransformation()
+        self._context.RecomputePrsOnly(self._ais, False)
+        self._context.HilightSelected(False)
+        self._draw_move_handles()
+        self.selection_drag_message.emit("Tažení zrušeno; model se nezměnil.")
         return True
 
     def _display_guide(self, shown: Any) -> None:
@@ -1106,13 +1255,17 @@ class OccViewer(QWidget):
             self._highlight = None
 
     def fit_all(self) -> None:
+        self.cancel_selection_drag()
         self.cancel_guide_drag()
         if self.ready:
+            self._remove_move_handles()  # rukojeti nesmějí ovlivnit měřítko kamery
             self._sync_size()
             self._view.FitAll(0.08, False)
+            self._draw_move_handles()
             self._view.Redraw()
 
     def set_standard_view(self, name: str) -> None:
+        self.cancel_selection_drag()
         self.cancel_guide_drag()
         if self.ready:
             self._view.SetProj(STANDARD_VIEWS[name])
@@ -1173,8 +1326,10 @@ class OccViewer(QWidget):
         log.info("3D prohlížeč spuštěn (OpenGL: %s)", self.graphics_info())
         if self._pending is not None:
             part, fit, accent, transparent = self._pending
+            move_data = self._move_data
             self._pending = None
             self.show_part(part, fit=fit, accent=accent, transparent=transparent)
+            self.set_move_selection(move_data)
         if self._pending_guides is not None:
             self.show_guides(self._pending_guides)
 
@@ -1230,9 +1385,11 @@ class OccViewer(QWidget):
             self._view.Redraw()
 
     def _resized(self) -> None:
+        self.cancel_selection_drag()
         self.cancel_guide_drag()
         if self.ready:
             self._sync_size()
+            self._draw_move_handles()
 
     def _sync_size(self) -> None:
         """OCCT si velikost okna jinak nepřečte znovu – bez toho by výběr myší mířil vedle.
@@ -1267,6 +1424,9 @@ class OccViewer(QWidget):
     def _mouse_press(self, event: QMouseEvent) -> None:
         if not self.ready:
             return
+        if self._selection_drag is not None:
+            self.cancel_selection_drag()
+            return
         if self._guide_drag is not None:
             self.cancel_guide_drag()
             return
@@ -1283,12 +1443,18 @@ class OccViewer(QWidget):
                 return
             self._probe_dragging = False
             if event.modifiers() == Qt.KeyboardModifier.NoModifier \
+                    and self._begin_selection_drag(event.position()):
+                return
+            if event.modifiers() == Qt.KeyboardModifier.NoModifier \
                     and self._begin_guide_drag(event.position()):
                 return
             self._view.StartRotation(*self._pixels(event.position()))
 
     def _mouse_move(self, event: QMouseEvent) -> None:
         if not self.ready:
+            return
+        if self._selection_drag is not None:
+            self._move_selection_drag(event.position())
             return
         if self._guide_drag is not None:
             self._move_guide_drag(event.position())
@@ -1312,8 +1478,12 @@ class OccViewer(QWidget):
                     self._view.Pan(x - lx, ly - y)
                 elif self._dragging and buttons & Qt.MouseButton.LeftButton:
                     self._view.Rotation(x, y)
+                if self._dragging:
+                    self._draw_move_handles()
         else:
             hit = self._guide_handle_at(event.position())
+            if hit is None:
+                hit = self._move_handle_at(event.position())
             self._surface.setCursor(Qt.CursorShape.OpenHandCursor if hit is not None
                                     else Qt.CursorShape.ArrowCursor)
             self._context.MoveTo(x, y, self._view, True)  # předvýběr pod kurzorem
@@ -1321,6 +1491,19 @@ class OccViewer(QWidget):
 
     def _mouse_release(self, event: QMouseEvent) -> None:
         if not self.ready:
+            return
+        if self._selection_drag is not None:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._move_selection_drag(event.position())
+                drag = self._selection_drag
+                if drag is not None:
+                    request = {"token": drag["data"]["token"], "delta": drag["delta"]}
+                    moved = self._dragging and any(drag["delta"])
+                    self.cancel_selection_drag()
+                    if moved:
+                        self.selection_moved.emit(request)
+            else:
+                self.cancel_selection_drag()
             return
         if self._guide_drag is not None:
             if event.button() == Qt.MouseButton.LeftButton:
@@ -1410,7 +1593,7 @@ class OccViewer(QWidget):
             self.picked_point = None
 
     def _wheel(self, event: QWheelEvent) -> None:
-        if self._guide_drag is not None:
+        if self._guide_drag is not None or self._selection_drag is not None:
             return
         if not self.ready:
             return
@@ -1425,3 +1608,4 @@ class OccViewer(QWidget):
         if step:
             self._view.StartZoomAtPoint(x, y)
             self._view.ZoomAtPoint(x, y, x + step, y + step)
+            self._draw_move_handles()

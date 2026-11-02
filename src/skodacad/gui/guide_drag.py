@@ -28,15 +28,15 @@ def axis_parameter(ray, anchor, direction):
     Osa prochází rukojetí, parametr je v mm od ní. Projekčně zaniklá osa je nejistá.
     Od počátečního parametru se při tahu odečte počátek uchopení (bez poskočení).
     """
-    if direction not in ("X", "Y"):
-        raise ValueError("Jedna osa tažení musí být X nebo Y.")
+    if direction not in ("X", "Y", "Z"):
+        raise ValueError("Jedna osa tažení musí být X, Y nebo Z.")
     if len(ray) != 6 or len(anchor) != 3 or not all(math.isfinite(v) for v in (*ray, *anchor)):
         return None
     length = math.hypot(*ray[3:])
     if not math.isfinite(length) or length == 0:
         return None
     d = [v/length for v in ray[3:]]
-    axis = 0 if direction == "X" else 1
+    axis = "XYZ".index(direction)
     others = [i for i in range(3) if i != axis]
     denominator = math.fsum(d[i]*d[i] for i in others)
     if denominator < 1e-6:  # sin² úhlu paprsku a osy; nekancelovat 1 - d[axis]²

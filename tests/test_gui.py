@@ -25,6 +25,8 @@ class FakeViewer(QtWidgets.QWidget):
     probe_rotated = Signal(int)
     guide_handle_moved = Signal(dict)
     guide_drag_message = Signal(str)
+    selection_moved = Signal(dict)
+    selection_drag_message = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -82,6 +84,12 @@ class FakeViewer(QtWidgets.QWidget):
 
     def set_guide_drag_direction(self, direction):
         self.guide_drag_direction = direction
+
+    def set_move_selection(self, data):
+        self.move_selection = data
+
+    def cancel_selection_drag(self):
+        return False
 
     def show_guides(self, data):
         self.guides = data

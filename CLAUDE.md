@@ -1311,6 +1311,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Pole přírůstku resetuje jen změna výběru nebo úspěšný příkaz, ne H/T/I/přepočet/chyba.
   Enter musí parsovat uvnitř `_run`, aby prázdný vstup neunikl do globálního exception handleru.
   [Evidence](docs/p7-18-hromadny-posun.md).
+- P7.19: rukojeti výběru v osách celé sestavy XYZ, výchozí krok 1 mm (0 = volně),
+  GUI preference. Kotva je střed obálky viditelného výběru, potvrzení posouvá všechny
+  normalizované vybrané větve včetně skrytých přes `move_many_by`. Viewer při tahu
+  skrývá jen prezentace vybraných částí (`CustomAspects.SetHidden`) a kreslí jejich
+  samostatný nevybíratelný AIS s lokální translací a původními materiály. Recept,
+  geometrie a historie se nemění. Puštění vysílá jednou vektor a token výběru/receptu/
+  identity výsledku; zastaralý návrh se odmítne. Esc/fokus/skrytí/resize/změna výběru,
+  kroku či prezentace tah ruší. Technický první paint přehraje i čekající rukojeti.
+  Rukojeti nesmějí ovlivňovat FitAll; projekčně zaniklé osy nejsou uchopitelné.
+  Rozepsaný číselný vektor se tažením nemaže. [Evidence](docs/p7-19-tazeni-vyberu.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
