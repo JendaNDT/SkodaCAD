@@ -92,12 +92,14 @@ def _clean(degrees: float) -> float:
 def angles_of(matrix: Matrix) -> list[float]:
     """Zpět na úhly [rx, ry, rz] (pevné osy X → Y → Z), zaokrouhlené na 1e-9°."""
     sy = -matrix[2][0]
-    if abs(sy) >= 1 - 1e-12:  # osa Y otočená o ±90°: X a Z splynou, X dostane 0
+    cy = math.hypot(matrix[0][0], matrix[1][0])
+    if cy < 1e-12:  # přesně ±90°: X a Z splynou, X dostane 0
         ry = 90.0 if sy > 0 else -90.0
         rx = 0.0
         rz = math.degrees(math.atan2(-matrix[0][1], matrix[1][1]))
     else:
-        ry = math.degrees(math.asin(max(-1.0, min(1.0, sy))))
+        # sy se před ±90° zaokrouhlí na 1 dřív než zanikne cy. Zachovat i malé cy.
+        ry = math.degrees(math.atan2(sy, cy))
         rx = math.degrees(math.atan2(matrix[2][1], matrix[2][2]))
         rz = math.degrees(math.atan2(matrix[1][0], matrix[0][0]))
     return [_clean(rx), _clean(ry), _clean(rz)]

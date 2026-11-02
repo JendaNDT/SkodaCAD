@@ -409,6 +409,17 @@ Při tahu vidíš náhled, puštění ověří vazby a potvrdí jeden krok Zpět
 Rozepsané číselné přírůstky se tažením nepřepisují.
 [Chování a ověření tažení](docs/p7-19-tazeni-vyberu.md).
 
+**Hromadné otáčení:** při výběru více komponent použij vpravo **Společné otočení [°]**.
+Zvol osu **X/Y/Z celé sestavy**, zadej úhel a stiskni **Otočit vybrané** nebo Enter.
+Všechny vybrané díly, včetně skrytých a celých podsestav, se otočí kolem společného
+geometrického těžiště. Střed je vážený objemem, nezávisí na materiálu a při otočení
+zůstává na místě. Jeho souřadnice vidíš v panelu. Záporný úhel obrací směr.
+Celý pohyb je jeden krok **Zpět/Znovu**, 0° a celé otáčky historii nepřidávají.
+Pevný díl blokuje celý příkaz; vazby musí dovolit přesně zadaný pohyb bez pohybu okolí.
+Výrazy poloh zůstávají parametrické. Natočení zadané výrazem je podporováno kolem Z;
+pro X/Y jsou potřebné číselné hodnoty natočení. Střed a úhel se použijí v okamžiku
+příkazu. [Pravidla a ověření společného otáčení](docs/p7-20-hromadne-otaceni.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

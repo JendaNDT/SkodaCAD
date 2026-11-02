@@ -1323,6 +1323,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Stavový řádek vytvořit už v konstruktoru: první hláška jinak zmenší plochu a resize
   zruší tah. Nativní test musí mezi stiskem/pohybem/puštěním zpracovat události Qt.
   Rozepsaný číselný vektor se tažením nemaže. [Evidence](docs/p7-19-tazeni-vyberu.md).
+- P7.20: `AssemblySession.turn_many_around` otáčí normalizované top-level větve kolem
+  `rotation_center`: geometrické těžiště všech jejich kopií vážené objemem, včetně
+  skrytých; materiál nepůsobí. Střed a úhel jsou snímek při příkazu. Jedno `_change`,
+  po řešiči kontrola všech poloh, matic otočení a otisků, jako u hromadného posunu.
+  Výrazy poloh transformovat afinní mapou a slučovat stejné členy přes AST, aby další
+  otočení nezvětšovala výrazy. Pojmenované členy ponechat ve výrazu pro kontext sestavy.
+  Kolem Z zachovat všechny výrazy natočení (přičíst k Rz); kolem X/Y číselné natočení,
+  jiné odmítnout před změnou a vysvětlit v panelu. 0/360° bez historie či zrušení Znovu.
+  `angles_of` používá atan2(sy, hypot(r00,r10)), aby neztratil složky před ±90°.
+  GUI osa/úhel přežijí výběr a pohled, rozepsaný posun se nemaže, nejsou v receptu.
+  [Evidence](docs/p7-20-hromadne-otaceni.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

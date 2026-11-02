@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
+    QComboBox,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -218,6 +219,7 @@ class AssemblyWindow(QMainWindow):
         transparency_row.addWidget(self.transparency_percent, 1)
         layout.addLayout(transparency_row)
         self._build_move_box(layout)
+        self._build_batch_rotation_box(layout)
         layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()
         self.name_edit.setAccessibleName("Název komponenty")
@@ -344,7 +346,8 @@ class AssemblyWindow(QMainWindow):
         roots = self._selection_roots()
         problem = ""
         if any(len(ids) != 1 for ids in roots):
-            problem = "Vyber celé nadřazené podsestavy; jejich vnitřní díly se zde neposouvají."
+            problem = ("Vyber celé nadřazené podsestavy; jejich vnitřní díly se zde "
+                       "společně neupravují.")
         elif self.computing or self.session.result is None or not self.session.result.complete:
             problem = "Dokonči přepočet a oprav neúplné díly nebo vazby sestavy."
         elif self.session.assembly is not None:
@@ -358,6 +361,76 @@ class AssemblyWindow(QMainWindow):
     def _move_token(self) -> tuple:
         return (self._selection, id(self.session.result),
                 json.dumps(self.session.assembly.to_dict(), sort_keys=True))
+
+    def _build_batch_rotation_box(self, layout: QVBoxLayout) -> None:
+        self.batch_rotation_box = QGroupBox("Společné otočení [°]")
+        grid = QGridLayout(self.batch_rotation_box)
+        grid.addWidget(QLabel("Osa sestavy"), 0, 0)
+        self.batch_rotation_axis = QComboBox()
+        self.batch_rotation_axis.addItems(["X", "Y", "Z"])
+        self.batch_rotation_axis.setCurrentText("Z")
+        self.batch_rotation_axis.setAccessibleName("Osa společného otočení")
+        self.batch_rotation_axis.currentIndexChanged.connect(self._refresh_batch_rotation_box)
+        grid.addWidget(self.batch_rotation_axis, 0, 1)
+        grid.addWidget(QLabel("Úhel [°]"), 1, 0)
+        self.batch_rotation_angle = QLineEdit("90")
+        self.batch_rotation_angle.setMinimumWidth(90)
+        self.batch_rotation_angle.setAccessibleName("Úhel společného otočení")
+        self.batch_rotation_angle.setToolTip("Kladný úhel otáčí podle pravidla pravé ruky. "
+                                            "Číslo nebo výraz s parametry sestavy; "
+                                            "úhel se vyhodnotí jednou při otočení.")
+        self.batch_rotation_angle.returnPressed.connect(self.apply_batch_rotation)
+        grid.addWidget(self.batch_rotation_angle, 1, 1)
+        grid.setColumnStretch(1, 1)
+        self.batch_rotation_center = self._wrapped_label()
+        self.batch_rotation_center.setToolTip(
+            "Geometrické těžiště všech vybraných dílů, vážené jejich objemem. "
+            "Zahrnuje i skryté díly a celé vybrané podsestavy, nezávisí na materiálu. "
+            "Střed i úhel se použijí v okamžiku otočení.")
+        grid.addWidget(self.batch_rotation_center, 2, 0, 1, 2)
+        self.batch_rotation_note = self._wrapped_label()
+        grid.addWidget(self.batch_rotation_note, 3, 0, 1, 2)
+        self.batch_rotation_button = QPushButton("Otočit vybrané")
+        self.batch_rotation_button.clicked.connect(self.apply_batch_rotation)
+        grid.addWidget(self.batch_rotation_button, 4, 0, 1, 2)
+        layout.addWidget(self.batch_rotation_box)
+
+    def _refresh_batch_rotation_box(self) -> None:
+        multiple = len(self._selection) > 1
+        self.batch_rotation_box.setVisible(multiple)
+        problem = self._move_problem()
+        roots = self._selection_roots()
+        center = None
+        if multiple and not problem:
+            try:
+                center = self.session.rotation_center([ids[0] for ids in roots])
+            except AssemblyError as exc:
+                problem = str(exc)
+            if self.batch_rotation_axis.currentText() != "Z" and any(
+                    isinstance(v, str) for ids in roots
+                    for v in self.session.assembly.component(ids[0]).rotation):
+                problem = ("Natočení některých dílů je zadané výrazem. Zvol osu Z "
+                           "nebo uprav natočení jednotlivých dílů na čísla.")
+        self.batch_rotation_button.setEnabled(multiple and bool(roots) and not problem)
+        self.batch_rotation_center.setText(
+            "Střed výběru [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", center,
+                                                                         strict=True))
+            if center else "Střed výběru není dostupný.")
+        self.batch_rotation_note.setText(problem or "Otočí celý výběr včetně skrytých dílů. "
+                                        "Zpět vrátí celý pohyb jedním krokem.")
+
+    def apply_batch_rotation(self) -> None:
+        if not self.batch_rotation_button.isEnabled():
+            return
+        components = [ids[0] for ids in self._selection_roots()]
+
+        def work() -> None:
+            angle = parse_value(self.batch_rotation_angle.text())
+            self.session.turn_many_around(components,
+                                          self.batch_rotation_axis.currentText().lower(), angle)
+
+        if self._run("Výběr nejde otočit", work):
+            self.statusBar().showMessage("Celý výběr byl otočen. Zpět vrátí celý pohyb.")
 
     def _refresh_move_handles(self) -> None:
         self.move_step.setEnabled(self.move_button.isEnabled() and self.move_handles.isChecked())
@@ -1755,7 +1828,7 @@ class AssemblyWindow(QMainWindow):
             self.fixed_box.setChecked(False)
             self.form_note.setText(
                 f"Vybrané komponenty: {len(self._selection)}. "
-                "Společně lze posunout, skrýt, izolovat a nastavit průhlednost. "
+                "Společně lze posunout, otočit, skrýt, izolovat a nastavit průhlednost. "
                 "Absolutní polohu nebo název upravuj po jedné komponentě."
                 if len(self._selection) > 1
                 else "Komponenta podsestavy – uprav ji v souboru podsestavy." if self._selected
@@ -1763,6 +1836,7 @@ class AssemblyWindow(QMainWindow):
                 else "Vyber komponentu ve stromu nebo ve 3D.")
         self.fixed_box.blockSignals(False)
         self._refresh_move_box()
+        self._refresh_batch_rotation_box()
         self._refresh_isolation_actions()
         self._refresh_highlight()
 
