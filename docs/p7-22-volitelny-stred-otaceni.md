@@ -24,7 +24,8 @@ a prstence, ale pole a převzetí středu zůstanou dostupné k opravě.
 Volba i rozepsané hodnoty zůstávají v otevřeném okně přes změnu výběru, viditelnosti,
 průhlednosti a Zpět/Znovu. Jsou nastavením ovládání: samy nepřepočítávají model,
 neoznačují ho jako změněný, nepřidávají historii ani neruší Znovu. Do souboru sestavy
-se neukládají; nové okno začíná režimem Střed výběru. Výběr bodu kliknutím zatím není.
+se neukládají; nové okno začíná režimem Střed výběru. Výběr kliknutím přidává
+[navazující P7.23](p7-23-vyber-stredu-ve-3d.md).
 
 ## Výpočet a bezpečné přijetí
 

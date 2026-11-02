@@ -143,6 +143,8 @@ class AssemblyWindow(QMainWindow):
         self.viewer.selection_cleared.connect(lambda: self.select(None))
         self.viewer.selection_moved.connect(self._selection_dragged)
         self.viewer.selection_rotated.connect(self._rotation_dragged)
+        self.viewer.rotation_center_picked.connect(self._rotation_center_picked)
+        self.viewer.rotation_center_pick_finished.connect(self._rotation_pick_finished)
         self.viewer.selection_drag_message.connect(lambda text: self.statusBar().showMessage(text))
         self.setCentralWidget(self.viewer)
         self._build_tree()
@@ -384,6 +386,8 @@ class AssemblyWindow(QMainWindow):
         grid.addWidget(self.batch_rotation_angle, 1, 1)
         grid.setColumnStretch(1, 1)
         self._rotation_center_revision = 0
+        self._rotation_pick_pending = None
+        self._rotation_pick_serial = 0
         grid.addWidget(QLabel("Střed otáčení"), 2, 0)
         self.rotation_center_mode = QComboBox()
         self.rotation_center_mode.addItems(["Střed výběru", "Počátek sestavy", "Vlastní bod"])
@@ -393,6 +397,28 @@ class AssemblyWindow(QMainWindow):
             "Počátek sestavy je X=Y=Z=0. Vlastní bod má souřadnice v celé sestavě. "
             "Volba je nastavení otevřeného okna, do souboru se neukládá.")
         grid.addWidget(self.rotation_center_mode, 2, 1)
+        pick_row = QWidget()
+        pick_layout = QHBoxLayout(pick_row)
+        pick_layout.setContentsMargins(0, 0, 0, 0)
+        self.rotation_pick_kind = QComboBox()
+        for title, kind in (("Střed kružnice", "circle"), ("Vrchol", "vertex"),
+                            ("Bod na ploše", "face")):
+            self.rotation_pick_kind.addItem(title, kind)
+        self.rotation_pick_kind.setAccessibleName("Způsob výběru středu")
+        self.rotation_pick_kind.setToolTip(
+            "Střed kružnice nebo kruhového oblouku: klikni na jeho hranu. "
+            "Vrchol: přesný bod geometrie. Bod na ploše: přesný průsečík pohledu s plochou.")
+        self.rotation_pick_kind.currentIndexChanged.connect(
+            lambda _index: self.viewer.cancel_rotation_center_pick())
+        pick_layout.addWidget(self.rotation_pick_kind, 1)
+        self.rotation_pick_button = QPushButton("Vybrat ve 3D")
+        self.rotation_pick_button.setCheckable(True)
+        self.rotation_pick_button.setToolTip(
+            "Kliknutím převezmeš bod z libovolného viditelného dílu, výběr komponent zůstane. "
+            "Esc nebo pravý klik výběr zruší. Táhnutím lze dál otáčet a posouvat pohled.")
+        self.rotation_pick_button.toggled.connect(self._rotation_pick_toggled)
+        pick_layout.addWidget(self.rotation_pick_button)
+        grid.addWidget(pick_row, 3, 0, 1, 2)
         self.rotation_point_box = QWidget()
         point_grid = QGridLayout(self.rotation_point_box)
         point_grid.setContentsMargins(0, 0, 0, 0)
@@ -414,25 +440,25 @@ class AssemblyWindow(QMainWindow):
                                             "zahrnuje i skryté vybrané díly.")
         self.rotation_center_copy.clicked.connect(self._copy_rotation_center)
         point_grid.addWidget(self.rotation_center_copy, 3, 0, 1, 2)
-        grid.addWidget(self.rotation_point_box, 3, 0, 1, 2)
+        grid.addWidget(self.rotation_point_box, 4, 0, 1, 2)
         self.batch_rotation_center = self._wrapped_label()
         self.batch_rotation_center.setToolTip(
             "Stejný bod používá tlačítko i rotační rukojeti. Střed i úhel se použijí "
             "v okamžiku otočení. Změna bodu během tahu náhled zruší.")
-        grid.addWidget(self.batch_rotation_center, 4, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_center, 5, 0, 1, 2)
         self.batch_rotation_note = self._wrapped_label()
-        grid.addWidget(self.batch_rotation_note, 5, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_note, 6, 0, 1, 2)
         self.batch_rotation_button = QPushButton("Otočit vybrané")
         self.batch_rotation_button.clicked.connect(self.apply_batch_rotation)
-        grid.addWidget(self.batch_rotation_button, 6, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_button, 7, 0, 1, 2)
         self.rotation_handles = QCheckBox("Rotační rukojeti ve 3D")
         self.rotation_handles.setToolTip(
             "Táhni barevný prstenec nebo jeho kuličku X/Y/Z kolem společného středu. "
             "Zapnutím se přepnou posouvací rukojeti. Esc zruší náhled; "
             "zahrnuté jsou i skryté vybrané díly. Natočení zadané výrazem podporuje osu Z.")
         self.rotation_handles.toggled.connect(lambda checked: self._choose_handles(True, checked))
-        grid.addWidget(self.rotation_handles, 7, 0, 1, 2)
-        grid.addWidget(QLabel("Krok otáčení"), 8, 0)
+        grid.addWidget(self.rotation_handles, 8, 0, 1, 2)
+        grid.addWidget(QLabel("Krok otáčení"), 9, 0)
         self.rotation_step = QDoubleSpinBox()
         self.rotation_step.setRange(0, 180)
         self.rotation_step.setDecimals(3)
@@ -444,7 +470,7 @@ class AssemblyWindow(QMainWindow):
         self.rotation_step.setToolTip("Krok od začátku tahu ve stupních; 0 = Volně. "
                                      "Číselný úhel a osu pro tlačítko tažení nepřepisuje.")
         self.rotation_step.valueChanged.connect(self._refresh_move_handles)
-        grid.addWidget(self.rotation_step, 8, 1)
+        grid.addWidget(self.rotation_step, 9, 1)
         self.rotation_center_mode.currentIndexChanged.connect(self._rotation_center_changed)
         layout.addWidget(self.batch_rotation_box)
 
@@ -467,10 +493,82 @@ class AssemblyWindow(QMainWindow):
         return (*self._move_token(), self._rotation_center_revision)
 
     def _rotation_center_changed(self, *_args) -> None:
+        self.viewer.cancel_rotation_center_pick()
         self._rotation_center_revision += 1
         self.viewer.cancel_selection_drag()
         self._refresh_batch_rotation_box()
         self._refresh_move_handles()
+
+    def _rotation_pick_signature(self):
+        return (self._rotation_token(), tuple(i.ids for i in self.visible_instances()),
+                self.rotation_pick_kind.currentData())
+
+    def _refresh_rotation_pick_button(self) -> None:
+        self.rotation_pick_button.setEnabled(
+            len(self._selection) > 1 and bool(self._selection_roots())
+            and not self._move_problem() and bool(self.visible_instances()))
+
+    def _rotation_pick_finished(self, token=None) -> None:
+        if token is not None and token != self._rotation_pick_pending:
+            return  # dokončení staršího výběru nesmí vypnout nově spuštěný
+        self._rotation_pick_pending = None
+        blocked = self.rotation_pick_button.blockSignals(True)
+        self.rotation_pick_button.setChecked(False)
+        self.rotation_pick_button.setText("Vybrat ve 3D")
+        self.rotation_pick_button.blockSignals(blocked)
+
+    def _rotation_pick_toggled(self, checked) -> None:
+        self.viewer.cancel_rotation_center_pick()
+        if not checked or not self.rotation_pick_button.isEnabled():
+            self._rotation_pick_finished()
+            return
+        self._rotation_pick_serial += 1
+        token = (self._rotation_pick_signature(), self._rotation_pick_serial)
+        self._rotation_pick_pending = token
+        if not self.viewer.start_rotation_center_pick(self.rotation_pick_kind.currentData(), token):
+            self._rotation_pick_finished()
+            self.statusBar().showMessage("3D prohlížeč není připravený pro výběr středu.")
+            return
+        self.rotation_pick_button.setText("Zrušit výběr")
+        self.statusBar().showMessage(f"Střed: {self.rotation_pick_kind.currentText()} – klikni "
+                                     "na viditelnou geometrii; Esc nebo pravý klik = zrušit.")
+
+    def _rotation_center_picked(self, request) -> None:
+        pending = self._rotation_pick_pending
+        if pending is None or request.get("token") != pending:
+            self.statusBar().showMessage("Zastaralý bod nebyl převzat.")
+            return
+        self.viewer.cancel_rotation_center_pick()
+        self._rotation_pick_finished()
+        if pending[0] != self._rotation_pick_signature() or self._move_problem():
+            self.statusBar().showMessage("Výběr nebo sestava se změnily; výběr středu byl zrušen.")
+            return
+        kind = request.get("kind")
+        pieces = {"circle": "edges", "vertex": "vertices", "face": "faces"}.get(kind)
+        shape = request.get("shape")
+        if (kind != self.rotation_pick_kind.currentData() or pieces is None or shape is None
+                or not any(piece.wrapped.IsSame(shape) for i in self.visible_instances()
+                           for piece in getattr(i.part, pieces)())):
+            self.statusBar().showMessage("Kliknutá geometrie už není viditelná; vyber střed znovu.")
+            return
+        try:
+            point = self.session.rotation_center([ids[0] for ids in self._selection_roots()],
+                                                 request.get("point", []))
+        except AssemblyError as exc:
+            self.statusBar().showMessage(str(exc))
+            return
+        controls = [self.rotation_center_mode, *self.rotation_center_edits]
+        blocks = [control.blockSignals(True) for control in controls]
+        self.rotation_center_mode.setCurrentIndex(2)
+        for field, value in zip(self.rotation_center_edits, point, strict=True):
+            field.setText(repr(value))
+        for control, blocked in zip(controls, blocks, strict=True):
+            control.blockSignals(blocked)
+        self._rotation_center_changed()
+        self.statusBar().showMessage("Střed převzat z 3D: "
+                                     + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", point,
+                                                                              strict=True))
+                                     + " mm. Díly se zatím neotočily.")
 
     def _copy_rotation_center(self) -> None:
         def work():
@@ -493,6 +591,7 @@ class AssemblyWindow(QMainWindow):
         roots = self._selection_roots()
         self.rotation_point_box.setVisible(self.rotation_center_mode.currentIndex() == 2)
         self.rotation_center_copy.setEnabled(multiple and bool(roots) and not problem)
+        self._refresh_rotation_pick_button()
         center = None
         if multiple and not problem:
             try:
@@ -546,6 +645,7 @@ class AssemblyWindow(QMainWindow):
                          for v in self.session.assembly.component(ids[0]).rotation) else [0, 1, 2]
 
     def _refresh_move_handles(self) -> None:
+        self._refresh_rotation_pick_button()
         self.move_step.setEnabled(self.move_button.isEnabled() and self.move_handles.isChecked())
         self.rotation_step.setEnabled(self.rotation_handles.isEnabled()
                                       and self.rotation_handles.isChecked())
@@ -1367,6 +1467,8 @@ class AssemblyWindow(QMainWindow):
         self.select_many(s.ids for s in result.statuses) if result else self.select(None)
 
     def clear_component_selection(self) -> None:
+        if self.viewer.cancel_rotation_center_pick():
+            return
         self.viewer.clear_selection()
         self.select(None)
 
@@ -2095,6 +2197,7 @@ class AssemblyWindow(QMainWindow):
         return answer == QMessageBox.StandardButton.Discard
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        self.viewer.cancel_rotation_center_pick()
         if self._confirm_discard():
             self._timer.stop()
             if self._check_job is not None:
@@ -2109,6 +2212,8 @@ class AssemblyWindow(QMainWindow):
         super().changeEvent(event)
         from PySide6.QtCore import QEvent
 
+        if event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow():
+            self.viewer.cancel_rotation_center_pick()
         if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()
                 and self.session.assembly is not None and not self.computing
                 and not self.checking):

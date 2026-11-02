@@ -1358,6 +1358,21 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   starý návrh). Neplatné pole vysvětlit v panelu a vypnout otočení, ne editaci opravy.
   Nativní self-test táhne XYZ kolem vlastního bodu, ruší změnou bodu i volby a ověřuje
   také Enterem otočení kolem počátku sestavy. [Evidence](docs/p7-22-volitelny-stred-otaceni.md).
+- P7.23: `start_rotation_center_pick(kind, token)` jednorázově aktivuje hrany/vrcholy/
+  plochy zobrazeného AIS a uloží původní aktivní režimy. Nevolá SelectDetected ani
+  `_remember_point`, takže výběr ploch i `picked_point` zůstávají. Kružnice/oblouk:
+  `BRepAdaptor_Curve.Circle().Location()`, vrchol: `BRep_Tool.Pnt_s`, plocha: přesný
+  průsečík paprsku s BRep, nejbližší síťovému zásahu AIS. Žádný odhad ze středu obálky.
+  Po přijetí nebo zrušení obnovit režimy, kurzor a rukojeti. Prázdný/nevhodný klik
+  dál čeká; tažení naviguje kamerou. Esc/pravý klik/tlačítko, změna dat/pohledu na
+  díly, resize/skrytí/opouštění okna a změna druhu či středu režim ruší. Focus uvnitř
+  okna sám neruší (druhé kliknutí na tlačítko musí spolehlivě zrušit výběr).
+  Controller drží aktivní požadavek se sérií, tokenem modelu/středu, viditelností a
+  druhem. Zastaralý či skrytý tvar odmítnout. Bod může být na nevybraném dílu; nikdy
+  kvůli němu nepřepisovat výběr komponent ani podklady vazeb. Převzetí blokuje signály
+  polí a přepne jednou na Vlastní bod, bez _run a historie. Nativní test uchovává
+  skutečný AIS výběr i podklady vazby přes klik na kružnici, vrchol a plochu jiné
+  nožičky. [Evidence](docs/p7-23-vyber-stredu-ve-3d.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
