@@ -26,16 +26,18 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -u - <<'PY'
+          cat > p723_gui_shutdown.py <<'PY'
           import atexit, faulthandler, multiprocessing, sys, threading
-          import pytest
-          faulthandler.enable()
-          faulthandler.dump_traceback_later(180, repeat=True)
-          code = pytest.main(["-q", "tests/test_gui.py", "tests/test_assembly_gui.py", "tests/test_rotation_center_pick.py", "tests/test_rotation_drag.py", "tests/test_selection_drag.py"])
-          print("PYTEST_RETURNED", code, flush=True)
-          print("THREADS", [(t.name, t.daemon) for t in threading.enumerate()], flush=True)
-          print("CHILDREN", [(p.name, p.is_alive()) for p in multiprocessing.active_children()], flush=True)
-          atexit.register(lambda: print("ATEXIT_REACHED", flush=True))
-          faulthandler.dump_traceback_later(20, repeat=True)
-          sys.exit(code)
+          if __name__ == "__main__":
+              import pytest
+              faulthandler.enable()
+              faulthandler.dump_traceback_later(180, repeat=True)
+              code = pytest.main(["-q", "tests/test_gui.py", "tests/test_assembly_gui.py", "tests/test_rotation_center_pick.py", "tests/test_rotation_drag.py", "tests/test_selection_drag.py"])
+              print("PYTEST_RETURNED", code, flush=True)
+              print("THREADS", [(t.name, t.daemon) for t in threading.enumerate()], flush=True)
+              print("CHILDREN", [(p.name, p.is_alive()) for p in multiprocessing.active_children()], flush=True)
+              atexit.register(lambda: print("ATEXIT_REACHED", flush=True))
+              faulthandler.dump_traceback_later(20, repeat=True)
+              sys.exit(code)
           PY
+          python -u p723_gui_shutdown.py
