@@ -389,6 +389,12 @@ class AssemblyWindow(QMainWindow):
         self.rotation_axis_pick_button.toggled.connect(
             lambda checked: self._rotation_pick_toggled(checked, self._geometry_axis_kind()))
         axis_layout.addWidget(self.rotation_axis_pick_button)
+        self.rotation_axis_reverse_button = QPushButton("Obrátit směr osy")
+        self.rotation_axis_reverse_button.setToolTip(
+            "Obrátí šipku kladného směru převzaté osy. Díly se nepohnou; "
+            "číselný úhel ani krok se nezmění.")
+        self.rotation_axis_reverse_button.clicked.connect(self._reverse_rotation_axis)
+        axis_layout.addWidget(self.rotation_axis_reverse_button)
         self.rotation_axis_note = self._wrapped_label()
         axis_layout.addWidget(self.rotation_axis_note)
         grid.addWidget(self.rotation_axis_box, 1, 0, 1, 2)
@@ -527,6 +533,16 @@ class AssemblyWindow(QMainWindow):
             return self._require_rotation_axis()[1]
         return self.batch_rotation_axis.currentText().lower()
 
+    def _reverse_rotation_axis(self) -> None:
+        picked = self._picked_rotation_axis()
+        if picked is None or not self.rotation_axis_reverse_button.isEnabled():
+            return
+        point, direction = picked
+        setattr(self, f"_rotation_{self._geometry_axis_kind()}",
+                (point, tuple(-value for value in direction)))
+        self._rotation_center_changed()
+        self.statusBar().showMessage("Kladný směr osy byl obrácen. Díly se zatím neotočily.")
+
     def _chosen_rotation_center(self):
         return self.session.rotation_center([ids[0] for ids in self._selection_roots()],
                                             self._rotation_center_values())
@@ -550,6 +566,8 @@ class AssemblyWindow(QMainWindow):
                     and not self._move_problem() and bool(self.visible_instances()))
         self.rotation_pick_button.setEnabled(eligible and not self._geometry_axis_kind())
         self.rotation_axis_pick_button.setEnabled(eligible and bool(self._geometry_axis_kind()))
+        self.rotation_axis_reverse_button.setEnabled(
+            eligible and self._picked_rotation_axis() is not None)
 
     def _rotation_pick_finished(self, token=None) -> None:
         if token is not None and token != self._rotation_pick_pending:

@@ -2422,6 +2422,25 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         viewer._context.ActivatedModes(viewer._ais, restored)
         assert sorted(restored) == modes_before
         assert viewer._view.Proj() == camera and abs(viewer._view.Scale()-scale) < 1e-9
+        original_point, original_direction = point, np.array(direction)
+        for sign in (-1, 1, -1):
+            token = assembly._rotation_token()
+            assembly.component_scroll.ensureWidgetVisible(assembly.rotation_axis_reverse_button)
+            QTest.mouseClick(assembly.rotation_axis_reverse_button, Qt.MouseButton.LeftButton)
+            QTest.qWait(30)
+            point, direction = assembly._picked_rotation_axis()
+            assert point == original_point
+            assert np.array_equal(direction, sign*original_direction)
+            assert assembly._rotation_token() != token
+            assert viewer._move_data["axis_direction"] == direction
+            assert assembly._selection == ids and assembly._picks == picks_before
+            assert session.assembly.to_dict() == before and session.result is result
+            assert len(session._undo) == steps and session._redo == redo
+            assert viewer.picked_point == picked_before
+            assert all(any(s.IsSame(old) for old in selected) for s in viewer.selected_shapes())
+            assert len(viewer.selected_shapes()) == len(selected)
+            assert viewer._view.Proj() == camera and abs(viewer._view.Scale()-scale) < 1e-9
+        normal = np.array(direction)
         if line:
             viewer.set_standard_view("iso")  # prstenec v zadním pohledu téměř zaniká
             QTest.qWait(30)
@@ -2430,11 +2449,14 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         assert assembly.batch_rotation_angle.text() == "37,5"
         old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
 
-        def check_motion(angle):
+        def expected_rotation(angle):
             x, y, z = normal
             cross = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
             t = math.radians(angle)
-            q = np.eye(3)*math.cos(t)+(1-math.cos(t))*np.outer(normal, normal)+math.sin(t)*cross
+            return np.eye(3)*math.cos(t)+(1-math.cos(t))*np.outer(normal, normal)+math.sin(t)*cross
+
+        def check_motion(angle):
+            q = expected_rotation(angle)
             for i in session.result.instances:
                 expected = pivot+q @ (old[i.ids]-pivot) if i.ids in ids else old[i.ids]
                 assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
@@ -2470,6 +2492,11 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         QTest.qWait(30)
         assert viewer._selection_drag["angle"] == 30
         assert session.assembly.to_dict() == before and len(session._undo) == steps
+        preview = viewer._selection_drag["preview"].LocalTransformation()
+        matrix = np.array([[preview.Value(row, col) for col in range(1, 5)]
+                           for row in range(1, 4)])
+        q = expected_rotation(30)
+        assert np.allclose(matrix, np.column_stack((q, pivot-q @ pivot)), atol=1e-9, rtol=0)
         QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
         QTest.qWait(30)
         check_motion(30)
@@ -2490,6 +2517,9 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
             assert session.assembly.to_dict() == before and len(session._undo) == steps
         reference = "přímou hranu" if line else "válcovou plochu"
         refused = "kružnice odmítnuta" if line else "rovina odmítnuta"
+        lines.append(f"✓ Obrácení směru osy ({'hrana' if line else 'válec'}): "
+                     "tři skutečné kliky, druhý vrátí původní směr; bod, výběr a historie "
+                     "beze změny; Enter 90° i tažení 30° kolem obrácené osy, jeden Zpět/Znovu")
         lines.append(f"✓ {label}: skutečný klik na šikmou {reference} jiného dílu; "
                      f"přesný bod i směr, {refused}, výběr/plochy/vazby/kamera/pole "
                      "a historie zachovány; Enter 90° i tažení 30° kolem stejné osy, "

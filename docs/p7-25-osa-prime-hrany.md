@@ -2,6 +2,8 @@
 
 Datum: **2. 11. 2026**. Navazuje na P7.24; jádro otáčení, formát a závislosti beze změny.
 
+Navazující [P7.26](p7-26-obraceni-smeru-osy.md) přidává tlačítko **Obrátit směr osy**.
+
 ## Ovládání a rozsah
 
 Při výběru více komponent zvol v panelu **Společné otočení [°]** osu **Přímá hrana**.
