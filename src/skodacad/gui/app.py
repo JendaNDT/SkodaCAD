@@ -1059,6 +1059,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_transparency(assembly, lines) and ok
         ok = _self_test_assembly_transparency_levels(assembly, lines) and ok
         ok = _self_test_assembly_multi_selection(assembly, lines) and ok
+        ok = _self_test_assembly_motion_panel(assembly, lines) and ok
         ok = _self_test_assembly_batch_move(assembly, lines) and ok
         ok = _self_test_assembly_selection_drag(assembly, lines) and ok
         ok = _self_test_assembly_batch_move(assembly, lines, single=True) and ok
@@ -1148,6 +1149,62 @@ def _self_test_assembly_layout(assembly, lines) -> bool:
     except Exception:  # noqa: BLE001 -- srozumitelná evidence self-testu balíčku
         lines.append("✕ Panely sestavy:\n" + traceback.format_exc())
         return False
+
+
+def _self_test_assembly_motion_panel(assembly, lines) -> bool:
+    """Nativní záložky a sbalování zachovají vstupy, model, kameru a historii."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    assembly.select(("nozicka_1",))
+    fields = [assembly.name_edit, *assembly.position_edits, *assembly.move_edits,
+              assembly.batch_rotation_angle, *assembly.rotation_center_edits]
+    original = [field.text() for field in fields]
+    before, result = session.assembly.to_dict(), session.result
+    history = (len(session._undo), len(session._redo), session.dirty)
+    try:
+        assembly.raise_()
+        assembly.activateWindow()
+        assembly.placement_section.set_expanded(False)
+        assembly.appearance_section.set_expanded(False)
+        assembly.component_scroll.ensureWidgetVisible(assembly.move_box)
+        QTest.qWait(30)
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        for index, field in enumerate(fields):
+            field.setText(f"{index}+h")
+        pending = [field.text() for field in fields]
+        old = {"token": assembly._move_token(), "delta": [5, 0, 0]}
+        bar = assembly.movement_tabs.tabBar()
+        for index in (1, 0, 1, 0):
+            QTest.mouseClick(bar, Qt.MouseButton.LeftButton, pos=bar.tabRect(index).center())
+            QTest.qWait(30)
+            assert assembly.movement_tabs.currentIndex() == index
+            assert assembly.move_box.isVisible() == (index == 0)
+            assert assembly.batch_rotation_box.isVisible() == (index == 1)
+        for section in (assembly.placement_section, assembly.appearance_section):
+            for expanded in (True, False):
+                assembly.component_scroll.ensureWidgetVisible(section.button)
+                QTest.mouseClick(section.button, Qt.MouseButton.LeftButton)
+                QTest.qWait(30)
+                assert section.expanded == expanded
+        viewer.selection_moved.emit(old)
+        assert [field.text() for field in fields] == pending
+        assert session.assembly.to_dict() == before and session.result is result
+        assert (len(session._undo), len(session._redo), session.dirty) == history
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        lines.append("✓ Panel pohybu sestavy: skutečné kliky Posun/Otočení a sbalení sekcí, "
+                     "rozepsaná pole/model/historie/kamera zachovány, starý tah odmítnut")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika sestaveného balíčku
+        lines.append("✕ Panel pohybu sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        for field, text in zip(fields, original, strict=True):
+            field.setText(text)
+        assembly.placement_section.set_expanded(False)
+        assembly.appearance_section.set_expanded(False)
+        assembly.component_scroll.ensureWidgetVisible(assembly.move_box)
 
 
 def _self_test_assembly_views(assembly, lines) -> bool:
@@ -1732,6 +1789,7 @@ def _self_test_assembly_batch_move(assembly, lines, *, single=False) -> bool:
         assembly.activateWindow()
         QTest.qWait(50)
         assembly.select_many((("krabicka",), ("vicko",)))
+        assembly.component_scroll.ensureWidgetVisible(assembly.move_box)
         assert assembly.move_box.isVisible() and not assembly.move_button.isEnabled()
         assert "Pevné komponenty: Krabička" in assembly.move_note.text()
         ids = (("nozicka_1",),) if single else (("nozicka_1",), ("nozicka_2",))

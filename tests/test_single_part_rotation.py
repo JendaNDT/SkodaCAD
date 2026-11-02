@@ -26,6 +26,7 @@ def test_single_part_axis_rotates_geometry_with_one_undo_redo(request, axis, mod
     w.select(selected)
     before = w.session.assembly.to_dict()
     old = {i.ids: vertices(i.part) for i in w.session.result.instances}
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_axis)
     assert w.batch_rotation_box.isVisibleTo(w)
     assert w.batch_rotation_box.title() == "Otočení [°]"
     assert w.rotation_handles.isEnabled() and w.rotation_pick_button.isEnabled()

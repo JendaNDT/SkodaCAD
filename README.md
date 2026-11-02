@@ -385,6 +385,11 @@ jednou. Absolutní poloha, název, smazání a otevření dílu jsou dostupné p
 Samotný výběr je stav okna, nepřidává kroky Zpět a neomezuje export celé sestavy.
 [Chování a ověření hromadného výběru](docs/p7-17-hromadny-vyber.md).
 
+**Panel pohybu:** záložky **Posun** a **Otočení** ukazují právě potřebné ovládání.
+Absolutní souřadnice a název i vzhled jsou v rozbalovacích sekcích pod nimi.
+Rozepsané hodnoty se přepínáním zachovají; rozpracovaný tah nebo výběr reference
+se bezpečně zruší. [Rozložení a ověření panelu](docs/p7-31-panel-pohybu.md).
+
 **Posun výběru:** pro jeden díl se vpravo zobrazí **Posun [mm]**, pro více
 komponent **Společný posun [mm]**. Oba panely umožňují číselný přírůstek i tažení
 [stejnými posouvacími rukojeťmi](docs/p7-30-posun-jednoho-dilu.md).

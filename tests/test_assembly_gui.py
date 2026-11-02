@@ -807,6 +807,7 @@ def test_batch_rotation_enter_uses_whole_selection_center_and_preserves_view_fie
     w.select_many(ids)
     old = {i.ids: np.array(tuple(i.part.center())) for i in w.session.result.instances}
     center = (old[ids[0]]+old[ids[1]])/2  # stejné nožičky, nikoli průměr počátků sestavy
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_axis)
     assert w.batch_rotation_box.isVisibleTo(w) and w.batch_rotation_button.isEnabled()
     assert w.batch_rotation_axis.currentText() == "Z"
     w.move_edits[0].setText("2,5")
@@ -868,6 +869,7 @@ def test_batch_rotation_explains_fixed_nested_and_expressions(opened, nested_iso
     w.batch_rotation_axis.setCurrentText("Z")
     assert w.batch_rotation_button.isEnabled()
     w.select(("nozicka_1",))
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_axis)
     assert w.batch_rotation_box.isVisibleTo(w)
     assert w.batch_rotation_button.isEnabled()
 
