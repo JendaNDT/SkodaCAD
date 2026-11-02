@@ -47,7 +47,7 @@ from OCP.collections import Array1_gp_Pnt
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
 from OCP.GeomAbs import GeomAbs_C1
-from OCP.gp import gp_Pnt, gp_Trsf, gp_Vec
+from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
     Graphic3d_MaterialAspect,
@@ -92,6 +92,15 @@ from skodacad.gui.guide_drag import (
     snapped_delta,
 )
 from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
+from skodacad.gui.rotation_drag import (
+    MIN_FACING,
+    advance_angle,
+    angle_on_plane,
+    nearest_ring,
+    plane_axes,
+    ring_points,
+    snapped_angle,
+)
 from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
 
 log = logging.getLogger(__name__)
@@ -246,6 +255,7 @@ class OccViewer(QWidget):
     guide_handle_moved = Signal(dict)  # jediný návrh po dokončeném tahu
     guide_drag_message = Signal(str)
     selection_moved = Signal(dict)  # náhled celého výběru, jediný požadavek po puštění
+    selection_rotated = Signal(dict)
     selection_drag_message = Signal(str)
     probe_rotated = Signal(int)  # otočení sondy kolečkem (±15°)
 
@@ -279,6 +289,7 @@ class OccViewer(QWidget):
         self._move_data = None
         self._move_objects = []
         self._move_tips = []
+        self._move_rings = []
         self._selection_drag = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
@@ -620,10 +631,14 @@ class OccViewer(QWidget):
             self._context.Remove(shown, False)
         self._move_objects = []
         self._move_tips = []
+        self._move_rings = []
 
     def _draw_move_handles(self, delta=(0., 0., 0.)) -> None:
         self._remove_move_handles()
         if not self.ready or self._move_data is None or self._ais is None:
+            return
+        if self._move_data.get("mode") == "rotate":
+            self._draw_rotation_handles()
             return
         anchor = [a+d for a, d in zip(self._move_data["anchor"], delta, strict=True)]
         length = self._view.Convert(round(90*self._pixel_scale()))
@@ -664,13 +679,69 @@ class OccViewer(QWidget):
             self._move_tips.append((axis, tuple(tip)))
         self._view.Redraw()
 
+    def _draw_rotation_handles(self) -> None:
+        center = self._move_data["anchor"]
+        radius = self._view.Convert(round(90*self._pixel_scale()))
+        if not math.isfinite(radius) or radius <= 0:
+            return
+        projected = self._view.Convert(*map(float, center))
+        ray = self._view.ConvertWithProj(*projected)
+        length = math.hypot(*ray[3:])
+        if not length:
+            return
+        colors = ((.90, .12, .10), (.12, .65, .18), (.10, .35, .95))
+        for axis in self._move_data["axes"]:
+            if abs(ray[axis+3])/length < MIN_FACING:
+                continue
+            points = ring_points(center, axis, radius)
+            tip = points[12]  # 45°; kuličky jsou mimo průsečíky v souřadnicových rovinách
+            normal, base = [0., 0., 0.], [0., 0., 0.]
+            normal[axis] = 1.
+            base[plane_axes(axis)[0]] = 1.
+            circle = gp_Circ(gp_Ax2(gp_Pnt(*center), gp_Dir(*normal), gp_Dir(*base)), radius)
+            compound = TopoDS_Compound()
+            builder = BRep_Builder()
+            builder.MakeCompound(compound)
+            builder.Add(compound, BRepBuilderAPI_MakeEdge(circle).Edge())
+            builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(*tip)).Vertex())
+            color = _rgb(*colors[axis])
+            line = AIS_Shape(compound)
+            line.SetColor(color)
+            active = self._selection_drag is not None and self._selection_drag["axis"] == axis
+            line.SetWidth(4. if active else 2.5)
+            line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 5.))
+            label = AIS_TextLabel()
+            label.SetText(TCollection_ExtendedString("XYZ"[axis]))
+            tip_pixel = self._view.Convert(*map(float, tip))
+            distance = math.dist(projected, tip_pixel)/self._pixel_scale()
+            factor = 110/max(distance, 1.)  # popisky mimo všechny prstence, i u úzké elipsy
+            label.SetPosition(gp_Pnt(*(c+(p-c)*factor
+                                      for p, c in zip(tip, center, strict=True))))
+            label.SetColor(color)
+            label.SetHeight(16.)
+            label.SetFont("Arial")
+            label.SetFontAspect(Font_FA_Bold)
+            for shown in (line, label):
+                self._context.Display(shown, False)
+                self._context.Deactivate(shown)
+                self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
+                self._move_objects.append(shown)
+            self._move_tips.append((axis, tip))
+            self._move_rings.append(points)
+        self._view.Redraw()
+
     def _move_handle_at(self, pos):
         if not self._move_tips:
             return None
         ratio = self._pixel_scale()
         points = [tuple(v/ratio for v in self._view.Convert(*tip))
                   for _axis, tip in self._move_tips]
-        return nearest_handle(points, (pos.x(), pos.y()))
+        hit = nearest_handle(points, (pos.x(), pos.y()))
+        if hit is not None or not self._move_rings:
+            return hit
+        rings = [[tuple(v/ratio for v in self._view.Convert(*p)) for p in ring]
+                 for ring in self._move_rings]
+        return nearest_ring(rings, (pos.x(), pos.y()))
 
     def _begin_selection_drag(self, pos) -> bool:
         hit = self._move_handle_at(pos)
@@ -681,13 +752,17 @@ class OccViewer(QWidget):
             self.selection_drag_message.emit("Rukojeti se překrývají – natoč pohled.")
             return True
         axis, tip = self._move_tips[hit]
-        start = axis_parameter(self._view.ConvertWithProj(*self._pixels(pos)), tip, "XYZ"[axis])
+        data = self._move_data
+        rotating = data.get("mode") == "rotate"
+        radius = self._view.Convert(round(90*self._pixel_scale()))
+        ray = self._view.ConvertWithProj(*self._pixels(pos))
+        start = (angle_on_plane(ray, data["anchor"], axis, radius*.1) if rotating
+                 else axis_parameter(ray, tip, "XYZ"[axis]))
         if start is None:
             self._press = None
             self.selection_drag_message.emit("Osa v pohledu zaniká – natoč pohled.")
             return True
         # Vlastníci výběru původního AIS zůstávají platní. Skrytí je pouze prezentace.
-        data = self._move_data
         compound = TopoDS_Compound()
         builder = BRep_Builder()
         builder.MakeCompound(compound)
@@ -704,10 +779,15 @@ class OccViewer(QWidget):
         self._context.ClearDetected(False)
         self._context.RecomputePrsOnly(self._ais, False)
         self._selection_drag = {"data": data, "axis": axis, "tip": tip, "start": start,
-                                "preview": preview, "delta": [0., 0., 0.]}
+                                "preview": preview, "delta": [0., 0., 0.], "angle": 0.,
+                                "previous": start, "total": 0., "radius": radius}
         self._surface.setCursor(Qt.CursorShape.ClosedHandCursor)
+        operation = "otočení kolem osy" if rotating else "posunu v ose"
         self.selection_drag_message.emit(
-            f"Náhled posunu v ose {'XYZ'[axis]} · puštění = potvrdit · Esc = zrušit")
+            f"Náhled {operation} {'XYZ'[axis]} · "
+            "puštění = potvrdit · Esc = zrušit")
+        if rotating:
+            self._draw_move_handles()
         self._view.Redraw()
         return True
 
@@ -716,6 +796,9 @@ class OccViewer(QWidget):
         if not self._dragging and (pos.toPoint()-self._press).manhattanLength() <= _DRAG_THRESHOLD:
             return
         self._dragging = True
+        if drag["data"].get("mode") == "rotate":
+            self._move_rotation_drag(pos)
+            return
         value = axis_parameter(self._view.ConvertWithProj(*self._pixels(pos)), drag["tip"],
                                "XYZ"[drag["axis"]])
         if value is None:
@@ -733,6 +816,29 @@ class OccViewer(QWidget):
         self.selection_drag_message.emit(
             f"Posun {'XYZ'[drag['axis']]}: {delta[drag['axis']]:g} mm · "
             "puštění = potvrdit · Esc = zrušit")
+
+    def _move_rotation_drag(self, pos) -> None:
+        drag = self._selection_drag
+        center, axis = drag["data"]["anchor"], drag["axis"]
+        current = angle_on_plane(self._view.ConvertWithProj(*self._pixels(pos)), center,
+                                 axis, drag["radius"]*.1)
+        if current is None:
+            self.cancel_selection_drag()
+            return
+        drag["total"] = advance_angle(drag["previous"], current, drag["total"])
+        drag["previous"] = current
+        drag["angle"] = snapped_angle(drag["total"], drag["data"]["step"])
+        normal = [0., 0., 0.]
+        normal[axis] = 1.
+        transform = gp_Trsf()
+        transform.SetRotation(gp_Ax1(gp_Pnt(*center), gp_Dir(*normal)),
+                              math.radians(drag["angle"]))
+        drag["preview"].SetLocalTransformation(transform)
+        if self._highlight is not None:
+            self._highlight.SetLocalTransformation(transform)
+        self._view.Redraw()
+        self.selection_drag_message.emit(
+            f"Otočení {'XYZ'[axis]}: {drag['angle']:g}° · puštění = potvrdit · Esc = zrušit")
 
     def cancel_selection_drag(self) -> bool:
         drag = self._selection_drag
@@ -1502,11 +1608,16 @@ class OccViewer(QWidget):
                 self._move_selection_drag(event.position())
                 drag = self._selection_drag
                 if drag is not None:
-                    request = {"token": drag["data"]["token"], "delta": drag["delta"]}
-                    moved = self._dragging and any(drag["delta"])
+                    rotating = drag["data"].get("mode") == "rotate"
+                    request = ({"token": drag["data"]["token"], "axis": "xyz"[drag["axis"]],
+                                "angle": drag["angle"]} if rotating else
+                               {"token": drag["data"]["token"], "delta": drag["delta"]})
+                    moved = self._dragging and (math.remainder(drag["angle"], 360.) != 0
+                                                if rotating else any(drag["delta"]))
                     self.cancel_selection_drag()
                     if moved:
-                        self.selection_moved.emit(request)
+                        signal = self.selection_rotated if rotating else self.selection_moved
+                        signal.emit(request)
             else:
                 self.cancel_selection_drag()
             return

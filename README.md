@@ -420,6 +420,15 @@ Výrazy poloh zůstávají parametrické. Natočení zadané výrazem je podporo
 pro X/Y jsou potřebné číselné hodnoty natočení. Střed a úhel se použijí v okamžiku
 příkazu. [Pravidla a ověření společného otáčení](docs/p7-20-hromadne-otaceni.md).
 
+**Rotační rukojeti ve 3D:** v panelu **Společné otočení [°]** zapni stejnojmennou
+volbu. Posouvací rukojeti se přepnou na barevné prstence **X/Y/Z** kolem společného
+středu. Táhni prstenec nebo jeho kuličku; puštění ověří a potvrdí celý pohyb,
+**Esc** náhled zruší. **Krok otáčení** je výchozí 15°, rozsah 0–180°; 0 = Volně.
+Krok platí od začátku tahu. Celá otáčka nepřidá historii. Číselný úhel a rozepsaný
+posun se tažením nepřepisují. U natočení zadaných výrazem je dostupný prstenec Z.
+Téměř boční prstence se nezobrazují; u křížení uchop jinou část nebo natoč pohled.
+[Chování a ověření rotačních rukojetí](docs/p7-21-rotacni-rukojeti.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

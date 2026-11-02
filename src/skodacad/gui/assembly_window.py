@@ -142,6 +142,7 @@ class AssemblyWindow(QMainWindow):
         self.viewer.selection_changed.connect(self._picked)
         self.viewer.selection_cleared.connect(lambda: self.select(None))
         self.viewer.selection_moved.connect(self._selection_dragged)
+        self.viewer.selection_rotated.connect(self._rotation_dragged)
         self.viewer.selection_drag_message.connect(lambda text: self.statusBar().showMessage(text))
         self.setCentralWidget(self.viewer)
         self._build_tree()
@@ -310,7 +311,7 @@ class AssemblyWindow(QMainWindow):
         self.move_handles.setChecked(True)
         self.move_handles.setToolTip("Táhni barevný konec osy X, Y nebo Z. Esc zruší náhled. "
                                     "Posune se celý výběr včetně jeho skrytých dílů.")
-        self.move_handles.toggled.connect(self._refresh_move_handles)
+        self.move_handles.toggled.connect(lambda checked: self._choose_handles(False, checked))
         grid.addWidget(self.move_handles, 5, 0, 1, 2)
         grid.addWidget(QLabel("Krok tažení"), 6, 0)
         self.move_step = QDoubleSpinBox()
@@ -393,6 +394,26 @@ class AssemblyWindow(QMainWindow):
         self.batch_rotation_button = QPushButton("Otočit vybrané")
         self.batch_rotation_button.clicked.connect(self.apply_batch_rotation)
         grid.addWidget(self.batch_rotation_button, 4, 0, 1, 2)
+        self.rotation_handles = QCheckBox("Rotační rukojeti ve 3D")
+        self.rotation_handles.setToolTip(
+            "Táhni barevný prstenec nebo jeho kuličku X/Y/Z kolem společného středu. "
+            "Zapnutím se přepnou posouvací rukojeti. Esc zruší náhled; "
+            "zahrnuté jsou i skryté vybrané díly. Natočení zadané výrazem podporuje osu Z.")
+        self.rotation_handles.toggled.connect(lambda checked: self._choose_handles(True, checked))
+        grid.addWidget(self.rotation_handles, 5, 0, 1, 2)
+        grid.addWidget(QLabel("Krok otáčení"), 6, 0)
+        self.rotation_step = QDoubleSpinBox()
+        self.rotation_step.setRange(0, 180)
+        self.rotation_step.setDecimals(3)
+        self.rotation_step.setValue(15)
+        self.rotation_step.setSpecialValueText("Volně")
+        self.rotation_step.setSuffix("°")
+        self.rotation_step.setKeyboardTracking(False)
+        self.rotation_step.setAccessibleName("Krok otáčení myší")
+        self.rotation_step.setToolTip("Krok od začátku tahu ve stupních; 0 = Volně. "
+                                     "Číselný úhel a osu pro tlačítko tažení nepřepisuje.")
+        self.rotation_step.valueChanged.connect(self._refresh_move_handles)
+        grid.addWidget(self.rotation_step, 6, 1)
         layout.addWidget(self.batch_rotation_box)
 
     def _refresh_batch_rotation_box(self) -> None:
@@ -406,6 +427,10 @@ class AssemblyWindow(QMainWindow):
                 center = self.session.rotation_center([ids[0] for ids in roots])
             except AssemblyError as exc:
                 problem = str(exc)
+        eligible = multiple and bool(roots) and not problem
+        self.rotation_handles.setEnabled(eligible)
+        self.rotation_step.setEnabled(eligible and self.rotation_handles.isChecked())
+        if eligible:
             if self.batch_rotation_axis.currentText() != "Z" and any(
                     isinstance(v, str) for ids in roots
                     for v in self.session.assembly.component(ids[0]).rotation):
@@ -432,23 +457,52 @@ class AssemblyWindow(QMainWindow):
         if self._run("Výběr nejde otočit", work):
             self.statusBar().showMessage("Celý výběr byl otočen. Zpět vrátí celý pohyb.")
 
+    def _choose_handles(self, rotating: bool, checked: bool) -> None:
+        other = self.move_handles if rotating else self.rotation_handles
+        if checked:
+            blocked = other.blockSignals(True)
+            other.setChecked(False)
+            other.blockSignals(blocked)
+        self._refresh_move_box()
+        self._refresh_batch_rotation_box()
+        self._refresh_move_handles()
+
+    def _rotation_axes(self) -> list[int]:
+        roots = self._selection_roots()
+        return [2] if any(isinstance(v, str) for ids in roots
+                         for v in self.session.assembly.component(ids[0]).rotation) else [0, 1, 2]
+
     def _refresh_move_handles(self) -> None:
         self.move_step.setEnabled(self.move_button.isEnabled() and self.move_handles.isChecked())
+        self.rotation_step.setEnabled(self.rotation_handles.isEnabled()
+                                      and self.rotation_handles.isChecked())
         data = None
-        if len(self._selection) > 1 and self.move_handles.isChecked() and not self._move_problem():
+        rotating = self.rotation_handles.isChecked()
+        if (len(self._selection) > 1 and (self.move_handles.isChecked() or rotating)
+                and not self._move_problem()):
             roots = self._selection_roots()
             selected = [i for i in self.visible_instances()
                         if any(i.ids[:len(ids)] == ids for ids in roots)]
             if selected:
-                boxes = [i.part.bounding_box() for i in selected]
-                anchor = tuple((min(tuple(b.min)[axis] for b in boxes)
-                                + max(tuple(b.max)[axis] for b in boxes))/2 for axis in range(3))
-                data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
-                        "step": self.move_step.value(), "token": self._move_token()}
+                if rotating:
+                    try:
+                        anchor = self.session.rotation_center([ids[0] for ids in roots])
+                        data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
+                                "step": self.rotation_step.value(), "token": self._move_token(),
+                                "mode": "rotate", "axes": self._rotation_axes()}
+                    except AssemblyError:
+                        pass  # důvod už ukazuje panel; žádný použitelný prstenec
+                else:
+                    boxes = [i.part.bounding_box() for i in selected]
+                    anchor = tuple((min(tuple(b.min)[axis] for b in boxes)
+                                    + max(tuple(b.max)[axis] for b in boxes))/2
+                                   for axis in range(3))
+                    data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
+                            "step": self.move_step.value(), "token": self._move_token()}
         self.viewer.set_move_selection(data)
 
     def _selection_dragged(self, request: dict) -> None:
-        if (len(self._selection) < 2 or self._move_problem()
+        if (not self.move_handles.isChecked() or len(self._selection) < 2 or self._move_problem()
                 or request["token"] != self._move_token()):
             self.statusBar().showMessage("Výběr nebo sestava se změnily; tažení bylo zrušeno.")
             self._refresh_move_handles()
@@ -457,6 +511,20 @@ class AssemblyWindow(QMainWindow):
         if self._run("Výběr nejde posunout",
                      lambda: self.session.move_many_by(components, request["delta"])):
             self.statusBar().showMessage("Celý výběr byl posunut. Zpět vrátí celý posun.")
+
+    def _rotation_dragged(self, request: dict) -> None:
+        if (not self.rotation_handles.isChecked() or len(self._selection) < 2
+                or self._move_problem() or request["token"] != self._move_token()
+                or request["axis"] not in ["xyz"[axis] for axis in self._rotation_axes()]):
+            self.statusBar().showMessage("Výběr nebo sestava se změnily; otáčení bylo zrušeno.")
+            self._refresh_move_handles()
+            return
+        components = [ids[0] for ids in self._selection_roots()]
+        if self._run("Výběr nejde otočit",
+                     lambda: self.session.turn_many_around(components,
+                                                          request["axis"], request["angle"])):
+            self.statusBar().showMessage(f"Celý výběr byl otočen kolem {request['axis'].upper()} "
+                                         f"o {request['angle']:g}°. Zpět vrátí celý pohyb.")
 
     @staticmethod
     def _wrapped_label(text: str = "") -> QLabel:

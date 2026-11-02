@@ -1334,6 +1334,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `angles_of` používá atan2(sy, hypot(r00,r10)), aby neztratil složky před ±90°.
   GUI osa/úhel přežijí výběr a pohled, rozepsaný posun se nemaže, nejsou v receptu.
   [Evidence](docs/p7-20-hromadne-otaceni.md).
+- P7.21: `set_move_selection` má režim `rotate`, stejný životní cyklus náhledu jako
+  posun. Analytické kružnice XYZ + kuličky, 96bodová projekce pro hit-test; kulička
+  má přednost, nerozlišitelné křížení odmítnout. Prstence s |paprsek·normála| < .15
+  nekreslit. Úhel z průsečíku paprsku s rovinou v pravotočivém rámci, rozbalovat ±180°
+  postupnými přírůstky; krok 15° (0 = volně), 0–180°, poloviny od nuly. Preview je
+  pouze AIS `SetRotation` kolem `rotation_center`, včetně zvýraznění; prstence zůstávají
+  v globálních osách. Puštění vyšle jednou `selection_rotated`; celé otáčky neodesílá.
+  Controller ověří režim, token a povolené osy a použije `turn_many_around`.
+  Přepínače posunu/otáčení jsou výlučné, oba lze vypnout; preference okna, bez historie.
+  Výrazy natočení dovolují jen Z, neviditelné díly se neodkrývají, ale patří do středu
+  a potvrzeného pohybu. Změna kroku/režimu a všechny starší důvody přerušení tah ruší.
+  Popisky mimo všechny prstence, nikoli pod jiným obloukem či kuličkou.
+  [Evidence](docs/p7-21-rotacni-rukojeti.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
