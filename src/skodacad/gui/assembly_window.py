@@ -398,7 +398,7 @@ class AssemblyWindow(QMainWindow):
             "Volba je nastavení otevřeného okna, do souboru se neukládá.")
         grid.addWidget(self.rotation_center_mode, 2, 1)
         pick_row = QWidget()
-        pick_layout = QHBoxLayout(pick_row)
+        pick_layout = QVBoxLayout(pick_row)
         pick_layout.setContentsMargins(0, 0, 0, 0)
         self.rotation_pick_kind = QComboBox()
         for title, kind in (("Střed kružnice", "circle"), ("Vrchol", "vertex"),
@@ -410,7 +410,7 @@ class AssemblyWindow(QMainWindow):
             "Vrchol: přesný bod geometrie. Bod na ploše: přesný průsečík pohledu s plochou.")
         self.rotation_pick_kind.currentIndexChanged.connect(
             lambda _index: self.viewer.cancel_rotation_center_pick())
-        pick_layout.addWidget(self.rotation_pick_kind, 1)
+        pick_layout.addWidget(self.rotation_pick_kind)
         self.rotation_pick_button = QPushButton("Vybrat ve 3D")
         self.rotation_pick_button.setCheckable(True)
         self.rotation_pick_button.setToolTip(
