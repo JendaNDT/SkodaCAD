@@ -57,7 +57,7 @@ jobs:
         run: ruff check src tests
 
       - name: Testy
-        timeout-minutes: 30  # zaseknutý dialog v testu nesmí blokovat celé sestavení (testy ~16–19 min)
+        timeout-minutes: 35  # sada až 29:34 + nativní ukončení; zaseknutý dialog má dál pevný limit
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q --durations=20 --junitxml=pytest-results.xml

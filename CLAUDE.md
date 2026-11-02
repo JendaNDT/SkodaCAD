@@ -1181,7 +1181,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `packaging/check_dlls.py` (v balíčku nesmí chybět msvcp140/vcruntime140/vcomp140…).
 - Windows konzole na GitHubu není UTF-8 → `PYTHONUTF8=1` v workflow.
 - Než pošleš uživateli odkaz ke stažení, musí projít obě úlohy workflow.
-- Krok *Testy* má časový limit (Windows 30 min, macOS 35 min – proti zaseknutému dialogu).
+- Krok *Testy* má časový limit (Windows i macOS 35 min – proti zaseknutému dialogu).
   Etapa 09 původní 10 min na Windows překročila (testy 7:55 → přes 10 min, sestavení
   selhalo „timed out“). Při etapě 14 trvaly testy na Windows 15:42 (14A.1) a 18:25 (14A.2)
   při limitu 20 min – rozptyl běžců GitHubu je několik minut, proto 20. 10. 2026 limit
@@ -1192,6 +1192,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   NDT a zrychlení dvou testů (PR #59, #60) Windows 14:53, macOS 19:30, cloud 18:56.
   Nejdelší testy jsou teď konstrukční návrhy, audit a návrh poloh (20–35 s, poctivý
   výpočet paprsků a kolizí).
+- 2. 11. 2026 při P7.25 Windows dvakrát dokončil všech 2 614 testů (29:34 a 29:21),
+  ale nativní ukončování po souhrnu překročilo 30minutový limit. Testovací krok má
+  nově rezervu do 35 min, stejně jako macOS; příkaz celé sady, běžný návratový kód,
+  ruff i kontroly stažených aplikací zůstávají povinné. Celková úloha má dál 55 min.
 
 ## Známé pasti (macOS)
 

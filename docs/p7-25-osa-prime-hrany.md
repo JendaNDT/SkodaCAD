@@ -66,3 +66,9 @@ kameru, 35/85 % průhlednost, pole a historii. Enterem provede 90° a myší 30�
 téže přímky s kontrolou těžišť, validity těles a jednoho Zpět/Znovu. Po převzetí
 je kamera beze změny; před tažením se výslovně přepne ze zadního pohledu na izometrii.
 Místní evidence a snímky: `out/p7-line-rotation-axis/`; úplné výsledky patří do PR.
+
+Windows při úplném ověření dvakrát dokončil všech 2 614 testů (29:34 a 29:21), ale
+30minutový limit přerušil následné nativní ukončování procesu. Proto má testovací
+krok rezervu 35 minut, stejně jako macOS. Příkaz celé sady a požadavek normálního
+úspěšného ukončení, ruff i zkoušky stažených balíčků se nemění; žádný test se nepřeskakuje.
+Tato úprava CI a dokumentace nemění produktový kód ani již ověřenou místní aplikaci.
