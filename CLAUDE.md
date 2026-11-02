@@ -21,6 +21,9 @@
   „ve stylu solid edge nebo Inventor“. P6.4 na autorském dílu zůstává neprovedené.
   [P7.1 audit a návrh](docs/p7-1-audit-a-navrh-prostredi.md) odděluje technický
   průzkum, vizuální návrhy a dosud neprovedenou autorskou přejímku.
+- **Pokyn autora z 2. 11. 2026:** běžné ověření změn prováděj samostatně,
+  automatickými testy i ovládáním aplikace. Ruční ověření autorem nenavrhuj jako
+  výchozí další krok, pokud je můžeš provést sám.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.

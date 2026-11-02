@@ -1069,6 +1069,12 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="line") and ok
         ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="plane") and ok
         ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="vertices") and ok
+        for custom in (False, True):
+            ok = _self_test_assembly_rotation_handles(
+                assembly, lines, custom=custom, single=True) and ok
+        for kind in ("cylinder", "line", "plane", "vertices"):
+            ok = _self_test_cylinder_rotation_axis(
+                assembly, lines, kind=kind, single=True) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1999,7 +2005,7 @@ def _self_test_assembly_batch_rotation(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
+def _self_test_assembly_rotation_handles(assembly, lines, custom=False, *, single=False) -> bool:
     """Skutečné tažení prstenců, AIS náhled, přerušení a jedno přijetí po puštění."""
     import math
 
@@ -2013,8 +2019,10 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
     if not viewer.ready:
         lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
+    if single:
+        label += " jednoho dílu"
     steps = len(session._undo)
-    ids = (("nozicka_1",), ("nozicka_2",))
+    ids = (("nozicka_1",),) if single else (("nozicka_1",), ("nozicka_2",))
     try:
         assembly.show_all()
         assembly.raise_()
@@ -2029,7 +2037,8 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
         assembly.move_edits[0].setText("2,5")
         assembly.batch_rotation_angle.setText("37,5")
         assembly.set_component_transparency(ids[0], 35)
-        assembly.set_component_transparency(ids[1], 85)
+        if not single:
+            assembly.set_component_transparency(ids[1], 85)
         assembly.isolate_selected()
         viewer.set_standard_view("iso")
         assembly.component_scroll.ensureWidgetVisible(assembly.rotation_handles)
@@ -2048,11 +2057,12 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
                             for v in viewer._view.Convert(*map(float, p))))
 
         for axis in range(3):
-            if axis == 1:
+            if axis == 1 and not single:
                 assembly.set_component_visible(ids[1], False)  # kamera stále vměstnává obě
             before, result = session.assembly.to_dict(), session.result
             old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
-            center = np.array([5, -10, 2.5]) if custom else (old[ids[0]]+old[ids[1]])/2
+            center = (np.array([5, -10, 2.5]) if custom else
+                      old[ids[0]] if single else (old[ids[0]]+old[ids[1]])/2)
             assert np.allclose(viewer._move_data["anchor"], center, atol=1e-8, rtol=0)
             assert [a for a, _tip in viewer._move_tips] == [0, 1, 2]
             start, end = position(axis, 45), position(axis, 77)
@@ -2086,7 +2096,8 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
                 assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
                 assert i.part.is_valid
             assert session.result.complete and abs(session.result.volume_mm3-31309.287) < .01
-            assert [assembly._transparency_value(path) for path in ids] == [35, 85]
+            assert [assembly._transparency_value(path) for path in ids] == (
+                [35] if single else [35, 85])
             moved = session.assembly.to_dict()
             assembly.undo_action.trigger()
             assert session.assembly.to_dict() == before and len(session._undo) == steps
@@ -2163,9 +2174,10 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
                 assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
             assembly.undo_action.trigger()
             assert session.assembly.to_dict() == before
+        parts = "jeden díl, 35 %" if single else "oba díly včetně skrytého, 35/85 %"
         lines.append(f"✓ {label}: skutečné tažení XYZ, náhled bez změny modelu, "
-                     "přichycení 15° → pohyb 30°, oba díly včetně skrytého, pevný střed, "
-                     "35/85 %, kamera/okolí/objem/pole zachovány, jeden krok Zpět/Znovu, "
+                     f"přichycení 15° → pohyb 30°, {parts}, pevný střed, "
+                     "kamera/okolí/objem/pole zachovány, jeden krok Zpět/Znovu, "
                      "Esc/krok/režim/fokus/resize a 360° bez historie"
                      + (", změna bodu/volby/chybný bod ruší tah, převzetí těžiště, "
                         "počátek sestavy a číselné otočení Enterem" if custom else ""))
@@ -2329,7 +2341,7 @@ def _self_test_rotation_center_pick(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bool:
+def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder", single=False) -> bool:
     """Skutečný klik na šikmou referenci, přesná osa, číselné otočení i tažení."""
     import math
 
@@ -2347,11 +2359,13 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
     vertices = kind == "vertices"
     label = {"line": "Osa hrany", "plane": "Kolmice k ploše",
              "vertices": "Osa dvou vrcholů"}.get(kind, "Osa válce")
+    if single:
+        label += " jednoho dílu"
     if not viewer.ready:
         lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
     initial_steps = len(session._undo)
-    ids = (("nozicka_1",), ("nozicka_2",))
+    ids = (("nozicka_1",),) if single else (("nozicka_1",), ("nozicka_2",))
     try:
         # Reference se připraví přes session, nikdy se nepřepíše soubor ukázkového dílu.
         session.set_placement("nozicka_3", rotation=[30, 40, 50])
@@ -2362,7 +2376,8 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         for path in (("krabicka",), ("vicko",)):
             assembly.set_component_visible(path, False)
         assembly.set_component_transparency(ids[0], 35)
-        assembly.set_component_transparency(ids[1], 85)
+        if not single:
+            assembly.set_component_transparency(ids[1], 85)
         assembly.rotation_handles.setChecked(True)
         viewer.set_standard_view("back" if line or vertices else "iso")
         QTest.qWait(100)
@@ -2500,7 +2515,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
                 assert i.part.is_valid
             assert session.result.complete and len(session._undo) == steps+1
             assert assembly._selection == ids
-            assert [assembly._transparency_value(p) for p in ids] == [35, 85]
+            assert [assembly._transparency_value(p) for p in ids] == ([35] if single else [35, 85])
             moved = session.assembly.to_dict()
             assembly.undo_action.trigger()
             assert session.assembly.to_dict() == before and len(session._undo) == steps
@@ -2571,10 +2586,11 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         lines.append(f"✓ Obrácení směru osy ({reverse_label}): "
                      "tři skutečné kliky, druhý vrátí původní směr; bod, výběr a historie "
                      "beze změny; Enter 90° i tažení 30° kolem obrácené osy, jeden Zpět/Znovu")
+        transparency = "35 %" if single else "35/85 %"
         lines.append(f"✓ {label}: skutečný výběr reference ({reference}); "
                      f"přesný bod i směr, {refused}, výběr/plochy/vazby/kamera/pole "
                      "a historie zachovány; Enter 90° i tažení 30° kolem stejné osy, "
-                     "35/85 %, jeden krok Zpět/Znovu; Esc/tlačítko/změna osy ruší výběr")
+                     f"{transparency}, jeden krok Zpět/Znovu; Esc/tlačítko/změna osy ruší výběr")
         return True
     except Exception:  # noqa: BLE001 -- diagnostika staženého balíčku
         lines.append(f"✕ {label}:\n" + traceback.format_exc())

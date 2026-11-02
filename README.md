@@ -409,7 +409,10 @@ Při tahu vidíš náhled, puštění ověří vazby a potvrdí jeden krok Zpět
 Rozepsané číselné přírůstky se tažením nepřepisují.
 [Chování a ověření tažení](docs/p7-19-tazeni-vyberu.md).
 
-**Hromadné otáčení:** při výběru více komponent použij vpravo **Společné otočení [°]**.
+**Otáčení výběru:** při výběru jedné komponenty použij vpravo **Otočení [°]**,
+při výběru více komponent **Společné otočení [°]**. Oba panely nabízejí stejnou
+volbu osy a středu i rotační rukojeti ve 3D.
+[Ovládání a ověření jednoho dílu](docs/p7-29-otaceni-jednoho-dilu.md).
 Zvol osu **X/Y/Z celé sestavy**, zadej úhel a stiskni **Otočit vybrané** nebo Enter.
 Všechny vybrané díly, včetně skrytých a celých podsestav, se ve výchozím režimu otočí kolem
 geometrického těžiště. Střed je vážený objemem, nezávisí na materiálu a při otočení

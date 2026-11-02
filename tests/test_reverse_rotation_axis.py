@@ -160,6 +160,8 @@ def test_axis_is_required_and_disabled_handler_cannot_change_preferences(request
     pick_axis(w, kind)
     axis = w._picked_rotation_axis()
     w.select_many((("nozicka_1",),))
+    assert w.rotation_axis_reverse_button.isEnabled()
+    w.select(("krabicka",))
     assert not w.rotation_axis_reverse_button.isEnabled()
     w._reverse_rotation_axis()
     assert w._picked_rotation_axis() == axis
