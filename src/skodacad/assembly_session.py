@@ -12,6 +12,7 @@ polohy změní při sestavení (změněný soubor dílu), sestava je neuložená
 
 from __future__ import annotations
 
+import ast
 import copy
 import math
 import os
@@ -590,6 +591,109 @@ class AssemblySession:
 
         return self._change(mutate, validate=validate)
 
+    def _rotation_selection(self, component_ids: Sequence[str]) -> tuple[list[Component],
+                                                                       AssemblyResult]:
+        if (isinstance(component_ids, (str, bytes)) or not isinstance(component_ids, Sequence)
+                or not component_ids or any(not isinstance(cid, str) or not cid
+                                            for cid in component_ids)):
+            raise AssemblyError("Vyber komponenty této sestavy; vnitřní díly podsestav "
+                                "otáčej výběrem celé nadřazené podsestavy.")
+        components = [self._require().component(cid) for cid in dict.fromkeys(component_ids)]
+        if self.result is None or not self.result.complete:
+            raise AssemblyError("Sestava ještě není úplně připravená. Dokonči přepočet "
+                                "a oprav díly nebo vazby; pak otočení zopakuj.")
+        return components, self.result
+
+    def rotation_center(self, component_ids: Sequence[str]) -> tuple[float, float, float]:
+        """Geometrické těžiště všech vybraných kopií, vážené objemem, bez vlivu materiálu.
+
+        Včetně všech potomků podsestav; filtry pohledu sem nevstupují. Při tuhém
+        otočení se tento bod nemění, na rozdíl od středu osově zarovnané obálky.
+        """
+        components, result = self._rotation_selection(component_ids)
+        chosen = {c.id for c in components}
+        instances = [i for i in result.instances if i.ids[0] in chosen]
+        if ({i.ids[0] for i in instances} != chosen
+                or any(not math.isfinite(i.volume_mm3) or i.volume_mm3 <= 0 for i in instances)):
+            raise AssemblyError("Vybrané komponenty nemají platná objemová tělesa "
+                                "pro výpočet společného středu.")
+        largest = max(i.volume_mm3 for i in instances)
+        total = math.fsum(i.volume_mm3/largest for i in instances)
+        points = [(tuple(i.part.center()), i.volume_mm3/largest/total) for i in instances]
+        if any(not all(math.isfinite(v) for v in p) for p, _weight in points):
+            raise AssemblyError("Těžiště některého dílu není konečné číslo; obnov sestavu.")
+        center = tuple(math.fsum(p[axis]*weight for p, weight in points) for axis in range(3))
+        if not all(math.isfinite(v) for v in center):
+            raise AssemblyError("Společný střed není konečné číslo; zkontroluj polohy dílů.")
+        return center
+
+    def turn_many_around(self, component_ids: Sequence[str], axis: str,
+                         degrees: Any) -> AssemblyResult:
+        """Jeden tuhý pohyb kolem geometrického těžiště výběru v osách celé sestavy.
+
+        Střed a úhel jsou snímek v okamžiku příkazu. Výrazy poloh se transformují
+        stejnou afinní mapou; parametrická natočení lze zachovat kolem osy Z.
+        """
+        import numpy as np
+
+        components, result = self._rotation_selection(component_ids)
+        axis_matrix(axis, 0.)
+        fixed = [c.label for c in components if c.fixed]
+        if fixed:
+            raise AssemblyError("Výběr obsahuje pevné komponenty: " + ", ".join(fixed)
+                                + ". Odeber je z výběru nebo zruš volbu Pevná. "
+                                "Žádná komponenta se neotočila.")
+        try:
+            angle = evaluate(degrees, result.parameters)
+        except ExpressionError as exc:
+            raise AssemblyError(f"Společné otočení: {exc}") from None
+        except OverflowError:
+            raise AssemblyError("Úhel je příliš velký; zadej menší číslo.") from None
+        if not math.isfinite(angle):
+            raise AssemblyError("Úhel musí být konečné číslo ve stupních.")
+        angle = math.remainder(angle, 360.)
+        if angle == 0:
+            return result
+        angles = {c.id: (None if axis == "z" else self._numbers(c.rotation, c, "otočení"))
+                  for c in components}
+        chosen = {c.id for c in components}
+        center = np.array(self.rotation_center([c.id for c in components]))
+        transform = np.array(axis_matrix(axis, angle))
+        before = {c.id: self._pose(c.id) for c in self._require().components}
+        expected = {cid: (transform @ r, center + transform @ (p-center)) if cid in chosen
+                    else (r, p) for cid, (r, p) in before.items()}
+        if any(not np.isfinite(p).all() for _r, p in expected.values()):
+            raise AssemblyError("Výsledná poloha není konečné číslo; zkontroluj polohy dílů.")
+        sources = {s.ids: s.fingerprint for s in result.statuses}
+
+        def mutate(candidate: Assembly) -> None:
+            for cid in chosen:
+                component = candidate.component(cid)
+                component.position = _rotated_position(component.position, transform, center)
+                component.rotation = ([*component.rotation[:2],
+                                       _offset_value(component.rotation[2], angle)] if axis == "z"
+                                      else turned(angles[cid], axis, angle))
+
+        def validate(candidate: Assembly, built: AssemblyResult) -> None:
+            if not built.complete:
+                raise AssemblyError("Po otočení by sestava nebyla úplná. Obnov sestavu "
+                                    "a oprav díly nebo vazby; otočení se nepřijalo.")
+            if {s.ids: s.fingerprint for s in built.statuses} != sources:
+                raise AssemblyError("Během otočení se změnil zdroj dílu nebo podsestavy. "
+                                    "Obnov sestavu a otočení zopakuj; změna se nepřijala.")
+            for component in candidate.components:
+                rotation, position = expected[component.id]
+                actual = [evaluate(v, built.parameters) for v in component.position]
+                actual_angles = [evaluate(v, built.parameters) for v in component.rotation]
+                if (not np.allclose(actual, position, atol=1e-6, rtol=0)
+                        or not np.allclose(rotation_matrix(actual_angles), rotation,
+                                           atol=1e-10, rtol=0)):
+                    raise AssemblyError("Vazby nedovolují přesně toto společné otočení "
+                                        "bez pohybu dalších dílů. Uprav osu, úhel, výběr "
+                                        "nebo vazby. Žádná komponenta se neotočila.")
+
+        return self._change(mutate, validate=validate)
+
     def turn(self, component_id: str, axis: str, degrees: float) -> AssemblyResult:
         """Otočí komponentu kolem osy sestavy vedené jejím počátkem (tlačítka ±90°);
         posun zůstane."""
@@ -692,6 +796,69 @@ class AssemblySession:
         component = self._require().component(component_id)
         file, _warning = locate(self._require_path().parent, component.path)
         return file
+
+
+def _rotated_position(values: Sequence[Any], matrix: Any, center: Any) -> list[Any]:
+    """Afinní kombinace původních výrazů; slučování členů brání růstu po dalších otočeních."""
+    def number(node):
+        # Pojmenované členy ponechat ve výrazu, který se vyhodnotí v kontextu sestavy.
+        if any(isinstance(child, ast.Name) for child in ast.walk(node)):
+            return None
+        try:
+            return evaluate(ast.unparse(node), {})
+        except (ExpressionError, OverflowError):
+            return None
+
+    def collect(node, scale, constants, terms):
+        if scale == 0:
+            return
+        value = number(node)
+        if value is not None:
+            constants.append(scale*value)
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            collect(node.operand, scale*(-1 if isinstance(node.op, ast.USub) else 1),
+                    constants, terms)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+            collect(node.left, scale, constants, terms)
+            collect(node.right, scale*(-1 if isinstance(node.op, ast.Sub) else 1), constants, terms)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
+            left, right = number(node.left), number(node.right)
+            if right is not None and (isinstance(node.op, ast.Mult) or right != 0):
+                factor = right if isinstance(node.op, ast.Mult) else 1/right
+                collect(node.left, scale*factor, constants, terms)
+            elif left is not None and isinstance(node.op, ast.Mult):
+                collect(node.right, scale*left, constants, terms)
+            else:
+                terms.setdefault(ast.unparse(node), []).append(scale)
+        else:
+            terms.setdefault(ast.unparse(node), []).append(scale)
+
+    output = []
+    for axis, row in enumerate(matrix):
+        if all(v == (1 if j == axis else 0) for j, v in enumerate(row)):
+            output.append(values[axis])
+            continue
+        constants = [float(center[axis]), *(-float(v*c) for v, c in zip(row, center, strict=True))]
+        terms = {}
+        for coefficient, value in zip(row, values, strict=True):
+            if isinstance(value, str):
+                collect(ast.parse(value, mode="eval").body, float(coefficient), constants, terms)
+            else:
+                constants.append(float(coefficient)*value)
+        constant = tidy(math.fsum(constants))
+        parts = []
+        for atom, amounts in sorted(terms.items()):
+            coefficient = math.fsum(amounts)
+            if coefficient:
+                parts.append(f"({atom})" if coefficient == 1 else f"-({atom})"
+                             if coefficient == -1 else f"({coefficient!r}) * ({atom})")
+        if not parts:
+            output.append(constant)
+        else:
+            if constant:
+                parts.append(repr(constant))
+            output.append(" + ".join(parts))
+    return output
 
 
 def _offset_value(value: Any, amount: float) -> Any:

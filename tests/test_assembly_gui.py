@@ -796,6 +796,112 @@ def test_drag_preferences_survive_views_selection_history_without_changing_recip
     assert w.session.assembly.to_dict() == before and not w.session.can_undo
 
 
+def test_batch_rotation_enter_uses_whole_selection_center_and_preserves_view_fields(opened, app):
+    import numpy as np
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    old = {i.ids: np.array(tuple(i.part.center())) for i in w.session.result.instances}
+    center = (old[ids[0]]+old[ids[1]])/2  # stejné nožičky, nikoli průměr počátků sestavy
+    assert w.batch_rotation_box.isVisibleTo(w) and w.batch_rotation_button.isEnabled()
+    assert w.batch_rotation_axis.currentText() == "Z"
+    w.move_edits[0].setText("2,5")
+    w.isolate_selected()
+    w.set_component_visible(ids[1], False)
+    w.set_component_transparency(ids[0], 35)
+    w.batch_rotation_angle.setText("90")
+    before = w.session.assembly.to_dict()
+    w.show()
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_angle)
+    w.batch_rotation_angle.setFocus()
+    app.processEvents()
+    QTest.keyClick(w.batch_rotation_angle, Qt.Key.Key_Return)
+    assert len(w.session._undo) == 1 and w._selection == ids
+    assert w._isolated == ids and w._visibility == {ids[1]: False}
+    assert w.move_edits[0].text() == "2,5" and w.batch_rotation_angle.text() == "90"
+    assert w._transparency_value(ids[0]) == 35 and not w._picks
+    for instance in w.session.result.instances:
+        dx, dy, dz = old[instance.ids]-center
+        expected = center+np.array([-dy, dx, dz])
+        assert tuple(instance.part.center()) == pytest.approx(
+            expected if instance.ids in ids else old[instance.ids], abs=1e-6)
+    assert w.session.rotation_center([p[0] for p in ids]) == pytest.approx(center, abs=1e-7)
+    w.undo_action.trigger()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    assert w._selection == ids and w.move_edits[0].text() == "2,5"
+    w.redo_action.trigger()
+    assert len(w.session._undo) == 1 and w._selection == ids
+
+
+@pytest.mark.parametrize("text", ["", "neznamy", "1/0"])
+def test_batch_rotation_bad_angle_keeps_entire_state_and_input(opened, dialogs, text):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.batch_rotation_angle.setText(text)
+    w.batch_rotation_button.click()
+    assert dialogs["shown"][-1][0] == "Výběr nejde otočit"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and not w.session.dirty
+    assert w.batch_rotation_angle.text() == text
+
+
+def test_batch_rotation_explains_fixed_nested_and_expressions(opened, nested_isolation):
+    w = opened
+    w.select_many((("krabicka",), ("vicko",)))
+    assert not w.batch_rotation_button.isEnabled()
+    assert "Pevné komponenty" in w.batch_rotation_note.text()
+    nested_isolation.select_many((("a", "deska"), ("b", "deska")))
+    assert not nested_isolation.batch_rotation_button.isEnabled()
+    assert "nadřazené podsestavy" in nested_isolation.batch_rotation_note.text()
+    w.session.set_placement("nozicka_1", rotation=["0", "0", "0"])
+    w._refresh()
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    assert w.batch_rotation_button.isEnabled()
+    w.batch_rotation_axis.setCurrentText("X")
+    assert not w.batch_rotation_button.isEnabled()
+    assert "výrazem" in w.batch_rotation_note.text()
+    w.batch_rotation_axis.setCurrentText("Z")
+    assert w.batch_rotation_button.isEnabled()
+    w.select(("nozicka_1",))
+    assert not w.batch_rotation_box.isVisibleTo(w)
+
+
+def test_batch_rotation_constraint_failure_is_atomic_and_keeps_selection(constrained, dialogs):
+    w = constrained
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.batch_rotation_axis.setCurrentText("X")
+    w.batch_rotation_angle.setText("90")
+    w.batch_rotation_button.click()
+    assert dialogs["shown"][-1][0] == "Výběr nejde otočit"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and w._selection == ids
+    assert w.batch_rotation_angle.text() == "90"
+
+
+def test_batch_rotation_full_turn_and_views_keep_redo_and_preferences(opened):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.batch_rotation_button.click()
+    w.undo_action.trigger()
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.batch_rotation_axis.setCurrentText("Y")
+    w.batch_rotation_angle.setText("360")
+    w.toggle_selected_visibility()
+    w.toggle_selected_transparency()
+    w.show_all()
+    w.batch_rotation_button.click()
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and w.session.can_redo
+    w.select_many((("nozicka_3",), ("nozicka_4",)))
+    assert w.batch_rotation_axis.currentText() == "Y" and w.batch_rotation_angle.text() == "360"
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result

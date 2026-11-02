@@ -1061,6 +1061,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_multi_selection(assembly, lines) and ok
         ok = _self_test_assembly_batch_move(assembly, lines) and ok
         ok = _self_test_assembly_selection_drag(assembly, lines) and ok
+        ok = _self_test_assembly_batch_rotation(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1888,6 +1889,104 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
         while len(session._undo) > steps:
             session.undo()
         assembly.move_step.setValue(1.)
+        assembly._refresh()
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_batch_rotation(assembly, lines) -> bool:
+    """Nativní osa/Enter; jeden tuhý pohyb včetně skrytého dílu, žádné modelování v GUI."""
+    import math
+
+    import numpy as np
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Společné otočení sestavy: chybí grafický prohlížeč")
+        return True
+    steps = len(session._undo)
+    ids = (("nozicka_1",), ("nozicka_2",))
+    try:
+        assembly.show_all()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        assembly.select_many((("krabicka",), ("vicko",)))
+        assert not assembly.batch_rotation_button.isEnabled()
+        assert "Pevné komponenty" in assembly.batch_rotation_note.text()
+        assembly.select_many(ids)
+        assembly.move_edits[0].setText("2,5")
+        assembly.set_component_transparency(ids[0], 35)
+        assembly.set_component_transparency(ids[1], 85)
+        assembly.isolate_selected()
+        assembly.set_component_visible(ids[1], False)
+        assert len(assembly.visible_instances()) == 1
+        for axis in range(3):
+            original = session.assembly.to_dict()
+            old = {i.ids: np.array(tuple(i.part.center())) for i in session.result.instances}
+            # Nožičky mají stejné objemy; střed zahrnuje také skrytou druhou nožičku.
+            center = (old[ids[0]]+old[ids[1]])/2
+            direction, scale = viewer._view.Proj(), viewer._view.Scale()
+            combo = assembly.batch_rotation_axis
+            assembly.component_scroll.ensureWidgetVisible(combo)
+            combo.setFocus()
+            QTest.keyClick(combo, Qt.Key.Key_Home)
+            for _ in range(axis):
+                QTest.keyClick(combo, Qt.Key.Key_Down)
+            assert combo.currentText() == "XYZ"[axis]
+            field = assembly.batch_rotation_angle
+            assembly.component_scroll.ensureWidgetVisible(field)
+            field.setFocus()
+            field.selectAll()
+            QTest.keyClicks(field, "37,5")
+            QTest.keyClick(field, Qt.Key.Key_Return)
+            QTest.qWait(30)
+            assert len(session._undo) == steps+1 and assembly._selection == ids
+            assert assembly._isolated == ids and len(assembly.visible_instances()) == 1
+            assert assembly.move_edits[0].text() == "2,5" and field.text() == "37,5"
+            assert [assembly._transparency_value(path) for path in ids] == [35, 85]
+            assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+            e = np.eye(3)[axis]
+            x, y, z = e
+            cross = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+            t = math.radians(37.5)
+            q = np.eye(3)*math.cos(t)+(1-math.cos(t))*np.outer(e, e)+math.sin(t)*cross
+            for i in session.result.instances:
+                expected = center+q @ (old[i.ids]-center) if i.ids in ids else old[i.ids]
+                assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
+                assert i.part.is_valid
+            assert np.allclose(session.rotation_center([p[0] for p in ids]), center, atol=1e-7)
+            assert session.result.complete and abs(session.result.volume_mm3-31309.287) < .01
+            assert all(isinstance(v, str) for cid, in ids
+                       for v in session.assembly.component(cid).position)
+            moved = session.assembly.to_dict()
+            assembly.undo_action.trigger()
+            assert session.assembly.to_dict() == original and len(session._undo) == steps
+            assembly.redo_action.trigger()
+            assert session.assembly.to_dict() == moved and len(session._undo) == steps+1
+            assembly.undo_action.trigger()
+
+        before, result, redo = session.assembly.to_dict(), session.result, list(session._redo)
+        assembly.batch_rotation_angle.setText("360")
+        assembly.batch_rotation_button.click()
+        QTest.qWait(30)
+        assert session.assembly.to_dict() == before and session.result is result
+        assert len(session._undo) == steps and session._redo == redo
+        lines.append("✓ Společné otočení sestavy: nativní osa/Enter 37,5° XYZ, "
+                     "tuhý pohyb obou dílů včetně skrytého, neměnný společný střed, "
+                     "pevný díl blokován, 35/85 %, kamera/okolní díly/parametry/objem zachovány, "
+                     "jeden krok Zpět/Znovu, 360° bez historie")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Společné otočení sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        while len(session._undo) > steps:
+            session.undo()
+        assembly.batch_rotation_axis.setCurrentText("Z")
+        assembly.batch_rotation_angle.setText("90")
         assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()
