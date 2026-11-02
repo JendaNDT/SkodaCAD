@@ -1025,6 +1025,141 @@ def test_rotation_drag_constraint_failure_keeps_entire_model_and_fields(constrai
     assert not w.session.can_undo and w.batch_rotation_angle.text() == "12"
 
 
+@pytest.mark.parametrize("axis", "xyz")
+@pytest.mark.parametrize("mouse", [False, True])
+def test_custom_rotation_center_is_shared_by_button_and_handles(opened, app, axis, mouse):
+    import numpy as np
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from test_assembly_batch_rotation import rodrigues
+
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    w.isolate_selected()
+    w.set_component_visible(ids[1], False)
+    w.set_component_transparency(ids[0], 35)
+    w.move_edits[0].setText("2,5")
+    w.batch_rotation_angle.setText("30")
+    w.batch_rotation_axis.setCurrentText(axis.upper())
+    w.rotation_center_mode.setCurrentText("Vlastní bod")
+    for field, value in zip(w.rotation_center_edits, ("12,5", "-31", "18"), strict=True):
+        field.setText(value)
+    center = np.array([12.5, -31, 18])
+    w.rotation_handles.click()
+    assert w.viewer.move_selection["anchor"] == tuple(center)
+    before, result = w.session.assembly.to_dict(), w.session.result
+    old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
+    if mouse:
+        w.viewer.selection_rotated.emit({"token": w.viewer.move_selection["token"],
+                                         "axis": axis, "angle": 30})
+    else:
+        w.show()
+        w.component_scroll.ensureWidgetVisible(w.rotation_center_edits[-1])
+        w.rotation_center_edits[-1].setFocus()
+        app.processEvents()
+        QTest.keyClick(w.rotation_center_edits[-1], Qt.Key.Key_Return)
+    for i in w.session.result.instances:
+        expected = center+rodrigues(axis, 30) @ (old[i.ids]-center) if i.ids in ids else old[i.ids]
+        assert tuple(i.part.center()) == pytest.approx(expected, abs=1e-6)
+        assert i.part.is_valid
+    assert w.session.result.volume_mm3 == pytest.approx(result.volume_mm3)
+    assert w._selection == ids and w._isolated == ids
+    assert ids[1] not in {i.ids for i in w.visible_instances()}
+    assert w._transparency_value(ids[0]) == 35 and w.move_edits[0].text() == "2,5"
+    assert [f.text() for f in w.rotation_center_edits] == ["12,5", "-31", "18"]
+    assert w.viewer.move_selection["anchor"] == tuple(center)
+    assert len(w.session._undo) == 1
+    w.undo_action.trigger()
+    assert not w.session.can_undo and w.session.assembly.to_dict() == before
+    w.redo_action.trigger()
+    assert len(w.session._undo) == 1 and w.rotation_center_mode.currentText() == "Vlastní bod"
+
+
+def test_custom_center_expression_refreshes_with_parameters_without_editing_text(opened):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.rotation_center_mode.setCurrentText("Vlastní bod")
+    for field, text in zip(w.rotation_center_edits, ("x0/2", "-y0", "h"), strict=True):
+        field.setText(text)
+    w.rotation_handles.click()
+    assert w.viewer.move_selection["anchor"] == (16, -17, 3)
+    w.session.set_parameters({**w.session.assembly.parameters, "x0": 40})
+    w._refresh()
+    assert w.viewer.move_selection["anchor"] == (20, -17, 3)
+    assert [f.text() for f in w.rotation_center_edits] == ["x0/2", "-y0", "h"]
+
+
+def test_rotation_center_mode_copy_and_preferences_are_view_only(opened):
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    w.batch_rotation_button.click()
+    w.undo_action.trigger()
+    before, result, redo = w.session.assembly.to_dict(), w.session.result, list(w.session._redo)
+    w.rotation_handles.click()
+    w.rotation_center_mode.setCurrentText("Počátek sestavy")
+    assert w.viewer.move_selection["anchor"] == (0, 0, 0)
+    assert not w.rotation_point_box.isVisibleTo(w)
+    w.rotation_center_mode.setCurrentText("Vlastní bod")
+    w.set_component_visible(ids[1], False)
+    expected = w.session.rotation_center([p[0] for p in ids])
+    w.rotation_center_copy.click()
+    assert tuple(float(f.text()) for f in w.rotation_center_edits) == expected
+    assert w.viewer.move_selection["anchor"] == expected
+    w.select_many((("nozicka_3",), ("nozicka_4",)))
+    assert tuple(float(f.text()) for f in w.rotation_center_edits) == expected
+    w.toggle_selected_transparency()
+    w.show_all()
+    assert w.rotation_center_mode.currentText() == "Vlastní bod"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert w.session._redo == redo and not w.session.can_undo
+    w.rotation_center_mode.setCurrentText("Střed výběru")
+    assert w.viewer.move_selection["anchor"] == w.session.rotation_center(
+        ["nozicka_3", "nozicka_4"])
+
+
+@pytest.mark.parametrize("value", ["", "1/0", "chybi", "nan", "1e400"])
+def test_invalid_custom_center_disables_rotation_but_can_be_corrected(opened, value):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.rotation_handles.click()
+    w.rotation_center_mode.setCurrentText("Vlastní bod")
+    w.rotation_center_edits[1].setText(value)
+    assert not w.batch_rotation_button.isEnabled() and not w.rotation_handles.isEnabled()
+    assert w.viewer.move_selection is None and w.batch_rotation_note.text()
+    assert w.rotation_center_edits[1].isEnabled() and w.rotation_center_copy.isEnabled()
+    w.batch_rotation_button.click()
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo
+    w.rotation_center_copy.click()
+    assert w.batch_rotation_button.isEnabled() and w.rotation_handles.isEnabled()
+    assert w.viewer.move_selection is not None
+
+
+@pytest.mark.parametrize("change", ["field", "mode", "copy", "away_back"])
+def test_center_change_rejects_stale_mouse_rotation_even_if_returned(opened, change):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.rotation_center_mode.setCurrentText("Vlastní bod")
+    w.rotation_handles.click()
+    token = w.viewer.move_selection["token"]
+    if change == "mode":
+        w.rotation_center_mode.setCurrentText("Počátek sestavy")
+    elif change == "copy":
+        w.rotation_center_copy.click()
+    else:
+        w.rotation_center_edits[0].setText("1")
+        if change == "away_back":
+            w.rotation_center_edits[0].setText("0")
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.viewer.selection_rotated.emit({"token": token, "axis": "z", "angle": 30})
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and "zrušeno" in w.statusBar().currentMessage()
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result

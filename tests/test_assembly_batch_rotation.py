@@ -218,7 +218,8 @@ def test_existing_orientation_near_gimbal_keeps_full_rotation(group, pitch):
     assert s._pose("a")[0] == pytest.approx(rodrigues("y", .000001) @ old, abs=1e-10)
 
 
-def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path):
+@pytest.mark.parametrize("point", [None, (12.5, -31, 18)])
+def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path, point):
     part = write(tmp_path / "jinde/kvadr.json", part_data())
     sub = write(tmp_path / "moduly/modul.json", assembly_data([
         component("prvni", "../jinde/kvadr.json", fixed=True),
@@ -231,9 +232,9 @@ def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path):
     s = AssemblySession()
     s.open(path)
     old = {i.ids: vertices(i.part) for i in s.result.instances}
-    center = np.array(s.rotation_center(["a", "b"]))
+    center = np.array(s.rotation_center(["a", "b"], point))
     q = rodrigues("y", 37.5)
-    s.turn_many_around(["a", "b"], "y", 37.5)
+    s.turn_many_around(["a", "b"], "y", 37.5, center=point)
     for i in s.result.instances:
         expected = ((q @ (old[i.ids]-center).T).T+center if i.ids[0] != "c" else old[i.ids])
         assert all(min(np.linalg.norm(expected-p, axis=1)) < 1e-6 for p in vertices(i.part))

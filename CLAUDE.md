@@ -1347,6 +1347,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   a potvrzeného pohybu. Změna kroku/režimu a všechny starší důvody přerušení tah ruší.
   Popisky mimo všechny prstence, nikoli pod jiným obloukem či kuličkou.
   [Evidence](docs/p7-21-rotacni-rukojeti.md).
+- P7.22: `rotation_center(ids, center=None)` vyhodnotí vlastní XYZ v parametrech
+  sestavy, nebo zachová objemové těžiště. `turn_many_around(..., center=...)` používá
+  tento snímek pro stejnou afinní mapu a atomickou validaci jako dříve. Chybný vlastní
+  bod odmítnout i pro celou otáčku; žádné částečné přijetí nebo změna historie.
+  GUI Střed výběru / Počátek sestavy / Vlastní bod sdílí střed pro tlačítko i prstence.
+  Souřadnice jsou preference okna; při pohledu/výběru/Zpět je nepřepisovat ani ukládat
+  do receptu. Převzetí těžiště zachová plnou číselnou přesnost. Text/mód/převzetí bodu
+  ruší tah, revize středu je součástí rotačního tokenu (i změna tam a zpět zneplatní
+  starý návrh). Neplatné pole vysvětlit v panelu a vypnout otočení, ne editaci opravy.
+  Nativní self-test táhne XYZ kolem vlastního bodu, ruší změnou bodu i volby a ověřuje
+  také Enterem otočení kolem počátku sestavy. [Evidence](docs/p7-22-volitelny-stred-otaceni.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

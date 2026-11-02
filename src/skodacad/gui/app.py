@@ -1063,6 +1063,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_selection_drag(assembly, lines) and ok
         ok = _self_test_assembly_batch_rotation(assembly, lines) and ok
         ok = _self_test_assembly_rotation_handles(assembly, lines) and ok
+        ok = _self_test_assembly_rotation_handles(assembly, lines, custom=True) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1993,7 +1994,7 @@ def _self_test_assembly_batch_rotation(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
+def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
     """Skutečné tažení prstenců, AIS náhled, přerušení a jedno přijetí po puštění."""
     import math
 
@@ -2003,8 +2004,9 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
     from PySide6.QtTest import QTest
 
     viewer, session = assembly.viewer, assembly.session
+    label = "Vlastní střed otáčení" if custom else "Rotační rukojeti"
     if not viewer.ready:
-        lines.append("! Rotační rukojeti: chybí grafický prohlížeč")
+        lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
     steps = len(session._undo)
     ids = (("nozicka_1",), ("nozicka_2",))
@@ -2014,6 +2016,11 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
         assembly.activateWindow()
         QTest.qWait(100)
         assembly.select_many(ids)
+        assembly.rotation_center_mode.setCurrentIndex(2 if custom else 0)
+        if custom:
+            for field, text in zip(assembly.rotation_center_edits, ("5", "-10", "2,5"),
+                                   strict=True):
+                field.setText(text)
         assembly.move_edits[0].setText("2,5")
         assembly.batch_rotation_angle.setText("37,5")
         assembly.set_component_transparency(ids[0], 35)
@@ -2040,7 +2047,8 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
                 assembly.set_component_visible(ids[1], False)  # kamera stále vměstnává obě
             before, result = session.assembly.to_dict(), session.result
             old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
-            center = (old[ids[0]]+old[ids[1]])/2
+            center = np.array([5, -10, 2.5]) if custom else (old[ids[0]]+old[ids[1]])/2
+            assert np.allclose(viewer._move_data["anchor"], center, atol=1e-8, rtol=0)
             assert [a for a, _tip in viewer._move_tips] == [0, 1, 2]
             start, end = position(axis, 45), position(axis, 77)
             direction, scale = viewer._view.Proj(), viewer._view.Scale()
@@ -2082,7 +2090,8 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
             assembly.undo_action.trigger()
 
         before, result, redo = session.assembly.to_dict(), session.result, list(session._redo)
-        for cause in ("escape", "step", "mode", "focus", "resize"):
+        causes = ("escape", "step", "mode", "focus", "resize")
+        for cause in (*causes, *(("center", "center_mode", "invalid_center") if custom else ())):
             start, end = position(2, 45), position(2, 77)
             QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
             QTest.qWait(30)
@@ -2098,6 +2107,13 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
             elif cause == "focus":
                 assembly.component_scroll.ensureWidgetVisible(assembly.batch_rotation_angle)
                 assembly.batch_rotation_angle.setFocus()
+            elif cause in ("center", "invalid_center"):
+                assembly.rotation_center_edits[0].setText("6" if cause == "center" else "")
+                if cause == "invalid_center":
+                    assert not assembly.batch_rotation_button.isEnabled()
+                    assert viewer._move_data is None
+            elif cause == "center_mode":
+                assembly.rotation_center_mode.setCurrentIndex(1)
             else:
                 assembly.resize(assembly.width()+1, assembly.height()+1)
             QTest.qWait(30)
@@ -2105,6 +2121,9 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
             assert viewer._selection_drag is None and session.assembly.to_dict() == before
             assert session.result is result and len(session._undo) == steps
             assert session._redo == redo
+            if custom:
+                assembly.rotation_center_mode.setCurrentIndex(2)
+                assembly.rotation_center_edits[0].setText("5")
             assembly.rotation_handles.setChecked(True)
 
         assembly.rotation_step.setValue(15.)
@@ -2117,13 +2136,37 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
         QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
         assert viewer._selection_drag is None and session.assembly.to_dict() == before
         assert len(session._undo) == steps and session._redo == redo
-        lines.append("✓ Rotační rukojeti: skutečné tažení XYZ, náhled bez změny modelu, "
+        if custom:
+            assembly.rotation_center_copy.click()
+            expected = session.rotation_center([p[0] for p in ids])
+            assert viewer._move_data["anchor"] == expected
+            assert session.assembly.to_dict() == before and session._redo == redo
+            assembly.rotation_center_mode.setCurrentIndex(1)
+            assert viewer._move_data["anchor"] == (0, 0, 0)
+            assembly.batch_rotation_axis.setCurrentText("Z")
+            assembly.batch_rotation_angle.setText("90")
+            old = {i.ids: tuple(i.part.center()) for i in session.result.instances}
+            assembly.component_scroll.ensureWidgetVisible(assembly.batch_rotation_angle)
+            assembly.batch_rotation_angle.setFocus()
+            QTest.qWait(30)
+            QTest.keyClick(assembly.batch_rotation_angle, Qt.Key.Key_Return)
+            QTest.qWait(30)
+            assert len(session._undo) == steps+1
+            for i in session.result.instances:
+                x, y, z = old[i.ids]
+                expected = (-y, x, z) if i.ids in ids else (x, y, z)
+                assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
+            assembly.undo_action.trigger()
+            assert session.assembly.to_dict() == before
+        lines.append(f"✓ {label}: skutečné tažení XYZ, náhled bez změny modelu, "
                      "přichycení 15° → pohyb 30°, oba díly včetně skrytého, pevný střed, "
                      "35/85 %, kamera/okolí/objem/pole zachovány, jeden krok Zpět/Znovu, "
-                     "Esc/krok/režim/fokus/resize a 360° bez historie")
+                     "Esc/krok/režim/fokus/resize a 360° bez historie"
+                     + (", změna bodu/volby/chybný bod ruší tah, převzetí těžiště, "
+                        "počátek sestavy a číselné otočení Enterem" if custom else ""))
         return True
     except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
-        lines.append("✕ Rotační rukojeti:\n" + traceback.format_exc())
+        lines.append(f"✕ {label}:\n" + traceback.format_exc())
         return False
     finally:
         viewer.cancel_selection_drag()
@@ -2132,6 +2175,7 @@ def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
         assembly.rotation_handles.setChecked(False)
         assembly.move_handles.setChecked(True)
         assembly.rotation_step.setValue(15.)
+        assembly.rotation_center_mode.setCurrentIndex(0)
         assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()

@@ -604,13 +604,32 @@ class AssemblySession:
                                 "a oprav díly nebo vazby; pak otočení zopakuj.")
         return components, self.result
 
-    def rotation_center(self, component_ids: Sequence[str]) -> tuple[float, float, float]:
-        """Geometrické těžiště všech vybraných kopií, vážené objemem, bez vlivu materiálu.
+    def rotation_center(self, component_ids: Sequence[str],
+                        center: Sequence[Any] | None = None) -> tuple[float, float, float]:
+        """Ověřený vlastní bod, nebo geometrické těžiště všech vybraných kopií.
 
-        Včetně všech potomků podsestav; filtry pohledu sem nevstupují. Při tuhém
-        otočení se tento bod nemění, na rozdíl od středu osově zarovnané obálky.
+        Souřadnice vlastního bodu jsou v osách celé sestavy, výrazy se vyhodnotí
+        v jejích parametrech. Bez vlastního bodu zahrnuje všechny potomky podsestav;
+        objemové váhy nezávisí na materiálu ani filtrech pohledu.
         """
         components, result = self._rotation_selection(component_ids)
+        if center is not None:
+            if (isinstance(center, (str, bytes)) or not isinstance(center, Sequence)
+                    or len(center) != 3):
+                raise AssemblyError("Střed otáčení musí mít tři souřadnice X, Y, Z v mm.")
+            point = []
+            for axis, value in zip("XYZ", center, strict=True):
+                try:
+                    number = evaluate(value, result.parameters)
+                except ExpressionError as exc:
+                    raise AssemblyError(f"Střed otáčení {axis}: {exc}") from None
+                except OverflowError:
+                    raise AssemblyError(f"Střed otáčení {axis} je příliš velký; "
+                                        "zadej menší číslo.") from None
+                if not math.isfinite(number):
+                    raise AssemblyError(f"Střed otáčení {axis} musí být konečné číslo v mm.")
+                point.append(number)
+            return tuple(point)
         chosen = {c.id for c in components}
         instances = [i for i in result.instances if i.ids[0] in chosen]
         if ({i.ids[0] for i in instances} != chosen
@@ -628,8 +647,8 @@ class AssemblySession:
         return center
 
     def turn_many_around(self, component_ids: Sequence[str], axis: str,
-                         degrees: Any) -> AssemblyResult:
-        """Jeden tuhý pohyb kolem geometrického těžiště výběru v osách celé sestavy.
+                         degrees: Any, *, center: Sequence[Any] | None = None) -> AssemblyResult:
+        """Jeden tuhý pohyb kolem vlastního bodu nebo těžiště, v osách celé sestavy.
 
         Střed a úhel jsou snímek v okamžiku příkazu. Výrazy poloh se transformují
         stejnou afinní mapou; parametrická natočení lze zachovat kolem osy Z.
@@ -651,13 +670,14 @@ class AssemblySession:
             raise AssemblyError("Úhel je příliš velký; zadej menší číslo.") from None
         if not math.isfinite(angle):
             raise AssemblyError("Úhel musí být konečné číslo ve stupních.")
+        pivot = self.rotation_center([c.id for c in components], center)
         angle = math.remainder(angle, 360.)
         if angle == 0:
             return result
         angles = {c.id: (None if axis == "z" else self._numbers(c.rotation, c, "otočení"))
                   for c in components}
         chosen = {c.id for c in components}
-        center = np.array(self.rotation_center([c.id for c in components]))
+        center = np.array(pivot)
         transform = np.array(axis_matrix(axis, angle))
         before = {c.id: self._pose(c.id) for c in self._require().components}
         expected = {cid: (transform @ r, center + transform @ (p-center)) if cid in chosen
