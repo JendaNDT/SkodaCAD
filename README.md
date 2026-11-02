@@ -465,7 +465,7 @@ ukazuje kladný směr, záporný úhel ho obrací. Výběr dílů zůstává, sa
 nemění model ani historii. Osa hrany a osa válce se pamatují zvlášť v otevřeném okně;
 po změně reference je převezmi znovu. [Chování a ověření osy hrany](docs/p7-25-osa-prime-hrany.md).
 
-**Obrátit směr osy:** po převzetí osy válce, přímé hrany nebo kolmice k ploše stiskni toto tlačítko.
+**Obrátit směr osy:** po převzetí osy válce, přímé hrany, kolmice k ploše nebo dvou vrcholů stiskni toto tlačítko.
 Šipka i kladný směr číselného otočení a tažení se obrátí; bod osy, úhel a krok zůstanou.
 Díly se při obrácení nepohnou a historie Zpět/Znovu se nezmění. Druhý stisk vrátí původní
 směr. Každý druh osy si pamatuje svůj směr; nový výběr reference převezme směr její
@@ -477,6 +477,13 @@ přesným místem kliknutí, kolmo k ploše. Směr určuje orientace plochy; **O
 jej změní. Zakřivená plocha se nepřijme. Výběr dílů i historie zůstanou zachované;
 číselné otočení i prstenec používají tutéž osu. Kolmice má vlastní snímek otevřeného
 okna, po změně reference ji převezmi znovu. [Chování a ověření kolmice](docs/p7-27-kolmice-k-plose.md).
+
+**Osa ze dvou vrcholů:** zvol **Dva vrcholy → Vybrat osu ve 3D** a klikni postupně
+na dva různé vrcholy viditelných dílů. První určí bod osy (oranžová značka), druhý
+kladný směr od prvního ke druhému; mohou být na různých dílech i v podsestavách.
+Stejné místo se odmítne, výběr čeká dál. Esc nebo pravý klik zachovají předchozí osu.
+Funguje číselné otočení, prstenec i **Obrátit směr osy**. Snímek má vlastní paměť
+otevřeného okna; po změně reference jej vyber znovu. [Chování a ověření](docs/p7-28-osa-dvou-vrcholu.md).
 
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:

@@ -1068,6 +1068,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_cylinder_rotation_axis(assembly, lines) and ok
         ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="line") and ok
         ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="plane") and ok
+        ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="vertices") and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -2343,7 +2344,9 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
     viewer, session = assembly.viewer, assembly.session
     line = kind == "line"
     plane = kind == "plane"
-    label = {"line": "Osa hrany", "plane": "Kolmice k ploše"}.get(kind, "Osa válce")
+    vertices = kind == "vertices"
+    label = {"line": "Osa hrany", "plane": "Kolmice k ploše",
+             "vertices": "Osa dvou vrcholů"}.get(kind, "Osa válce")
     if not viewer.ready:
         lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
@@ -2361,7 +2364,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         assembly.set_component_transparency(ids[0], 35)
         assembly.set_component_transparency(ids[1], 85)
         assembly.rotation_handles.setChecked(True)
-        viewer.set_standard_view("back" if line else "iso")
+        viewer.set_standard_view("back" if line or vertices else "iso")
         QTest.qWait(100)
         matrix, origin = session._pose("nozicka_3")
         normal = matrix @ np.array([0., 0., 1.])
@@ -2373,6 +2376,11 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
                             for v in viewer._view.Convert(*map(float, point))))
 
         target = origin+matrix @ np.array([2., 0., 3.]) if plane else None
+        if vertices:
+            pivot = origin+matrix @ np.array([5., 0., 3.])
+            other_matrix, other_origin = session._pose("nozicka_4")
+            target = other_origin+other_matrix @ np.array([5., 0., 3.])
+            normal = (target-pivot)/np.linalg.norm(target-pivot)
         if plane:
             # Nezávislý průsečík skutečného pixelového paprsku s rovinou čela.
             ray = np.array(viewer._view.ConvertWithProj(*viewer._pixels(screen(target))))
@@ -2380,7 +2388,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
             pivot = ray[:3]+ray[3:]*np.dot(normal, on_plane-ray[:3])/np.dot(normal, ray[3:])
 
         with QSignalBlocker(viewer):
-            viewer._select_at(*viewer._pixels(screen((-32, -12, -1.5) if line
+            viewer._select_at(*viewer._pixels(screen((-32, -12, -1.5) if line or vertices
                                                     else (-32, -17, 0))))
         selected = viewer.selected_shapes()
         assert selected, "Příprava výběru plochy selhala"
@@ -2391,7 +2399,8 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         modes_before = sorted(modes)
         assembly.move_edits[0].setText("2,5")
         assembly.batch_rotation_angle.setText("37,5")
-        assembly.batch_rotation_axis.setCurrentIndex({"line": 4, "plane": 5}.get(kind, 3))
+        assembly.batch_rotation_axis.setCurrentIndex(
+            {"line": 4, "plane": 5, "vertices": 6}.get(kind, 3))
         assert not assembly.batch_rotation_button.isEnabled()
         before, result, redo = session.assembly.to_dict(), session.result, list(session._redo)
         assembly.component_scroll.ensureWidgetVisible(assembly.rotation_axis_pick_button)
@@ -2417,8 +2426,19 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         radial -= normal*np.dot(radial, normal)
         radial /= np.linalg.norm(radial)
         camera, scale = viewer._view.Proj(), viewer._view.Scale()
+        if vertices:
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=screen(pivot))
+            QTest.qWait(30)
+            assert viewer._center_pick is not None and "first" in viewer._center_pick
+            assert viewer._center_pick.get("marker") is not None
+            assert assembly._picked_rotation_axis() is None
+            assert session.assembly.to_dict() == before and len(session._undo) == steps
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=screen(pivot))
+            QTest.qWait(30)
+            assert viewer._center_pick is not None and assembly._picked_rotation_axis() is None
         QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton,
-                         pos=screen(target if plane else pivot if line else pivot+5*radial))
+                         pos=screen(target if plane or vertices else pivot if line
+                                    else pivot+5*radial))
         QTest.qWait(30)
         assert viewer._center_pick is None, f"Klik nepřevzal referenci: {label}"
         point, direction = assembly._picked_rotation_axis()
@@ -2426,7 +2446,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         # Parametrizace pláště může mít opačné znaménko než lokální Z dílu.
         assert abs(abs(np.dot(direction, normal))-1) < 1e-10
         assert np.linalg.norm(np.cross(direction, normal)) < 1e-10, (direction, normal)
-        if plane:
+        if plane or vertices:
             assert np.dot(direction, normal) > 1-1e-10  # ven z materiálu, nikoli proti normále
         normal = np.array(direction)
         assert assembly._selection == ids and assembly._picks == picks_before
@@ -2458,7 +2478,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
             assert len(viewer.selected_shapes()) == len(selected)
             assert viewer._view.Proj() == camera and abs(viewer._view.Scale()-scale) < 1e-9
         normal = np.array(direction)
-        if line:
+        if line or vertices:
             viewer.set_standard_view("iso")  # prstenec v zadním pohledu téměř zaniká
             QTest.qWait(30)
         assert [a for a, _ in viewer._move_tips] == [3]
@@ -2517,11 +2537,19 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
         QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
         QTest.qWait(30)
         check_motion(30)
+        if vertices:
+            viewer.set_standard_view("back")
+            QTest.qWait(30)
         for cause in ("escape", "button", "axis"):
             assembly.component_scroll.ensureWidgetVisible(assembly.rotation_axis_pick_button)
             QTest.mouseClick(assembly.rotation_axis_pick_button, Qt.MouseButton.LeftButton)
             QTest.qWait(30)
             assert viewer._center_pick is not None
+            if vertices:
+                # I rozpracovaný pár musí zmizet bez nahrazení předchozí osy.
+                QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=screen(pivot))
+                QTest.qWait(30)
+                assert "first" in viewer._center_pick
             if cause == "escape":
                 QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
             elif cause == "button":
@@ -2532,15 +2560,18 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bo
             assert viewer._center_pick is None and assembly._selection == ids
             assert getattr(assembly, f"_rotation_{kind}") == (point, direction)
             assert session.assembly.to_dict() == before and len(session._undo) == steps
-        reference = {"line": "přímou hranu", "plane": "rovinnou plochu"}.get(
+        reference = {"line": "přímou hranu", "plane": "rovinnou plochu",
+                     "vertices": "dvojici vrcholů různých dílů"}.get(
             kind, "válcovou plochu")
-        refused = {"line": "kružnice odmítnuta", "plane": "válec odmítnut"}.get(
+        refused = {"line": "kružnice odmítnuta", "plane": "válec odmítnut",
+                   "vertices": "první vrchol bez změny, stejný druhý odmítnut"}.get(
             kind, "rovina odmítnuta")
-        reverse_label = {"line": "hrana", "plane": "plocha"}.get(kind, "válec")
+        reverse_label = {"line": "hrana", "plane": "plocha", "vertices": "dva vrcholy"}.get(
+            kind, "válec")
         lines.append(f"✓ Obrácení směru osy ({reverse_label}): "
                      "tři skutečné kliky, druhý vrátí původní směr; bod, výběr a historie "
                      "beze změny; Enter 90° i tažení 30° kolem obrácené osy, jeden Zpět/Znovu")
-        lines.append(f"✓ {label}: skutečný klik na šikmou {reference} jiného dílu; "
+        lines.append(f"✓ {label}: skutečný výběr reference ({reference}); "
                      f"přesný bod i směr, {refused}, výběr/plochy/vazby/kamera/pole "
                      "a historie zachovány; Enter 90° i tažení 30° kolem stejné osy, "
                      "35/85 %, jeden krok Zpět/Znovu; Esc/tlačítko/změna osy ruší výběr")
