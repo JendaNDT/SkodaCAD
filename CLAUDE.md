@@ -1388,6 +1388,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Nativní self-test kliká na šikmou nožičku, odmítne rovinu, zachová AIS výběr a vazby,
   otočí Enterem i myší se skutečnou kontrolou těžišť a jedním Zpět/Znovu.
   [Evidence](docs/p7-24-osa-valcove-plochy.md).
+- P7.25: výběr `line` používá EDGE režim a přesný `BRepAdaptor_Curve` umístěné hrany,
+  pouze `GeomAbs_Line`. Degenerované, nulové a nekonečné úsečky odmítnout; kotva je
+  `Value(first/2 + last/2)` v konečném intervalu, směr z `Line.Direction`, bez obálky
+  či aproximace křivky. Znaménko z nosné přímky, nikoli pořadí vrcholů; rozhoduje šipka.
+  `_geometry_axis_kind` volí nezávislý snímek hrany nebo válce. Přepnutí nesmí použít
+  bod/směr druhého druhu; pole vlastního středu zůstanou pro návrat k XYZ zachovaná.
+  Rukojeť má v datech `axis_kind`; potvrzení hlásí právě tento druh a controller jej
+  kontroluje vedle revize/generace. Směr, matematika, krok i životní cyklus z P7.24.
+  Nativní self-test sdílí scénář obou referencí: přímý šev šikmé nožičky je o poloměr
+  mimo osu válce. Skutečně klikne na kruhovou hranu a odmítne ji, pak na přímou hranu;
+  po převzetí nesmí změnit kameru ani výběr/vazby. Pro tah vědomě přepne zadní pohled
+  na izometrii, ověří Enter 90° i myš 30° a jeden Zpět/Znovu.
+  [Evidence](docs/p7-25-osa-prime-hrany.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

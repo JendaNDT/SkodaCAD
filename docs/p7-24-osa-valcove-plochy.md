@@ -2,6 +2,8 @@
 
 Datum: **2. 11. 2026**. Navazuje na P7.23. Formát souborů a závislosti beze změny.
 
+Navazující [P7.25](p7-25-osa-prime-hrany.md) přidává nezávisle převzatou osu přímé hrany.
+
 ## Ovládání a rozsah
 
 Při výběru více komponent v panelu **Společné otočení [°]** zvol osu **Válcová plocha**.

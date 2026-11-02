@@ -1066,6 +1066,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_rotation_handles(assembly, lines, custom=True) and ok
         ok = _self_test_rotation_center_pick(assembly, lines) and ok
         ok = _self_test_cylinder_rotation_axis(assembly, lines) and ok
+        ok = _self_test_cylinder_rotation_axis(assembly, lines, kind="line") and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -2326,8 +2327,8 @@ def _self_test_rotation_center_pick(assembly, lines) -> bool:
         assembly.show_all()
 
 
-def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
-    """Skutečný klik na šikmý válec, přesná osa, číselné otočení i tažení prstence."""
+def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder") -> bool:
+    """Skutečný klik na šikmou referenci, přesná osa, číselné otočení i tažení."""
     import math
 
     import numpy as np
@@ -2336,10 +2337,13 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
     from PySide6.QtTest import QTest
 
     from skodacad.gui.rotation_drag import plane_frame
+    from skodacad.gui.viewer import _rotation_pick_point
 
     viewer, session = assembly.viewer, assembly.session
+    line = kind == "line"
+    label = "Osa hrany" if line else "Osa válce"
     if not viewer.ready:
-        lines.append("! Osa válce: chybí grafický prohlížeč")
+        lines.append(f"! {label}: chybí grafický prohlížeč")
         return True
     initial_steps = len(session._undo)
     ids = (("nozicka_1",), ("nozicka_2",))
@@ -2355,18 +2359,20 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
         assembly.set_component_transparency(ids[0], 35)
         assembly.set_component_transparency(ids[1], 85)
         assembly.rotation_handles.setChecked(True)
-        viewer.set_standard_view("iso")
+        viewer.set_standard_view("back" if line else "iso")
         QTest.qWait(100)
         matrix, origin = session._pose("nozicka_3")
         normal = matrix @ np.array([0., 0., 1.])
-        pivot = origin+1.5*normal
+        # Přímý šev pláště je o poloměr mimo osu válce, nejde převzít střed válce.
+        pivot = origin+matrix @ np.array([5. if line else 0., 0., 1.5])
 
         def screen(point):
             return QPoint(*(round(v/viewer._pixel_scale())
                             for v in viewer._view.Convert(*map(float, point))))
 
         with QSignalBlocker(viewer):
-            viewer._select_at(*viewer._pixels(screen((-32, -17, 0))))
+            viewer._select_at(*viewer._pixels(screen((-32, -12, -1.5) if line
+                                                    else (-32, -17, 0))))
         selected = viewer.selected_shapes()
         assert selected, "Příprava výběru plochy selhala"
         assembly._picks = [(shape, viewer.picked_point) for shape in selected]
@@ -2376,27 +2382,31 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
         modes_before = sorted(modes)
         assembly.move_edits[0].setText("2,5")
         assembly.batch_rotation_angle.setText("37,5")
-        assembly.batch_rotation_axis.setCurrentIndex(3)
+        assembly.batch_rotation_axis.setCurrentIndex(4 if line else 3)
         assert not assembly.batch_rotation_button.isEnabled()
         before, result, redo = session.assembly.to_dict(), session.result, list(session._redo)
         assembly.component_scroll.ensureWidgetVisible(assembly.rotation_axis_pick_button)
         QTest.mouseClick(assembly.rotation_axis_pick_button, Qt.MouseButton.LeftButton)
         QTest.qWait(30)
         assert viewer._center_pick is not None and not viewer._move_objects
-        # Rovinné čelo je nevhodné: čekat na další klik a zachovat předchozí osu.
+        # Kružnice pro osu hrany / rovinné čelo pro válec jsou nevhodné.
+        bad_target = origin+matrix @ np.array([3., 4., 3.]) if line else (-32, -17, 0)
         QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton,
-                         pos=screen((-32, -17, 0)))
+                         pos=screen(bad_target))
         QTest.qWait(30)
-        assert viewer._center_pick is not None and assembly._rotation_cylinder is None
+        assert viewer._center_pick is not None and assembly._picked_rotation_axis() is None
+        if line:
+            assert viewer._context.HasDetectedShape()
+            assert _rotation_pick_point(viewer._context.DetectedShape(), "circle") is not None
         radial = np.array(viewer._view.Proj())
         radial -= normal*np.dot(radial, normal)
         radial /= np.linalg.norm(radial)
         camera, scale = viewer._view.Proj(), viewer._view.Scale()
         QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton,
-                         pos=screen(pivot+5*radial))
+                         pos=screen(pivot if line else pivot+5*radial))
         QTest.qWait(30)
-        assert viewer._center_pick is None, "Klik nepřevzal šikmý válec"
-        point, direction = assembly._rotation_cylinder
+        assert viewer._center_pick is None, f"Klik nepřevzal referenci: {label}"
+        point, direction = assembly._picked_rotation_axis()
         assert np.allclose(point, pivot, atol=1e-8, rtol=0), (point, pivot)
         # Parametrizace pláště může mít opačné znaménko než lokální Z dílu.
         assert abs(abs(np.dot(direction, normal))-1) < 1e-10
@@ -2412,6 +2422,9 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
         viewer._context.ActivatedModes(viewer._ais, restored)
         assert sorted(restored) == modes_before
         assert viewer._view.Proj() == camera and abs(viewer._view.Scale()-scale) < 1e-9
+        if line:
+            viewer.set_standard_view("iso")  # prstenec v zadním pohledu téměř zaniká
+            QTest.qWait(30)
         assert [a for a, _ in viewer._move_tips] == [3]
         assert assembly.move_edits[0].text() == "2,5"
         assert assembly.batch_rotation_angle.text() == "37,5"
@@ -2473,15 +2486,17 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
                 assembly.batch_rotation_axis.setCurrentText("Z")
             QTest.qWait(30)
             assert viewer._center_pick is None and assembly._selection == ids
-            assert assembly._rotation_cylinder == (point, direction)
+            assert getattr(assembly, f"_rotation_{kind}") == (point, direction)
             assert session.assembly.to_dict() == before and len(session._undo) == steps
-        lines.append("✓ Osa válce: skutečný klik na šikmou válcovou plochu jiného dílu; "
-                     "přesný bod i směr, rovina odmítnuta, výběr/plochy/vazby/kamera/pole "
+        reference = "přímou hranu" if line else "válcovou plochu"
+        refused = "kružnice odmítnuta" if line else "rovina odmítnuta"
+        lines.append(f"✓ {label}: skutečný klik na šikmou {reference} jiného dílu; "
+                     f"přesný bod i směr, {refused}, výběr/plochy/vazby/kamera/pole "
                      "a historie zachovány; Enter 90° i tažení 30° kolem stejné osy, "
                      "35/85 %, jeden krok Zpět/Znovu; Esc/tlačítko/změna osy ruší výběr")
         return True
     except Exception:  # noqa: BLE001 -- diagnostika staženého balíčku
-        lines.append("✕ Osa válce:\n" + traceback.format_exc())
+        lines.append(f"✕ {label}:\n" + traceback.format_exc())
         return False
     finally:
         viewer.cancel_rotation_center_pick()
@@ -2489,7 +2504,7 @@ def _self_test_cylinder_rotation_axis(assembly, lines) -> bool:
         while len(session._undo) > initial_steps:
             session.undo()
         assembly.batch_rotation_axis.setCurrentText("Z")
-        assembly._rotation_cylinder = None
+        setattr(assembly, f"_rotation_{kind}", None)
         assembly.rotation_handles.setChecked(False)
         assembly._refresh()
         assembly.reset_transparency()

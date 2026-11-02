@@ -457,6 +457,14 @@ Esc a Zrušit výběr ponechají předchozí osu i výběr dílů. Převzatá os
 v otevřeném okně, nikoli vazba na plochu; po změně reference ji vyber znovu.
 Volba X/Y/Z obnoví dosavadní nastavení středu. [Chování a ověření osy válce](docs/p7-24-osa-valcove-plochy.md).
 
+**Osa z přímé hrany:** ve stejném panelu zvol **Přímá hrana → Vybrat osu ve 3D**
+a klikni na přímou hranu libovolného viditelného dílu, i nevybraného nebo v podsestavě.
+Osa vede celou nosnou přímkou hrany, rukojeť leží uprostřed úsečky. Oblouky a jiné
+křivky se nepřijmou. Číselný úhel i oranžový prstenec používají stejnou osu; šipka
+ukazuje kladný směr, záporný úhel ho obrací. Výběr dílů zůstává, samotné převzetí
+nemění model ani historii. Osa hrany a osa válce se pamatují zvlášť v otevřeném okně;
+po změně reference je převezmi znovu. [Chování a ověření osy hrany](docs/p7-25-osa-prime-hrany.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 
