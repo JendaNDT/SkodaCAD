@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from build123d import Box, Cone, Cylinder, GeomType, Pos, Rot, Sphere
+from build123d import Box, Cone, Cylinder, GeomType, Plane, Pos, Rot, Sphere, mirror
 from OCP.AIS import AIS_TextLabel
 from OCP.gp import gp_Pnt
 from PySide6.QtCore import QEvent
@@ -29,11 +29,14 @@ from test_selection_drag import mouse, viewer  # noqa: F401
 
 
 @pytest.mark.parametrize("rotation", [(0, 0, 0), (30, 40, 50)])
+@pytest.mark.parametrize("mirrored", [False, True])
 @pytest.mark.parametrize("axis,sign", [(0, -1), (0, 1), (1, -1), (1, 1), (2, -1), (2, 1)])
-def test_plane_uses_world_ray_intersection_and_oriented_normal(rotation, axis, sign):
+def test_plane_uses_world_ray_intersection_and_oriented_normal(rotation, mirrored, axis, sign):
     part = Box(10, 12, 14)
     face = next(f for f in part.faces() if tuple(f.normal_at())[axis] == sign)
     face = Pos(12, 23, 34)*Rot(*rotation)*face
+    if mirrored:
+        face, = mirror(face, about=Plane.YZ).faces()
     center, normal = np.array(tuple(face.center())), np.array(tuple(face.normal_at()))
     _n, u, v = map(np.array, plane_frame(tuple(normal)))
     target = center+1.25*u-2.5*v  # záměrně mimo těžiště plochy

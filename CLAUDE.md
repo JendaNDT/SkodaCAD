@@ -1418,7 +1418,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Kotva je přesný průsečík pixelového paprsku s oříznutou plochou přes dosavadní
   `_rotation_pick_point`, nikoli bod sítě, těžiště či počátek roviny. Díry/mimo plochu
   a rovnoběžný paprsek musí odmítnout. Směr `Plane.Axis.Direction` v již umístěné
-  geometrii negovat pro `TopAbs_REVERSED`; FORWARD/REVERSED dávají orientovanou normálu.
+  geometrii negovat pro `TopAbs_REVERSED` i pro levotočivou pozici roviny
+  (`Plane.Position.Direct() == False`, např. zrcadlení); výsledek je orientovaná normála U×V.
   Hrana/válec/kolmice mají samostatné snímky, společný generační protokol i obrácení.
   Nativní test odmítne skutečně detekovaný válec, klikne mimo střed šikmého čela a
   nezávislým průsečíkem pixelového paprsku s rovinou ověří kotvu i kladnou normálu.

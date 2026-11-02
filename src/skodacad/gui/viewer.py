@@ -181,8 +181,11 @@ def _rotation_pick_plane(shape, hit=None, ray=None):
     point = _rotation_pick_point(face, "face", hit, ray)
     if point is None:
         return None
+    plane = surface.Plane()
     sign = -1 if face.Orientation() == TopAbs_REVERSED else 1
-    direction = tuple(sign*v for v in surface.Plane().Axis().Direction().Coord())
+    if not plane.Position().Direct():  # zrcadlená rovina: normála U×V je proti ose Z
+        sign = -sign
+    direction = tuple(sign*v for v in plane.Axis().Direction().Coord())
     return (point, direction) if all(math.isfinite(v) for v in direction) else None
 
 

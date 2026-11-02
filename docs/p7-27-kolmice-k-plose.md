@@ -33,12 +33,14 @@ Viewer přijme pouze FACE s `BRepAdaptor_Surface.GetType() == GeomAbs_Plane`.
 `_rotation_pick_point(face, "face", hit, ray)` určí průsečík skutečného pixelového
 paprsku s oříznutou BRep plochou, včetně děr. AIS bod je jen podklad detekce;
 kotva neleží na jeho síti. Směr `Plane().Axis().Direction()` již obsahuje světové
-umístění a obrací se pro `TopAbs_REVERSED`. Jiné orientace a nekonečné souřadnice
+umístění a obrací se pro `TopAbs_REVERSED` i levotočivou pozici roviny
+(`Plane.Position.Direct() == False`, např. po zrcadlení). Tím odpovídá normále U×V.
+Jiné orientace a nekonečné souřadnice
 se odmítnou. Výběr používá generační a revizní protokol z P7.23–26, vlastní `plane`
 druh v datech prstence i potvrzení. Staré potvrzení, cizí/skrytá plocha nebo jiný
 druh osy se odmítají. Obrácení používá dosavadní společný životní cyklus.
 
-Regrese kontrolují všech šest orientovaných stěn umístěného kvádru, šikmé plochy,
+Regrese kontrolují všech šest orientovaných stěn umístěného i zrcadleného kvádru, šikmé plochy,
 opačnou orientaci, průsečík mimo těžiště, díry, okraj rozsahu a neplatné paprsky,
 odmítnutí křivých ploch, DPI 1/1,25/2, náhled AIS i potvrzení, skutečné vrcholy
 otočených těles podle nezávislé rotace, historii a Znovu, samostatné snímky, staré
