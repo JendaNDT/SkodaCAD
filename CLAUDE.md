@@ -1405,6 +1405,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   po převzetí nesmí změnit kameru ani výběr/vazby. Pro tah vědomě přepne zadní pohled
   na izometrii, ověří Enter 90° i myš 30° a jeden Zpět/Znovu.
   [Evidence](docs/p7-25-osa-prime-hrany.md).
+- P7.26: tlačítko Obrátit směr osy neguje pouze směr aktuálního snímku hrany/válce,
+  bod zachová přesně. Používá `_rotation_center_changed` (zrušení výběru reference
+  i tahu, nová revize tokenu); ani obrácení tam a zpět nesmí přijmout staré potvrzení.
+  Bez _run, přepočtu, historie či změny polí. Směry obou druhů jsou nezávislé, XYZ
+  se neobrací, nový výběr reference převezme geometrický směr. Výrazy natočení mají
+  stále stejné omezení ±Z; oprava směru musí zůstat dostupná i při tomto omezení.
+  Nativní scénáře obou os třikrát kliknou na tlačítko a ověří zachovaný výběr AIS,
+  vazby/kameru/historii, pak Enter 90° a myš 30° kolem obrácené osy s jedním Zpět/Znovu.
+  [Evidence](docs/p7-26-obraceni-smeru-osy.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
