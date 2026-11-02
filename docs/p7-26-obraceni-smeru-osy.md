@@ -2,6 +2,8 @@
 
 Datum: **2. 11. 2026**. Navazuje na P7.24/25. Jádro otáčení, formát a závislosti beze změny.
 
+Navazující [P7.27](p7-27-kolmice-k-plose.md) přidává i obrácení kolmice k rovinné ploše.
+
 ## Ovládání
 
 Vyber více komponent. V panelu **Společné otočení [°]** zvol **Válcová plocha** nebo

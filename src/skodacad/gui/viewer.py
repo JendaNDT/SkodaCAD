@@ -47,7 +47,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.collections import Array1_gp_Pnt, List_int
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
-from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle, GeomAbs_Cylinder, GeomAbs_Line
+from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle, GeomAbs_Cylinder, GeomAbs_Line, GeomAbs_Plane
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Lin, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
@@ -67,7 +67,7 @@ from OCP.Prs3d import (
 )
 from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
 from OCP.TCollection import TCollection_ExtendedString
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_FORWARD, TopAbs_REVERSED, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS, TopoDS_Compound
 from OCP.V3d import (
     V3d_Viewer,
@@ -168,6 +168,23 @@ def _rotation_pick_line(shape):
     point = tuple(curve.Value(first/2+last/2).Coord())
     direction = tuple(curve.Line().Direction().Coord())
     return (point, direction) if all(math.isfinite(v) for v in (*point, *direction)) else None
+
+def _rotation_pick_plane(shape, hit=None, ray=None):
+    """Kolmice k přesné rovinné ploše v místě průsečíku paprsku; orientovaný směr."""
+    if shape.ShapeType() != TopAbs_FACE:
+        return None
+    face = TopoDS.Face(shape)
+    surface = BRepAdaptor_Surface(face, True)
+    if (surface.GetType() != GeomAbs_Plane
+            or face.Orientation() not in (TopAbs_FORWARD, TopAbs_REVERSED)):
+        return None
+    point = _rotation_pick_point(face, "face", hit, ray)
+    if point is None:
+        return None
+    sign = -1 if face.Orientation() == TopAbs_REVERSED else 1
+    direction = tuple(sign*v for v in surface.Plane().Axis().Direction().Coord())
+    return (point, direction) if all(math.isfinite(v) for v in direction) else None
+
 
 # Klíče odpovídají viewer_views.VIEW_LABELS (názvy a zkratky pro menu).
 STANDARD_VIEWS = {
@@ -702,7 +719,7 @@ class OccViewer(QWidget):
     def start_rotation_center_pick(self, kind: str, token) -> bool:
         """Jednorázový výběr bodu. Vlastníci běžného výběru AIS se nemění."""
         modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE,
-                 "cylinder": TopAbs_FACE, "line": TopAbs_EDGE}
+                 "cylinder": TopAbs_FACE, "line": TopAbs_EDGE, "plane": TopAbs_FACE}
         if not self.ready or self._ais is None or kind not in modes:
             return False
         self.cancel_rotation_center_pick()
@@ -756,9 +773,12 @@ class OccViewer(QWidget):
             selector = context.MainSelector()
             hit = selector.PickedPoint(1).Coord() if selector.NbPicked() else None
             try:
-                if data["kind"] in ("cylinder", "line"):
-                    axis = (_rotation_pick_cylinder(shape) if data["kind"] == "cylinder"
-                            else _rotation_pick_line(shape))
+                if data["kind"] in ("cylinder", "line", "plane"):
+                    if data["kind"] == "plane":
+                        axis = _rotation_pick_plane(shape, hit, self._view.ConvertWithProj(x, y))
+                    else:
+                        axis = (_rotation_pick_cylinder(shape) if data["kind"] == "cylinder"
+                                else _rotation_pick_line(shape))
                     if axis is not None:
                         point, direction = axis
                 else:
@@ -895,7 +915,8 @@ class OccViewer(QWidget):
 
     def _rotation_axis_label(self, axis):
         if axis == 3:
-            return "Osa hrany" if self._move_data.get("axis_kind") == "line" else "Osa válce"
+            return {"line": "Osa hrany", "plane": "Kolmice k ploše"}.get(
+                self._move_data.get("axis_kind"), "Osa válce")
         return "XYZ"[axis]
 
     def _move_handle_at(self, pos):
