@@ -211,6 +211,7 @@ class AssemblyWindow(QMainWindow):
         self.transparency_percent.valueChanged.connect(self._transparency_percent_changed)
         transparency_row.addWidget(self.transparency_percent, 1)
         layout.addLayout(transparency_row)
+        self._build_move_box(layout)
         layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()
         self.name_edit.setAccessibleName("Název komponenty")
@@ -275,6 +276,52 @@ class AssemblyWindow(QMainWindow):
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+    def _build_move_box(self, layout: QVBoxLayout) -> None:
+        self.move_box = QGroupBox("Společný posun [mm]")
+        grid = QGridLayout(self.move_box)
+        self.move_edits = []
+        self._move_selection = ()
+        for row, axis in enumerate(AXES):
+            grid.addWidget(QLabel(axis.upper()), row, 0)
+            field = QLineEdit("0")
+            field.setMinimumWidth(90)
+            field.setAccessibleName(f"Společný posun {axis.upper()}")
+            field.setToolTip("Přírůstek v ose celé sestavy, v mm. Číslo nebo výraz "
+                             "s parametry sestavy; výraz se vyhodnotí při posunu.")
+            field.returnPressed.connect(self.apply_batch_move)
+            self.move_edits.append(field)
+            grid.addWidget(field, row, 1)
+        grid.setColumnStretch(1, 1)
+        self.move_note = self._wrapped_label()
+        grid.addWidget(self.move_note, 3, 0, 1, 2)
+        self.move_button = QPushButton("Posunout vybrané")
+        self.move_button.clicked.connect(self.apply_batch_move)
+        grid.addWidget(self.move_button, 4, 0, 1, 2)
+        layout.addWidget(self.move_box)
+
+    def _refresh_move_box(self) -> None:
+        selection = self._selection
+        if selection != self._move_selection:
+            for field in self.move_edits:
+                field.setText("0")
+            self._move_selection = selection
+        self.move_box.setVisible(len(selection) > 1)
+        roots = self._selection_roots()
+        problem = ""
+        if any(len(ids) != 1 for ids in roots):
+            problem = "Vyber celé nadřazené podsestavy; jejich vnitřní díly se zde neposouvají."
+        elif self.computing or self.session.result is None or not self.session.result.complete:
+            problem = "Dokonči přepočet a oprav neúplné díly nebo vazby sestavy."
+        elif self.session.assembly is not None:
+            fixed = [self.session.assembly.component(ids[0]).label for ids in roots
+                     if self.session.assembly.component(ids[0]).fixed]
+            if fixed:
+                problem = "Pevné komponenty: " + ", ".join(fixed) + ". Odeber je z výběru "
+                problem += "nebo u nich jednotlivě zruš volbu Pevná."
+        self.move_button.setEnabled(len(selection) > 1 and bool(roots) and not problem)
+        self.move_note.setText(problem or "X/Y/Z v osách celé sestavy. Všechny vybrané "
+                               "díly se posunou stejně; Zpět vrátí celý posun.")
 
     @staticmethod
     def _wrapped_label(text: str = "") -> QLabel:
@@ -703,6 +750,19 @@ class AssemblyWindow(QMainWindow):
         if component is not None:
             self._run("Komponentu nejde otočit",
                       lambda: self.session.turn(component, axis, degrees))
+
+    def apply_batch_move(self) -> None:
+        if not self.move_button.isEnabled():
+            return
+        components = [ids[0] for ids in self._selection_roots()]
+
+        def work() -> None:
+            delta = [parse_value(field.text()) for field in self.move_edits]
+            self.session.move_many_by(components, delta)
+
+        if self._run("Výběr nejde posunout", work):
+            for field in self.move_edits:
+                field.setText("0")
 
     def _fixed_toggled(self, checked: bool) -> None:
         component = self._editable()
@@ -1633,13 +1693,14 @@ class AssemblyWindow(QMainWindow):
             self.fixed_box.setChecked(False)
             self.form_note.setText(
                 f"Vybrané komponenty: {len(self._selection)}. "
-                "Společně lze skrýt, izolovat a nastavit průhlednost. "
-                "Pro úpravu polohy nebo názvu vyber jedinou komponentu."
+                "Společně lze posunout, skrýt, izolovat a nastavit průhlednost. "
+                "Absolutní polohu nebo název upravuj po jedné komponentě."
                 if len(self._selection) > 1
                 else "Komponenta podsestavy – uprav ji v souboru podsestavy." if self._selected
                 else "Vybraná vazba – uprav ji níž." if self._constraint
                 else "Vyber komponentu ve stromu nebo ve 3D.")
         self.fixed_box.blockSignals(False)
+        self._refresh_move_box()
         self._refresh_isolation_actions()
         self._refresh_highlight()
 

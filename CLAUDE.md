@@ -1300,6 +1300,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   protnuté ruční viditelností. H/T/procenta nejprve normalizují výběr (vybraný rodič
   překryje potomka), upraví pravidla všech větví a překreslí jen jednou.
   [Evidence](docs/p7-17-hromadny-vyber.md).
+- P7.18: `AssemblySession.move_many_by` posune top-level komponenty jedním `_change`.
+  Pevná komponenta blokuje celý výběr; úplná sestava je podmínkou. `_change(validate=…)`
+  validuje **po** řešiči a `_apply_solved`, **před** přijetím/historií. Kontroluje všechny
+  top-level polohy (vybrané + stejný vektor, ostatní beze změny), matice otočení a otisky
+  všech zdrojů. Návrat vybraného dílu či přitažení souseda řešičem se atomicky odmítne.
+  Souřadnicové výrazy obalit `(<původní>) + (<konstanta>)`, opakované konstanty slučovat;
+  netavit je na čísla. Přírůstek vyhodnotit jednou v parametrech celé sestavy.
+  GUI používá `_selection_roots` (rodič překryje potomka), vnitřní cesty blokuje s vysvětlením.
+  Pole přírůstku resetuje jen změna výběru nebo úspěšný příkaz, ne H/T/I/přepočet/chyba.
+  Enter musí parsovat uvnitř `_run`, aby prázdný vstup neunikl do globálního exception handleru.
+  [Evidence](docs/p7-18-hromadny-posun.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

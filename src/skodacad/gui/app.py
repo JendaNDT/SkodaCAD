@@ -1059,6 +1059,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_transparency(assembly, lines) and ok
         ok = _self_test_assembly_transparency_levels(assembly, lines) and ok
         ok = _self_test_assembly_multi_selection(assembly, lines) and ok
+        ok = _self_test_assembly_batch_move(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1690,6 +1691,89 @@ def _self_test_assembly_multi_selection(assembly, lines) -> bool:
         lines.append("✕ Hromadný výběr sestavy:\n" + traceback.format_exc())
         return False
     finally:
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_batch_move(assembly, lines) -> bool:
+    """Skutečný Enter/tlačítka, dva parametrické díly, jeden krok Zpět/Znovu."""
+    import numpy as np
+    from build123d import Compound
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Hromadný posun sestavy: chybí grafický prohlížeč")
+        return True
+    steps = len(session._undo)
+    try:
+        assembly.show_all()
+        assembly.reset_transparency()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(50)
+        assembly.select_many((("krabicka",), ("vicko",)))
+        assert assembly.move_box.isVisible() and not assembly.move_button.isEnabled()
+        assert "Pevné komponenty: Krabička" in assembly.move_note.text()
+        ids = (("nozicka_1",), ("nozicka_2",))
+        assembly.select_many(ids)
+        assert assembly.move_button.isEnabled()
+        before = session.assembly.to_dict()
+        old = {i.ids: np.array(tuple(i.part.center())) for i in session.result.instances}
+        rotations = {c.id: list(c.rotation) for c in session.assembly.components}
+        expressions = {cid: list(session.assembly.component(cid).position) for cid, in ids}
+        assert all(isinstance(v, str) for pos in expressions.values() for v in pos)
+        assembly.set_component_transparency(ids[0], 35)
+        assembly.set_component_transparency(ids[1], 85)
+        assembly.set_component_visible(("vicko",), False)
+        assembly.isolate_selected()
+        for field, value in zip(assembly.move_edits, ("2,5", "-1", "-4"), strict=True):
+            assembly.component_scroll.ensureWidgetVisible(field)
+            field.setFocus()
+            field.selectAll()
+            QTest.keyClicks(field, value)
+        assembly.visibility_action.trigger()
+        assert not assembly.visible_instances()
+        assembly.visibility_action.trigger()
+        assert [f.text() for f in assembly.move_edits] == ["2,5", "-1", "-4"]
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        field = assembly.move_edits[2]
+        assembly.component_scroll.ensureWidgetVisible(field)
+        field.setFocus()
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        assert len(session._undo) == steps+1 and not session.can_redo
+        assert assembly._selection == ids and assembly._isolated == ids
+        assert assembly._visibility == {("vicko",): False}
+        assert [f.text() for f in assembly.move_edits] == ["0", "0", "0"]
+        assert not assembly._picks
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        for instance in session.result.instances:
+            expected = old[instance.ids] + (np.array([2.5, -1, -4]) if instance.ids in ids else 0)
+            assert np.allclose(tuple(instance.part.center()), expected, atol=1e-6, rtol=0)
+        assert {c.id: c.rotation for c in session.assembly.components} == rotations
+        assert all(isinstance(v, str) for cid, in ids
+                   for v in session.assembly.component(cid).position)
+        drawn = Compound(viewer._ais.Shape())
+        assert len(drawn.solids()) == 2 and session.result.complete
+        assert len(session.result.instances) == 6 and abs(session.result.volume_mm3-31309.287) < .01
+        after = session.assembly.to_dict()
+        assembly.undo_action.trigger()
+        assert session.assembly.to_dict() == before and len(session._undo) == steps
+        assembly.redo_action.trigger()
+        assert session.assembly.to_dict() == after and len(session._undo) == steps+1
+        assert assembly._selection == ids
+        lines.append("✓ Hromadný posun sestavy: nativní Enter, 2 díly o [2,5; −1; −4] mm, "
+                     "pevná komponenta blokována, výrazy poloh zachovány, H a izolace, "
+                     "kamera/otočení/ostatní díly/objem beze změny, jeden krok Zpět/Znovu")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Hromadný posun sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        while len(session._undo) > steps:
+            session.undo()
+        assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()
 
