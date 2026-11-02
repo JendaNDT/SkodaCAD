@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 from build123d import Box, Compound, Pos
-from OCP.AIS import AIS_ColoredShape
+from OCP.AIS import AIS_ColoredShape, AIS_TextLabel
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QApplication
@@ -123,3 +123,15 @@ def test_substep_move_is_noop_and_alt_shift_keep_existing_controls(viewer):
     assert not events
     v._mouse_press(mouse(QEvent.Type.MouseButtonPress, start, Qt.KeyboardModifier.ShiftModifier))
     assert v._selection_drag is None
+
+
+def test_axis_labels_stay_outside_round_handles(viewer):
+    import math
+
+    v = viewer
+    labels = [o for o in v._move_objects if isinstance(o, AIS_TextLabel)]
+    assert [label.Text().ToExtString() for label in labels] == list("XYZ")
+    for label, (_axis, tip) in zip(labels, v._move_tips, strict=True):
+        p = label.Position()
+        screen = v._view.Convert(p.X(), p.Y(), p.Z())
+        assert math.dist(screen, v._view.Convert(*tip))/v._pixel_scale() == pytest.approx(18.)
