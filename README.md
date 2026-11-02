@@ -1665,6 +1665,12 @@ i přijaté kolize, kterých se týká. Ukázka: `examples/sestavy/deska_se_srou
 
 ## Pro vývoj
 
+Související úpravy se připravují po dávkách. Během práce běží cílené místní
+testy; rozpracovaný návrh na GitHubu (draft PR) dlouhé kontroly přeskakuje.
+Označení dávky jako hotové spustí kontroly Windows a macOS. Před sloučením
+musí projít včetně kontroly sestavených balíčků. Vrácení návrhu do draftu
+zruší předchozí běžící kontroly; ruční spuštění a vydání z `main` zůstávají dostupné.
+
 Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladové výzkumy
 jsou ve složce [docs/](docs/).
 

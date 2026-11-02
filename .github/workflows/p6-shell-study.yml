@@ -2,6 +2,7 @@ name: P6 průzkum skořepin
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'docs/p6-3-pruzkum-skorepin.py'
       - '.github/workflows/p6-shell-study.yml'
@@ -26,6 +27,8 @@ env:
 
 jobs:
   pruzkum:
+    # Rozpracované dávky ověřujeme místně; dlouhé kontroly až po dokončení.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Skořepiny – ${{ matrix.os }}
     strategy:
       fail-fast: false

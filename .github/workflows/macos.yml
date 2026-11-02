@@ -18,6 +18,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/macos.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - "src/**"
       - "tests/**"
@@ -36,6 +37,8 @@ permissions:
 
 jobs:
   sestaveni:
+    # Rozpracované dávky ověřujeme místně; dlouhé kontroly až po dokončení.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: macos-15  # Apple Silicon (arm64) jako MacBook Air M4
     timeout-minutes: 60
     steps:

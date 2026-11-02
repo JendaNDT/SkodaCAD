@@ -1,18 +1,25 @@
 name: P3 STEP přenos mezi systémy
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'src/**'
       - 'tests/**'
       - 'pyproject.toml'
       - '.github/workflows/p35-cross-os.yml'
   workflow_dispatch:
+concurrency:
+  group: p35-cross-os-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 env:
   PYTHONUTF8: "1"
 jobs:
   vytvor-macos:
+    # Rozpracované dávky ověřujeme místně; dlouhé kontroly až po dokončení.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -30,6 +37,8 @@ jobs:
           name: p35-modely-macos
           path: p35-mac/**/*.json
   vytvor-windows:
+    # Rozpracované dávky ověřujeme místně; dlouhé kontroly až po dokončení.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:

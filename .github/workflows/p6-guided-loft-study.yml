@@ -2,6 +2,7 @@ name: P6 průzkum vodicích křivek
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'docs/p6-6-pruzkum-voditek.py'
       - 'tests/test_guided_loft_study.py'
@@ -23,6 +24,8 @@ env:
 
 jobs:
   pruzkum:
+    # Rozpracované dávky ověřujeme místně; dlouhé kontroly až po dokončení.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Vodítka – ${{ matrix.os }}
     strategy:
       fail-fast: false
