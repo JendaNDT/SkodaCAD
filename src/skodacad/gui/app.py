@@ -1819,9 +1819,13 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
             old = {i.ids: np.array(tuple(i.part.center())) for i in old_result.instances}
             direction, scale = viewer._view.Proj(), viewer._view.Scale()
             start, end = positions(axis)
+            surface_size = viewer._surface.size()
             QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)  # skutečná myš dá Qt čas na layout/fokus, nejen synchronní signály
             assert viewer._selection_drag is not None, f"Nelze uchopit osu {'XYZ'[axis]}"
+            assert viewer._surface.size() == surface_size, "Zpráva nesmí změnit velikost 3D plochy"
             QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
             drag = viewer._selection_drag
             assert drag is not None and any(drag["delta"])
             delta = np.array(drag["delta"])
@@ -1855,7 +1859,9 @@ def _self_test_assembly_selection_drag(assembly, lines) -> bool:
         for cancel in ("escape", "step", "focus"):
             start, end = positions(0)
             QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)
             QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
             assert viewer._selection_drag is not None
             if cancel == "escape":
                 QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
