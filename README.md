@@ -448,6 +448,15 @@ ani nepřidá historii. **Esc**, pravý klik nebo **Zrušit výběr** režim uko
 klik či nevhodná hrana nechá výběr zapnutý pro další pokus. Pohled lze dál otáčet,
 posouvat a přibližovat. [Chování a ověření výběru bodu](docs/p7-23-vyber-stredu-ve-3d.md).
 
+**Osa z válcové plochy:** v panelu **Společné otočení [°]** zvol osu **Válcová plocha**,
+zapni **Vybrat osu ve 3D** a klikni na válcovou stěnu otvoru nebo čepu. Přesný bod
+i směr se převezmou i z nevybraného viditelného dílu nebo podsestavy. Rovina, kužel
+a nekruhový plášť se nepřijmou. Číselné otočení i jeden oranžový prstenec používají
+tutéž osu, včetně šikmých směrů; šipka ukazuje kladný směr. Záporný úhel jej obrátí.
+Esc a Zrušit výběr ponechají předchozí osu i výběr dílů. Převzatá osa je pevný snímek
+v otevřeném okně, nikoli vazba na plochu; po změně reference ji vyber znovu.
+Volba X/Y/Z obnoví dosavadní nastavení středu. [Chování a ověření osy válce](docs/p7-24-osa-valcove-plochy.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

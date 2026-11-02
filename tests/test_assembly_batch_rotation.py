@@ -29,7 +29,8 @@ def group(tmp_path):
 
 
 def rodrigues(axis, angle):
-    e = np.eye(3)["xyz".index(axis)]
+    e = np.eye(3)["xyz".index(axis)] if isinstance(axis, str) else np.array(axis, dtype=float)
+    e /= np.linalg.norm(e)
     x, y, z = e
     cross = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
     t = math.radians(angle)
@@ -219,7 +220,8 @@ def test_existing_orientation_near_gimbal_keeps_full_rotation(group, pitch):
 
 
 @pytest.mark.parametrize("point", [None, (12.5, -31, 18)])
-def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path, point):
+@pytest.mark.parametrize("axis", ["y", (1, 2, 3)])
+def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path, point, axis):
     part = write(tmp_path / "jinde/kvadr.json", part_data())
     sub = write(tmp_path / "moduly/modul.json", assembly_data([
         component("prvni", "../jinde/kvadr.json", fixed=True),
@@ -233,8 +235,8 @@ def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path, poin
     s.open(path)
     old = {i.ids: vertices(i.part) for i in s.result.instances}
     center = np.array(s.rotation_center(["a", "b"], point))
-    q = rodrigues("y", 37.5)
-    s.turn_many_around(["a", "b"], "y", 37.5, center=point)
+    q = rodrigues(axis, 37.5)
+    s.turn_many_around(["a", "b"], axis, 37.5, center=point)
     for i in s.result.instances:
         expected = ((q @ (old[i.ids]-center).T).T+center if i.ids[0] != "c" else old[i.ids])
         assert all(min(np.linalg.norm(expected-p, axis=1)) < 1e-6 for p in vertices(i.part))
@@ -242,11 +244,12 @@ def test_nested_parents_rotate_all_children_and_keep_source_files(tmp_path, poin
     assert all(p.read_bytes() == content for p, content in raw.items())
 
 
-def test_rotated_recipe_save_reopen_and_step_have_same_complete_geometry(group, tmp_path):
+@pytest.mark.parametrize("axis", ["x", (1, 2, 3)])
+def test_rotated_recipe_save_reopen_and_step_have_same_complete_geometry(group, tmp_path, axis):
     from build123d import import_step
 
     s, _ = group
-    s.turn_many_around(["a", "b"], "x", 37.5)
+    s.turn_many_around(["a", "b"], axis, 37.5)
     old = {i.ids: np.array(tuple(i.part.center())) for i in s.result.instances}
     s.save(tmp_path / "kopie.json")
     reopened = AssemblySession()

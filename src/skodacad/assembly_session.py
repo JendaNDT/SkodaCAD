@@ -34,6 +34,7 @@ from skodacad.assembly import (
 from skodacad.assembly_build import (
     AssemblyResult,
     Cache,
+    axis_direction,
     axis_matrix,
     build,
     feature_of,
@@ -646,17 +647,18 @@ class AssemblySession:
             raise AssemblyError("Společný střed není konečné číslo; zkontroluj polohy dílů.")
         return center
 
-    def turn_many_around(self, component_ids: Sequence[str], axis: str,
+    def turn_many_around(self, component_ids: Sequence[str], axis: str | Sequence[float],
                          degrees: Any, *, center: Sequence[Any] | None = None) -> AssemblyResult:
-        """Jeden tuhý pohyb kolem vlastního bodu nebo těžiště, v osách celé sestavy.
+        """Jeden tuhý pohyb kolem bodu a směru ve světě sestavy (XYZ nebo vektor).
 
         Střed a úhel jsou snímek v okamžiku příkazu. Výrazy poloh se transformují
-        stejnou afinní mapou; parametrická natočení lze zachovat kolem osy Z.
+        stejnou afinní mapou; parametrická natočení lze zachovat kolem ±Z.
         """
         import numpy as np
 
         components, result = self._rotation_selection(component_ids)
-        axis_matrix(axis, 0.)
+        direction = axis_direction(axis)
+        along_z = direction[:2] == (0., 0.)
         fixed = [c.label for c in components if c.fixed]
         if fixed:
             raise AssemblyError("Výběr obsahuje pevné komponenty: " + ", ".join(fixed)
@@ -674,11 +676,11 @@ class AssemblySession:
         angle = math.remainder(angle, 360.)
         if angle == 0:
             return result
-        angles = {c.id: (None if axis == "z" else self._numbers(c.rotation, c, "otočení"))
+        angles = {c.id: (None if along_z else self._numbers(c.rotation, c, "otočení"))
                   for c in components}
         chosen = {c.id for c in components}
         center = np.array(pivot)
-        transform = np.array(axis_matrix(axis, angle))
+        transform = np.array(axis_matrix(direction, angle))
         before = {c.id: self._pose(c.id) for c in self._require().components}
         expected = {cid: (transform @ r, center + transform @ (p-center)) if cid in chosen
                     else (r, p) for cid, (r, p) in before.items()}
@@ -691,8 +693,8 @@ class AssemblySession:
                 component = candidate.component(cid)
                 component.position = _rotated_position(component.position, transform, center)
                 component.rotation = ([*component.rotation[:2],
-                                       _offset_value(component.rotation[2], angle)] if axis == "z"
-                                      else turned(angles[cid], axis, angle))
+                                       _offset_value(component.rotation[2], angle*direction[2])]
+                                      if along_z else turned(angles[cid], direction, angle))
 
         def validate(candidate: Assembly, built: AssemblyResult) -> None:
             if not built.complete:

@@ -2,6 +2,7 @@
 
 import math
 
+from skodacad.assembly_build import axis_direction
 from skodacad.gui.guide_drag import snapped_delta
 
 DEFAULT_ANGLE_STEP = 15.0
@@ -16,29 +17,42 @@ def plane_axes(axis):
 
 
 def ring_points(center, axis, radius, segments=96):
-    u, v = plane_axes(axis)
+    _normal, u, v = plane_frame(axis)
     points = []
     for index in range(segments+1):
-        point = list(center)
         angle = index*2*math.pi/segments
-        point[u] += radius*math.cos(angle)
-        point[v] += radius*math.sin(angle)
-        points.append(tuple(point))
+        points.append(tuple(c+radius*(a*math.cos(angle)+b*math.sin(angle))
+                            for c, a, b in zip(center, u, v, strict=True)))
     return points
+
+
+def plane_frame(axis):
+    """Pravotočivý ortonormální rám i pro libovolný směr převzatého válce."""
+    if isinstance(axis, int):
+        a, b = plane_axes(axis)
+        return tuple(tuple(float(j == i) for j in range(3)) for i in (axis, a, b))
+    n = axis_direction(axis)
+    index = min(range(3), key=lambda i: abs(n[i]))
+    u = tuple(float(i == index)-n[index]*n[i] for i in range(3))
+    length = math.hypot(*u)
+    u = tuple(v/length for v in u)
+    v = (n[1]*u[2]-n[2]*u[1], n[2]*u[0]-n[0]*u[2], n[0]*u[1]-n[1]*u[0])
+    return n, u, v
 
 
 def angle_on_plane(ray, center, axis, min_radius=0.):
     """Úhel paprsku v rovině prstence, stupně; boční pohled a střed jsou neurčité."""
-    u, v = plane_axes(axis)
+    normal, u, v = plane_frame(axis)
     if (len(ray) != 6 or len(center) != 3
             or not all(math.isfinite(x) for x in (*ray, *center, min_radius))):
         return None
     length = math.hypot(*ray[3:])
-    if not length or abs(ray[axis+3])/length < MIN_FACING:
+    dot = sum(a*b for a, b in zip(normal, ray[3:], strict=True))
+    if not length or abs(dot)/length < MIN_FACING:
         return None
-    t = (center[axis]-ray[axis])/ray[axis+3]
-    x = ray[u]+t*ray[u+3]-center[u]
-    y = ray[v]+t*ray[v+3]-center[v]
+    t = sum((c-p)*n for c, p, n in zip(center, ray[:3], normal, strict=True))/dot
+    offset = tuple(p+t*d-c for p, d, c in zip(ray[:3], ray[3:], center, strict=True))
+    x, y = (sum(a*b for a, b in zip(offset, basis, strict=True)) for basis in (u, v))
     if not all(math.isfinite(w) for w in (x, y)) or math.hypot(x, y) <= min_radius:
         return None
     return math.degrees(math.atan2(y, x))

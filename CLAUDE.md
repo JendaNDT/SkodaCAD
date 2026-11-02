@@ -1373,6 +1373,21 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   polí a přepne jednou na Vlastní bod, bez _run a historie. Nativní test uchovává
   skutečný AIS výběr i podklady vazby přes klik na kružnici, vrchol a plochu jiné
   nožičky. [Evidence](docs/p7-23-vyber-stredu-ve-3d.md).
+- P7.24: `axis_direction`/`axis_matrix` přijmou XYZ nebo konečný nenulový číselný směr,
+  robustně normalizovaný i pro velmi malé/velké vektory. `turn_many_around` sdílí
+  afinní mapu, otisky a atomickou validaci po řešiči pro libovolnou osu; výrazy natočení
+  zachovat jen pro přesné ±Z (přírůstek Rz se znaménkem). Polohy zůstávají parametrické.
+  Výběr `cylinder` využívá životní cyklus P7.23, pouze FACE detekci a stejný generační
+  token. `BRepAdaptor_Surface.Cylinder()` jen pro skutečný `GeomAbs_Cylinder` v umístěné
+  geometrii; bod na ose = Location + směr × střed konečného V intervalu. Znaménko směru
+  je z parametrizace, nikoli normály či lokálního Z dílu; kladný směr kreslí šipka.
+  Preference okna obsahuje bod i směr jako snímek. Volba Válcová plocha skryje dosavadní
+  střed, ale zachová jeho pole pro návrat k XYZ. Číselný příkaz i jeden oranžový prstenec
+  používají stejný snímek; pravotočivý rám vzniká v rovině kolmé k převzaté ose.
+  Změna osy zvyšuje revizi tokenu a ruší náhled i výběr, včetně přepnutí tam a zpět.
+  Nativní self-test kliká na šikmou nožičku, odmítne rovinu, zachová AIS výběr a vazby,
+  otočí Enterem i myší se skutečnou kontrolou těžišť a jedním Zpět/Znovu.
+  [Evidence](docs/p7-24-osa-valcove-plochy.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.

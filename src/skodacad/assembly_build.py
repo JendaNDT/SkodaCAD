@@ -65,15 +65,35 @@ def _multiply(a: Matrix, b: Matrix) -> Matrix:
                  for i in range(3))  # type: ignore[return-value]
 
 
-def axis_matrix(axis: str, degrees: float) -> Matrix:
+def axis_direction(axis: str | Sequence[float]) -> tuple[float, float, float]:
+    """Jednotkový směr ve světě sestavy; čísla jsou snímek, ne parametrický výraz."""
+    if isinstance(axis, str):
+        if axis in ("x", "y", "z"):
+            return tuple(float(i == "xyz".index(axis)) for i in range(3))
+        raise AssemblyError(f"Neznámá osa „{axis}“, povolené: x, y, z nebo směr osy.")
+    if (not isinstance(axis, Sequence) or len(axis) != 3
+            or any(isinstance(v, (str, bytes, bool)) for v in axis)):
+        raise AssemblyError("Směr osy musí mít tři konečná čísla a nesmí být nulový.")
+    try:
+        values = tuple(float(v) for v in axis)
+    except (TypeError, ValueError, OverflowError):
+        raise AssemblyError("Směr osy musí mít tři konečná čísla a nesmí být nulový.") from None
+    if not all(math.isfinite(v) for v in values) or not max(map(abs, values)):
+        raise AssemblyError("Směr osy musí mít tři konečná čísla a nesmí být nulový.")
+    # Škálování chrání i velmi malé/velké platné směrové vektory.
+    scale = max(map(abs, values))
+    scaled = tuple(v/scale for v in values)
+    length = math.hypot(*scaled)
+    return tuple(v/length for v in scaled)
+
+
+def axis_matrix(axis: str | Sequence[float], degrees: float) -> Matrix:
+    x, y, z = axis_direction(axis)
     c, s = _cos_sin(degrees)
-    if axis == "x":
-        return ((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c))
-    if axis == "y":
-        return ((c, 0.0, s), (0.0, 1.0, 0.0), (-s, 0.0, c))
-    if axis == "z":
-        return ((c, -s, 0.0), (s, c, 0.0), (0.0, 0.0, 1.0))
-    raise AssemblyError(f"Neznámá osa „{axis}“, povolené: x, y, z.")
+    t = 1-c
+    return ((c+x*x*t, x*y*t-z*s, x*z*t+y*s),
+            (y*x*t+z*s, c+y*y*t, y*z*t-x*s),
+            (z*x*t-y*s, z*y*t+x*s, c+z*z*t))
 
 
 def rotation_matrix(angles: Sequence[float]) -> Matrix:
@@ -105,7 +125,7 @@ def angles_of(matrix: Matrix) -> list[float]:
     return [_clean(rx), _clean(ry), _clean(rz)]
 
 
-def turned(angles: Sequence[float], axis: str, degrees: float) -> list[float]:
+def turned(angles: Sequence[float], axis: str | Sequence[float], degrees: float) -> list[float]:
     """Úhly po otočení o ``degrees`` kolem pevné osy sestavy (tlačítka ±90°)."""
     return angles_of(_multiply(axis_matrix(axis, degrees), rotation_matrix(angles)))
 
