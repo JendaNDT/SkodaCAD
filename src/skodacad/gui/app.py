@@ -1062,6 +1062,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_batch_move(assembly, lines) and ok
         ok = _self_test_assembly_selection_drag(assembly, lines) and ok
         ok = _self_test_assembly_batch_rotation(assembly, lines) and ok
+        ok = _self_test_assembly_rotation_handles(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1987,6 +1988,150 @@ def _self_test_assembly_batch_rotation(assembly, lines) -> bool:
             session.undo()
         assembly.batch_rotation_axis.setCurrentText("Z")
         assembly.batch_rotation_angle.setText("90")
+        assembly._refresh()
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_rotation_handles(assembly, lines) -> bool:
+    """Skutečné tažení prstenců, AIS náhled, přerušení a jedno přijetí po puštění."""
+    import math
+
+    import numpy as np
+    from OCP.gp import gp_Pnt
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Rotační rukojeti: chybí grafický prohlížeč")
+        return True
+    steps = len(session._undo)
+    ids = (("nozicka_1",), ("nozicka_2",))
+    try:
+        assembly.show_all()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        assembly.select_many(ids)
+        assembly.move_edits[0].setText("2,5")
+        assembly.batch_rotation_angle.setText("37,5")
+        assembly.set_component_transparency(ids[0], 35)
+        assembly.set_component_transparency(ids[1], 85)
+        assembly.isolate_selected()
+        viewer.set_standard_view("iso")
+        assembly.component_scroll.ensureWidgetVisible(assembly.rotation_handles)
+        QTest.mouseClick(assembly.rotation_handles, Qt.MouseButton.LeftButton)
+        QTest.qWait(30)
+        assert assembly.rotation_handles.isChecked() and not assembly.move_handles.isChecked()
+        assembly.rotation_step.setValue(15.)
+
+        def position(axis, degrees):
+            center = viewer._move_data["anchor"]
+            radius = viewer._view.Convert(round(90*viewer._pixel_scale()))
+            p = list(center)
+            p[(axis+1) % 3] += radius*math.cos(math.radians(degrees))
+            p[(axis+2) % 3] += radius*math.sin(math.radians(degrees))
+            return QPoint(*(round(v/viewer._pixel_scale())
+                            for v in viewer._view.Convert(*map(float, p))))
+
+        for axis in range(3):
+            if axis == 1:
+                assembly.set_component_visible(ids[1], False)  # kamera stále vměstnává obě
+            before, result = session.assembly.to_dict(), session.result
+            old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
+            center = (old[ids[0]]+old[ids[1]])/2
+            assert [a for a, _tip in viewer._move_tips] == [0, 1, 2]
+            start, end = position(axis, 45), position(axis, 77)
+            direction, scale = viewer._view.Proj(), viewer._view.Scale()
+            QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)
+            assert viewer._selection_drag is not None, f"Nelze uchopit prstenec {'XYZ'[axis]}"
+            assert viewer._selection_drag["axis"] == axis
+            QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
+            drag = viewer._selection_drag
+            assert drag is not None and drag["angle"] == 30
+            assert session.assembly.to_dict() == before and session.result is result
+            assert len(session._undo) == steps
+            c = gp_Pnt(*center).Transformed(drag["preview"].LocalTransformation())
+            assert np.allclose((c.X(), c.Y(), c.Z()), center, atol=1e-8, rtol=0)
+            assert all(viewer._ais.CustomAspects(s).IsHidden() for s in drag["data"]["shapes"])
+            QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+            QTest.qWait(30)
+            assert viewer._selection_drag is None and len(session._undo) == steps+1
+            assert assembly._selection == ids and assembly._isolated == ids
+            assert assembly.move_edits[0].text() == "2,5"
+            assert assembly.batch_rotation_angle.text() == "37,5"
+            assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+            x, y, z = e = np.eye(3)[axis]
+            cross = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+            t = math.radians(30)
+            q = np.eye(3)*math.cos(t)+(1-math.cos(t))*np.outer(e, e)+math.sin(t)*cross
+            for i in session.result.instances:
+                expected = center+q @ (old[i.ids]-center) if i.ids in ids else old[i.ids]
+                assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
+                assert i.part.is_valid
+            assert session.result.complete and abs(session.result.volume_mm3-31309.287) < .01
+            assert [assembly._transparency_value(path) for path in ids] == [35, 85]
+            moved = session.assembly.to_dict()
+            assembly.undo_action.trigger()
+            assert session.assembly.to_dict() == before and len(session._undo) == steps
+            assembly.redo_action.trigger()
+            assert session.assembly.to_dict() == moved and len(session._undo) == steps+1
+            assembly.undo_action.trigger()
+
+        before, result, redo = session.assembly.to_dict(), session.result, list(session._redo)
+        for cause in ("escape", "step", "mode", "focus", "resize"):
+            start, end = position(2, 45), position(2, 77)
+            QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)
+            QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
+            assert viewer._selection_drag is not None
+            if cause == "escape":
+                QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
+            elif cause == "step":
+                assembly.rotation_step.setValue(5.)
+            elif cause == "mode":
+                assembly.move_handles.setChecked(True)
+            elif cause == "focus":
+                assembly.component_scroll.ensureWidgetVisible(assembly.batch_rotation_angle)
+                assembly.batch_rotation_angle.setFocus()
+            else:
+                assembly.resize(assembly.width()+1, assembly.height()+1)
+            QTest.qWait(30)
+            QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+            assert viewer._selection_drag is None and session.assembly.to_dict() == before
+            assert session.result is result and len(session._undo) == steps
+            assert session._redo == redo
+            assembly.rotation_handles.setChecked(True)
+
+        assembly.rotation_step.setValue(15.)
+        start = position(2, 45)
+        QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+        QTest.qWait(30)
+        for k in range(1, 12):
+            QTest.mouseMove(viewer._surface, position(2, 45+30*k))
+            QTest.qWait(5)
+        QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+        assert viewer._selection_drag is None and session.assembly.to_dict() == before
+        assert len(session._undo) == steps and session._redo == redo
+        lines.append("✓ Rotační rukojeti: skutečné tažení XYZ, náhled bez změny modelu, "
+                     "přichycení 15° → pohyb 30°, oba díly včetně skrytého, pevný střed, "
+                     "35/85 %, kamera/okolí/objem/pole zachovány, jeden krok Zpět/Znovu, "
+                     "Esc/krok/režim/fokus/resize a 360° bez historie")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Rotační rukojeti:\n" + traceback.format_exc())
+        return False
+    finally:
+        viewer.cancel_selection_drag()
+        while len(session._undo) > steps:
+            session.undo()
+        assembly.rotation_handles.setChecked(False)
+        assembly.move_handles.setChecked(True)
+        assembly.rotation_step.setValue(15.)
         assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()

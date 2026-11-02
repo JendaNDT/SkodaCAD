@@ -902,6 +902,129 @@ def test_batch_rotation_full_turn_and_views_keep_redo_and_preferences(opened):
     assert w.batch_rotation_axis.currentText() == "Y" and w.batch_rotation_angle.text() == "360"
 
 
+def test_rotation_handles_use_full_center_and_exclusive_mode_without_clearing_inputs(opened):
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    center = w.session.rotation_center([p[0] for p in ids])
+    w.move_edits[0].setText("2,5")
+    w.batch_rotation_angle.setText("37,5")
+    w.rotation_handles.click()
+    assert not w.move_handles.isChecked() and not w.move_step.isEnabled()
+    assert w.rotation_step.isEnabled() and w.rotation_step.value() == 15
+    data = w.viewer.move_selection
+    assert data["mode"] == "rotate" and data["axes"] == [0, 1, 2] and data["anchor"] == center
+    w.set_component_visible(ids[1], False)
+    assert len(w.viewer.move_selection["shapes"]) == 1
+    assert w.viewer.move_selection["anchor"] == center  # skrytý díl stále patří do těžiště
+    w.rotation_step.setValue(5)
+    assert w.viewer.move_selection["step"] == 5
+    w.move_handles.click()
+    assert not w.rotation_handles.isChecked() and not w.rotation_step.isEnabled()
+    assert w.viewer.move_selection.get("mode", "move") == "move"
+    assert w.move_edits[0].text() == "2,5" and w.batch_rotation_angle.text() == "37,5"
+    assert not w.session.can_undo
+
+
+@pytest.mark.parametrize("axis", "xyz")
+def test_rotation_mouse_request_is_one_rigid_change_with_undo(opened, axis):
+    import numpy as np
+
+    from test_assembly_batch_rotation import rodrigues
+
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    w.rotation_handles.click()
+    w.batch_rotation_angle.setText("37,5")
+    w.move_edits[0].setText("2,5")
+    before = w.session.assembly.to_dict()
+    old = {i.ids: np.array(tuple(i.part.center())) for i in w.session.result.instances}
+    center = (old[ids[0]]+old[ids[1]])/2
+    w.viewer.selection_rotated.emit({"token": w.viewer.move_selection["token"],
+                                     "axis": axis, "angle": 30.})
+    assert len(w.session._undo) == 1 and w._selection == ids
+    for i in w.session.result.instances:
+        expected = center+rodrigues(axis, 30) @ (old[i.ids]-center) if i.ids in ids else old[i.ids]
+        assert tuple(i.part.center()) == pytest.approx(expected, abs=1e-6)
+    assert w.move_edits[0].text() == "2,5" and w.batch_rotation_angle.text() == "37,5"
+    assert w.rotation_handles.isChecked() and w.viewer.move_selection["mode"] == "rotate"
+    w.undo_action.trigger()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    w.redo_action.trigger()
+    assert len(w.session._undo) == 1 and w.rotation_handles.isChecked()
+
+
+def test_rotation_handles_respect_fixed_nested_and_expression_axes(opened, nested_isolation):
+    w = opened
+    w.select_many((("krabicka",), ("vicko",)))
+    assert not w.rotation_handles.isEnabled()
+    w.session.set_placement("nozicka_1", rotation=["0", "0", "0"])
+    w._refresh()
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.rotation_handles.click()
+    assert w.viewer.move_selection["axes"] == [2]
+    state = w.session.assembly.to_dict()
+    w.viewer.selection_rotated.emit({"token": w.viewer.move_selection["token"],
+                                     "axis": "x", "angle": 30})
+    assert w.session.assembly.to_dict() == state
+    nested_isolation.select_many((("a", "deska"), ("b", "deska")))
+    assert not nested_isolation.rotation_handles.isEnabled()
+    nested_isolation.select_many((("a",), ("a", "deska"), ("b",)))
+    nested_isolation.rotation_handles.click()
+    assert len(nested_isolation.viewer.move_selection["shapes"]) == 4
+
+
+@pytest.mark.parametrize("cause", ["selection", "recipe", "result", "mode"])
+def test_stale_rotation_drag_request_is_rejected(opened, cause):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.rotation_handles.click()
+    token = w.viewer.move_selection["token"]
+    if cause == "selection":
+        w.select_many((("nozicka_3",), ("nozicka_4",)))
+    elif cause == "recipe":
+        w.session.assembly.name += " změna"
+    elif cause == "result":
+        w.session.rebuild()
+    else:
+        w.move_handles.click()
+    before, undo = w.session.assembly.to_dict(), list(w.session._undo)
+    w.viewer.selection_rotated.emit({"token": token, "axis": "z", "angle": 30})
+    assert w.session.assembly.to_dict() == before and w.session._undo == undo
+    assert "zrušeno" in w.statusBar().currentMessage()
+
+
+def test_mode_switch_rejects_old_move_request_and_preferences_survive_views(opened):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    token = w.viewer.move_selection["token"]
+    w.rotation_handles.click()
+    w.rotation_step.setValue(5)
+    w.viewer.selection_moved.emit({"token": token, "delta": [5, 0, 0]})
+    assert not w.session.can_undo
+    w.toggle_selected_visibility()
+    assert w.viewer.move_selection is None
+    w.show_all()
+    w.toggle_selected_transparency()
+    w.isolate_selected()
+    assert w.rotation_handles.isChecked() and w.rotation_step.value() == 5
+    assert w.viewer.move_selection["mode"] == "rotate"
+
+
+def test_rotation_drag_constraint_failure_keeps_entire_model_and_fields(constrained, dialogs):
+    w = constrained
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.rotation_handles.click()
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.batch_rotation_angle.setText("12")
+    w.viewer.selection_rotated.emit({"token": w.viewer.move_selection["token"],
+                                     "axis": "x", "angle": 30})
+    assert dialogs["shown"][-1][0] == "Výběr nejde otočit"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and w.batch_rotation_angle.text() == "12"
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result
