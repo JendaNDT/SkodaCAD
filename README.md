@@ -411,7 +411,7 @@ Rozepsané číselné přírůstky se tažením nepřepisují.
 
 **Hromadné otáčení:** při výběru více komponent použij vpravo **Společné otočení [°]**.
 Zvol osu **X/Y/Z celé sestavy**, zadej úhel a stiskni **Otočit vybrané** nebo Enter.
-Všechny vybrané díly, včetně skrytých a celých podsestav, se otočí kolem společného
+Všechny vybrané díly, včetně skrytých a celých podsestav, se ve výchozím režimu otočí kolem
 geometrického těžiště. Střed je vážený objemem, nezávisí na materiálu a při otočení
 zůstává na místě. Jeho souřadnice vidíš v panelu. Záporný úhel obrací směr.
 Celý pohyb je jeden krok **Zpět/Znovu**, 0° a celé otáčky historii nepřidávají.
@@ -428,6 +428,16 @@ Krok platí od začátku tahu. Celá otáčka nepřidá historii. Číselný úh
 posun se tažením nepřepisují. U natočení zadaných výrazem je dostupný prstenec Z.
 Téměř boční prstence se nezobrazují; u křížení uchop jinou část nebo natoč pohled.
 [Chování a ověření rotačních rukojetí](docs/p7-21-rotacni-rukojeti.md).
+
+**Volitelný střed otáčení:** v témže panelu zvol **Střed výběru** (výchozí těžiště),
+**Počátek sestavy** (0, 0, 0) nebo **Vlastní bod**. Vlastní X/Y/Z jsou v mm v osách celé
+sestavy a přijímají i desetinnou čárku nebo výrazy s parametry sestavy. Tlačítko
+**Převzít střed výběru** vyplní aktuální těžiště jako pevný bod, včetně skrytých dílů.
+Stejný bod používá číselné otočení i prstence ve 3D; jeho vyhodnocené souřadnice ukazuje
+panel. Změna středu během tahu náhled zruší. Volba a rozepsané souřadnice se pamatují
+v otevřeném okně, nemění model ani historii a neukládají se do souboru. Při příkazu se
+bod vyhodnotí jednou; pozdější změna parametru už provedené otočení nepřesouvá.
+[Chování a ověření vlastního středu](docs/p7-22-volitelny-stred-otaceni.md).
 
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:

@@ -383,25 +383,56 @@ class AssemblyWindow(QMainWindow):
         self.batch_rotation_angle.returnPressed.connect(self.apply_batch_rotation)
         grid.addWidget(self.batch_rotation_angle, 1, 1)
         grid.setColumnStretch(1, 1)
+        self._rotation_center_revision = 0
+        grid.addWidget(QLabel("Střed otáčení"), 2, 0)
+        self.rotation_center_mode = QComboBox()
+        self.rotation_center_mode.addItems(["Střed výběru", "Počátek sestavy", "Vlastní bod"])
+        self.rotation_center_mode.setAccessibleName("Volba středu otáčení")
+        self.rotation_center_mode.setToolTip(
+            "Střed výběru je geometrické těžiště včetně skrytých dílů. "
+            "Počátek sestavy je X=Y=Z=0. Vlastní bod má souřadnice v celé sestavě. "
+            "Volba je nastavení otevřeného okna, do souboru se neukládá.")
+        grid.addWidget(self.rotation_center_mode, 2, 1)
+        self.rotation_point_box = QWidget()
+        point_grid = QGridLayout(self.rotation_point_box)
+        point_grid.setContentsMargins(0, 0, 0, 0)
+        self.rotation_center_edits = []
+        for row, axis in enumerate("XYZ"):
+            point_grid.addWidget(QLabel(f"{axis} [mm]"), row, 0)
+            field = QLineEdit("0")
+            field.setAccessibleName(f"Střed otáčení {axis}")
+            field.setMinimumWidth(90)
+            field.setToolTip("Souřadnice bodu v celé sestavě, v mm. Číslo nebo výraz "
+                             "s parametry sestavy; bod se použije v okamžiku otočení.")
+            field.textChanged.connect(self._rotation_center_changed)
+            field.returnPressed.connect(self.apply_batch_rotation)
+            self.rotation_center_edits.append(field)
+            point_grid.addWidget(field, row, 1)
+        point_grid.setColumnStretch(1, 1)
+        self.rotation_center_copy = QPushButton("Převzít střed výběru")
+        self.rotation_center_copy.setToolTip("Vyplní aktuální těžiště jako pevný vlastní bod; "
+                                            "zahrnuje i skryté vybrané díly.")
+        self.rotation_center_copy.clicked.connect(self._copy_rotation_center)
+        point_grid.addWidget(self.rotation_center_copy, 3, 0, 1, 2)
+        grid.addWidget(self.rotation_point_box, 3, 0, 1, 2)
         self.batch_rotation_center = self._wrapped_label()
         self.batch_rotation_center.setToolTip(
-            "Geometrické těžiště všech vybraných dílů, vážené jejich objemem. "
-            "Zahrnuje i skryté díly a celé vybrané podsestavy, nezávisí na materiálu. "
-            "Střed i úhel se použijí v okamžiku otočení.")
-        grid.addWidget(self.batch_rotation_center, 2, 0, 1, 2)
+            "Stejný bod používá tlačítko i rotační rukojeti. Střed i úhel se použijí "
+            "v okamžiku otočení. Změna bodu během tahu náhled zruší.")
+        grid.addWidget(self.batch_rotation_center, 4, 0, 1, 2)
         self.batch_rotation_note = self._wrapped_label()
-        grid.addWidget(self.batch_rotation_note, 3, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_note, 5, 0, 1, 2)
         self.batch_rotation_button = QPushButton("Otočit vybrané")
         self.batch_rotation_button.clicked.connect(self.apply_batch_rotation)
-        grid.addWidget(self.batch_rotation_button, 4, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_button, 6, 0, 1, 2)
         self.rotation_handles = QCheckBox("Rotační rukojeti ve 3D")
         self.rotation_handles.setToolTip(
             "Táhni barevný prstenec nebo jeho kuličku X/Y/Z kolem společného středu. "
             "Zapnutím se přepnou posouvací rukojeti. Esc zruší náhled; "
             "zahrnuté jsou i skryté vybrané díly. Natočení zadané výrazem podporuje osu Z.")
         self.rotation_handles.toggled.connect(lambda checked: self._choose_handles(True, checked))
-        grid.addWidget(self.rotation_handles, 5, 0, 1, 2)
-        grid.addWidget(QLabel("Krok otáčení"), 6, 0)
+        grid.addWidget(self.rotation_handles, 7, 0, 1, 2)
+        grid.addWidget(QLabel("Krok otáčení"), 8, 0)
         self.rotation_step = QDoubleSpinBox()
         self.rotation_step.setRange(0, 180)
         self.rotation_step.setDecimals(3)
@@ -413,18 +444,59 @@ class AssemblyWindow(QMainWindow):
         self.rotation_step.setToolTip("Krok od začátku tahu ve stupních; 0 = Volně. "
                                      "Číselný úhel a osu pro tlačítko tažení nepřepisuje.")
         self.rotation_step.valueChanged.connect(self._refresh_move_handles)
-        grid.addWidget(self.rotation_step, 6, 1)
+        grid.addWidget(self.rotation_step, 8, 1)
+        self.rotation_center_mode.currentIndexChanged.connect(self._rotation_center_changed)
         layout.addWidget(self.batch_rotation_box)
+
+    def _rotation_center_values(self):
+        mode = self.rotation_center_mode.currentIndex()
+        if mode != 2:
+            return None if mode == 0 else (0., 0., 0.)
+        values = []
+        for axis, field in zip("XYZ", self.rotation_center_edits, strict=True):
+            if not field.text().strip():
+                raise AssemblyError(f"Střed otáčení {axis}: zadej číslo nebo výraz v mm.")
+            values.append(parse_value(field.text()))
+        return values
+
+    def _chosen_rotation_center(self):
+        return self.session.rotation_center([ids[0] for ids in self._selection_roots()],
+                                            self._rotation_center_values())
+
+    def _rotation_token(self) -> tuple:
+        return (*self._move_token(), self._rotation_center_revision)
+
+    def _rotation_center_changed(self, *_args) -> None:
+        self._rotation_center_revision += 1
+        self.viewer.cancel_selection_drag()
+        self._refresh_batch_rotation_box()
+        self._refresh_move_handles()
+
+    def _copy_rotation_center(self) -> None:
+        def work():
+            center = self.session.rotation_center([ids[0] for ids in self._selection_roots()])
+            for field, value in zip(self.rotation_center_edits, center, strict=True):
+                blocked = field.blockSignals(True)
+                field.setText(repr(value))  # zachovat přesnost, ne tři desetinná místa popisku
+                field.blockSignals(blocked)
+            self._rotation_center_changed()
+        # Nastavení pohledu nesmí používat _run (přepočet a označení změny modelu).
+        try:
+            work()
+        except AssemblyError as exc:
+            self.statusBar().showMessage(str(exc))
 
     def _refresh_batch_rotation_box(self) -> None:
         multiple = len(self._selection) > 1
         self.batch_rotation_box.setVisible(multiple)
         problem = self._move_problem()
         roots = self._selection_roots()
+        self.rotation_point_box.setVisible(self.rotation_center_mode.currentIndex() == 2)
+        self.rotation_center_copy.setEnabled(multiple and bool(roots) and not problem)
         center = None
         if multiple and not problem:
             try:
-                center = self.session.rotation_center([ids[0] for ids in roots])
+                center = self._chosen_rotation_center()
             except AssemblyError as exc:
                 problem = str(exc)
         eligible = multiple and bool(roots) and not problem
@@ -438,9 +510,9 @@ class AssemblyWindow(QMainWindow):
                            "nebo uprav natočení jednotlivých dílů na čísla.")
         self.batch_rotation_button.setEnabled(multiple and bool(roots) and not problem)
         self.batch_rotation_center.setText(
-            "Střed výběru [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", center,
+            "Použitý střed [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", center,
                                                                          strict=True))
-            if center else "Střed výběru není dostupný.")
+            if center else "Střed otáčení není dostupný.")
         self.batch_rotation_note.setText(problem or "Otočí celý výběr včetně skrytých dílů. "
                                         "Zpět vrátí celý pohyb jedním krokem.")
 
@@ -452,7 +524,8 @@ class AssemblyWindow(QMainWindow):
         def work() -> None:
             angle = parse_value(self.batch_rotation_angle.text())
             self.session.turn_many_around(components,
-                                          self.batch_rotation_axis.currentText().lower(), angle)
+                                          self.batch_rotation_axis.currentText().lower(), angle,
+                                          center=self._rotation_center_values())
 
         if self._run("Výběr nejde otočit", work):
             self.statusBar().showMessage("Celý výběr byl otočen. Zpět vrátí celý pohyb.")
@@ -486,9 +559,9 @@ class AssemblyWindow(QMainWindow):
             if selected:
                 if rotating:
                     try:
-                        anchor = self.session.rotation_center([ids[0] for ids in roots])
+                        anchor = self._chosen_rotation_center()
                         data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
-                                "step": self.rotation_step.value(), "token": self._move_token(),
+                                "step": self.rotation_step.value(), "token": self._rotation_token(),
                                 "mode": "rotate", "axes": self._rotation_axes()}
                     except AssemblyError:
                         pass  # důvod už ukazuje panel; žádný použitelný prstenec
@@ -513,8 +586,9 @@ class AssemblyWindow(QMainWindow):
             self.statusBar().showMessage("Celý výběr byl posunut. Zpět vrátí celý posun.")
 
     def _rotation_dragged(self, request: dict) -> None:
-        if (not self.rotation_handles.isChecked() or len(self._selection) < 2
-                or self._move_problem() or request["token"] != self._move_token()
+        if (not self.rotation_handles.isChecked() or not self.rotation_handles.isEnabled()
+                or len(self._selection) < 2 or self._move_problem()
+                or request["token"] != self._rotation_token()
                 or request["axis"] not in ["xyz"[axis] for axis in self._rotation_axes()]):
             self.statusBar().showMessage("Výběr nebo sestava se změnily; otáčení bylo zrušeno.")
             self._refresh_move_handles()
@@ -522,7 +596,8 @@ class AssemblyWindow(QMainWindow):
         components = [ids[0] for ids in self._selection_roots()]
         if self._run("Výběr nejde otočit",
                      lambda: self.session.turn_many_around(components,
-                                                          request["axis"], request["angle"])):
+                                                          request["axis"], request["angle"],
+                                                          center=self._rotation_center_values())):
             self.statusBar().showMessage(f"Celý výběr byl otočen kolem {request['axis'].upper()} "
                                          f"o {request['angle']:g}°. Zpět vrátí celý pohyb.")
 
