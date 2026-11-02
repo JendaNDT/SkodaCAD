@@ -148,6 +148,9 @@ class AssemblyWindow(QMainWindow):
         self._build_checks()
         self._create_actions()
         self._build_menus()
+        # Lišta musí zabírat místo už před prvním tahem. Její pozdní vytvoření
+        # změní velikost 3D plochy a bezpečnostní resize pak zruší rozpracovaný tah.
+        self.statusBar().showMessage("Vyber komponenty ve stromu nebo ve 3D.")
         self.setMinimumSize(960, 600)
         self.resize(1200, 760)
         self.reset_layout()

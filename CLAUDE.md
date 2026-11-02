@@ -1320,6 +1320,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   identity výsledku; zastaralý návrh se odmítne. Esc/fokus/skrytí/resize/změna výběru,
   kroku či prezentace tah ruší. Technický první paint přehraje i čekající rukojeti.
   Rukojeti nesmějí ovlivňovat FitAll; projekčně zaniklé osy nejsou uchopitelné.
+  Stavový řádek vytvořit už v konstruktoru: první hláška jinak zmenší plochu a resize
+  zruší tah. Nativní test musí mezi stiskem/pohybem/puštěním zpracovat události Qt.
   Rozepsaný číselný vektor se tažením nemaže. [Evidence](docs/p7-19-tazeni-vyberu.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
