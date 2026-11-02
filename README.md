@@ -439,6 +439,15 @@ v otevřeném okně, nemění model ani historii a neukládají se do souboru. P
 bod vyhodnotí jednou; pozdější změna parametru už provedené otočení nepřesouvá.
 [Chování a ověření vlastního středu](docs/p7-22-volitelny-stred-otaceni.md).
 
+**Střed kliknutím ve 3D:** v témže panelu zvol **Střed kružnice**, **Vrchol** nebo
+**Bod na ploše** a zapni **Vybrat ve 3D**. Klikni na příslušnou geometrii libovolného
+viditelného dílu, i nevybraného. Kruhová hrana nebo oblouk poskytne přesný střed,
+vrchol své souřadnice a plocha přesný průsečík s pohledem. Výběr komponent pro otočení
+zůstane zachovaný. Bod se převezme do **Vlastní bod**; samotné kliknutí díly nepřesune
+ani nepřidá historii. **Esc**, pravý klik nebo **Zrušit výběr** režim ukončí. Prázdný
+klik či nevhodná hrana nechá výběr zapnutý pro další pokus. Pohled lze dál otáčet,
+posouvat a přibližovat. [Chování a ověření výběru bodu](docs/p7-23-vyber-stredu-ve-3d.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

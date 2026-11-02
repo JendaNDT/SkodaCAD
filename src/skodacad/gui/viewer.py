@@ -40,14 +40,15 @@ from OCP.Aspect import (
     Aspect_TOM_POINT,
     Aspect_TOTP_LEFT_LOWER,
 )
-from OCP.BRep import BRep_Builder
+from OCP.BRep import BRep_Builder, BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
-from OCP.collections import Array1_gp_Pnt
+from OCP.collections import Array1_gp_Pnt, List_int
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
-from OCP.GeomAbs import GeomAbs_C1
-from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
+from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle
+from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Lin, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
     Graphic3d_MaterialAspect,
@@ -55,6 +56,7 @@ from OCP.Graphic3d import (
     Graphic3d_TypeOfShadingModel_Unlit,
     Graphic3d_ZLayerId_Topmost,
 )
+from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
 from OCP.OpenGl import OpenGl_GraphicDriver
 from OCP.Poly import Poly_Triangle, Poly_Triangulation
 from OCP.Prs3d import (
@@ -65,8 +67,8 @@ from OCP.Prs3d import (
 )
 from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
 from OCP.TCollection import TCollection_ExtendedString
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
-from OCP.TopoDS import TopoDS_Compound
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+from OCP.TopoDS import TopoDS, TopoDS_Compound
 from OCP.V3d import (
     V3d_Viewer,
     V3d_XnegYposZpos,
@@ -104,6 +106,32 @@ from skodacad.gui.rotation_drag import (
 from skodacad.ndt.plan import STEP_COLORS, ZONE_COLOR
 
 log = logging.getLogger(__name__)
+
+
+def _rotation_pick_point(shape, kind, hit=None, ray=None):
+    """Přesný bod z umístěné geometrie; plocha se protne paprskem, ne jen sítí AIS."""
+    if kind == "circle" and shape.ShapeType() == TopAbs_EDGE:
+        curve = BRepAdaptor_Curve(TopoDS.Edge(shape))
+        if curve.GetType() != GeomAbs_Circle:
+            return None
+        point = curve.Circle().Location()
+    elif kind == "vertex" and shape.ShapeType() == TopAbs_VERTEX:
+        point = BRep_Tool.Pnt_s(TopoDS.Vertex(shape))
+    elif kind == "face" and shape.ShapeType() == TopAbs_FACE and hit is not None and ray:
+        if (len(hit) != 3 or len(ray) != 6
+                or not all(math.isfinite(v) for v in (*hit, *ray)) or not math.hypot(*ray[3:])):
+            return None
+        intersector = IntCurvesFace_ShapeIntersector()
+        intersector.Load(shape, 1e-7)
+        intersector.Perform(gp_Lin(gp_Pnt(*ray[:3]), gp_Dir(*ray[3:])), -1e100, 1e100)
+        if not intersector.IsDone() or not intersector.NbPnt():
+            return None
+        point = min((intersector.Pnt(i) for i in range(1, intersector.NbPnt()+1)),
+                    key=lambda p: math.dist(p.Coord(), hit))
+    else:
+        return None
+    values = point.Coord()
+    return tuple(values) if all(math.isfinite(v) for v in values) else None
 
 # Klíče odpovídají viewer_views.VIEW_LABELS (názvy a zkratky pro menu).
 STANDARD_VIEWS = {
@@ -202,6 +230,8 @@ class _NativeSurface(QWidget):
                             QEvent.Type.Hide, QEvent.Type.UngrabMouse):
             self._owner.cancel_guide_drag()
             self._owner.cancel_selection_drag()
+            if event.type() in (QEvent.Type.WindowDeactivate, QEvent.Type.Hide):
+                self._owner.cancel_rotation_center_pick()
         result = super().event(event)
         if event.type() == QEvent.Type.DevicePixelRatioChange:
             self._owner._resized()
@@ -235,7 +265,8 @@ class _NativeSurface(QWidget):
         self._owner.fit_all()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape and (self._owner.cancel_selection_drag()
+        if event.key() == Qt.Key.Key_Escape and (self._owner.cancel_rotation_center_pick()
+                                                or self._owner.cancel_selection_drag()
                                                 or self._owner.cancel_guide_drag()):
             event.accept()
             return
@@ -256,6 +287,8 @@ class OccViewer(QWidget):
     guide_drag_message = Signal(str)
     selection_moved = Signal(dict)  # náhled celého výběru, jediný požadavek po puštění
     selection_rotated = Signal(dict)
+    rotation_center_picked = Signal(dict)
+    rotation_center_pick_finished = Signal(object)
     selection_drag_message = Signal(str)
     probe_rotated = Signal(int)  # otočení sondy kolečkem (±15°)
 
@@ -291,6 +324,7 @@ class OccViewer(QWidget):
         self._move_tips = []
         self._move_rings = []
         self._selection_drag = None
+        self._center_pick = None
         self._measure_objects: list[Any] = []  # čáry a popisky měření
         self._map_objects: list[Any] = []  # barevná mapa tloušťky a značka nejtenčího místa
         self._coverage_objects: list[Any] = []
@@ -385,6 +419,7 @@ class OccViewer(QWidget):
         Před prvním vykreslením upraví čekající požadavek.
         """
         shapes = _part_transparencies(parts)
+        self.cancel_rotation_center_pick()
         self.cancel_selection_drag()
         if not self.ready:
             if self._pending is not None:
@@ -446,7 +481,8 @@ class OccViewer(QWidget):
         return shapes
 
     def clear_selection(self) -> None:
-        if self.cancel_selection_drag() or self.cancel_guide_drag():
+        if (self.cancel_rotation_center_pick() or self.cancel_selection_drag()
+                or self.cancel_guide_drag()):
             return
         if self.ready:
             self._context.ClearSelected(False)
@@ -622,9 +658,78 @@ class OccViewer(QWidget):
 
     def set_move_selection(self, data: dict | None) -> None:
         """Rukojeti sestavy; tvary už jsou umístěné. Nikdy nemění jejich geometrii."""
+        self.cancel_rotation_center_pick(redraw=False)
         self.cancel_selection_drag()
         self._move_data = data
         self._draw_move_handles()
+
+    def start_rotation_center_pick(self, kind: str, token) -> bool:
+        """Jednorázový výběr bodu. Vlastníci běžného výběru AIS se nemění."""
+        modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE}
+        if not self.ready or self._ais is None or kind not in modes:
+            return False
+        self.cancel_rotation_center_pick()
+        self.cancel_selection_drag()
+        self.cancel_guide_drag()
+        saved = List_int()
+        self._context.ActivatedModes(self._ais, saved)
+        self._center_pick = {"kind": kind, "token": token, "ais": self._ais,
+                             "modes": list(saved)}
+        self._context.Deactivate(self._ais)
+        self._context.Activate(self._ais, AIS_Shape.SelectionMode_s(modes[kind]))
+        self._context.ClearDetected(False)
+        self._remove_move_handles()
+        self._press = None
+        self._probe_dragging = False
+        self._dragging = False
+        self._surface.setFocus()
+        self._surface.setCursor(Qt.CursorShape.CrossCursor)
+        self._view.Redraw()
+        return True
+
+    def cancel_rotation_center_pick(self, *, redraw=True, notify=True) -> bool:
+        data = self._center_pick
+        if data is None:
+            return False
+        self._center_pick = None
+        self._press = None
+        self._dragging = self._probe_dragging = False
+        self._surface.setCursor(Qt.CursorShape.ArrowCursor)
+        if self.ready:
+            if self._ais is data["ais"]:
+                self._context.Deactivate(self._ais)
+                for mode in data["modes"]:
+                    self._context.Activate(self._ais, mode)
+            self._context.ClearDetected(False)
+            if redraw:
+                self._draw_move_handles()
+                self._view.Redraw()
+        if notify:
+            self.rotation_center_pick_finished.emit(data["token"])
+            self.selection_drag_message.emit("Výběr středu zrušen; bod ani díly se nezměnily.")
+        return True
+
+    def _pick_rotation_center_at(self, x, y) -> None:
+        data, context = self._center_pick, self._context
+        context.MoveTo(x, y, self._view, False)
+        point = None
+        shape = context.DetectedShape() if context.HasDetectedShape() else None
+        if context.HasDetected() and shape is not None:
+            selector = context.MainSelector()
+            hit = selector.PickedPoint(1).Coord() if selector.NbPicked() else None
+            try:
+                point = _rotation_pick_point(shape, data["kind"], hit,
+                                             self._view.ConvertWithProj(x, y))
+            except Exception:  # noqa: BLE001 -- vadná geometrie nesmí ukončit výběr ani okno
+                log.exception("Bod středu nejde získat z kliknuté geometrie")
+        if point is None:
+            self.selection_drag_message.emit("Zde není vhodná geometrie. Klikni znovu, "
+                                              "nebo Esc výběr zruš.")
+            return
+        self.cancel_rotation_center_pick(notify=False)
+        self.rotation_center_picked.emit({"token": data["token"], "kind": data["kind"],
+                                          "point": point, "shape": shape})
+        self.rotation_center_pick_finished.emit(data["token"])
 
     def _remove_move_handles(self) -> None:
         for shown in self._move_objects:
@@ -635,7 +740,8 @@ class OccViewer(QWidget):
 
     def _draw_move_handles(self, delta=(0., 0., 0.)) -> None:
         self._remove_move_handles()
-        if not self.ready or self._move_data is None or self._ais is None:
+        if (not self.ready or self._move_data is None or self._ais is None
+                or self._center_pick is not None):
             return
         if self._move_data.get("mode") == "rotate":
             self._draw_rotation_handles()
@@ -1496,6 +1602,7 @@ class OccViewer(QWidget):
             self._view.Redraw()
 
     def _resized(self) -> None:
+        self.cancel_rotation_center_pick()
         self.cancel_selection_drag()
         self.cancel_guide_drag()
         if self.ready:
@@ -1544,6 +1651,11 @@ class OccViewer(QWidget):
         self._surface.setFocus()
         self._press = self._last = event.position().toPoint()
         self._dragging = False
+        if self._center_pick is not None:
+            self._probe_dragging = False
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._view.StartRotation(*self._pixels(event.position()))
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
             if self.probe_drag_enabled or alt:
@@ -1595,13 +1707,27 @@ class OccViewer(QWidget):
             hit = self._guide_handle_at(event.position())
             if hit is None:
                 hit = self._move_handle_at(event.position())
-            self._surface.setCursor(Qt.CursorShape.OpenHandCursor if hit is not None
+            self._surface.setCursor(Qt.CursorShape.CrossCursor if self._center_pick is not None
+                                    else Qt.CursorShape.OpenHandCursor if hit is not None
                                     else Qt.CursorShape.ArrowCursor)
             self._context.MoveTo(x, y, self._view, True)  # předvýběr pod kurzorem
         self._last = pos
 
     def _mouse_release(self, event: QMouseEvent) -> None:
         if not self.ready:
+            return
+        if self._center_pick is not None:
+            if self._press is None:
+                return
+            clicked = (not self._dragging
+                       and (event.position().toPoint()-self._press).manhattanLength()
+                       <= _DRAG_THRESHOLD)
+            self._press = None
+            self._dragging = False
+            if clicked and event.button() == Qt.MouseButton.RightButton:
+                self.cancel_rotation_center_pick()
+            elif clicked and event.button() == Qt.MouseButton.LeftButton:
+                self._pick_rotation_center_at(*self._pixels(event.position()))
             return
         if self._selection_drag is not None:
             if event.button() == Qt.MouseButton.LeftButton:
@@ -1714,7 +1840,7 @@ class OccViewer(QWidget):
         if not self.ready:
             return
         alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
-        if (self.probe_drag_enabled or alt) and self._probe_objects:
+        if self._center_pick is None and (self.probe_drag_enabled or alt) and self._probe_objects:
             delta = event.angleDelta().y()
             if delta:
                 self.probe_rotated.emit(15 if delta > 0 else -15)

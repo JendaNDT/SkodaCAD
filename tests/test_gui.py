@@ -27,6 +27,8 @@ class FakeViewer(QtWidgets.QWidget):
     guide_drag_message = Signal(str)
     selection_moved = Signal(dict)
     selection_rotated = Signal(dict)
+    rotation_center_picked = Signal(dict)
+    rotation_center_pick_finished = Signal(object)
     selection_drag_message = Signal(str)
 
     def __init__(self):
@@ -46,11 +48,13 @@ class FakeViewer(QtWidgets.QWidget):
         self.beam = []  # body lomené dráhy osy UT paprsku v dílu
         self.picked_point = None
         self.probe_drag_enabled = False
+        self.center_pick = None
         self.target = None  # (objem náhledu cíle, objem zadaného tvaru nebo None)
         self.points = None  # (body, barvy) mapy kontaktních ploch návrhu poloh
         self.plan = None  # ({barva: [(od, do)]}, začátek, zóny) plánu dráhy sondy
 
     def show_part(self, part, fit=False, accent=None, transparent=None):
+        self.cancel_rotation_center_pick()
         self.model_selection_disabled = False
         self.guides = None
         self.parts.append((part, fit))
@@ -68,6 +72,7 @@ class FakeViewer(QtWidgets.QWidget):
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
     def set_transparent_parts(self, parts):
+        self.cancel_rotation_center_pick()
         self.transparencies = list(parts)
         self.transparent_parts = [part for part, amount in parts if amount > 0]
 
@@ -87,7 +92,20 @@ class FakeViewer(QtWidgets.QWidget):
         self.guide_drag_direction = direction
 
     def set_move_selection(self, data):
+        self.cancel_rotation_center_pick()
         self.move_selection = data
+
+    def start_rotation_center_pick(self, kind, token):
+        self.center_pick = {"kind": kind, "token": token}
+        return True
+
+    def cancel_rotation_center_pick(self):
+        if self.center_pick is None:
+            return False
+        token = self.center_pick["token"]
+        self.center_pick = None
+        self.rotation_center_pick_finished.emit(token)
+        return True
 
     def cancel_selection_drag(self):
         return False

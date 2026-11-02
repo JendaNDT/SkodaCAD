@@ -1064,6 +1064,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_batch_rotation(assembly, lines) and ok
         ok = _self_test_assembly_rotation_handles(assembly, lines) and ok
         ok = _self_test_assembly_rotation_handles(assembly, lines, custom=True) and ok
+        ok = _self_test_rotation_center_pick(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -2176,6 +2177,149 @@ def _self_test_assembly_rotation_handles(assembly, lines, custom=False) -> bool:
         assembly.move_handles.setChecked(True)
         assembly.rotation_step.setValue(15.)
         assembly.rotation_center_mode.setCurrentIndex(0)
+        assembly._refresh()
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_rotation_center_pick(assembly, lines) -> bool:
+    """Skutečný klik na kružnici, vrchol a plochu jiného dílu; běžný výběr zůstává."""
+    import math
+
+    import numpy as np
+    from OCP.collections import List_int
+    from PySide6.QtCore import QPoint, QSignalBlocker, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Výběr středu ve 3D: chybí grafický prohlížeč")
+        return True
+    steps = len(session._undo)
+    ids = (("nozicka_1",), ("nozicka_2",))
+    try:
+        assembly.show_all()
+        assembly.select_many(ids)
+        for path in (("krabicka",), ("vicko",)):
+            assembly.set_component_visible(path, False)
+        assembly.set_component_transparency(ids[0], 35)
+        assembly.set_component_transparency(ids[1], 85)
+        assembly.rotation_handles.setChecked(True)
+        assembly.move_edits[0].setText("2,5")
+        assembly.batch_rotation_angle.setText("37,5")
+        viewer.set_standard_view("top")
+        QTest.qWait(100)
+
+        def screen(point):
+            return QPoint(*(round(v/viewer._pixel_scale())
+                            for v in viewer._view.Convert(*map(float, point))))
+
+        # Technická příprava existujícího AIS výběru bez změny komponent v controlleru.
+        with QSignalBlocker(viewer):
+            viewer._select_at(*viewer._pixels(screen((-32, -17, 0))))
+        selected = viewer.selected_shapes()
+        assert selected, "Příprava běžného výběru plochy selhala"
+        assembly._picks = [(shape, viewer.picked_point) for shape in selected]
+        assembly._refresh_pick_note()
+        picked_before, picks_before = viewer.picked_point, list(assembly._picks)
+        modes = List_int()
+        viewer._context.ActivatedModes(viewer._ais, modes)
+        modes_before = list(modes)
+        before, result = session.assembly.to_dict(), session.result
+        redo = list(session._redo)
+        for kind, target, expected in (("circle", (34.5, 17+math.sqrt(18.75), 0), (32, 17, 0)),
+                                       ("vertex", (37, 17, 0), (37, 17, 0)),
+                                       ("face", (32, 17, 0), None)):
+            assembly.rotation_pick_kind.setCurrentIndex(assembly.rotation_pick_kind.findData(kind))
+            assembly.component_scroll.ensureWidgetVisible(assembly.rotation_pick_button)
+            QTest.qWait(30)
+            QTest.mouseClick(assembly.rotation_pick_button, Qt.MouseButton.LeftButton)
+            QTest.qWait(30)
+            assert viewer._center_pick is not None and not viewer._move_objects
+            pos = screen(target)
+            ray = viewer._view.ConvertWithProj(*viewer._pixels(pos))
+            if expected is None:  # nezávislý průsečík zaokrouhleného pixelu s rovinou z=0
+                t = -ray[2]/ray[5]
+                expected = tuple(ray[i]+t*ray[i+3] for i in range(3))
+            direction, scale = viewer._view.Proj(), viewer._view.Scale()
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=pos)
+            QTest.qWait(30)
+            assert viewer._center_pick is None, f"Klik {kind} nepřevzal bod"
+            actual = [float(f.text()) for f in assembly.rotation_center_edits]
+            assert np.allclose(actual, expected, atol=1e-7, rtol=0), (kind, actual, expected)
+            assert assembly.rotation_center_mode.currentIndex() == 2
+            assert assembly._selection == ids and assembly._picks == picks_before
+            assert session.assembly.to_dict() == before and session.result is result
+            assert len(session._undo) == steps and session._redo == redo
+            assert viewer.picked_point == picked_before
+            assert len(viewer.selected_shapes()) == len(selected)
+            assert all(any(s.IsSame(old) for old in selected) for s in viewer.selected_shapes())
+            restored = List_int()
+            viewer._context.ActivatedModes(viewer._ais, restored)
+            assert sorted(restored) == sorted(modes_before)
+            assert viewer._view.Proj() == direction and math.isclose(viewer._view.Scale(), scale)
+            assert [assembly._transparency_value(p) for p in ids] == [35, 85]
+            assert assembly.move_edits[0].text() == "2,5"
+            assert assembly.batch_rotation_angle.text() == "37,5"
+
+        saved = [f.text() for f in assembly.rotation_center_edits]
+        for cause in ("escape", "stop", "kind", "miss"):
+            assembly.component_scroll.ensureWidgetVisible(assembly.rotation_pick_button)
+            QTest.mouseClick(assembly.rotation_pick_button, Qt.MouseButton.LeftButton)
+            QTest.qWait(30)
+            assert viewer._center_pick is not None
+            if cause == "stop":
+                QTest.mouseClick(assembly.rotation_pick_button, Qt.MouseButton.LeftButton)
+            elif cause == "kind":
+                assembly.rotation_pick_kind.setCurrentIndex(0)
+            else:
+                if cause == "miss":
+                    QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton, pos=QPoint(8, 8))
+                    QTest.qWait(30)
+                    assert viewer._center_pick is not None
+                QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
+            QTest.qWait(30)
+            assert viewer._center_pick is None and assembly._selection == ids
+            assert [f.text() for f in assembly.rotation_center_edits] == saved
+            assert session.assembly.to_dict() == before and session._redo == redo
+
+        # Převzatý bod následně používá skutečné číselné otočení, jednou Zpět/Znovu.
+        pivot = np.array([float(f.text()) for f in assembly.rotation_center_edits])
+        old = {i.ids: np.array(tuple(i.part.center())) for i in result.instances}
+        assembly.batch_rotation_axis.setCurrentText("Z")
+        assembly.batch_rotation_angle.setText("90")
+        assembly.component_scroll.ensureWidgetVisible(assembly.batch_rotation_angle)
+        assembly.batch_rotation_angle.setFocus()
+        QTest.keyClick(assembly.batch_rotation_angle, Qt.Key.Key_Return)
+        QTest.qWait(30)
+        assert len(session._undo) == steps+1 and session.result.complete
+        for i in session.result.instances:
+            x, y, z = old[i.ids]-pivot
+            expected = pivot+np.array([-y, x, z]) if i.ids in ids else old[i.ids]
+            assert np.allclose(tuple(i.part.center()), expected, atol=1e-6, rtol=0)
+            assert i.part.is_valid
+        changed = session.assembly.to_dict()
+        assembly.undo_action.trigger()
+        assert session.assembly.to_dict() == before and len(session._undo) == steps
+        assembly.redo_action.trigger()
+        assert session.assembly.to_dict() == changed and len(session._undo) == steps+1
+        assembly.undo_action.trigger()
+        lines.append("✓ Výběr středu ve 3D: skutečný klik na střed kružnice, vrchol a přesný "
+                     "bod plochy jiného dílu; výběr komponent/ploch/vazeb, kamera, materiály "
+                     "35/85 %, pole a historie zachovány; Esc/tlačítko/změna druhu, prázdný "
+                     "klik čeká; převzatý bod řídí otočení s jedním Zpět/Znovu")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika staženého balíčku
+        lines.append("✕ Výběr středu ve 3D:\n" + traceback.format_exc())
+        return False
+    finally:
+        viewer.cancel_rotation_center_pick()
+        while len(session._undo) > steps:
+            session.undo()
+        assembly.rotation_center_mode.setCurrentIndex(0)
+        assembly.rotation_pick_kind.setCurrentIndex(0)
+        assembly.rotation_handles.setChecked(False)
+        assembly.move_handles.setChecked(True)
         assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()
