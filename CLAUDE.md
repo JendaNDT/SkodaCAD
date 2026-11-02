@@ -33,6 +33,9 @@
   na výslovný pokyn k novému sestavení. Potřebuje-li dávka další práci, vrať PR
   do draftu; po dokončení jej znovu označ jako připravené. Hotovou ucelenou dávku
   ověř a sestav automaticky, bez dalšího dotazu autora (výslovně potvrzeno 2. 11.).
+  Před označením hotové dávky nejprve vyčkej na ukončení přeskočených běhů
+  posledního nahrání do draftu; opožděný běh draftu by jinak mohl zrušit nové
+  kontroly hotové dávky. Potom ověř běžící kontroly aktuálního commitu.
   Kontroly obou systémů před sloučením platí dál.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
