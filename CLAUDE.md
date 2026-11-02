@@ -1414,6 +1414,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Nativní scénáře obou os třikrát kliknou na tlačítko a ověří zachovaný výběr AIS,
   vazby/kameru/historii, pak Enter 90° a myš 30° kolem obrácené osy s jedním Zpět/Znovu.
   [Evidence](docs/p7-26-obraceni-smeru-osy.md).
+- P7.27: režim `plane` / Kolmo k ploše přijme pouze `GeomAbs_Plane`, FACE detekci.
+  Kotva je přesný průsečík pixelového paprsku s oříznutou plochou přes dosavadní
+  `_rotation_pick_point`, nikoli bod sítě, těžiště či počátek roviny. Díry/mimo plochu
+  a rovnoběžný paprsek musí odmítnout. Směr `Plane.Axis.Direction` v již umístěné
+  geometrii negovat pro `TopAbs_REVERSED` i pro levotočivou pozici roviny
+  (`Plane.Position.Direct() == False`, např. zrcadlení); výsledek je orientovaná normála U×V.
+  Hrana/válec/kolmice mají samostatné snímky, společný generační protokol i obrácení.
+  Nativní test odmítne skutečně detekovaný válec, klikne mimo střed šikmého čela a
+  nezávislým průsečíkem pixelového paprsku s rovinou ověří kotvu i kladnou normálu.
+  Pak jako u dalších os ověří tři obrácení, přesný AIS náhled, Enter90, myš30 a Zpět/Znovu.
+  [Evidence](docs/p7-27-kolmice-k-plose.md).
 - Klik myší: na Macu se poměr pixelů **měří** (šířka okna OCCT / šířka plochy v Qt) – OCCT
   v cizím NSView může počítat v bodech i v pixelech Retina. Windows a Linux beze změny
   (`devicePixelRatioF`). Self-test vypisuje „okno OCCT … Qt … poměr myši“.
