@@ -851,7 +851,7 @@ class OccViewer(QWidget):
             line.SetWidth(4. if active else 2.5)
             line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 5.))
             label = AIS_TextLabel()
-            label.SetText(TCollection_ExtendedString(self._rotation_axis_label(axis)))
+            label.SetText(TCollection_ExtendedString(self._rotation_axis_label(axis), True))
             tip_pixel = self._view.Convert(*map(float, tip))
             distance = math.dist(projected, tip_pixel)/self._pixel_scale()
             factor = 110/max(distance, 1.)  # popisky mimo všechny prstence, i u úzké elipsy

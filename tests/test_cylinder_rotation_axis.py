@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pytest
 from build123d import Box, Cone, Cylinder, Pos, Rot
+from OCP.AIS import AIS_TextLabel
 from OCP.gp import gp_Pnt
 from PySide6.QtCore import QEvent
 from scipy.spatial.transform import Rotation
@@ -171,6 +172,8 @@ def test_oblique_mouse_preview_and_committed_axis_use_same_world_line(request):
     direction = axis_direction((1, 2, 3))
     v.set_move_selection(dict(v._move_data, mode="rotate", axes=[3],
                               axis_direction=direction, step=15))
+    assert [o.Text().ToExtString() for o in v._move_objects
+            if isinstance(o, AIS_TextLabel)] == ["Osa válce"]
     received = []
     v.selection_rotated.connect(received.append)
     center = np.array(v._move_data["anchor"])
