@@ -41,13 +41,13 @@ from OCP.Aspect import (
     Aspect_TOTP_LEFT_LOWER,
 )
 from OCP.BRep import BRep_Builder, BRep_Tool
-from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeVertex
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.collections import Array1_gp_Pnt, List_int
 from OCP.Font import Font_FA_Bold
 from OCP.Geom import Geom_BezierCurve
-from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle
+from OCP.GeomAbs import GeomAbs_C1, GeomAbs_Circle, GeomAbs_Cylinder
 from OCP.gp import gp_Ax1, gp_Ax2, gp_Circ, gp_Dir, gp_Lin, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.Graphic3d import (
     Graphic3d_DiagnosticInfo_Basic,
@@ -99,7 +99,7 @@ from skodacad.gui.rotation_drag import (
     advance_angle,
     angle_on_plane,
     nearest_ring,
-    plane_axes,
+    plane_frame,
     ring_points,
     snapped_angle,
 )
@@ -132,6 +132,23 @@ def _rotation_pick_point(shape, kind, hit=None, ray=None):
         return None
     values = point.Coord()
     return tuple(values) if all(math.isfinite(v) for v in values) else None
+
+
+def _rotation_pick_cylinder(shape):
+    """Přesná osa umístěné válcové plochy, kotva uprostřed jejího V intervalu."""
+    if shape.ShapeType() != TopAbs_FACE:
+        return None
+    surface = BRepAdaptor_Surface(TopoDS.Face(shape), True)
+    if surface.GetType() != GeomAbs_Cylinder:
+        return None
+    cylinder = surface.Cylinder()
+    direction = tuple(cylinder.Axis().Direction().Coord())
+    v0, v1 = surface.FirstVParameter(), surface.LastVParameter()
+    if not all(math.isfinite(v) and abs(v) < 1e100 for v in (v0, v1)):
+        return None
+    point = tuple(p+d*(v0/2+v1/2) for p, d in
+                  zip(cylinder.Location().Coord(), direction, strict=True))
+    return (point, direction) if all(math.isfinite(v) for v in (*point, *direction)) else None
 
 # Klíče odpovídají viewer_views.VIEW_LABELS (názvy a zkratky pro menu).
 STANDARD_VIEWS = {
@@ -665,7 +682,8 @@ class OccViewer(QWidget):
 
     def start_rotation_center_pick(self, kind: str, token) -> bool:
         """Jednorázový výběr bodu. Vlastníci běžného výběru AIS se nemění."""
-        modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE}
+        modes = {"circle": TopAbs_EDGE, "vertex": TopAbs_VERTEX, "face": TopAbs_FACE,
+                 "cylinder": TopAbs_FACE}
         if not self.ready or self._ais is None or kind not in modes:
             return False
         self.cancel_rotation_center_pick()
@@ -706,20 +724,26 @@ class OccViewer(QWidget):
                 self._view.Redraw()
         if notify:
             self.rotation_center_pick_finished.emit(data["token"])
-            self.selection_drag_message.emit("Výběr středu zrušen; bod ani díly se nezměnily.")
+            self.selection_drag_message.emit("Výběr reference zrušen; osa, střed ani díly "
+                                              "se nezměnily.")
         return True
 
     def _pick_rotation_center_at(self, x, y) -> None:
         data, context = self._center_pick, self._context
         context.MoveTo(x, y, self._view, False)
-        point = None
+        point, direction = None, None
         shape = context.DetectedShape() if context.HasDetectedShape() else None
         if context.HasDetected() and shape is not None:
             selector = context.MainSelector()
             hit = selector.PickedPoint(1).Coord() if selector.NbPicked() else None
             try:
-                point = _rotation_pick_point(shape, data["kind"], hit,
-                                             self._view.ConvertWithProj(x, y))
+                if data["kind"] == "cylinder":
+                    cylinder = _rotation_pick_cylinder(shape)
+                    if cylinder is not None:
+                        point, direction = cylinder
+                else:
+                    point = _rotation_pick_point(shape, data["kind"], hit,
+                                                 self._view.ConvertWithProj(x, y))
             except Exception:  # noqa: BLE001 -- vadná geometrie nesmí ukončit výběr ani okno
                 log.exception("Bod středu nejde získat z kliknuté geometrie")
         if point is None:
@@ -727,8 +751,10 @@ class OccViewer(QWidget):
                                               "nebo Esc výběr zruš.")
             return
         self.cancel_rotation_center_pick(notify=False)
-        self.rotation_center_picked.emit({"token": data["token"], "kind": data["kind"],
-                                          "point": point, "shape": shape})
+        request = {"token": data["token"], "kind": data["kind"], "point": point, "shape": shape}
+        if direction is not None:
+            request["direction"] = direction
+        self.rotation_center_picked.emit(request)
         self.rotation_center_pick_finished.emit(data["token"])
 
     def _remove_move_handles(self) -> None:
@@ -795,21 +821,29 @@ class OccViewer(QWidget):
         length = math.hypot(*ray[3:])
         if not length:
             return
-        colors = ((.90, .12, .10), (.12, .65, .18), (.10, .35, .95))
+        colors = ((.90, .12, .10), (.12, .65, .18), (.10, .35, .95), (.80, .38, .05))
         for axis in self._move_data["axes"]:
-            if abs(ray[axis+3])/length < MIN_FACING:
+            frame_axis = self._rotation_frame_axis(axis)
+            normal, base, _v = plane_frame(frame_axis)
+            if abs(sum(a*b for a, b in zip(ray[3:], normal, strict=True)))/length < MIN_FACING:
                 continue
-            points = ring_points(center, axis, radius)
+            points = ring_points(center, frame_axis, radius)
             tip = points[12]  # 45°; kuličky jsou mimo průsečíky v souřadnicových rovinách
-            normal, base = [0., 0., 0.], [0., 0., 0.]
-            normal[axis] = 1.
-            base[plane_axes(axis)[0]] = 1.
             circle = gp_Circ(gp_Ax2(gp_Pnt(*center), gp_Dir(*normal), gp_Dir(*base)), radius)
             compound = TopoDS_Compound()
             builder = BRep_Builder()
             builder.MakeCompound(compound)
             builder.Add(compound, BRepBuilderAPI_MakeEdge(circle).Edge())
             builder.Add(compound, BRepBuilderAPI_MakeVertex(gp_Pnt(*tip)).Vertex())
+            if axis == 3:
+                # Kladný směr osy je čitelný i pro válec s obrácenou parametrizací.
+                end = tuple(c+n*radius for c, n in zip(center, normal, strict=True))
+                builder.Add(compound, BRepBuilderAPI_MakeEdge(gp_Pnt(*center), gp_Pnt(*end)).Edge())
+                for sign in (-1, 1):
+                    wing = tuple(e-radius*.12*(n+sign*b) for e, n, b in
+                                 zip(end, normal, base, strict=True))
+                    edge = BRepBuilderAPI_MakeEdge(gp_Pnt(*end), gp_Pnt(*wing)).Edge()
+                    builder.Add(compound, edge)
             color = _rgb(*colors[axis])
             line = AIS_Shape(compound)
             line.SetColor(color)
@@ -817,7 +851,7 @@ class OccViewer(QWidget):
             line.SetWidth(4. if active else 2.5)
             line.Attributes().SetPointAspect(Prs3d_PointAspect(Aspect_TOM_BALL, color, 5.))
             label = AIS_TextLabel()
-            label.SetText(TCollection_ExtendedString("XYZ"[axis]))
+            label.SetText(TCollection_ExtendedString(self._rotation_axis_label(axis)))
             tip_pixel = self._view.Convert(*map(float, tip))
             distance = math.dist(projected, tip_pixel)/self._pixel_scale()
             factor = 110/max(distance, 1.)  # popisky mimo všechny prstence, i u úzké elipsy
@@ -835,6 +869,13 @@ class OccViewer(QWidget):
             self._move_tips.append((axis, tip))
             self._move_rings.append(points)
         self._view.Redraw()
+
+    def _rotation_frame_axis(self, axis):
+        return self._move_data["axis_direction"] if axis == 3 else axis
+
+    @staticmethod
+    def _rotation_axis_label(axis):
+        return "Osa válce" if axis == 3 else "XYZ"[axis]
 
     def _move_handle_at(self, pos):
         if not self._move_tips:
@@ -862,7 +903,8 @@ class OccViewer(QWidget):
         rotating = data.get("mode") == "rotate"
         radius = self._view.Convert(round(90*self._pixel_scale()))
         ray = self._view.ConvertWithProj(*self._pixels(pos))
-        start = (angle_on_plane(ray, data["anchor"], axis, radius*.1) if rotating
+        start = (angle_on_plane(ray, data["anchor"], self._rotation_frame_axis(axis), radius*.1)
+                 if rotating
                  else axis_parameter(ray, tip, "XYZ"[axis]))
         if start is None:
             self._press = None
@@ -890,7 +932,7 @@ class OccViewer(QWidget):
         self._surface.setCursor(Qt.CursorShape.ClosedHandCursor)
         operation = "otočení kolem osy" if rotating else "posunu v ose"
         self.selection_drag_message.emit(
-            f"Náhled {operation} {'XYZ'[axis]} · "
+            f"Náhled {operation} {self._rotation_axis_label(axis)} · "
             "puštění = potvrdit · Esc = zrušit")
         if rotating:
             self._draw_move_handles()
@@ -927,15 +969,14 @@ class OccViewer(QWidget):
         drag = self._selection_drag
         center, axis = drag["data"]["anchor"], drag["axis"]
         current = angle_on_plane(self._view.ConvertWithProj(*self._pixels(pos)), center,
-                                 axis, drag["radius"]*.1)
+                                 self._rotation_frame_axis(axis), drag["radius"]*.1)
         if current is None:
             self.cancel_selection_drag()
             return
         drag["total"] = advance_angle(drag["previous"], current, drag["total"])
         drag["previous"] = current
         drag["angle"] = snapped_angle(drag["total"], drag["data"]["step"])
-        normal = [0., 0., 0.]
-        normal[axis] = 1.
+        normal, _u, _v = plane_frame(self._rotation_frame_axis(axis))
         transform = gp_Trsf()
         transform.SetRotation(gp_Ax1(gp_Pnt(*center), gp_Dir(*normal)),
                               math.radians(drag["angle"]))
@@ -944,7 +985,8 @@ class OccViewer(QWidget):
             self._highlight.SetLocalTransformation(transform)
         self._view.Redraw()
         self.selection_drag_message.emit(
-            f"Otočení {'XYZ'[axis]}: {drag['angle']:g}° · puštění = potvrdit · Esc = zrušit")
+            f"Otočení {self._rotation_axis_label(axis)}: {drag['angle']:g}° · "
+            "puštění = potvrdit · Esc = zrušit")
 
     def cancel_selection_drag(self) -> bool:
         drag = self._selection_drag
@@ -1735,7 +1777,8 @@ class OccViewer(QWidget):
                 drag = self._selection_drag
                 if drag is not None:
                     rotating = drag["data"].get("mode") == "rotate"
-                    request = ({"token": drag["data"]["token"], "axis": "xyz"[drag["axis"]],
+                    request = ({"token": drag["data"]["token"],
+                                "axis": "cylinder" if drag["axis"] == 3 else "xyz"[drag["axis"]],
                                 "angle": drag["angle"]} if rotating else
                                {"token": drag["data"]["token"], "delta": drag["delta"]})
                     moved = self._dragging and (math.remainder(drag["angle"], 360.) != 0

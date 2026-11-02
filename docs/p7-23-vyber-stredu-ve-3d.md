@@ -2,6 +2,8 @@
 
 Datum: **2. 11. 2026**. Navazuje na P7.22. Formát, závislosti a modelovací jádro beze změny.
 
+Navazující [P7.24](p7-24-osa-valcove-plochy.md) přidává převzetí bodu i směru osy z válcové plochy.
+
 ## Ovládání
 
 Při hromadném výběru zvol v panelu **Společné otočení [°]** způsob výběru a stiskni

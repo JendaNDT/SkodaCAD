@@ -65,6 +65,7 @@ from skodacad.assembly_build import (
     AssemblyResult,
     Built,
     Cache,
+    axis_direction,
     build_part,
 )
 from skodacad.assembly_check import NDT_NOTE, labels, total_mass
@@ -368,14 +369,29 @@ class AssemblyWindow(QMainWindow):
     def _build_batch_rotation_box(self, layout: QVBoxLayout) -> None:
         self.batch_rotation_box = QGroupBox("Společné otočení [°]")
         grid = QGridLayout(self.batch_rotation_box)
-        grid.addWidget(QLabel("Osa sestavy"), 0, 0)
+        grid.addWidget(QLabel("Osa otáčení"), 0, 0)
         self.batch_rotation_axis = QComboBox()
-        self.batch_rotation_axis.addItems(["X", "Y", "Z"])
+        self.batch_rotation_axis.addItems(["X", "Y", "Z", "Válcová plocha"])
         self.batch_rotation_axis.setCurrentText("Z")
         self.batch_rotation_axis.setAccessibleName("Osa společného otočení")
-        self.batch_rotation_axis.currentIndexChanged.connect(self._refresh_batch_rotation_box)
+        self.batch_rotation_axis.currentIndexChanged.connect(self._rotation_center_changed)
         grid.addWidget(self.batch_rotation_axis, 0, 1)
-        grid.addWidget(QLabel("Úhel [°]"), 1, 0)
+        self._rotation_cylinder = None
+        self.rotation_axis_box = QWidget()
+        axis_layout = QVBoxLayout(self.rotation_axis_box)
+        axis_layout.setContentsMargins(0, 0, 0, 0)
+        self.rotation_axis_pick_button = QPushButton("Vybrat osu ve 3D")
+        self.rotation_axis_pick_button.setCheckable(True)
+        self.rotation_axis_pick_button.setToolTip(
+            "Klikni na válcovou plochu libovolného viditelného dílu. Přesná osa určí "
+            "bod i směr otáčení; výběr dílů zůstane. Esc nebo pravý klik výběr zruší.")
+        self.rotation_axis_pick_button.toggled.connect(
+            lambda checked: self._rotation_pick_toggled(checked, "cylinder"))
+        axis_layout.addWidget(self.rotation_axis_pick_button)
+        self.rotation_axis_note = self._wrapped_label()
+        axis_layout.addWidget(self.rotation_axis_note)
+        grid.addWidget(self.rotation_axis_box, 1, 0, 1, 2)
+        grid.addWidget(QLabel("Úhel [°]"), 2, 0)
         self.batch_rotation_angle = QLineEdit("90")
         self.batch_rotation_angle.setMinimumWidth(90)
         self.batch_rotation_angle.setAccessibleName("Úhel společného otočení")
@@ -383,12 +399,13 @@ class AssemblyWindow(QMainWindow):
                                             "Číslo nebo výraz s parametry sestavy; "
                                             "úhel se vyhodnotí jednou při otočení.")
         self.batch_rotation_angle.returnPressed.connect(self.apply_batch_rotation)
-        grid.addWidget(self.batch_rotation_angle, 1, 1)
+        grid.addWidget(self.batch_rotation_angle, 2, 1)
         grid.setColumnStretch(1, 1)
         self._rotation_center_revision = 0
         self._rotation_pick_pending = None
         self._rotation_pick_serial = 0
-        grid.addWidget(QLabel("Střed otáčení"), 2, 0)
+        self.rotation_center_label = QLabel("Střed otáčení")
+        grid.addWidget(self.rotation_center_label, 3, 0)
         self.rotation_center_mode = QComboBox()
         self.rotation_center_mode.addItems(["Střed výběru", "Počátek sestavy", "Vlastní bod"])
         self.rotation_center_mode.setAccessibleName("Volba středu otáčení")
@@ -396,7 +413,7 @@ class AssemblyWindow(QMainWindow):
             "Střed výběru je geometrické těžiště včetně skrytých dílů. "
             "Počátek sestavy je X=Y=Z=0. Vlastní bod má souřadnice v celé sestavě. "
             "Volba je nastavení otevřeného okna, do souboru se neukládá.")
-        grid.addWidget(self.rotation_center_mode, 2, 1)
+        grid.addWidget(self.rotation_center_mode, 3, 1)
         pick_row = QWidget()
         pick_layout = QVBoxLayout(pick_row)
         pick_layout.setContentsMargins(0, 0, 0, 0)
@@ -418,7 +435,8 @@ class AssemblyWindow(QMainWindow):
             "Esc nebo pravý klik výběr zruší. Táhnutím lze dál otáčet a posouvat pohled.")
         self.rotation_pick_button.toggled.connect(self._rotation_pick_toggled)
         pick_layout.addWidget(self.rotation_pick_button)
-        grid.addWidget(pick_row, 3, 0, 1, 2)
+        self.rotation_pick_row = pick_row
+        grid.addWidget(pick_row, 4, 0, 1, 2)
         self.rotation_point_box = QWidget()
         point_grid = QGridLayout(self.rotation_point_box)
         point_grid.setContentsMargins(0, 0, 0, 0)
@@ -440,25 +458,26 @@ class AssemblyWindow(QMainWindow):
                                             "zahrnuje i skryté vybrané díly.")
         self.rotation_center_copy.clicked.connect(self._copy_rotation_center)
         point_grid.addWidget(self.rotation_center_copy, 3, 0, 1, 2)
-        grid.addWidget(self.rotation_point_box, 4, 0, 1, 2)
+        grid.addWidget(self.rotation_point_box, 5, 0, 1, 2)
         self.batch_rotation_center = self._wrapped_label()
         self.batch_rotation_center.setToolTip(
             "Stejný bod používá tlačítko i rotační rukojeti. Střed i úhel se použijí "
             "v okamžiku otočení. Změna bodu během tahu náhled zruší.")
-        grid.addWidget(self.batch_rotation_center, 5, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_center, 6, 0, 1, 2)
         self.batch_rotation_note = self._wrapped_label()
-        grid.addWidget(self.batch_rotation_note, 6, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_note, 7, 0, 1, 2)
         self.batch_rotation_button = QPushButton("Otočit vybrané")
         self.batch_rotation_button.clicked.connect(self.apply_batch_rotation)
-        grid.addWidget(self.batch_rotation_button, 7, 0, 1, 2)
+        grid.addWidget(self.batch_rotation_button, 8, 0, 1, 2)
         self.rotation_handles = QCheckBox("Rotační rukojeti ve 3D")
         self.rotation_handles.setToolTip(
             "Táhni barevný prstenec nebo jeho kuličku X/Y/Z kolem společného středu. "
+            "Při volbě Válcová plocha má jeden prstenec směr převzaté osy; šipka je kladná. "
             "Zapnutím se přepnou posouvací rukojeti. Esc zruší náhled; "
             "zahrnuté jsou i skryté vybrané díly. Natočení zadané výrazem podporuje osu Z.")
         self.rotation_handles.toggled.connect(lambda checked: self._choose_handles(True, checked))
-        grid.addWidget(self.rotation_handles, 8, 0, 1, 2)
-        grid.addWidget(QLabel("Krok otáčení"), 9, 0)
+        grid.addWidget(self.rotation_handles, 9, 0, 1, 2)
+        grid.addWidget(QLabel("Krok otáčení"), 10, 0)
         self.rotation_step = QDoubleSpinBox()
         self.rotation_step.setRange(0, 180)
         self.rotation_step.setDecimals(3)
@@ -470,11 +489,15 @@ class AssemblyWindow(QMainWindow):
         self.rotation_step.setToolTip("Krok od začátku tahu ve stupních; 0 = Volně. "
                                      "Číselný úhel a osu pro tlačítko tažení nepřepisuje.")
         self.rotation_step.valueChanged.connect(self._refresh_move_handles)
-        grid.addWidget(self.rotation_step, 9, 1)
+        grid.addWidget(self.rotation_step, 10, 1)
         self.rotation_center_mode.currentIndexChanged.connect(self._rotation_center_changed)
         layout.addWidget(self.batch_rotation_box)
 
     def _rotation_center_values(self):
+        if self._cylinder_axis_active():
+            if self._rotation_cylinder is None:
+                raise AssemblyError("Nejdřív tlačítkem Vybrat osu ve 3D klikni na válcovou plochu.")
+            return self._rotation_cylinder[0]
         mode = self.rotation_center_mode.currentIndex()
         if mode != 2:
             return None if mode == 0 else (0., 0., 0.)
@@ -484,6 +507,16 @@ class AssemblyWindow(QMainWindow):
                 raise AssemblyError(f"Střed otáčení {axis}: zadej číslo nebo výraz v mm.")
             values.append(parse_value(field.text()))
         return values
+
+    def _cylinder_axis_active(self):
+        return self.batch_rotation_axis.currentIndex() == 3
+
+    def _chosen_rotation_axis(self):
+        if self._cylinder_axis_active():
+            if self._rotation_cylinder is None:
+                raise AssemblyError("Nejdřív vyber osu z válcové plochy.")
+            return self._rotation_cylinder[1]
+        return self.batch_rotation_axis.currentText().lower()
 
     def _chosen_rotation_center(self):
         return self.session.rotation_center([ids[0] for ids in self._selection_roots()],
@@ -499,54 +532,64 @@ class AssemblyWindow(QMainWindow):
         self._refresh_batch_rotation_box()
         self._refresh_move_handles()
 
-    def _rotation_pick_signature(self):
+    def _rotation_pick_signature(self, kind=None):
         return (self._rotation_token(), tuple(i.ids for i in self.visible_instances()),
-                self.rotation_pick_kind.currentData())
+                kind or self.rotation_pick_kind.currentData())
 
     def _refresh_rotation_pick_button(self) -> None:
-        self.rotation_pick_button.setEnabled(
-            len(self._selection) > 1 and bool(self._selection_roots())
-            and not self._move_problem() and bool(self.visible_instances()))
+        eligible = (len(self._selection) > 1 and bool(self._selection_roots())
+                    and not self._move_problem() and bool(self.visible_instances()))
+        self.rotation_pick_button.setEnabled(eligible and not self._cylinder_axis_active())
+        self.rotation_axis_pick_button.setEnabled(eligible and self._cylinder_axis_active())
 
     def _rotation_pick_finished(self, token=None) -> None:
         if token is not None and token != self._rotation_pick_pending:
             return  # dokončení staršího výběru nesmí vypnout nově spuštěný
         self._rotation_pick_pending = None
-        blocked = self.rotation_pick_button.blockSignals(True)
-        self.rotation_pick_button.setChecked(False)
-        self.rotation_pick_button.setText("Vybrat ve 3D")
-        self.rotation_pick_button.blockSignals(blocked)
+        for button, text in ((self.rotation_pick_button, "Vybrat ve 3D"),
+                             (self.rotation_axis_pick_button, "Vybrat osu ve 3D")):
+            blocked = button.blockSignals(True)
+            button.setChecked(False)
+            button.setText(text)
+            button.blockSignals(blocked)
 
-    def _rotation_pick_toggled(self, checked) -> None:
+    def _rotation_pick_toggled(self, checked, kind=None) -> None:
+        kind = kind or self.rotation_pick_kind.currentData()
+        button = self.rotation_axis_pick_button if kind == "cylinder" else self.rotation_pick_button
         self.viewer.cancel_rotation_center_pick()
-        if not checked or not self.rotation_pick_button.isEnabled():
+        if not checked or not button.isEnabled():
             self._rotation_pick_finished()
             return
         self._rotation_pick_serial += 1
-        token = (self._rotation_pick_signature(), self._rotation_pick_serial)
+        token = (self._rotation_pick_signature(kind), self._rotation_pick_serial)
         self._rotation_pick_pending = token
-        if not self.viewer.start_rotation_center_pick(self.rotation_pick_kind.currentData(), token):
+        if not self.viewer.start_rotation_center_pick(kind, token):
             self._rotation_pick_finished()
-            self.statusBar().showMessage("3D prohlížeč není připravený pro výběr středu.")
+            self.statusBar().showMessage("3D prohlížeč není připravený pro výběr reference.")
             return
-        self.rotation_pick_button.setText("Zrušit výběr")
-        self.statusBar().showMessage(f"Střed: {self.rotation_pick_kind.currentText()} – klikni "
+        blocked = button.blockSignals(True)
+        button.setChecked(True)
+        button.setText("Zrušit výběr")
+        button.blockSignals(blocked)
+        title = "Osa válce" if kind == "cylinder" else self.rotation_pick_kind.currentText()
+        self.statusBar().showMessage(f"{title} – klikni "
                                      "na viditelnou geometrii; Esc nebo pravý klik = zrušit.")
 
     def _rotation_center_picked(self, request) -> None:
         pending = self._rotation_pick_pending
         if pending is None or request.get("token") != pending:
-            self.statusBar().showMessage("Zastaralý bod nebyl převzat.")
+            self.statusBar().showMessage("Zastaralá reference nebyla převzata.")
             return
         self.viewer.cancel_rotation_center_pick()
         self._rotation_pick_finished()
-        if pending[0] != self._rotation_pick_signature() or self._move_problem():
+        kind = request.get("kind")
+        if pending[0] != self._rotation_pick_signature(kind) or self._move_problem():
             self.statusBar().showMessage("Výběr nebo sestava se změnily; výběr středu byl zrušen.")
             return
-        kind = request.get("kind")
-        pieces = {"circle": "edges", "vertex": "vertices", "face": "faces"}.get(kind)
+        pieces = {"circle": "edges", "vertex": "vertices", "face": "faces",
+                  "cylinder": "faces"}.get(kind)
         shape = request.get("shape")
-        if (kind != self.rotation_pick_kind.currentData() or pieces is None or shape is None
+        if (kind != pending[0][-1] or pieces is None or shape is None
                 or not any(piece.wrapped.IsSame(shape) for i in self.visible_instances()
                            for piece in getattr(i.part, pieces)())):
             self.statusBar().showMessage("Kliknutá geometrie už není viditelná; vyber střed znovu.")
@@ -554,8 +597,15 @@ class AssemblyWindow(QMainWindow):
         try:
             point = self.session.rotation_center([ids[0] for ids in self._selection_roots()],
                                                  request.get("point", []))
+            direction = axis_direction(request.get("direction", [])) if kind == "cylinder" else None
         except AssemblyError as exc:
             self.statusBar().showMessage(str(exc))
+            return
+        if kind == "cylinder":
+            self._rotation_cylinder = (point, direction)
+            self._rotation_center_changed()
+            self.statusBar().showMessage("Osa válce převzata v souřadnicích sestavy. "
+                                         "Díly se zatím neotočily; kladný směr ukazuje šipka.")
             return
         controls = [self.rotation_center_mode, *self.rotation_center_edits]
         blocks = [control.blockSignals(True) for control in controls]
@@ -589,8 +639,27 @@ class AssemblyWindow(QMainWindow):
         self.batch_rotation_box.setVisible(multiple)
         problem = self._move_problem()
         roots = self._selection_roots()
-        self.rotation_point_box.setVisible(self.rotation_center_mode.currentIndex() == 2)
-        self.rotation_center_copy.setEnabled(multiple and bool(roots) and not problem)
+        cylinder = self._cylinder_axis_active()
+        self.rotation_axis_box.setVisible(cylinder)
+        for control in (self.rotation_center_mode, self.rotation_point_box,
+                        self.rotation_pick_kind):
+            control.setEnabled(not cylinder)
+        self.rotation_point_box.setVisible(not cylinder
+                                          and self.rotation_center_mode.currentIndex() == 2)
+        for control in (self.rotation_center_label, self.rotation_center_mode,
+                        self.rotation_pick_row, self.batch_rotation_center):
+            control.setVisible(not cylinder)
+        self.rotation_center_copy.setEnabled(
+            multiple and bool(roots) and not problem and not cylinder)
+        if self._rotation_cylinder is not None:
+            p, d = self._rotation_cylinder
+            self.rotation_axis_note.setText(
+                "Bod [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", p, strict=True))
+                + "\nSměr: " + ", ".join(f"{a} {v:.4f}" for a, v in zip("XYZ", d, strict=True))
+                + "\nPřevzatá osa je pevný snímek; po změně reference ji vyber znovu.")
+        else:
+            self.rotation_axis_note.setText("Vyber válcovou stěnu otvoru nebo čepu. "
+                                            "Osa určí bod i směr; rovina ani kužel nejsou válec.")
         self._refresh_rotation_pick_button()
         center = None
         if multiple and not problem:
@@ -599,13 +668,14 @@ class AssemblyWindow(QMainWindow):
             except AssemblyError as exc:
                 problem = str(exc)
         eligible = multiple and bool(roots) and not problem
-        self.rotation_handles.setEnabled(eligible)
+        self.rotation_handles.setEnabled(eligible and bool(self._rotation_axes()))
         self.rotation_step.setEnabled(eligible and self.rotation_handles.isChecked())
         if eligible:
-            if self.batch_rotation_axis.currentText() != "Z" and any(
+            direction = axis_direction(self._chosen_rotation_axis())
+            if direction[:2] != (0., 0.) and any(
                     isinstance(v, str) for ids in roots
                     for v in self.session.assembly.component(ids[0]).rotation):
-                problem = ("Natočení některých dílů je zadané výrazem. Zvol osu Z "
+                problem = ("Natočení některých dílů je zadané výrazem. Zvol světovou osu Z "
                            "nebo uprav natočení jednotlivých dílů na čísla.")
         self.batch_rotation_button.setEnabled(multiple and bool(roots) and not problem)
         self.batch_rotation_center.setText(
@@ -623,7 +693,7 @@ class AssemblyWindow(QMainWindow):
         def work() -> None:
             angle = parse_value(self.batch_rotation_angle.text())
             self.session.turn_many_around(components,
-                                          self.batch_rotation_axis.currentText().lower(), angle,
+                                          self._chosen_rotation_axis(), angle,
                                           center=self._rotation_center_values())
 
         if self._run("Výběr nejde otočit", work):
@@ -641,8 +711,13 @@ class AssemblyWindow(QMainWindow):
 
     def _rotation_axes(self) -> list[int]:
         roots = self._selection_roots()
-        return [2] if any(isinstance(v, str) for ids in roots
-                         for v in self.session.assembly.component(ids[0]).rotation) else [0, 1, 2]
+        expressions = any(isinstance(v, str) for ids in roots
+                          for v in self.session.assembly.component(ids[0]).rotation)
+        if self._cylinder_axis_active():
+            if self._rotation_cylinder is None:
+                return []
+            return [] if expressions and self._rotation_cylinder[1][:2] != (0., 0.) else [3]
+        return [2] if expressions else [0, 1, 2]
 
     def _refresh_move_handles(self) -> None:
         self._refresh_rotation_pick_button()
@@ -663,6 +738,8 @@ class AssemblyWindow(QMainWindow):
                         data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
                                 "step": self.rotation_step.value(), "token": self._rotation_token(),
                                 "mode": "rotate", "axes": self._rotation_axes()}
+                        if self._cylinder_axis_active():
+                            data["axis_direction"] = self._chosen_rotation_axis()
                     except AssemblyError:
                         pass  # důvod už ukazuje panel; žádný použitelný prstenec
                 else:
@@ -689,16 +766,20 @@ class AssemblyWindow(QMainWindow):
         if (not self.rotation_handles.isChecked() or not self.rotation_handles.isEnabled()
                 or len(self._selection) < 2 or self._move_problem()
                 or request["token"] != self._rotation_token()
-                or request["axis"] not in ["xyz"[axis] for axis in self._rotation_axes()]):
+                or request["axis"] not in ["cylinder" if axis == 3 else "xyz"[axis]
+                                           for axis in self._rotation_axes()]):
             self.statusBar().showMessage("Výběr nebo sestava se změnily; otáčení bylo zrušeno.")
             self._refresh_move_handles()
             return
         components = [ids[0] for ids in self._selection_roots()]
         if self._run("Výběr nejde otočit",
                      lambda: self.session.turn_many_around(components,
-                                                          request["axis"], request["angle"],
+                                                          self._chosen_rotation_axis()
+                                                          if request["axis"] == "cylinder"
+                                                          else request["axis"], request["angle"],
                                                           center=self._rotation_center_values())):
-            self.statusBar().showMessage(f"Celý výběr byl otočen kolem {request['axis'].upper()} "
+            label = "osy válce" if request["axis"] == "cylinder" else request["axis"].upper()
+            self.statusBar().showMessage(f"Celý výběr byl otočen kolem {label} "
                                          f"o {request['angle']:g}°. Zpět vrátí celý pohyb.")
 
     @staticmethod
