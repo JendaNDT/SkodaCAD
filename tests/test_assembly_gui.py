@@ -715,6 +715,87 @@ def test_batch_move_pending_delta_survives_views_rebuild_and_resets_on_new_selec
     assert w.session.assembly.to_dict() == before and not w.session.can_undo
 
 
+def test_mouse_move_request_moves_hidden_selection_once_and_preserves_typed_delta(opened):
+    w = opened
+    ids = (("nozicka_1",), ("nozicka_2",))
+    w.select_many(ids)
+    w.move_edits[0].setText("2,5")
+    w.set_component_visible(ids[1], False)
+    data = w.viewer.move_selection
+    assert len(data["shapes"]) == 1 and data["step"] == 1
+    old = {i.ids: tuple(i.part.center()) for i in w.session.result.instances}
+    before = w.session.assembly.to_dict()
+    w.viewer.selection_moved.emit({"token": data["token"], "delta": [0., 0., -3.]})
+    assert len(w.session._undo) == 1 and w._selection == ids
+    assert w.move_edits[0].text() == "2,5" and w._visibility == {ids[1]: False}
+    for instance in w.session.result.instances:
+        expected = (*old[instance.ids][:2], old[instance.ids][2]-3)
+        assert tuple(instance.part.center()) == pytest.approx(
+            expected if instance.ids in ids else old[instance.ids])
+    w.undo_action.trigger()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+
+
+@pytest.mark.parametrize("change", ["selection", "recipe", "result"])
+def test_stale_mouse_release_is_rejected(opened, change):
+    w = opened
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    token = w.viewer.move_selection["token"]
+    if change == "selection":
+        w.select_many((("nozicka_3",), ("nozicka_4",)))
+    elif change == "recipe":
+        w.session.assembly.name += " změna"
+    else:
+        w.session.rebuild()
+    before = w.session.assembly.to_dict()
+    w.viewer.selection_moved.emit({"token": token, "delta": [5., 0., 0.]})
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+    assert "zrušeno" in w.statusBar().currentMessage()
+
+
+def test_move_handles_block_fixed_nested_and_invisible_selection(opened, nested_isolation):
+    w = opened
+    w.select_many((("krabicka",), ("vicko",)))
+    assert w.viewer.move_selection is None and not w.move_handles.isEnabled()
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    assert w.viewer.move_selection is not None
+    w.toggle_selected_visibility()
+    assert w.viewer.move_selection is None
+    nested_isolation.select_many((("a", "deska"), ("b", "deska")))
+    assert nested_isolation.viewer.move_selection is None
+    nested_isolation.select_many((("a",), ("a", "deska"), ("b",)))
+    assert len(nested_isolation.viewer.move_selection["shapes"]) == 4
+
+
+def test_mouse_constraint_failure_is_atomic_and_keeps_pending_fields(constrained, dialogs):
+    w = constrained
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    before, result = w.session.assembly.to_dict(), w.session.result
+    w.move_edits[2].setText("7")
+    w.viewer.selection_moved.emit({"token": w.viewer.move_selection["token"],
+                                   "delta": [0., 0., 5.]})
+    assert dialogs["shown"][-1][0] == "Výběr nejde posunout"
+    assert w.session.assembly.to_dict() == before and w.session.result is result
+    assert not w.session.can_undo and w.move_edits[2].text() == "7"
+    assert w.viewer.move_selection is not None
+
+
+def test_drag_preferences_survive_views_selection_history_without_changing_recipe(opened):
+    w = opened
+    before = w.session.assembly.to_dict()
+    w.select_many((("nozicka_1",), ("nozicka_2",)))
+    w.move_step.setValue(.5)
+    assert w.viewer.move_selection["step"] == .5
+    w.move_handles.click()
+    assert w.viewer.move_selection is None and not w.move_step.isEnabled()
+    w.show_all()
+    w.select_many((("nozicka_3",), ("nozicka_4",)))
+    assert not w.move_handles.isChecked() and w.move_step.value() == .5
+    w.move_handles.click()
+    assert w.viewer.move_selection["step"] == .5 and w.move_step.isEnabled()
+    assert w.session.assembly.to_dict() == before and not w.session.can_undo
+
+
 def test_multi_hide_isolate_union_has_single_refresh_and_complete_physics(opened):
     w = opened
     before, result = w.session.assembly.to_dict(), w.session.result

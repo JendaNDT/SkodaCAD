@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QGridLayout,
@@ -139,12 +140,17 @@ class AssemblyWindow(QMainWindow):
         self.viewer = viewer_factory()
         self.viewer.selection_changed.connect(self._picked)
         self.viewer.selection_cleared.connect(lambda: self.select(None))
+        self.viewer.selection_moved.connect(self._selection_dragged)
+        self.viewer.selection_drag_message.connect(lambda text: self.statusBar().showMessage(text))
         self.setCentralWidget(self.viewer)
         self._build_tree()
         self._build_form()
         self._build_checks()
         self._create_actions()
         self._build_menus()
+        # Lišta musí zabírat místo už před prvním tahem. Její pozdní vytvoření
+        # změní velikost 3D plochy a bezpečnostní resize pak zruší rozpracovaný tah.
+        self.statusBar().showMessage("Vyber komponenty ve stromu nebo ve 3D.")
         self.setMinimumSize(960, 600)
         self.resize(1200, 760)
         self.reset_layout()
@@ -298,6 +304,24 @@ class AssemblyWindow(QMainWindow):
         self.move_button = QPushButton("Posunout vybrané")
         self.move_button.clicked.connect(self.apply_batch_move)
         grid.addWidget(self.move_button, 4, 0, 1, 2)
+        self.move_handles = QCheckBox("Rukojeti ve 3D")
+        self.move_handles.setChecked(True)
+        self.move_handles.setToolTip("Táhni barevný konec osy X, Y nebo Z. Esc zruší náhled. "
+                                    "Posune se celý výběr včetně jeho skrytých dílů.")
+        self.move_handles.toggled.connect(self._refresh_move_handles)
+        grid.addWidget(self.move_handles, 5, 0, 1, 2)
+        grid.addWidget(QLabel("Krok tažení"), 6, 0)
+        self.move_step = QDoubleSpinBox()
+        self.move_step.setRange(0, 1000)
+        self.move_step.setDecimals(3)
+        self.move_step.setValue(1)
+        self.move_step.setSpecialValueText("Volně")
+        self.move_step.setSuffix(" mm")
+        self.move_step.setKeyboardTracking(False)
+        self.move_step.setAccessibleName("Krok tažení výběru")
+        self.move_step.setToolTip("Krok od začátku tahu; 0 = volně. Platí jen pro tažení myší.")
+        self.move_step.valueChanged.connect(self._refresh_move_handles)
+        grid.addWidget(self.move_step, 6, 1)
         layout.addWidget(self.move_box)
 
     def _refresh_move_box(self) -> None:
@@ -307,6 +331,16 @@ class AssemblyWindow(QMainWindow):
                 field.setText("0")
             self._move_selection = selection
         self.move_box.setVisible(len(selection) > 1)
+        roots = self._selection_roots()
+        problem = self._move_problem()
+        enabled = len(selection) > 1 and bool(roots) and not problem
+        self.move_button.setEnabled(enabled)
+        self.move_handles.setEnabled(enabled)
+        self.move_step.setEnabled(enabled and self.move_handles.isChecked())
+        self.move_note.setText(problem or "X/Y/Z v osách celé sestavy. Všechny vybrané "
+                               "díly se posunou stejně; Zpět vrátí celý posun.")
+
+    def _move_problem(self) -> str:
         roots = self._selection_roots()
         problem = ""
         if any(len(ids) != 1 for ids in roots):
@@ -319,9 +353,37 @@ class AssemblyWindow(QMainWindow):
             if fixed:
                 problem = "Pevné komponenty: " + ", ".join(fixed) + ". Odeber je z výběru "
                 problem += "nebo u nich jednotlivě zruš volbu Pevná."
-        self.move_button.setEnabled(len(selection) > 1 and bool(roots) and not problem)
-        self.move_note.setText(problem or "X/Y/Z v osách celé sestavy. Všechny vybrané "
-                               "díly se posunou stejně; Zpět vrátí celý posun.")
+        return problem
+
+    def _move_token(self) -> tuple:
+        return (self._selection, id(self.session.result),
+                json.dumps(self.session.assembly.to_dict(), sort_keys=True))
+
+    def _refresh_move_handles(self) -> None:
+        self.move_step.setEnabled(self.move_button.isEnabled() and self.move_handles.isChecked())
+        data = None
+        if len(self._selection) > 1 and self.move_handles.isChecked() and not self._move_problem():
+            roots = self._selection_roots()
+            selected = [i for i in self.visible_instances()
+                        if any(i.ids[:len(ids)] == ids for ids in roots)]
+            if selected:
+                boxes = [i.part.bounding_box() for i in selected]
+                anchor = tuple((min(tuple(b.min)[axis] for b in boxes)
+                                + max(tuple(b.max)[axis] for b in boxes))/2 for axis in range(3))
+                data = {"shapes": [i.part.wrapped for i in selected], "anchor": anchor,
+                        "step": self.move_step.value(), "token": self._move_token()}
+        self.viewer.set_move_selection(data)
+
+    def _selection_dragged(self, request: dict) -> None:
+        if (len(self._selection) < 2 or self._move_problem()
+                or request["token"] != self._move_token()):
+            self.statusBar().showMessage("Výběr nebo sestava se změnily; tažení bylo zrušeno.")
+            self._refresh_move_handles()
+            return
+        components = [ids[0] for ids in self._selection_roots()]
+        if self._run("Výběr nejde posunout",
+                     lambda: self.session.move_many_by(components, request["delta"])):
+            self.statusBar().showMessage("Celý výběr byl posunut. Zpět vrátí celý posun.")
 
     @staticmethod
     def _wrapped_label(text: str = "") -> QLabel:
@@ -1705,6 +1767,7 @@ class AssemblyWindow(QMainWindow):
         self._refresh_highlight()
 
     def _refresh_highlight(self) -> None:
+        self.viewer.cancel_selection_drag()
         result = self.session.result
         visible = self.visible_instances()
         roots = self._selection_roots()
@@ -1722,6 +1785,7 @@ class AssemblyWindow(QMainWindow):
                 if instance.ids in pair:
                     shapes.extend(edge.wrapped for edge in instance.part.edges())
         self.viewer.highlight(shapes)
+        self._refresh_move_handles()
         center = self._finding.get("center") if self._finding is not None else None
         if center and (self._isolated is not None or self._visibility):
             shown = {i.ids for i in visible}

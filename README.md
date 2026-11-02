@@ -399,6 +399,16 @@ Původní výrazy poloh zůstávají parametrické; výraz zadaný jako přírů
 jednou při posunu. Soubory zdrojových dílů a podsestav se nemění.
 [Pravidla a ověření hromadného posunu](docs/p7-18-hromadny-posun.md).
 
+**Tažení celého výběru:** vyber více komponent a táhni barevný konec rukojeti
+**X, Y nebo Z** ve 3D. Celý výběr se posouvá po zvolené ose celé sestavy.
+V panelu **Společný posun [mm]** nastav **Krok tažení** (výchozí 1 mm, 0 = Volně)
+nebo vypni **Rukojeti ve 3D**. Rukojeti vycházejí ze středu viditelné části výběru;
+posun zahrne i skryté vybrané díly. Pokud není nic vybraného vidět, rukojeti se nezobrazí.
+Při tahu vidíš náhled, puštění ověří vazby a potvrdí jeden krok Zpět.
+**Esc** náhled zruší. Při odmítnutí se obnoví původní poloha celého výběru.
+Rozepsané číselné přírůstky se tažením nepřepisují.
+[Chování a ověření tažení](docs/p7-19-tazeni-vyberu.md).
+
 **Kontrola sestavy** – panel dole v okně sestavy (záložky *Kolize a vůle* a *Kusovník*),
 zpočátku skrytý; otevře se přes F8 nebo při spuštění kontroly:
 

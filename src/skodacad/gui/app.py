@@ -1060,6 +1060,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_transparency_levels(assembly, lines) and ok
         ok = _self_test_assembly_multi_selection(assembly, lines) and ok
         ok = _self_test_assembly_batch_move(assembly, lines) and ok
+        ok = _self_test_assembly_selection_drag(assembly, lines) and ok
     else:
         lines.append(f"✕ Sestava: {'; '.join(result.problems) if result else 'bez výsledku'}")
     assembly.session.dirty = False
@@ -1773,6 +1774,120 @@ def _self_test_assembly_batch_move(assembly, lines) -> bool:
     finally:
         while len(session._undo) > steps:
             session.undo()
+        assembly._refresh()
+        assembly.reset_transparency()
+        assembly.show_all()
+
+
+def _self_test_assembly_selection_drag(assembly, lines) -> bool:
+    """Nativní myš přes OCCT projekci: náhled XYZ, materiály, Esc a historie."""
+    import numpy as np
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, session = assembly.viewer, assembly.session
+    if not viewer.ready:
+        lines.append("! Tažení výběru sestavy: chybí grafický prohlížeč")
+        return True
+    steps = len(session._undo)
+    ids = (("nozicka_1",), ("nozicka_2",))
+    try:
+        assembly.show_all()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(50)
+        assembly.select_many(ids)
+        assembly.move_step.setValue(.5)
+        assembly.set_component_transparency(ids[0], 35)
+        assembly.set_component_transparency(ids[1], 85)
+        assembly.move_edits[0].setText("2,5")
+        viewer.set_standard_view("iso")
+        QApplication.processEvents()
+        viewer.fit_all()
+
+        def positions(axis):
+            tip = next(t for a, t in viewer._move_tips if a == axis)
+            end = list(tip)
+            end[axis] += 8.
+            ratio = viewer._pixel_scale()
+            return tuple(QPoint(*(round(v/ratio) for v in viewer._view.Convert(*point)))
+                         for point in (tip, tuple(end)))
+
+        for axis in range(3):
+            original = session.assembly.to_dict()
+            old_result = session.result
+            old = {i.ids: np.array(tuple(i.part.center())) for i in old_result.instances}
+            direction, scale = viewer._view.Proj(), viewer._view.Scale()
+            start, end = positions(axis)
+            surface_size = viewer._surface.size()
+            QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)  # skutečná myš dá Qt čas na layout/fokus, nejen synchronní signály
+            assert viewer._selection_drag is not None, f"Nelze uchopit osu {'XYZ'[axis]}"
+            assert viewer._surface.size() == surface_size, "Zpráva nesmí změnit velikost 3D plochy"
+            QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
+            drag = viewer._selection_drag
+            assert drag is not None and any(drag["delta"])
+            delta = np.array(drag["delta"])
+            assert abs(delta[axis]-8.) <= .5 and np.count_nonzero(delta) == 1
+            assert session.assembly.to_dict() == original and session.result is old_result
+            assert len(session._undo) == steps
+            translation = drag["preview"].LocalTransformation().TranslationPart()
+            assert np.allclose((translation.X(), translation.Y(), translation.Z()), delta)
+            assert all(viewer._ais.CustomAspects(s).IsHidden() for s in drag["data"]["shapes"])
+            assert np.allclose([
+                drag["preview"].CustomAspects(s).ShadingAspect().Aspect().FrontMaterial()
+                .Transparency() for s in drag["data"]["shapes"]], [.35, .85], atol=1e-6)
+            QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+            assert viewer._selection_drag is None and len(session._undo) == steps+1
+            assert assembly._selection == ids and assembly.move_edits[0].text() == "2,5"
+            assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+            for instance in session.result.instances:
+                expected = old[instance.ids] + (delta if instance.ids in ids else 0)
+                assert np.allclose(tuple(instance.part.center()), expected, atol=1e-6, rtol=0)
+                assert instance.part.is_valid
+            moved = session.assembly.to_dict()
+            assembly.undo_action.trigger()
+            assert session.assembly.to_dict() == original and len(session._undo) == steps
+            assembly.redo_action.trigger()
+            assert session.assembly.to_dict() == moved and len(session._undo) == steps+1
+            assembly.undo_action.trigger()
+
+        # Zrušený tah zachová také existující větev Znovu a rozepsaný číselný posun.
+        before, result = session.assembly.to_dict(), session.result
+        assert session.can_redo
+        for cancel in ("escape", "step", "focus"):
+            start, end = positions(0)
+            QTest.mousePress(viewer._surface, Qt.MouseButton.LeftButton, pos=start)
+            QTest.qWait(30)
+            QTest.mouseMove(viewer._surface, end)
+            QTest.qWait(30)
+            assert viewer._selection_drag is not None
+            if cancel == "escape":
+                QTest.keyClick(viewer._surface, Qt.Key.Key_Escape)
+            elif cancel == "step":
+                assembly.move_step.setValue(1.)
+            else:
+                assembly.move_edits[0].setFocus()
+                QApplication.processEvents()
+            QTest.mouseRelease(viewer._surface, Qt.MouseButton.LeftButton, pos=end)
+            assert viewer._selection_drag is None and session.assembly.to_dict() == before
+            assert session.result is result and len(session._undo) == steps and session.can_redo
+            assert assembly.move_edits[0].text() == "2,5"
+        assembly.select_many((("krabicka",), ("vicko",)))
+        assert not viewer._move_tips and not assembly.move_handles.isEnabled()
+        lines.append("✓ Tažení výběru sestavy: nativní myš XYZ, oba díly stejný posun, "
+                     "náhled bez změny modelu, 35/85 % průhlednost, jeden krok Zpět/Znovu, "
+                     "Esc/krok/fokus zachovají historii i rozepsaná pole, pevný díl blokován")
+        return True
+    except Exception:  # noqa: BLE001 -- úplná diagnostika balíčku
+        lines.append("✕ Tažení výběru sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        viewer.cancel_selection_drag()
+        while len(session._undo) > steps:
+            session.undo()
+        assembly.move_step.setValue(1.)
         assembly._refresh()
         assembly.reset_transparency()
         assembly.show_all()
