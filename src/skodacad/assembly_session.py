@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import math
 import os
 import re
 import shutil
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,37 @@ from skodacad.assembly_parameter_rename import rename_parameters, rename_referen
 from skodacad.expressions import ExpressionError, evaluate, resolve_parameters
 
 _UNDO_LIMIT = 100
+
+
+def _source_hashes(result: AssemblyResult) -> dict[Path, str]:
+    try:
+        return {s.file: hashlib.sha256(s.file.read_bytes()).hexdigest()
+                for s in result.statuses if s.file is not None}
+    except OSError as exc:
+        raise AssemblyError(f"Zdroj sestavy nejde přečíst: {exc}. Obnov sestavu.") from None
+
+
+@dataclass(frozen=True)
+class AssemblyParameterPreview:
+    """Oddělený spočítaný návrh; jeho přijetí musí stále odpovídat otevřené sestavě."""
+
+    original: Assembly
+    original_result: AssemblyResult
+    original_data: dict
+    path: Path
+    files: dict[Path, str]
+    parameters: dict
+    renames: tuple[tuple[str, str], ...]
+    assembly: Assembly
+    result: AssemblyResult
+
+    def check_current(self, session: AssemblySession) -> None:
+        if (session.assembly is not self.original or session.result is not self.original_result
+                or session.path != self.path or session.assembly.to_dict() != self.original_data
+                or _source_hashes(self.original_result) != self.files):
+            raise AssemblyError("Sestava nebo zdroj dílu se od náhledu změnil. "
+                                "Zavři náhled, obnov sestavu a zobraz nový náhled. "
+                                "Žádná změna se nepřijala.")
 
 
 def relative_path(file: str | Path, assembly_file: str | Path) -> str:
@@ -755,6 +788,51 @@ class AssemblySession:
     def set_parameters(self, parameters: dict[str, Any], *,
                        renames: Sequence[tuple[str, str]] = ()) -> AssemblyResult:
         """Parametry i jejich použití musí zůstat platné, jinak se změna nepřijme."""
+        return self._change_parameters(parameters, renames)
+
+    def preview_parameters(self, parameters: dict[str, Any], *,
+                           renames: Sequence[tuple[str, str]] = ()) -> AssemblyParameterPreview:
+        """Tentýž výpočet a kontroly jako Použít, ale v oddělené session i cache."""
+        original = self._require()
+        result = self.result
+        if result is None or not result.complete:
+            raise AssemblyError("Nejdřív dokonči načtení sestavy a oprav její chyby. "
+                                "Náhled potřebuje úplnou původní sestavu.")
+        files = _source_hashes(result)
+        trial = AssemblySession(self.cache.fork())
+        trial.assembly, trial.path = copy.deepcopy(original), self._require_path()
+        trial.result = result
+        trial.set_parameters(parameters, renames=renames)
+        if trial.result is result:  # i nezměněné parametry musí prověřit dnešní zdroje
+            trial.rebuild()
+        if not trial.result.complete:
+            detail = trial.result.problems[0] if trial.result.problems else "díly se ještě načítají"
+            raise AssemblyError(f"Náhled není úplný: {detail}. Žádná změna se nepřijala.")
+        if ({s.ids: s.fingerprint for s in trial.result.statuses}
+                != {s.ids: s.fingerprint for s in result.statuses}
+                or _source_hashes(result) != files):
+            raise AssemblyError("Při přípravě náhledu se změnil zdroj dílu nebo podsestavy. "
+                                "Obnov sestavu a zobraz náhled znovu.")
+        return AssemblyParameterPreview(original, result, copy.deepcopy(original.to_dict()),
+                                        trial.path, files, copy.deepcopy(parameters),
+                                        tuple(renames), trial.assembly, trial.result)
+
+    def apply_parameter_preview(self, preview: AssemblyParameterPreview) -> AssemblyResult:
+        """Znovu ověří zdroje i řešení; teprve potom přijme dávku jedním Zpět."""
+        preview.check_current(self)
+
+        def validate(candidate: Assembly, result: AssemblyResult) -> None:
+            preview.check_current(self)
+            if not result.complete or candidate.to_dict() != preview.assembly.to_dict():
+                raise AssemblyError("Výsledek už neodpovídá náhledu. Zobraz nový náhled; "
+                                    "žádná změna se nepřijala.")
+
+        return self._change_parameters(preview.parameters, preview.renames, validate)
+
+    def _change_parameters(self, parameters: dict[str, Any],
+                           renames: Sequence[tuple[str, str]],
+                           validate: Callable[[Assembly, AssemblyResult], None] | None = None
+                           ) -> AssemblyResult:
         def mutate(a: Assembly) -> None:
             # Pořadí zachová i opakované přejmenování či výměnu názvů přes dočasný název.
             # Výrazy parametrů už pocházejí z pracovní tabulky; zde zbývají polohy a vazby.
@@ -783,7 +861,7 @@ class AssemblySession:
                                     "ve výrazu. Úprava se nepřijala.") from None
             a.parameters = copy.deepcopy(parameters)
 
-        return self._change(mutate)
+        return self._change(mutate, validate=validate)
 
     def set_info(self, name: str | None = None, description: str | None = None) -> AssemblyResult:
         def mutate(a: Assembly) -> None:
