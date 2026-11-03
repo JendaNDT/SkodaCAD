@@ -323,6 +323,12 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   parametrech, všech osách polohy a otočení i vzdálenostních vazbách. Například změna
   `D` nepřepíše `D2`. Obsazený či neplatný název se odmítne. Přejmenování je nejprve
   pracovní změna; **Použít změny** potvrdí celou dávku a **Zpět** ji vrátí najednou.
+  **Náhled změn** otevře samostatné 3D okno s vypočtenými polohami, zvýrazněnými
+  změněnými komponentami, tabulkou původních/nových poloh a stavem vazeb. Přepínačem
+  porovnáš původní sestavu. **Zpět k parametrům** zachová rozepsanou tabulku;
+  **Použít změny** přijme dávku jedním krokem Zpět. Hlavní model, kamera a historie
+  se prohlížením náhledu nemění. Neplatná dávka nebo náhled zastaralý po změně
+  sestavy či zdroje se nepřijme. Nejdřív musí být původní sestava úplně načtená.
 - Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
   o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
   i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.
