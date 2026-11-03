@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -25,19 +26,22 @@ from PySide6.QtWidgets import (
 
 from skodacad.assembly import Assembly, AssemblyError
 from skodacad.assembly_parameter_rename import rename_parameters, rename_references
-from skodacad.assembly_parameter_usage import parameter_usage
+from skodacad.assembly_parameter_usage import UsageTarget, parameter_usage
 from skodacad.expressions import CONSTANTS, FUNCTIONS, ExpressionError, resolve_parameters
 
 
 class AssemblyParametersDialog(QDialog):
     def __init__(self, parameters: dict[str, Any], apply: Callable[[dict], None], parent=None,
                  *, assembly: Assembly | None = None,
-                 apply_renamed: Callable[[dict, Sequence[tuple[str, str]]], None] | None = None):
+                 apply_renamed: Callable[[dict, Sequence[tuple[str, str]]], None] | None = None,
+                 select_usage: Callable[[UsageTarget], bool] | None = None):
         super().__init__(parent)
         self._apply = apply
         self._apply_renamed = apply_renamed
         self._renames: list[tuple[str, str]] = []
         self._assembly = copy.deepcopy(assembly)
+        self._select_usage = select_usage
+        self._usage_targets: list[UsageTarget | None] = []
         self.setWindowTitle("Parametry sestavy")
         self.resize(780, 640)
         layout = QVBoxLayout(self)
@@ -78,9 +82,15 @@ class AssemblyParametersDialog(QDialog):
         self.usage_table.verticalHeader().hide()
         self.usage_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.usage_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.usage_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.usage_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.usage_table.setMinimumHeight(120)
         layout.addWidget(self.usage_table, 1)
+        self.usage_navigation = QLabel()
+        self.usage_navigation.setTextFormat(Qt.TextFormat.PlainText)
+        self.usage_navigation.setWordWrap(True)
+        self.usage_navigation.setAccessibleName("Výběr z přehledu použití")
+        layout.addWidget(self.usage_navigation)
         scope = QLabel("Odkazy v této sestavě, včetně návazností přes jiné parametry. "
                        "Vazby mohou přemístit i další spojené díly.")
         scope.setWordWrap(True)
@@ -109,6 +119,11 @@ class AssemblyParametersDialog(QDialog):
         self.table.itemChanged.connect(self._item_changed)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.currentCellChanged.connect(self._selection_changed)
+        self.usage_table.cellClicked.connect(self._usage_clicked)
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            shortcut = QShortcut(QKeySequence(key), self.usage_table)
+            shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+            shortcut.activated.connect(self._activate_usage_row)
         self.add_button.clicked.connect(self.add_parameter)
         self.rename_button.clicked.connect(self.edit_parameter_name)
         self.delete_button.clicked.connect(self.delete_parameter)
@@ -197,6 +212,10 @@ class AssemblyParametersDialog(QDialog):
             self._error(error)
 
     def _refresh_usage(self):
+        self._usage_targets = []
+        self.usage_navigation.setText("Kliknutím nebo Enterem vybereš místo použití. "
+                                      "Editor zůstane otevřený.")
+        self.usage_navigation.setStyleSheet("")
         row = self.table.currentRow()
         if row < 0:
             self.usage_title.setText("Vyber parametr pro přehled použití.")
@@ -212,6 +231,7 @@ class AssemblyParametersDialog(QDialog):
             return
         name = self.table.item(row, 0).text().strip()
         report = parameter_usage(self._assembly, parameters, name)
+        self._usage_targets = [use.target for use in report.uses]
         if report.warnings:
             status = "Přehled není úplný: " + report.warnings[0]
             if len(report.warnings) > 1:
@@ -233,6 +253,32 @@ class AssemblyParametersDialog(QDialog):
                     self.usage_table.setItem(index, column, item)
                 item.setText(text)
                 item.setToolTip(text)
+
+    def _activate_usage_row(self):
+        self._usage_clicked(self.usage_table.currentRow())
+
+    def _usage_clicked(self, row, _column=0):
+        if not 0 <= row < len(self._usage_targets):
+            return
+        target = self._usage_targets[row]
+        if target is None:
+            return
+        # Cíl nese skutečné id, nikdy jej neodvozujeme z popisku ani pořadí řádku.
+        place = self.usage_table.item(row, 0).text()
+        selected = False
+        if target.kind == "parameter":
+            for index in range(self.table.rowCount()):
+                if self.table.item(index, 0).text().strip() == target.id:
+                    self.table.setCurrentCell(index, 1)
+                    self.table.scrollToItem(self.table.item(index, 1))
+                    self.table.setFocus()
+                    selected = True
+                    break
+        elif self._select_usage is not None:
+            selected = self._select_usage(target)
+        self.usage_navigation.setText(f"Vybráno: {place}." if selected else
+                                      "Místo už není dostupné. Otevři přehled parametrů znovu.")
+        self.usage_navigation.setStyleSheet("" if selected else "color: #bf3030;")
 
     def _update(self, *_args):
         # Buňky ponecháváme na místě; přístupnost drží jejich indexy i při opravě chyby.
