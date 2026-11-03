@@ -12,11 +12,18 @@ from skodacad.assembly import Assembly
 
 
 @dataclass(frozen=True)
+class UsageTarget:
+    kind: str  # parameter / component / constraint
+    id: str
+
+
+@dataclass(frozen=True)
 class ParameterUse:
     place: str
     field: str
     expression: Any
     via: tuple[str, ...] = ()
+    target: UsageTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -32,20 +39,23 @@ def parameter_usage(assembly: Assembly | None, parameters: Mapping[str, Any],
     Výrazy parametrů pocházejí z pracovní tabulky, polohy/vazby z otevřené sestavy.
     Cyklus nezpůsobí nekonečné hledání. U nečitelného výrazu nelze tvrdit úplnost.
     """
-    sites = [(f"Parametr „{key}“", "Hodnota", value) for key, value in parameters.items()]
+    sites = [(f"Parametr „{key}“", "Hodnota", value, UsageTarget("parameter", key))
+             for key, value in parameters.items()]
     if assembly is not None:
         for component in assembly.components:
             place = f"Komponenta „{component.label}“ ({component.id})"
             for label, values in (("Posun", component.position), ("Otočení", component.rotation)):
                 unit = "mm" if label == "Posun" else "°"
-                sites += [(place, f"{label} {axis} [{unit}]", value)
+                sites += [(place, f"{label} {axis} [{unit}]", value,
+                           UsageTarget("component", component.id))
                           for axis, value in zip("XYZ", values, strict=True)]
-        sites += [(f"Vazba „{c.label}“ ({c.id})", "Vzdálenost [mm]", c.value)
+        sites += [(f"Vazba „{c.label}“ ({c.id})", "Vzdálenost [mm]", c.value,
+                   UsageTarget("constraint", c.id))
                   for c in assembly.constraints if c.type == "distance"]
 
     warnings = []
     references = []
-    for place, field, value in sites:
+    for place, field, value, _target in sites:
         refs = set()
         if isinstance(value, str):
             try:
@@ -68,9 +78,9 @@ def parameter_usage(assembly: Assembly | None, parameters: Mapping[str, Any],
                 waiting.append(key)
 
     uses = []
-    for (place, field, value), refs in zip(sites, references, strict=True):
+    for (place, field, value, target), refs in zip(sites, references, strict=True):
         matches = refs & paths.keys()
         if matches:
             closest = min(matches, key=lambda key: (len(paths[key]), key))
-            uses.append(ParameterUse(place, field, value, paths[closest]))
+            uses.append(ParameterUse(place, field, value, paths[closest], target))
     return UsageReport(tuple(uses), tuple(warnings))
