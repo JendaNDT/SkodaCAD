@@ -81,7 +81,7 @@ def make_constraints(folder, groups):
 
     shutil.copytree(ROOT / "examples/sestavy", folder / "sestavy")
     shutil.copy(ROOT / "examples/krabicka.json", folder / "krabicka.json")
-    sample = json.loads((folder / "sestavy/krabicka_s_vazbami.json").read_text())
+    sample = json.loads((folder / "sestavy/krabicka_s_vazbami.json").read_text(encoding="utf-8"))
     data = {**sample, "components": [], "constraints": []}
     for i in range(groups):
         for raw in sample["components"]:
