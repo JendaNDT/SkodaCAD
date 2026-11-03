@@ -468,6 +468,12 @@ class Cache:
         self._parts[key] = built
         self.waiting.pop(key, None)
 
+    def fork(self) -> Cache:
+        """Oddělené fronty a klíče pro pracovní náhled; hotové zdrojové tvary se sdílejí."""
+        cache = Cache(self.builder)
+        cache._parts = self._parts.copy()
+        return cache
+
 
 def build(assembly: Assembly, file: str | Path, cache: Cache | None = None) -> AssemblyResult:
     """Sestaví sestavu ze souboru ``file`` – cesty komponent jsou vůči jeho složce.
