@@ -1,5 +1,6 @@
 """Zátěžové vstupy P8.1 mají skutečnou analyticky kontrolovanou geometrii."""
 
+import locale
 import math
 import subprocess
 import sys
@@ -41,7 +42,20 @@ def test_instance_reference_has_correct_copies_and_live_placement_expression(tmp
     assert (tmp_path / "box.json").read_bytes() == source
 
 
-def test_constraint_groups_keep_all_seven_constraints_and_independent_offsets(tmp_path):
+@pytest.fixture(params=[None, "C"])
+def text_locale(request):
+    """Český recept musí fungovat i s ASCII výchozím kódováním souborů."""
+    original = locale.setlocale(locale.LC_CTYPE)
+    try:
+        if request.param is not None:
+            locale.setlocale(locale.LC_CTYPE, request.param)
+        yield
+    finally:
+        locale.setlocale(locale.LC_CTYPE, original)
+
+
+def test_constraint_groups_keep_all_seven_constraints_and_independent_offsets(tmp_path,
+                                                                            text_locale):
     path = make_constraints(tmp_path, 2)
     session = AssemblySession()
     session.open(path)
