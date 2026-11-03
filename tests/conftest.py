@@ -6,9 +6,18 @@ from typing import Any
 import pytest
 from build123d import Vector
 
+from qt_cleanup import dispose_new_widgets, top_levels
 from skodacad import Document
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+
+
+@pytest.fixture(autouse=True)
+def owned_qt_windows():
+    """Qt objekty testu se zruší před pozdním atexit úklidem PySide."""
+    previous = top_levels()
+    yield
+    dispose_new_widgets(previous)
 
 
 def make_doc(features: list[dict[str, Any]], parameters: dict[str, Any] | None = None,
