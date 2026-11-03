@@ -3013,6 +3013,151 @@ def _self_test_assembly_parameter_navigation(assembly, lines) -> bool:
         assert session.assembly.to_dict() == original
 
 
+def _self_test_assembly_parameter_preview(assembly, lines) -> bool:
+    """Dvě skutečná modální okna: porovnání 3D, návrat, potvrzení a zastaralý návrh."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
+
+    from skodacad.gui.assembly_parameter_preview import AssemblyParameterPreviewDialog
+    from skodacad.gui.assembly_parameters import AssemblyParametersDialog
+
+    session, viewer = assembly.session, assembly.viewer
+    mark = len(session._undo)
+    original = session.assembly.to_dict()
+    failures = []
+
+    def edit(dialog, row, column, text):
+        dialog.table.setCurrentCell(row, column)
+        dialog.table.editItem(dialog.table.item(row, column))
+        field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+        field.selectAll()
+        QTest.keyClicks(field, text)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QTest.qWait(20)
+
+    def lid(result):
+        return next(i.part for i in result.instances if i.ids == ("vicko",))
+
+    def inspect_preview(mode):
+        dialog = QApplication.activeModalWidget()
+        try:
+            assert isinstance(dialog, AssemblyParameterPreviewDialog), "náhled se neotevřel"
+            QTest.qWait(150)
+            assert dialog.viewer.ready and dialog.viewer._ais is not None
+            assert dialog.viewer is not viewer and dialog.viewer._highlight is not None
+            assert dialog.changed_ids == {"vicko"} and "7/7" in dialog.summary.text()
+            assert abs(lid(dialog.preview.result).bounding_box().max.Z
+                       - lid(result).bounding_box().max.Z - 12.5) < 1e-6
+            assert session.assembly is source and session.result is result
+            assert session.assembly.to_dict() == before
+            assert (len(session._undo), len(session._redo), session.dirty) == history
+            direction, scale = dialog.viewer._view.Proj(), dialog.viewer._view.Scale()
+            QTest.mouseClick(dialog.original_box, Qt.MouseButton.LeftButton)
+            assert dialog.original_box.isChecked() and "Původní" in dialog.heading.text()
+            QTest.mouseClick(dialog.original_box, Qt.MouseButton.LeftButton)
+            assert not dialog.original_box.isChecked()
+            assert dialog.viewer._view.Proj() == direction
+            assert abs(dialog.viewer._view.Scale() - scale) < 1e-9
+            if mode == "apply":
+                _screenshot(dialog, user_dir() / "self-test-nahled-parametru-sestavy.png")
+                QTest.mouseClick(dialog.apply_button, Qt.MouseButton.LeftButton)
+                assert not dialog.isVisible(), dialog.message.text()
+            elif mode == "stale":
+                session.set_info(name="Novější sestava")
+                new_source, new_result = session.assembly, session.result
+                QTest.mouseClick(dialog.apply_button, Qt.MouseButton.LeftButton)
+                assert "od náhledu změnil" in dialog.message.text()
+                assert not dialog.apply_button.isEnabled()
+                assert session.assembly is new_source and session.result is new_result
+                QTest.mouseClick(dialog.back_button, Qt.MouseButton.LeftButton)
+            else:
+                QTest.mouseClick(dialog.back_button, Qt.MouseButton.LeftButton)
+        except Exception:  # noqa: BLE001 -- chyby nativních událostí do zprávy
+            failures.append(traceback.format_exc())
+            if dialog is not None:
+                dialog.reject()
+
+    def inspect_parameters(mode):
+        dialog = QApplication.activeModalWidget()
+        try:
+            assert isinstance(dialog, AssemblyParametersDialog), "editor se neotevřel"
+            QTest.mouseClick(dialog.add_button, Qt.MouseButton.LeftButton)
+            field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+            field.selectAll()
+            QTest.keyClicks(field, "polovina")
+            QTest.keyClick(field, Qt.Key.Key_Return)
+            QTest.qWait(20)
+            edit(dialog, 1, 1, "6,25")
+            edit(dialog, 0, 1, "polovina*2")
+            edit(dialog, 0, 0, "vule")
+            QTimer.singleShot(100, lambda: inspect_preview(mode))
+            QTest.mouseClick(dialog.preview_button, Qt.MouseButton.LeftButton)
+            assert not failures, "\n".join(failures)
+            if mode != "apply":
+                assert dialog.isVisible()
+                assert dialog.parameters() == {"vule": "polovina*2", "polovina": 6.25}
+                if mode == "back":
+                    edit(dialog, 0, 1, "missing+1")
+                    assert not dialog.preview_button.isEnabled()
+                    assert "neznámý" in dialog.message.text()
+                QTest.mouseClick(dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel),
+                                 Qt.MouseButton.LeftButton)
+        except Exception:  # noqa: BLE001 -- chyby nativních událostí do zprávy
+            failures.append(traceback.format_exc())
+            if dialog is not None:
+                dialog.reject()
+
+    try:
+        assembly._refresh()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        base_direction, base_scale = viewer._view.Proj(), viewer._view.Scale()
+        sources = {s.file: s.file.read_bytes() for s in session.result.statuses}
+        for mode in ("back", "apply", "stale"):
+            source, result = session.assembly, session.result
+            before = source.to_dict()
+            history = (len(session._undo), len(session._redo), session.dirty)
+            QTimer.singleShot(100, lambda mode=mode: inspect_parameters(mode))
+            QTest.mouseClick(assembly.parameters_button, Qt.MouseButton.LeftButton)
+            assert not failures, "\n".join(failures)
+            assert viewer._view.Proj() == base_direction
+            assert abs(viewer._view.Scale() - base_scale) < 1e-9
+            if mode == "apply":
+                assert session.assembly.parameters == {"vule": "polovina*2", "polovina": 6.25}
+                assert len(session._undo) == history[0] + 1
+                assert abs(lid(session.result).bounding_box().max.Z
+                           - lid(result).bounding_box().max.Z - 12.5) < 1e-6
+                assert session.result.complete and len(session.result.constraints) == 7
+                assembly.undo_action.trigger()
+                assert session.assembly.to_dict() == before
+                assembly.redo_action.trigger()
+                assert session.assembly.constraints[0].value == "vule"
+                assembly.undo_action.trigger()
+            elif mode == "back":
+                assert session.assembly is source and session.result is result
+                assert session.assembly.to_dict() == before
+                assert (len(session._undo), len(session._redo), session.dirty) == history
+            else:
+                assert session.assembly.name == "Novější sestava"
+                assert session.assembly.parameters == before["parameters"]
+        assert all(path.read_bytes() == data for path, data in sources.items())
+        lines.append("✓ Náhled parametrů sestavy: skutečná tlačítka a 3D okno, "
+                     "desetinná čárka, závislý výraz a přejmenování, víčko +12,5 mm "
+                     "a 7 splněných vazeb; přepínání původní/náhled, návrat i Zrušit "
+                     "bez změny modelu/výsledku/historie/zdrojů a hlavní kamery; "
+                     "Použít jedním Zpět/Znovu, chybný výraz a zastaralý náhled odmítnuty")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika sestavené aplikace
+        lines.append("✕ Náhled parametrů sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        while len(session._undo) > mark:
+            session.undo()
+        assert session.assembly.to_dict() == original
+
+
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
     """Zabalená aplikace: vazby P5.3 – řešič (numpy) v balíčku, ukázka plně určená."""
     sample = folder / "sestavy" / "krabicka_s_vazbami.json"
@@ -3046,6 +3191,7 @@ def _self_test_constraints(window, lines: list[str], folder) -> bool:
         ok = _self_test_assembly_parameters(assembly, lines) and ok
         ok = _self_test_assembly_parameter_rename(assembly, lines) and ok
         ok = _self_test_assembly_parameter_navigation(assembly, lines) and ok
+        ok = _self_test_assembly_parameter_preview(assembly, lines) and ok
     session.dirty = False
     assembly.close()
     return ok
