@@ -39,6 +39,13 @@ kód. Workflow **P8.1 měření výkonu** má vlastní runner pro Windows i macO
 od testů a balení aplikace, a ukládá JSON, logy a nativní snímky na 30 dní.
 Řádky `P81_CASE` a `P81_ENV` v logu obsahují také strojově čitelný stručný souhrn.
 
+Recepty se vždy čtou jako UTF-8, včetně českých názvů při výchozím ASCII locale.
+Reference skupin vazeb probíhá i s locale `C` a původní nastavení po sobě obnoví.
+Otisky jsou z reálných bajtů: Windows checkout s CRLF má jiné SHA-256 než LF na
+macOS. Při porovnání se musí ověřit odpovídající převod konců řádků, ne zaměnit
+tento rozdíl za jiný algoritmus. PR měření běží na syntetickém merge commitu;
+jeho rodiče musí obsahovat ověřovaný head a jeho strom musí odpovídat dávce.
+
 Čas nemá práh úspěchu v pytest ani CI. Ochranný timeout ukončí vlastní proces
 i potomky při zaseknutí; takový případ zůstane v evidenci jako neúspěšný, nikoli
 jako falešně rychlý výsledek. Základní fyziku vstupů zvlášť ověřuje
@@ -92,9 +99,10 @@ navíc skutečně spouští příkaz Zastavit a ověřuje zachování původní 
 
 [Úplný nezměněný JSON](baselines/p8-1-macos-arm64.json) obsahuje 14 názvů případů,
 16 samostatných procesů (start třikrát), všechny vzorky a otisky měřičů. Všech
-16 záznamů je `ok`; čtyři samostatné reference vstupů prošly. Produkční zdroj je
-výše uvedený `7541cd0`; měřič vznikl následně v této dávce a jeho přesnou verzi
-určují samostatné SHA-256 v JSON, nikoli pole `commit` produkčního základu.
+16 záznamů je `ok`; pět referenčních zkoušek vstupů prošlo také pod výchozím ASCII.
+Produkční zdroj odpovídá výše uvedenému `7541cd0`; pole `commit` identifikuje
+checkout při měření. Měřič vznikl následně v této dávce a jeho přesnou verzi určují
+samostatné SHA-256 v JSON, včetně ještě necommitované opravy načítání UTF-8.
 
 Apple M4, 10 logických CPU, 16 GiB RAM, arm64, Darwin 27.2.0, Python 3.12.14,
 build123d 0.13.0, OCCT balíček 8.0.1.1.0, PySide6 6.11.3. Bez vynuceného počtu
@@ -103,46 +111,46 @@ nebyly vypnuté; jejich okamžité zatížení zachycuje prostředí v JSON.
 
 | Operace | Medián ze tří běhů [s] | Minimum–maximum [s] |
 |---|---:|---:|
-| Plný přepočet, 22 prvků / 10 kapes | 0,110 | 0,110–0,111 |
-| Plný přepočet, 62 prvků / 30 kapes | 0,647 | 0,645–0,650 |
-| Plný přepočet, 122 prvků / 60 kapes | 2,356 | 2,350–2,360 |
-| Encode/pickle/decode, 122 prvků | 0,100 | 0,091–0,101 |
+| Plný přepočet, 22 prvků / 10 kapes | 0,109 | 0,108–0,111 |
+| Plný přepočet, 62 prvků / 30 kapes | 0,644 | 0,639–0,644 |
+| Plný přepočet, 122 prvků / 60 kapes | 2,345 | 2,334–2,348 |
+| Encode/pickle/decode, 122 prvků | 0,098 | 0,095–0,102 |
 | Zahřátá sestava, 50 kopií | 0,008 | 0,008–0,008 |
-| Zahřátá sestava, 200 kopií | 0,031 | 0,030–0,031 |
-| Zahřátá sestava, 800 kopií | 0,125 | 0,124–0,125 |
-| Oddělený výpočet náhledu, 800 kopií | 0,158 | 0,158–0,161 |
-| Zahřátá sestava, 144 dílů / 168 vazeb ve 24 skupinách | 0,224 | 0,222–0,252 |
-| STEP export, 200 kopií | 0,014 | 0,010–0,014 |
-| STEP import/převzetí v pomocném procesu, 60 kapes | 1,245 | 1,244–1,253 |
-| Geometrické mapy PT a MT dohromady | 3,619 | 3,616–3,634 |
-| Zahřátý worker/převzetí, 62 prvků | 0,709 | 0,703–0,726 |
-| Nativní díl, otevření/worker/převzetí/scéna, 122 prvků | 2,637 | 2,634–2,710 |
-| Nativní sestava, otevření/strom/scéna, 800 kopií | 0,368 | 0,364–0,387 |
-| Nativní sestava, výběr poslední komponenty | 0,048 | 0,040–0,050 |
-| Nativní sestava, editor/náhled/návrat bez potvrzení | 0,757 | 0,752–0,783 |
+| Zahřátá sestava, 200 kopií | 0,031 | 0,031–0,031 |
+| Zahřátá sestava, 800 kopií | 0,124 | 0,123–0,126 |
+| Oddělený výpočet náhledu, 800 kopií | 0,160 | 0,159–0,196 |
+| Zahřátá sestava, 144 dílů / 168 vazeb ve 24 skupinách | 0,225 | 0,222–0,254 |
+| STEP export, 200 kopií | 0,010 | 0,010–0,014 |
+| STEP import/převzetí v pomocném procesu, 60 kapes | 1,241 | 1,236–1,243 |
+| Geometrické mapy PT a MT dohromady | 3,633 | 3,628–3,667 |
+| Zahřátý worker/převzetí, 62 prvků | 0,714 | 0,710–0,715 |
+| Nativní díl, otevření/worker/převzetí/scéna, 122 prvků | 2,637 | 2,631–2,637 |
+| Nativní sestava, otevření/strom/scéna, 800 kopií | 0,364 | 0,353–0,383 |
+| Nativní sestava, výběr poslední komponenty | 0,049 | 0,040–0,049 |
+| Nativní sestava, editor/náhled/návrat bez potvrzení | 0,741 | 0,735–0,788 |
 
-Import CAD knihoven v novém procesu měl medián 1,097 s. První pracovní přepočet
-a převzetí 62 prvků trvalo jednorázově 1,963 s. Nativní první okno od vstupu do
-případu včetně importů trvalo 1,938 s u dílu a 1,850 s u sestavy. Tyto jednorázové
+Import CAD knihoven v novém procesu měl medián 1,093 s. První pracovní přepočet
+a převzetí 62 prvků trvalo jednorázově 1,959 s. Nativní první okno od vstupu do
+případu včetně importů trvalo 1,944 s u dílu a 1,813 s u sestavy. Tyto jednorázové
 údaje nejsou mediány opakovaných startů GUI.
 
-Zrušení již použitého workeru po požadavku: 8 ms, následná obnova 731 ms;
-skutečný příkaz Zastavit v nativním okně 18 ms. Oba případy ověřily mrtvý zrušený
+Zrušení již použitého workeru po požadavku: 4 ms, následná obnova 725 ms;
+skutečný příkaz Zastavit v nativním okně 19 ms. Oba případy ověřily mrtvý zrušený
 proces a správný následující výsledek. Nativní historie zaznamenala přibližně
-797 MiB maximálního pozorovaného RSS rodiče a 1606 MiB součtu sledovaného poolu;
-nativní sestava přibližně 759 MiB rodiče bez workerů. Jde o maxima celého případu,
+797 MiB maximálního pozorovaného RSS rodiče a 1607 MiB součtu sledovaného poolu;
+nativní sestava přibližně 749 MiB rodiče bez workerů. Jde o maxima celého případu,
 včetně přípravy a validace, nikoli přírůstek přepočtu nebo důkaz úniku paměti.
 
 V měřených bězích nativního otevření sestavy byly nejdelší mezery Qt časovače
-357–371 ms; v otevření náhledu 439–457 ms. Při otevření dílu s workerem 157–174 ms.
+345–374 ms; v otevření náhledu 440–443 ms. Při otevření dílu s workerem 153–158 ms.
 Tyto mezery ukazují blokovanou hlavní smyčku; neurčují, kolik z ní spotřeboval
 strom, převod tvarů či kreslení. Do globální statistiky vstupuje i konstrukce okna
 a čekání před snímkem, proto se pro toto srovnání používají jednotlivé operace.
 
 **Pořadí pro P8.2:** nejprve rozdělit náklady hlavního vlákna při otevření/náhledu
-800 kopií na přípravu, strom a scénu. Výpočet sestavy samotný má zde 0,125 s,
-celý tok náhledu 0,757 s; rozdíl není čistý čas vykreslování. Potom profilovat
-122prvkovou historii: růst 0,110 → 0,647 → 2,356 s je rychlejší než růst počtu
+800 kopií na přípravu, strom a scénu. Výpočet sestavy samotný má zde 0,124 s,
+celý tok náhledu 0,741 s; rozdíl není čistý čas vykreslování. Potom profilovat
+122prvkovou historii: růst 0,109 → 0,644 → 2,345 s je rychlejší než růst počtu
 prvků, ale bez profilu neprokazuje konkrétní složitost ani nutnost nové cache.
 Otevření STEP je první referencí hlídaného procesu a PT/MT první referencí více
 studií; jejich fyzikální použitelnost tím není potvrzena. Před změnou algoritmů
