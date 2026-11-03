@@ -2784,6 +2784,119 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
         return False
 
 
+def _self_test_assembly_parameter_rename(assembly, lines) -> bool:
+    """Nativní přejmenování v pracovní tabulce a jedna společná transakce všech odkazů."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
+
+    from skodacad.gui.assembly_parameters import AssemblyParametersDialog
+
+    session, viewer = assembly.session, assembly.viewer
+    mark = len(session._undo)
+    original = session.assembly.to_dict()
+    failures = []
+
+    def physical():
+        return [(i.ids, i.part.is_valid, round(i.part.volume, 7),
+                 sorted(tuple(round(v, 7) for v in p) for p in i.part.vertices()))
+                for i in session.result.instances]
+
+    def finish_name(dialog, name):
+        field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+        field.selectAll()
+        QTest.keyClicks(field, name)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QTest.qWait(20)
+
+    def interact(cancel=False):
+        dialog = QApplication.activeModalWidget()
+        try:
+            assert isinstance(dialog, AssemblyParametersDialog), "editor se neotevřel"
+            if not cancel:
+                QTest.mouseClick(dialog.add_button, Qt.MouseButton.LeftButton)
+                finish_name(dialog, "polovina")
+                dialog.table.setCurrentCell(1, 1)
+                dialog.table.editItem(dialog.table.item(1, 1))
+                finish_name(dialog, "mezera/2")
+            dialog.table.setCurrentCell(0, 0)
+            QTest.mouseClick(dialog.rename_button, Qt.MouseButton.LeftButton)
+            if not cancel:
+                finish_name(dialog, "polovina")
+                assert "už existuje" in dialog.message.text()
+                assert dialog.table.item(0, 0).text() == "mezera"
+                QTest.mouseClick(dialog.rename_button, Qt.MouseButton.LeftButton)
+            finish_name(dialog, "zrusena" if cancel else "vule_vicka")
+            assert session.assembly.to_dict() == before, "přejmenování předčasně změnilo model"
+            if cancel:
+                QTest.mouseClick(dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel),
+                                 Qt.MouseButton.LeftButton)
+                return
+            assert dialog.parameters() == {"vule_vicka": 0, "polovina": "vule_vicka/2"}
+            rows = [tuple(dialog.usage_table.item(r, c).text() for c in range(4))
+                    for r in range(dialog.usage_table.rowCount())]
+            assert any(r[1] == "Posun X [mm]" and r[2] == "vule_vicka-32" for r in rows)
+            assert any(r[1] == "Otočení Z [°]" and r[2] == "vule_vicka" for r in rows)
+            assert any(r[1] == "Vzdálenost [mm]" and r[2] == "vule_vicka" for r in rows)
+            QTest.qWait(30)
+            dialog.grab().save(str(user_dir() / "self-test-prejmenovani-parametru.png"))
+            QTest.mouseClick(dialog.apply_button, Qt.MouseButton.LeftButton)
+            assert not dialog.isVisible(), dialog.message.text()
+        except Exception:  # noqa: BLE001 -- zachytit chybu z události modálního okna
+            failures.append(traceback.format_exc())
+            if dialog is not None:
+                dialog.reject()
+
+    try:
+        # Výrazy dávají stejné souřadnice jako původní nožička a ověří také polohu/otočení.
+        session.set_placement("nozicka_1", position=["mezera-32", -17, -3],
+                              rotation=[0, 0, "mezera"])
+        assembly._refresh()
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        before, shape = session.assembly.to_dict(), physical()
+        sources = {s.file: s.file.read_bytes() for s in session.result.statuses}
+        history = len(session._undo)
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        QTimer.singleShot(100, interact)
+        QTest.mouseClick(assembly.parameters_button, Qt.MouseButton.LeftButton)
+        assert not failures, "\n".join(failures)
+        assert session.assembly.parameters == {"vule_vicka": 0, "polovina": "vule_vicka/2"}
+        assert session.assembly.constraints[0].value == "vule_vicka"
+        foot = session.assembly.component("nozicka_1")
+        assert foot.position[0] == "vule_vicka-32" and foot.rotation[2] == "vule_vicka"
+        assert physical() == shape and all(item[1] for item in shape)
+        assert session.result.complete and all(c.state == "ok" for c in session.result.constraints)
+        assert len(session._undo) == history + 1
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        assembly.undo_action.trigger()
+        assert session.assembly.to_dict() == before and len(session._undo) == history
+        assembly.redo_action.trigger()
+        assert session.assembly.constraints[0].value == "vule_vicka" and physical() == shape
+        assembly.undo_action.trigger()
+        result = session.result
+        history = (len(session._undo), len(session._redo), session.dirty)
+        QTimer.singleShot(100, lambda: interact(cancel=True))
+        assembly.parameters_action.trigger()
+        assert not failures, "\n".join(failures)
+        assert session.assembly.to_dict() == before and session.result is result
+        assert (len(session._undo), len(session._redo), session.dirty) == history
+        assert all(path.read_bytes() == content for path, content in sources.items())
+        lines.append("✓ Přejmenování parametru sestavy: skutečné tlačítko a Enter, mezera → "
+                     "vule_vicka v parametru/poloze/otočení/vazbě i přehledu použití; geometrie "
+                     "a kamera zachovány, 7 vazeb splněno, jeden Zpět/Znovu, kolize názvu "
+                     "odmítnuta, Zrušit i zdrojové soubory beze změn")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika sestavené aplikace
+        lines.append("✕ Přejmenování parametru sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        while len(session._undo) > mark:
+            session.undo()
+        assert session.assembly.to_dict() == original
+
+
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
     """Zabalená aplikace: vazby P5.3 – řešič (numpy) v balíčku, ukázka plně určená."""
     sample = folder / "sestavy" / "krabicka_s_vazbami.json"
@@ -2815,6 +2928,7 @@ def _self_test_constraints(window, lines: list[str], folder) -> bool:
             lines.append(f"✕ Vazby: {freedom}, víčko {lifted}; {problems}")
     if ok:
         ok = _self_test_assembly_parameters(assembly, lines) and ok
+        ok = _self_test_assembly_parameter_rename(assembly, lines) and ok
     session.dirty = False
     assembly.close()
     return ok
