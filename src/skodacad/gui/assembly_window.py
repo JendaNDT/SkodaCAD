@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -73,6 +74,7 @@ from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.assembly_panel import ComponentScroll, MovementTabs
+from skodacad.gui.assembly_parameter_preview import AssemblyParameterPreviewDialog
 from skodacad.gui.assembly_parameters import AssemblyParametersDialog
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -142,6 +144,7 @@ class AssemblyWindow(QMainWindow):
             from skodacad.gui.viewer import OccViewer
 
             viewer_factory = OccViewer
+        self._viewer_factory = viewer_factory
         self.viewer = viewer_factory()
         self.viewer.selection_changed.connect(self._picked)
         self.viewer.selection_cleared.connect(lambda: self.select(None))
@@ -1399,16 +1402,60 @@ class AssemblyWindow(QMainWindow):
         if self.session.assembly is None:
             return
         source = self.session.assembly
+        original_data = source.to_dict()
+
+        def apply(parameters, renames=()):
+            self._check_parameter_editor(source, original_data)
+            self.apply_parameters(parameters, renames)
+
         dialog = AssemblyParametersDialog(source.parameters,
-                                           self.apply_parameters, self,
+                                           apply, self,
                                            assembly=source,
-                                           apply_renamed=self.apply_parameters,
+                                           apply_renamed=apply,
                                            select_usage=lambda target:
-                                           self.select_parameter_usage(target, source))
+                                           self.select_parameter_usage(target, source),
+                                           preview=lambda parameters, renames:
+                                           self.preview_parameters(parameters, renames, source,
+                                                                   original_data))
         try:
             self._exec_dialog(dialog)
         finally:
             dialog.deleteLater()
+
+    def _check_parameter_editor(self, source, original_data):
+        if self.session.assembly is not source or source.to_dict() != original_data:
+            raise AssemblyError("Sestava se od otevření editoru změnila. Otevři parametry znovu.")
+
+    def preview_parameters(self, parameters, renames, source, original_data=None):
+        self._check_parameter_editor(source, source.to_dict() if original_data is None
+                                     else original_data)
+        self.viewer.cancel_selection_drag()
+        self.viewer.cancel_rotation_center_pick()
+        self._movement_panel_revision += 1
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            preview = self.session.preview_parameters(parameters, renames=renames)
+        finally:
+            QApplication.restoreOverrideCursor()
+        visible = self.visible_instances()
+        dialog = AssemblyParameterPreviewDialog(
+            preview, self.apply_parameter_preview, self._viewer_factory,
+            QApplication.activeModalWidget() or self,
+            visible_ids={i.ids for i in visible},
+            transparency={i.ids: self._transparency_level(i.ids)
+                          for i in visible if self._is_transparent(i.ids)})
+        try:
+            return self._exec_parameter_preview(dialog) == QDialog.DialogCode.Accepted
+        finally:
+            dialog.deleteLater()
+
+    @staticmethod
+    def _exec_parameter_preview(dialog):
+        return dialog.exec()
+
+    def apply_parameter_preview(self, preview):
+        self.session.apply_parameter_preview(preview)
+        self._refresh()
 
     def select_parameter_usage(self, target: UsageTarget, source: Assembly) -> bool:
         """Pouze výběr; odkaz ze starého editoru nesmí vybrat id z jiného modelu."""
