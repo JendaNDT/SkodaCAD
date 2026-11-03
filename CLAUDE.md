@@ -43,6 +43,9 @@
   **Znovu potvrzeno autorem 3. 11. 2026:** doporučení patří i do závěrečných
   automatických oznámení o vydání. U oznámení s předepsaným formátem je vlož
   do textu zprávy; tiché kontroly bez novinek dál neoznamuj.
+- **Pokyn autora z 3. 11. 2026:** po náhledu parametrů P7.36 zahájit P8.1
+  měřením velké sestavy a dlouhé historie. [P8.1 metodika a baseline](docs/p8-1-vykonnostni-baseline.md)
+  odděluje měření od následného profilování P8.2 a optimalizací P8.3.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1635,19 +1638,19 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Plán
 
-**Stav k 31. 10. 2026** ([schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md)):
+**Stav k 3. 11. 2026** ([schválená roadmapa P0–P8 a NDT-17](docs/roadmapa-vyvoje.md)):
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|
 | P0 stabilizace | sloučeno (PR #30) | – |
-| P1 bezpečná geometrie | **přijato autorem** 25. 10. | R03, R04/P16, R12, historická identita |
+| P1 bezpečná geometrie | **přijato autorem** 25. 10.; R03 atomický zápis a R12 dokumentace následně opraveny | R04/P16, zbytkové riziko historické identity |
 | P2 přímé modelování | sloučeno (PR #44, #45) | ruční zkouška a přijetí autorem |
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | [Řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34); [Lineární proměnné zaoblení](docs/p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, formát 32, směr/původ, session a GUI; výsledky úplných kontrol v implementačním PR | P6.4 na autorském dílu, další operace z P6.1 |
-| P7 ergonomie | [P7.1 technický audit a návrh prostředí CAD](docs/p7-1-audit-a-navrh-prostredi.md), dvě varianty a nativní průzkum | volba rozložení, nativní implementace a přejímka |
-| P8 výkon/stabilizace | nezahájeno | – |
+| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
+| P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P8 výkon/stabilizace | [P8.1 měření](docs/p8-1-vykonnostni-baseline.md) místně ověřeno; kontroly obou OS jsou bránou sloučení | P8.2 profilování, P8.3 optimalizace, P8.4 dlouhý provoz, P8.5 přijetí |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada

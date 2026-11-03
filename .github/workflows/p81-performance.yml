@@ -1,0 +1,66 @@
+name: P8.1 měření výkonu
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "tests/benchmark_p8*.py"
+      - "tests/test_p81_reference.py"
+      - ".github/workflows/p81-performance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tests/benchmark_p8*.py"
+      - "tests/test_p81_reference.py"
+      - ".github/workflows/p81-performance.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: p81-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  measurement:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui]"
+      - name: Nativní podpora přístupnosti macOS
+        if: runner.os == 'macOS'
+        run: python packaging/build_macos_accessibility.py
+      - name: Zátěžové reference bez prahu rychlosti
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_p81_reference.py
+      - name: Samostatné procesy a skutečné nativní okno
+        # Samostatný runner, nikoli měření souběžně s pytest nebo sestavováním balíčku.
+        # Timeout je ochrana proti zaseknutí, ne požadavek na rychlost programu.
+        run: python tests/benchmark_p8.py --output p8-baseline.json --repeats 3 --timeout 240
+      - name: Evidence a původní vzorky
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p81-${{ matrix.os }}
+          path: |
+            p8-baseline.json
+            p8-baseline/**/process.log
+            p8-baseline/**/result.json
+            p8-baseline/**/native-window.png
+          retention-days: 30
