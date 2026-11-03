@@ -180,10 +180,13 @@ def validate_runtime(events, footer, cycles, warmups):
                   and facts["selection"] == "c799" and facts["native_view_ready"]
                   and facts["preview_native_ready"] and facts["cancel_model_unchanged"],
                   "Velká sestava nebo skutečný náhled neprošly")
+            check(facts["assembly_pool_closed"] and len(facts["assembly_worker_pids"]) == 2
+                  and set(facts["assembly_worker_pids"]).isdisjoint(map(int, values)),
+                  "Po zavřené sestavě přežil její pomocný proces")
         elif phase == "cycle-end":
             actual = {int(pid) for pid in values if int(pid) != memory["parent_pid"]}
-            check(memory["worker_count"] == 4 and actual == set(facts["owned_worker_pids"]),
-                  "Na konci cyklu zůstal cizí worker nebo chybí jeden vlastněný pool")
+            check(memory["worker_count"] == 2 and actual == set(facts["owned_worker_pids"]),
+                  "Na konci cyklu zůstal cizí worker nebo chybí pool hlavního dílu")
             check(event["resources"]["assembly_windows"] == 0
                   and event["resources"]["parameter_dialogs"] == 0,
                   "Po cyklu zůstalo zavřené okno nebo dialog")
@@ -260,7 +263,7 @@ def main():
             code = "timeout"
     events, evidence_error = read_events(folder / "events.jsonl")
     success = code == 0 and (folder / "footer.json").is_file() and not evidence_error
-    report = {"schema": "skodacad-p8.4-v1", "commit": subprocess.check_output(
+    report = {"schema": "skodacad-p8.4-v2", "commit": subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "created_utc": datetime.now(UTC).isoformat(), "cycles": args.cycles,
         "warmups": args.warmups, "exit": code, "status": "ok" if success else "failed",

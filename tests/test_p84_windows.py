@@ -71,3 +71,62 @@ def test_failed_open_releases_new_window_and_registry_is_empty(main_window, tmp_
     assert main_window.open_assembly(tmp_path / "chybi.json") is None
     deferred_deletes()
     assert main_window.assembly_windows == []
+
+
+class OwnedPool:
+    def __init__(self):
+        self.closed = 0
+
+    def close(self):
+        self.closed += 1
+
+
+def test_only_last_destroyed_assembly_releases_pool_and_next_window_gets_new_one(
+        main_window, project, monkeypatch):
+    path = project / "sestavy/krabicka_s_vickem.json"
+    first = main_window.open_assembly(path)
+    last = main_window.open_assembly(path)
+    result = last.session.result
+    pool = OwnedPool()
+    main_window._assembly_runner = pool
+    assert first.close()
+    deferred_deletes()
+    assert pool.closed == 0 and main_window._assembly_runner is pool
+    assert isValid(last) and last.session.result is result
+    assert last.close()
+    deferred_deletes()
+    assert pool.closed == 1 and main_window._assembly_runner is None
+    replacement = OwnedPool()
+    monkeypatch.setattr("skodacad.worker.BackgroundRebuilder", lambda: replacement)
+    previous = main_window._runner
+    main_window._runner = OwnedPool()  # zapne větev vytváření pomocného poolu
+    try:
+        fresh = main_window._assembly_window()
+        assert main_window._assembly_runner is replacement
+        assert fresh.close()
+        deferred_deletes()
+        assert replacement.closed == 1 and main_window._assembly_runner is None
+    finally:
+        main_window._runner = previous
+
+
+def test_cancelled_dirty_close_keeps_pool_until_accepted_close(main_window, project, dialogs):
+    window = main_window.open_assembly(project / "sestavy/krabicka_s_vickem.json")
+    window.session.rename("vicko", "Změněné víčko")
+    pool = OwnedPool()
+    main_window._assembly_runner = pool
+    assert not window.close()
+    deferred_deletes()
+    assert isValid(window) and pool.closed == 0 and main_window._assembly_runner is pool
+    dialogs["question"] = QMessageBox.StandardButton.Discard
+    assert window.close()
+    deferred_deletes()
+    assert pool.closed == 1 and main_window._assembly_runner is None
+
+
+def test_failed_first_assembly_open_releases_its_unused_pool(main_window, tmp_path):
+    pool = OwnedPool()
+    main_window._assembly_runner = pool
+    assert main_window.open_assembly(tmp_path / "neexistuje.json") is None
+    deferred_deletes()
+    assert pool.closed == 1 and main_window._assembly_runner is None

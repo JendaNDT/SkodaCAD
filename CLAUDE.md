@@ -59,6 +59,8 @@
   zvlášť rodič/oba worker pooly, správná geometrie a obnova po zrušení/pádu/STEP limitu.
   MainWindow vlastní okna sestav: přijatý close je zruší, destroyed odstraní obálku
   ze seznamu bez volání Qt metod. Zrušené zavírání neuložené sestavy ji musí zachovat.
+  Po posledním zrušeném vlastněném okně se ukončí i pool sestav; přeživší okno jej
+  zachová, další otevření vytvoří nový. Pool hlavního dílu zůstává nezávislý.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.

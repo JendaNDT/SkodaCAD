@@ -178,11 +178,12 @@ def preview_and_close(driver, main, path, folder, capture):
     if capture:
         _screenshot(window, folder / f"assembly-{capture}.png")
     ready = window.viewer.ready
+    closing_workers = worker_pids(main._assembly_runner)
     require(window.close(), "Čistá sestava se nezavřela")
     # Žádné deleteLater, reset ani gc.collect: běžné uzavření produktu je předmětem měření.
     return {"instances": 800, "volume_mm3": 800000, "selection": "c799",
             "native_view_ready": ready, "preview_native_ready": True,
-            "cancel_model_unchanged": True}
+            "cancel_model_unchanged": True, "assembly_worker_pids": closing_workers}
 
 
 def step_roundtrip(driver, session, folder):
@@ -316,16 +317,22 @@ def _cycles(folder, cycles, warmups, memory):
             capture = "first" if cycle == 0 else "last" if cycle == warmups+cycles-1 else ""
             facts = preview_and_close(driver, main, assembly, folder, capture)
             yield  # vrátit se do hlavní Qt smyčky, která vlastní naplánované DeferredDelete
+            alive = {p.pid for p in multiprocessing.active_children() if p.is_alive()}
+            require(main._assembly_runner is None
+                    and set(facts["assembly_worker_pids"]).isdisjoint(alive),
+                    "Po poslední sestavě zůstal její pomocný pool")
+            require(main._runner is runner, "Zavření sestavy změnilo pool hlavního dílu")
+            facts["assembly_pool_closed"] = True
             record("assembly-preview-close", facts, cycle)
             yield
             if capture:
                 _screenshot(main, folder / f"history-{capture}.png")
-            owned = set(worker_pids(runner) + worker_pids(main._assembly_runner))
+            owned = set(worker_pids(runner))
             row = record("cycle-end", {**inspect_history(main.session.result, 60, 12),
                                        "owned_worker_pids": sorted(owned)}, cycle)
             actual = {int(pid) for pid in row["memory"]["rss_bytes"]
                       if int(pid) != row["memory"]["parent_pid"]}
-            require(actual == owned and len(owned) <= 2*MAX_IDLE,
+            require(actual == owned and len(owned) <= MAX_IDLE,
                     "Po cyklu zůstal cizí nebo nadbytečný pomocný proces")
             require(row["resources"]["parameter_dialogs"] == 0,
                     "Po zavření zůstal editor nebo náhled parametrů")

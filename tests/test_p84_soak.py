@@ -103,7 +103,7 @@ def test_truncated_timeout_event_preserves_complete_prefix_and_reports_failure(t
 
 @pytest.fixture
 def complete_report():
-    path = Path(__file__).resolve().parents[1] / "docs/baselines/p8-4-macos-arm64.json"
+    path = Path(__file__).resolve().parents[1] / "docs/baselines/p8-4-macos-arm64-pool-release.json"
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -115,10 +115,11 @@ def test_saved_native_long_run_has_complete_cases_and_reproducible_summary(compl
     assert summarize(report["events"], 20, 2) == report["summary"]
 
 
-@pytest.mark.parametrize("bad", ["geometry", "cancel", "native", "window", "pid", "rss"])
+@pytest.mark.parametrize("bad", ["geometry", "cancel", "native", "pool", "window", "pid", "rss"])
 def test_native_evidence_rejects_missing_physics_or_resources(complete_report, bad):
     report = complete_report
     phase = {"geometry": "open", "cancel": "cancel-recover", "native": "assembly-preview-close",
+             "pool": "assembly-preview-close",
              "window": "cycle-end", "pid": "cycle-end", "rss": "cycle-end"}[bad]
     row = next(e for e in report["events"] if e["phase"] == phase)
     if bad == "geometry":
@@ -127,6 +128,8 @@ def test_native_evidence_rejects_missing_physics_or_resources(complete_report, b
         row["facts"]["cancelled_process_dead"] = False
     elif bad == "native":
         row["facts"]["preview_native_ready"] = False
+    elif bad == "pool":
+        row["facts"]["assembly_pool_closed"] = False
     elif bad == "window":
         row["resources"]["assembly_windows"] = 1
     elif bad == "pid":
@@ -135,3 +138,14 @@ def test_native_evidence_rejects_missing_physics_or_resources(complete_report, b
         row["memory"]["total_rss_bytes"] += 1
     with pytest.raises(ValueError):
         validate_runtime(report["events"], report["footer"], 20, 2)
+
+
+def test_original_window_only_baseline_is_preserved_as_historical_evidence():
+    import hashlib
+
+    path = Path(__file__).resolve().parents[1] / "docs/baselines/p8-4-macos-arm64.json"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
+        "4ac76750072402d7a02f16e08c9bec3bd7f861ad0f9fb508894d0a8c066dd295")
+    report = json.loads(path.read_text(encoding="utf-8"))
+    assert report["schema"] == "skodacad-p8.4-v1"
+    assert report["summary"]["cycle_end_worker_counts"] == [4]*20

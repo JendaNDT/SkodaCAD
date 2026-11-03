@@ -39,10 +39,12 @@ do JSONL na disk, aby měřič sám neuchovával rostoucí seznam vzorků v mě�
 Analýzu celé evidence a trendu provádí až rodič měřiče po skončení GUI procesu.
 
 Každý koncový bod musí mít úplné kladné RSS, přesný součet aktuálního vzorku,
-žádná zavřená okna sestav ani parametrické dialogy. Ověřují se konkrétní PID obou
-vlastněných poolů: přepočet dílu a přepočet sestavy mají každý nejvýše 2 připravené
-procesy. Čtyři klidové procesy jsou v tomto scénáři záměrné; žádný STEP proces
-nebo další cizí worker nesmí zůstat. Po běžném zavření hlavního okna nezůstane žádný.
+žádná zavřená okna sestav ani parametrické dialogy. Přepočet dílu a otevřené sestavy
+mají každý nejvýše 2 připravené procesy. Po zrušení posledního vlastněného okna
+sestavy se její pool uzavře; další otevření vytvoří nový. Na konci každého cyklu
+proto musejí zůstat **pouze 2 konkrétní PID poolu hlavního dílu** a žádný STEP nebo
+další cizí worker. Zaznamenají se i PID zavíraného poolu a ověří se jejich skutečný
+zánik. Po běžném zavření hlavního okna nezůstane žádný worker.
 
 Teprve po posledním primárním cyklu následují oddělené body před/po `gc.collect()`
 a běžné zavření aplikace. Měřič si ponechá Qt smyčku pro zaznamenání stavu po close;
@@ -88,6 +90,10 @@ pro zrušení po **přijatém** close a na destroyed odstraní obálku ze seznam
 bez volání Qt metod zrušeného objektu. Zrušení zavírání u neuložené sestavy stále
 zachová okno/model/historii; potvrzené zavření uvolní i child widgets prohlížeče.
 Ostatní otevřená okna pokračují a opakované otevření nemá neplatné obálky v seznamu.
+Po posledním zrušeném okně MainWindow také ukončí a odloží vlastní pool sestav.
+Při přeživším okně nebo zrušeném zavírání pool zůstává. Příští otevření vytvoří nový
+pool, což znovu zaplatí spuštění a načtení jádra; úsporu paměti nevydáváme za
+bezplatné zrychlení opakovaného otevření. Pool hlavního dílu se tím nemění.
 Jádro, přepočet, objemové kontroly, formát a závislosti se nemění.
 
 Původní testový Qt cleanup z #115 zůstává beze změny. Zde jde o životnost
@@ -114,11 +120,11 @@ OpenGl_PrimitiveArray::drawArray. Přesný nejnižší mechanismus prokázán ne
 Změna ani její experimentální testy nejsou součástí dávky; viewer.py je přesně
 shodný s výchozím vydáním. Měřič navíc nesmí držet silné nativní handle zavřených
 pohledů jen kvůli kontrole, protože by tím sám měnil jejich životnost.
-První snímek dlouhého místního běhu částečně překrývá systémové hlášení tohoto
+První snímek historického místního běhu pouze s opravou oken částečně překrývá systémové hlášení tohoto
 staršího pilotu: viditelná 3D scéna a číselné kontroly jsou doložené, čistý snímek
 celého rozhraní tím netvrdíme. Snímky se neupravují ani nenahrazují upraveným obrazem.
 
-## Úplný místní běh po opravě
+## Zachovaný úplný místní běh po první opravě oken
 
 [Neupravený JSON](baselines/p8-4-macos-arm64.json) dokončil **2 zahřívací + 20 měřených
 cyklů**, 180 kontrolních bodů, za **578,965 s**, s normálním koncem procesu **0**.
@@ -155,14 +161,84 @@ Uvádí commit `16b760c`, protože změna MainWindow i nové měřiče byly při
 ještě necommitnuté. Identitu skutečných zdrojů dokládá úplná mapa 148 SHA-256:
 146 původních zdrojů/ukázek/měřičů a oba nové skripty. Z původní mapy se změnil
 jen main_window.py (LF `dd1ed3bf7b873929bcaad9690b2a081149087486f75b47362840c7b5d34d305e`).
-Viewer, jádro, měřiče P8.1/P8.2 i dřívější raw baselines zůstaly beze změny.
+Tento historický report ještě zachovává oba klidové pooly, tedy 4 workery.
+Není měřením navazujícího ukončování poolu sestav. Zůstává beze změny;
+nová výsledná baseline bude samostatný soubor. Viewer, jádro, měřiče P8.1/P8.2
+i dřívější raw baselines zůstaly beze změny.
 
 Konečná cílená sada GUI, assembly GUI, viewer surface, guide drag, workerů,
 STEP dohledu a Qt cleanup prošla: **372 testů**, 165,65 s, normální konec.
 Sedm případů ověřujících úplný raw report se v této sadě před jeho uložením vynechalo.
 Po uložení reportu prošla samostatná sada všech nových guardů, regresí vlastnictví
 a fyzikálních referencí: **27 testů**, 2,45 s, normální konec. Celé Ruff src/tests
-a diff check prošly. Celá nová sada má **2894 testů** (2872 výchozích + 22 nových).
+a diff check prošly. Tato první verze měla **2894 testů** (2872 výchozích + 22 nových).
+
+## Odmítnutý CI běh a životnost poolu sestav
+
+macOS job `126248901468` v běhu `41731257425` nad headem `e452b4a` dokončil
+21 celých cyklů (2 zahřívací + 19 měřených). Ve 22. cyklu při posledním načtení
+STEP překročil vzorkovaný součet RSS ochrannou mez o **4 259 840 bajtů**:
+3 225 485 312 proti 3 221 225 472. Skončil řádně odmítnutím zkoušky, exit 1;
+nejde o úspěch celého dlouhého testu. Všech 148 otisků odpovídalo očekávání.
+
+V koncových bodech nezůstávala zavřená Qt okna (0, stále 952 widgetů), ale stále
+běžely oba připravené pooly, i když žádná sestava nebyla otevřená. Jejich odstranění
+je konkrétní oprava životnosti prostředků. Samotné dosažení ochranné meze ani
+růst RSS rodiče neprokazuje neomezený únik CAD jádra. Zdroj nejnižšího nativního
+mechanismu dalšího růstu nebyl doložen. Limity paměti a času ani geometrické
+případy se kvůli tomu nemění.
+
+Tři další regrese před opravou ukončování poolu selhaly (původní čtyři prošly).
+Po opravě všech **7 regresí vlastnictví** prošlo za 2,65 s. Ověřují zachování poolu
+pro přeživší a neuložené okno, jeho konec až po posledním zrušeném okně, vytvoření
+nového poolu při dalším otevření a úklid po chybě prvního otevření.
+
+Navazující úplné měření používá schema `skodacad-p8.4-v2`: stejné operace,
+stejný rozsah 2 + 20, beze změny 3072 MiB / 2400 s, navíc důkaz skutečného
+zániku PID poolu sestav a jen 2 PID hlavního poolu na konci cyklu.
+
+## Úplný místní běh konečné opravy včetně poolu
+
+[Nový neupravený JSON](baselines/p8-4-macos-arm64-pool-release.json) dokončil
+**2 zahřívací + 20 měřených cyklů**, 180 úplných kontrolních bodů, za **601,091 s**,
+s normálním koncem procesu **0**. Měřil na stejném M4 a stejných verzích knihoven;
+celkový čas zahrnuje i opakované nové spouštění poolu sestav.
+
+| Ukazatel konečné opravy | Naměřeno |
+|---|---:|
+| Koncové RSS rodiče ve 20 měřených cyklech | 757,4–898,8 MiB |
+| Medián první / poslední třetiny | 786,5 / 820,4 MiB |
+| Rozdíl mediánů | **+33,9 MiB** |
+| Medián párových sklonů | **+2,73 MiB/cyklus** |
+| Vzorkované maximum rodiče včetně operací | 1032,4 MiB |
+| Vzorkované současné maximum součtu procesů | 2638,3 MiB |
+| Vlastněné workery na konci každého cyklu / po zavření aplikace | **2 / 0** |
+| Zavřená okna sestav / parametrické dialogy na konci cyklů | **0 / 0** |
+
+V každém cyklu se oba zaznamenané PID sestav skutečně ukončily a zůstal pouze
+pool hlavního dílu. Opětovné otevření úspěšně vytvořilo nový pool a správnou
+geometrii. Sampler měl 1269 odběrů bez chybějícího RSS, všech 180 bodů bylo úplných.
+Před diagnostickým GC bylo RSS rodiče 898,8 MiB, poté 888,2 MiB; po běžném zavření
+888,2 MiB a žádný worker. Během primárních cyklů nebylo vynucené GC ani restart GUI.
+**Kladný trend rodiče nezamlčujeme**; ukončení konkrétních nepotřebných procesů
+není důkaz opravy všech zdrojů růstu RSS. Jde o omezenou zkoušku, nikoli rozpočty
+P8.5 nebo záruku celodenního provozu. Nevyvozujeme procentní úsporu RAM ani obecné
+zrychlení z dvojice jednotlivých běhů.
+
+Raw je bajtově shodná kopie výstupu, SHA-256
+`e9609973b8dc9af3cbefd176f946a9f822332fb5ed89928567ef3cd4765c84ad`.
+Uvádí tehdejší HEAD `e452b4a`; dodatečná oprava poolu při měření ještě nebyla
+commitnutá. Celá mapa 148 otisků odpovídá skutečným místním zdrojům,
+MainWindow LF `be8cded81d838547cebfae126c71ee49a2354584fa9de84c8b36d0835114f39a`.
+Všechny původní vstupy zůstaly beze změny. Čtyři nové nativní snímky sestavy
+a historie z prvního a posledního cyklu byly prohlédnuté; scény odpovídají
+800 kopiím a historii s 60 kapsami, bez překryvu starým systémovým hlášením.
+
+Konečná cílená sada dotčených modulů prošla: **376 testů**, 163,40 s, normální konec;
+8 guardů úplného nového raw se tehdy ještě vynechalo. Po jeho uložení prošla
+samostatná sada všech P8.4 guardů, regresí oken/poolů a fyzikálních referencí:
+**32 testů**, 3,13 s, normální konec. Celé Ruff src/tests a diff check prošly.
+Celá nová sada má **2899 testů** (2872 výchozích + 27 nových).
 
 Stejných 2 + 20 cyklů ověří nové workflow p84-long-run.yml na
 Windows i macOS. Před sloučením navíc musejí projít úplné standardní testy,

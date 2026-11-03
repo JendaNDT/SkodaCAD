@@ -1284,6 +1284,11 @@ class MainWindow(QMainWindow):
     def _assembly_window_destroyed(self, window: AssemblyWindow) -> None:
         # Identita Python obálky je bezpečná i po zrušení C++ objektu; žádné Qt metody.
         self.assembly_windows = [w for w in self.assembly_windows if w is not window]
+        if not self.assembly_windows and self._assembly_runner is not None:
+            # Bez sestav nemá kdo pool používat. Další otevření vytvoří nový;
+            # pool přepočtu hlavního dílu zůstává nezávislý a běží dál.
+            runner, self._assembly_runner = self._assembly_runner, None
+            runner.close()
 
     def open_assembly(self, path: str | Path, template: bool = False) -> AssemblyWindow | None:
         """Otevře sestavu ve vlastním okně (ukázku jako šablonu – Uložit se zeptá kam)."""

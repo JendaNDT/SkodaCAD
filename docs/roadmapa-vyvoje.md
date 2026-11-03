@@ -335,7 +335,10 @@ self-testech a novém srovnání obou OS z main.
 [dlouhý provoz a měření paměti](p8-4-dlouhy-provoz.md). Jeden nativní proces,
 opakované editace/ukládání/rušení/export/obnova workeru a velká sestava.
 Diagnostický pilot prokázal zadržená zavřená okna sestav; oprava jejich vlastnictví
-má regresní důkaz. Úplný dlouhý běh a kontroly obou OS zůstávají branou vydání.
+má regresní důkaz. CI navíc ukázalo ponechaný pool bez otevřené sestavy: navazující
+oprava jej ukončí po posledním vlastněném okně, při příštím otevření vznikne nový.
+Historická baseline první opravy se zachovává. Nový úplný dlouhý běh s uvolněním
+poolu a kontroly obou OS zůstávají branou vydání.
 P8.5 autorské přijetí a rozpočty tím nejsou provedené.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
