@@ -45,6 +45,7 @@ from skodacad.assembly_build import (
     tidy,
     turned,
 )
+from skodacad.assembly_parameter_rename import rename_parameters, rename_references
 from skodacad.expressions import ExpressionError, evaluate, resolve_parameters
 
 _UNDO_LIMIT = 100
@@ -746,9 +747,19 @@ class AssemblySession:
 
         return self._change(mutate)
 
-    def set_parameters(self, parameters: dict[str, Any]) -> AssemblyResult:
+    def rename_parameter(self, old: str, new: str) -> AssemblyResult:
+        """Přejmenuje parametr i všechny odkazy této úrovně jako jeden krok Zpět."""
+        parameters = rename_parameters(self._require().parameters, old, new)
+        return self.set_parameters(parameters, renames=[(old, new)])
+
+    def set_parameters(self, parameters: dict[str, Any], *,
+                       renames: Sequence[tuple[str, str]] = ()) -> AssemblyResult:
         """Parametry i jejich použití musí zůstat platné, jinak se změna nepřijme."""
         def mutate(a: Assembly) -> None:
+            # Pořadí zachová i opakované přejmenování či výměnu názvů přes dočasný název.
+            # Výrazy parametrů už pocházejí z pracovní tabulky; zde zbývají polohy a vazby.
+            for old, new in renames:
+                rename_references(a, old, new)
             try:
                 resolved = resolve_parameters(parameters)
                 for name, value in resolved.items():
