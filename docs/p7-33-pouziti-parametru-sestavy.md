@@ -20,8 +20,9 @@ Cyklus hledání nezacyklí. Každé místo se ukáže jednou, s nejkratší nal
 přímý odkaz má před nepřímým přednost.
 
 Parametry se čtou z aktuální pracovní tabulky po dokončení buňky. Polohy a vazby
-pocházejí ze snímku sestavy při otevření editoru. Při duplicitním/prázdném názvu
-nebo prázdné hodnotě se místo zavádějícího výsledku ukáže nedostupnost přehledu;
+pocházejí z pracovní kopie sestavy, kterou P7.34 aktualizuje také při přejmenování.
+Duplicitní/prázdný nový název se při přejmenování odmítne. Při neplatném obsahu
+načtené tabulky nebo prázdné hodnotě se ukáže nedostupnost přehledu;
 nečitelný výraz označí přehled za neúplný. Ověření hodnot a přijetí celé dávky
 zůstává stejné jako v P7.32.
 
