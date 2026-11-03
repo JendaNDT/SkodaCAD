@@ -144,8 +144,11 @@ def test_original_window_only_baseline_is_preserved_as_historical_evidence():
     import hashlib
 
     path = Path(__file__).resolve().parents[1] / "docs/baselines/p8-4-macos-arm64.json"
-    assert hashlib.sha256(path.read_bytes()).hexdigest() == (
-        "4ac76750072402d7a02f16e08c9bec3bd7f861ad0f9fb508894d0a8c066dd295")
+    # Přesné dvě varianty checkoutu; Windows Git převádí LF na CRLF.
+    assert hashlib.sha256(path.read_bytes()).hexdigest() in {
+        "4ac76750072402d7a02f16e08c9bec3bd7f861ad0f9fb508894d0a8c066dd295",
+        "fb27294bbdf8b9c6389df995af0095f4297c5160cd7acb688b56ae0a42afed25",
+    }
     report = json.loads(path.read_text(encoding="utf-8"))
     assert report["schema"] == "skodacad-p8.4-v1"
     assert report["summary"]["cycle_end_worker_counts"] == [4]*20

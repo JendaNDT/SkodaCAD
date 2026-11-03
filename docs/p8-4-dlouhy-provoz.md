@@ -165,6 +165,10 @@ Tento historický report ještě zachovává oba klidové pooly, tedy 4 workery.
 Není měřením navazujícího ukončování poolu sestav. Zůstává beze změny;
 nová výsledná baseline bude samostatný soubor. Viewer, jádro, měřiče P8.1/P8.2
 i dřívější raw baselines zůstaly beze změny.
+Git checkout na Windows převádí konce řádků na CRLF; kontrola proto povoluje
+jen původní LF otisk a nezávisle reprodukovaný přesný CRLF otisk
+`fb27294bbdf8b9c6389df995af0095f4297c5160cd7acb688b56ae0a42afed25`.
+Obsah JSON ani původní Git blob se tím nemění.
 
 Konečná cílená sada GUI, assembly GUI, viewer surface, guide drag, workerů,
 STEP dohledu a Qt cleanup prošla: **372 testů**, 165,65 s, normální konec.
@@ -237,7 +241,8 @@ a historie z prvního a posledního cyklu byly prohlédnuté; scény odpovídaj�
 Konečná cílená sada dotčených modulů prošla: **376 testů**, 163,40 s, normální konec;
 8 guardů úplného nového raw se tehdy ještě vynechalo. Po jeho uložení prošla
 samostatná sada všech P8.4 guardů, regresí oken/poolů a fyzikálních referencí:
-**32 testů**, 3,13 s, normální konec. Celé Ruff src/tests a diff check prošly.
+**32 testů**, po ověření LF/CRLF variant znovu 3,06 s, normální konec.
+Celé Ruff src/tests a diff check prošly.
 Celá nová sada má **2899 testů** (2872 výchozích + 27 nových).
 
 Stejných 2 + 20 cyklů ověří nové workflow p84-long-run.yml na
