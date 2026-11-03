@@ -11,6 +11,10 @@ Například `polovina = 6,25`, `mezera = polovina * 2` a vzdálenost vazby `meze
 u vybrané **poloviny** se zobrazí přímý odkaz do parametru **mezera** a nepřímý
 odkaz do vazby **přes mezera**. Nepoužitá hodnota má výslovnou zprávu.
 
+P7.35 přidává [výběr místa jedním kliknutím](p7-35-vyber-z-pouziti-parametru.md):
+komponentu nebo vazbu vybere ve stromu a zvýrazní ve 3D, parametr v horní tabulce.
+Editor a jeho pracovní změny zůstávají otevřené. Skryté díly se samy nezobrazují.
+
 ## Pravidla a meze
 
 `assembly_parameter_usage.parameter_usage` pouze čte recept. Název pozná podle
