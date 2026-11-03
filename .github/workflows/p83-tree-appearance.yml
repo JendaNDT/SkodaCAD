@@ -1,0 +1,96 @@
+name: P8.3 obnova vzhledu stromu před a po
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "src/skodacad/gui/assembly_window.py"
+      - "tests/test_assembly_gui.py"
+      - "tests/compare_p83.py"
+      - "tests/test_p83_comparison.py"
+      - ".github/workflows/p83-tree-appearance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/skodacad/gui/assembly_window.py"
+      - "tests/test_assembly_gui.py"
+      - "tests/compare_p83.py"
+      - "tests/test_p83_comparison.py"
+      - ".github/workflows/p83-tree-appearance.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: p83-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  comparison:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 93843f4790ef13b518b10fea26e3e794ff0d79bf
+          path: baseline
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: candidate/pyproject.toml
+      - name: Stejné závislosti pro oba zdroje
+        run: python -m pip install -e "./candidate[dev,gui]"
+      - name: Nativní podpora přístupnosti obou sestavení macOS
+        if: runner.os == 'macOS'
+        run: |
+          python baseline/packaging/build_macos_accessibility.py
+          python candidate/packaging/build_macos_accessibility.py
+      - name: Kontrola srovnávače a fyzikálních referencí
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q candidate/tests/test_p83_comparison.py candidate/tests/test_p81_reference.py
+      - name: Stejné GUI případy před a po v čerstvých procesech
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          root = Path.cwd()
+          for folder, phase in (("baseline", "before"), ("candidate", "after")):
+              tree = root / folder
+              subprocess.run([sys.executable, str(tree / "tests/profile_p8.py"),
+                  "--cases", "gui-assembly", "--output", str(root / f"p83-{phase}.json"),
+                  "--repeats", "3"], cwd=tree, check=True, timeout=660,
+                  env={**os.environ, "PYTHONPATH": str(tree / "src")})
+      - name: Shodné výsledky a poctivé účetnictví před a po
+        run: python candidate/tests/compare_p83.py --before p83-before.json --after p83-after.json --output p83-comparison.json
+      - name: Surové běhy, procesní protokoly a nativní okna
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p83-${{ matrix.os }}
+          path: |
+            p83-before.json
+            p83-after.json
+            p83-comparison.json
+            p83-before/**/result.json
+            p83-before/**/process.log
+            p83-before/**/native-window.png
+            p83-after/**/result.json
+            p83-after/**/process.log
+            p83-after/**/native-window.png
+          retention-days: 30

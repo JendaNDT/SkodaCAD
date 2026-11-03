@@ -1,0 +1,1738 @@
+{
+  "schema": "skodacad-p8.2-v1",
+  "created_utc": "2026-11-03T19:58:36.496803+00:00",
+  "commit": "93843f4790ef13b518b10fea26e3e794ff0d79bf",
+  "environment": {
+    "system": "macOS-27.2-arm64-arm-64bit",
+    "python": "3.12.14",
+    "cpu": "Apple M4",
+    "logical_cpus": 10,
+    "load_average": [
+      1.72998046875,
+      1.57861328125,
+      1.494140625
+    ],
+    "packages": {
+      "PySide6_Essentials": "6.11.3",
+      "build123d": "0.13.0",
+      "PySide6_Addons": "6.11.3",
+      "numpy": "2.5.4",
+      "PySide6": "6.11.3",
+      "ocp_gordon": "0.3.1",
+      "cadquery-ocp-proxy": "8.0.1.1.0",
+      "ocpsvg": "0.7.0",
+      "cadquery-ocp-novtk": "8.0.1.1.0"
+    }
+  },
+  "hashes": {
+    "examples/cep.json": "d751e7de675e1441129e3dd44a2484847aba22bc9f6aff340a461e6d296cd05a",
+    "examples/deska.json": "eaa99420566b59ce371852a273b20ebc8be59140e88c21f18ac67b5dde8dada7",
+    "examples/deska_workflow.json": "a3858cd00f2bb2d444cc2df6d79a760c016eeccaa53f9a4c91cffe0c5b5d12dc",
+    "examples/drzak_loziska.json": "9b855697f51ac2748fb7620bc5b46d2dba83240eb0fbf55b53dc6a81cb68f282",
+    "examples/hridel.json": "7bed764d9705c91f95d6cd51131350f68d06acf2c18eb609d30c79565bf1308e",
+    "examples/koleno.json": "aaeb3917021f3570b1937b80501b0ab62c86792b7cbd3ea6c44b1737a736a435",
+    "examples/krabicka.json": "fd1be9130a9ea4636eff028fabec4181a8ee431e66d94a330d84adf941d0437f",
+    "examples/kryt.json": "01065e9aad24830b80f7f32a48cb8c3ccd7299bbd3cc3916ab36cf8fb7867f96",
+    "examples/loft_stena.json": "6a495347142911e54a92c0850f89382c276bf82d0b1baf34a2b7790c3cfa4e79",
+    "examples/ndt/cilove_objemy/koutovy_svar_objem.json": "bc0c6e7e2503175c33c816be130573051bbd9fe80618a5469c4b22da46c85550",
+    "examples/ndt/cilove_objemy/tupy_svar_objem.json": "dc65298e79f90398c742c1113a9e6b1fea6fb4d7c195dfb2198a8b59ced4316a",
+    "examples/ndt/deska.json": "9e6ce9ad538b195b360973398110c4d15619b2b0cf36ede4b256825bd3bd9a66",
+    "examples/ndt/kapsa.json": "ed261696ff682bec1f957b9b704cbb15f3f8d6a6bc9cff9da34cba1a19b74e0d",
+    "examples/ndt/koutovy_svar.json": "eff782836d6f9f03bbdb64ee1d6670e8162a8092f9d5ea710bf2a3617198d0d3",
+    "examples/ndt/navrh_kapsa.json": "443933247bd52d080b98e6099240ba814feb750cb5c1c7623779e8527eb9b216",
+    "examples/ndt/otvor.json": "924414437a3bb170409ee1f13a54d25caeda42194456782b140b0f8b0571d965",
+    "examples/ndt/pristup.json": "bd926dcff7c0de722441f01907d044f1e4fe7dc3974fdb956ae4fd8e32a24318",
+    "examples/ndt/sterbina.json": "66105663b04f133eb29d4e3d8fba0cb72000a3e7d6ffcb0e973e6f831cfe9b37",
+    "examples/ndt/trubka.json": "026ab366db42b2e27a7221c68a3ace2b0967b736abdca1d32924fdf858368aa0",
+    "examples/ndt/tupy_svar.json": "c92ccee21c074664b96e056d94191c9f0778b92e85601833cac04c3df9ae02d4",
+    "examples/ndt/zebro.json": "2d61c4805a081beeaeed05df76fd38815c2723305ba41392d6d73968926b71f1",
+    "examples/paka.json": "9203f32cd75086c7980457b3b014664f3cd2edd3a0054c8cbf844a5f8722eb73",
+    "examples/prilozka.json": "cb244b08bf34c184371611743e9501efdf59babad4a21e7615244df3c583fe2d",
+    "examples/prime_upravy.json": "5beaf4e6a64ed66e4d5f17a7f44399c9853a28450e27eb639859c6c9a5d79bcd",
+    "examples/priruba.json": "f05484e28a6448d73359a4f817c416454f7c6844420d3be863c70bbdc627f1f8",
+    "examples/promenne_zaobleni.json": "7a2050d9df87e86d1fd573be8592335620391676dfdf8933a2b5e9f2c3de40d3",
+    "examples/ram.json": "3f78cac88f21d039128639ea3046cdfae1f7f6d60e35adcda105f08d6e29c145",
+    "examples/rizeny_prechod.json": "5924ed6b2e2b3baf4d28e8ec3e2af16f10b567ebe29e9c4ea91e955f5147ab5e",
+    "examples/sestavy/deska_se_sroubem.json": "84d323c33f016d594041eb21184d65d44e16c4b3645ea5e1d80761ebc692b92b",
+    "examples/sestavy/dily/deska_m3.json": "19bc4b22016f32ab05f60644d6994a44d196517e9ae8b6f30c40c23b94d81f5a",
+    "examples/sestavy/dily/nozicka.json": "48dcedbca579905fb012cea79088c5445eec8e3db063143ce93fdcc00f040cc7",
+    "examples/sestavy/dily/sroub_m3x10.json": "c701e646889489730374b3f117df116574c23f08fd7961d7901e1a042e3f0a28",
+    "examples/sestavy/dily/vicko.json": "bf77956ff877e91022895cc04049c11d5762de8fcfde221ab7107930a441af29",
+    "examples/sestavy/krabicka_s_vazbami.json": "ffc812af33a2d7b3be46569cc5d7ebe66824ce89209762604ff2937e17477b99",
+    "examples/sestavy/krabicka_s_vickem.json": "26cffadeb16a6f8bb6efa858e3a8aec72864e8c13324137eb9d31c5a56daa646",
+    "examples/sloupky.json": "60e95a4f562fea26eb839878a486120197f5fc083d8aa9739b946f9232cc9e29",
+    "examples/trubka.json": "e03a6a9b90f3ee47be5d33c58ef3e40d71d574e63918d8c120d652b2a50b4de3",
+    "examples/vysypka.json": "2dbd701ff0798498fc790bb7deac599f5df55c9a690fedf81bba403c9ddbc559",
+    "src/skodacad/__init__.py": "513da0b8635d3190e6ed0fa7497a209ee5b910787c134ee53b48c3343e2c5776",
+    "src/skodacad/__main__.py": "ae074e46dc499ec45d2d505e4752b1aa3af09656e1255399782eccb0b7a6e859",
+    "src/skodacad/assembly.py": "59ea9c67ae8388a571c17ca9c49100957dc7d55b5558335ded018abd20bcf48c",
+    "src/skodacad/assembly_build.py": "8789d3d53dcad35dc984dcad6162146406f0e6c1019483baac25601bb7b977ad",
+    "src/skodacad/assembly_check.py": "d659d10f94a7e680c7e6ddd49b67585bc47b5e7e9c78789c2a1dcb7c0fc96ba9",
+    "src/skodacad/assembly_parameter_rename.py": "02d3cf8d6be33817f71f7e58896738e15d9c146079dd96c88df4cef9fd151166",
+    "src/skodacad/assembly_parameter_usage.py": "0fd49525d21761f7fba04407a842870baf1bb376b3b62a01e453dd5c289a7150",
+    "src/skodacad/assembly_session.py": "fb8417777a46659c5d8d2fde83403b980b71075a913e771df39f643e0f79747b",
+    "src/skodacad/assembly_solve.py": "ee245ddba36e3350829a9a0a1b7f8e12d3300bf74ca0e1ea1b5dc717ff31c248",
+    "src/skodacad/assistant.py": "c5ca8ffc72211eb541ddb2a74137cbcaa970b400b4b7cc26b4f4497cc70caad0",
+    "src/skodacad/buildinfo.py": "82ee1df0e873012dc7a0130f2bc4ed0a6265b5f7f533a288371c5fc92c64f5c2",
+    "src/skodacad/cli.py": "278cfbf77be830ba13e57f2cfa6c107d5bb2b9c678abe5cd5856e8b681fd0181",
+    "src/skodacad/direct_edit.py": "9173cd9fc6077024f8953b30005ce9db534e13143adb8ecef631d715d6f6cc96",
+    "src/skodacad/document.py": "b5d55d218b688612800e18f367b3869f16bc12c334b765366a401d0ef2a86e73",
+    "src/skodacad/drawing_annotations.py": "0f19e5a982c1e5dc51bde80502b5c451a8abded58c6c926fd0b75f1ff8117e3f",
+    "src/skodacad/drawing_collisions.py": "33b99bf2fdae5ef5b7ee45915e7e94b3961cf09e0c84be897256816f20ef29ed",
+    "src/skodacad/drawing_data.py": "8fdb6ea6e29f7fbbf1e1ca1e2443ed675fbb75ec57f24644a2566c70abb2b44f",
+    "src/skodacad/drawing_dimensions.py": "be22a02067e690ec3fa9ec8b3792a7906bf718e13947434e6e311a63b26f7eb2",
+    "src/skodacad/drawing_export.py": "a2c832894cce63e95ec55281370dff9753e1a6f05728f864fb6f07069ba4c885",
+    "src/skodacad/drawing_geometry.py": "75083d026e41d96d444ffcc634f502d7749305bdb02278ef1c7313961a03759b",
+    "src/skodacad/drawing_section_mark.py": "c4718f79c0719b9d268711c90c35e4b218a534f0f60bf446269d1a67556633c6",
+    "src/skodacad/drawing_sheet.py": "6d680398769a169923cf8bf672bb46712fa79957b644c496a3f77e1757d1bb8d",
+    "src/skodacad/export.py": "a78e25663a5e1d0f4b9261eaf9c4d801ec569f24e2b2d0e7f29de57ea665801f",
+    "src/skodacad/expressions.py": "1bc218d17a8221de8f85a9888f803aa35567fc6d16352a0aad0a13a18f3f64e7",
+    "src/skodacad/features.py": "33f702c1049d9785981c315b42370a2aa3fc80de3aed3eae332b37b1cd4baa09",
+    "src/skodacad/geometry_validation.py": "3ea0d9f07510a2a9218e576cdd81d481b683888e15275599aa47c83331c46def",
+    "src/skodacad/gui/__init__.py": "0128ebf329683f0840d8b95aba534078f5654d448babb060f174eac01f853d77",
+    "src/skodacad/gui/app.py": "395d243e011a98b3f9ff0494ecf46dd65972050146eee0fdeb581918fd73e21a",
+    "src/skodacad/gui/assembly_access.py": "c2462c04ce626c74f5bad20b3bad3509be4301352bee505b4c86c6fd95b83dc8",
+    "src/skodacad/gui/assembly_panel.py": "cef8ab9a574d61aff5b0cf568a032e4f27626e4649cbb0eedc4690ff2bd0bf5e",
+    "src/skodacad/gui/assembly_parameter_preview.py": "5d6f0fcc002c2fb580b19c95524b4e8ed5ca2f6d7b8a45320789e00b89182589",
+    "src/skodacad/gui/assembly_parameters.py": "36713c8e50d01bf62ff7d55673dd58bd4e109b88d382b0feff78d29d9d34e37b",
+    "src/skodacad/gui/assembly_window.py": "68f00b512414c5f6c66da1af8386df7daad456d191f9acfca5695557d428f22d",
+    "src/skodacad/gui/assistant_panel.py": "95ed2a02f311f3ffe0e5958dd47190c4425326f2abad83838328917e1cc7d257",
+    "src/skodacad/gui/audit_panel.py": "d473c365be71c3fea2ef2182931fc29d0cb556ea5d8b00f63fadd14b70049f0c",
+    "src/skodacad/gui/cad_icons.py": "3d0e1d80e6b810d32f0225862c0f2ae463f9144297c07c5db4072328d51f976d",
+    "src/skodacad/gui/design_panel.py": "ad7fe51b2201bf5f74bcb5ceaff3fbc9a7d1836354c2cb677fc3bc8f671feda7",
+    "src/skodacad/gui/direct_edit_dialog.py": "4e8864458c2f6c419bc1beb6fc31944af673020c60bb96edcfb2d8c705622e9a",
+    "src/skodacad/gui/drawing_preview.py": "c3e98721f5a2a61a758cf5ea9dc6322b34462cbaff8a0988cf18dc132c549223",
+    "src/skodacad/gui/feature_editor.py": "61a121af5c26373499a121edac93cf5eae370493c48ef6db3dcf5edfacb470a9",
+    "src/skodacad/gui/feature_preview.py": "723f7331e3443ca1ebba23b2ff0612b772c05ea7c5206faeb53b3e02b138a6ed",
+    "src/skodacad/gui/file_dialogs.py": "4d6a7043b141cdb357a5eafdf68ce49e10cd7a0c7c24f48a61c79aea4a2ffc78",
+    "src/skodacad/gui/guide_drag.py": "d95933fb5692846f2934b45d4f03f1566b4a592a6ea5aabc6a071b2b7b7b9047",
+    "src/skodacad/gui/guide_style.py": "ab405ba46568a8f9c6eba5597217b8c45713a797ab427cd13deb7a720c627219",
+    "src/skodacad/gui/loft_wall_panel.py": "55eead81118bf4b341b1feca11927d0e3d9ac4bd333792419310ab06a92d047e",
+    "src/skodacad/gui/macos_accessibility.py": "f40d91bb8a111592fb09a8cdc1892b112ec5e93971872aaafa6bc0cbb3556adb",
+    "src/skodacad/gui/main_window.py": "4fbc42a79443ba650a2a3c9a0bb62940e8650c74451d30f0b9dcea2f53f1b240",
+    "src/skodacad/gui/mt_dialog.py": "14bc4830df829ae52e9ff7929800e7d68ceaf8ad92a1cea08c41d74593e8e8fd",
+    "src/skodacad/gui/ndt_panel.py": "dacdffe5cbb66506862fb9498a2eaffa3248955addda821fff71138bbf98e525",
+    "src/skodacad/gui/probe_dialog.py": "1022d3180b544f81d532e1c853a2a341cecd8606c5618ba683897c322157867d",
+    "src/skodacad/gui/pt_dialog.py": "d522be6d06080b8fcaa3a3bd42bedd1fd93c5eddf1ea4cea5734c85032308c8e",
+    "src/skodacad/gui/ribbon.py": "fb38dc679b0a5214c6f3b294e30d25b8993075c8254bcd336eb15a8145e71d3a",
+    "src/skodacad/gui/rotation_drag.py": "262ed017bb7c11c1ea8dfef4dd8f09a00b148a109077763995017c86eb27dcdd",
+    "src/skodacad/gui/rt_box.py": "4918138eeadf40d23a884fec3fd4df50022988d8aeb9c8b2da0d739650ee0ca7",
+    "src/skodacad/gui/rt_dialog.py": "72e075c82ca075bacd7e09faf7defbc7f05058b2fc2f5577cd06ffeef2467b1a",
+    "src/skodacad/gui/sketcher.py": "2c90f3a5b54f1d97c697786bfd5138d53b53b07feba6a963ca07effdf7df8931",
+    "src/skodacad/gui/target_dialog.py": "79554019c7385e48d892308e211844543df7f2837f740fb4a5f43bef4942e977",
+    "src/skodacad/gui/ui_colors.py": "32ce094c4b8c076bca339b596e6888d261799f8931830b297d7c9e7eb8971fc0",
+    "src/skodacad/gui/viewer.py": "84b7055f12f248bdce4202fc1a79e0e725156757eae82b512125e34c8516e375",
+    "src/skodacad/gui/viewer_views.py": "ea06c0054d03156423c9ac505a928c1dd90ca06b7ef0a40d1090b3f920185096",
+    "src/skodacad/gui/window_state.py": "5f2b7a376b4b30f4b559c04f9edfb99c68b675ab6ce3e4968e609f642aba67bb",
+    "src/skodacad/gui/workspace.py": "90f740142ff2b9a6c95a01f7e2dbfd830c75bdf39e4988bec9b52db101a6e4f4",
+    "src/skodacad/gui/zone_dialog.py": "d5039ea6256ca56d13c80ce791eac0e5762c456160c4a41220ec21f191977386",
+    "src/skodacad/guided_loft.py": "456b7e0dab5a57d7b18510f8957de8c5fe2c4edf889684a456c998e6edf28cd9",
+    "src/skodacad/holes.py": "92e7f1f6bbf140fb6f35227149b7bc0ae1f514a69d82152fc277ff6c87fda116",
+    "src/skodacad/inspection.py": "8c38a619eec542242cebd2b0589bab95ecb9d5af975f7da44ed94ef972a52362",
+    "src/skodacad/loft_inspection.py": "4720f33f0420245940fbc39425405928d5f16394f3e6ab9b2c13587f7430e24d",
+    "src/skodacad/loft_wall.py": "44d285c7513439a569c524fcfba78d069f7409b422898613cc89c90c27413815",
+    "src/skodacad/materials.py": "ff53823090783cd4f0716d528d1eb6e92eed401a1308eeffe4a57bfa29ea81c8",
+    "src/skodacad/measure.py": "d045ca803df5f33361299cf8c4d0e66b7ef9ec312c1e0c7f30aca992f8adcc13",
+    "src/skodacad/ndt/__init__.py": "980abe677b72c3fde99669d6c27b2442ed6b4617cb8dc3a356d697611beba1c6",
+    "src/skodacad/ndt/access.py": "b2229f82962f1638e51c92524f1ccc79980e48e99aab7f68d1a1eef4da00f7ea",
+    "src/skodacad/ndt/audit.py": "66dbbf44bf9a837427c0a668c4cb834f9825a34894069d99204c9c2867c52f61",
+    "src/skodacad/ndt/coverage.py": "5db1d4bf2f09e0962d0aeaf2d5235e4d4cf9c853409f56807d2a7080cda9e9f9",
+    "src/skodacad/ndt/design.py": "8a383546878b8b17cb39dbb8444abc3aada4f628b1b4ce7d36ce798c1e289bd2",
+    "src/skodacad/ndt/devices.py": "20e189d482604605df2e89110a2b610dc03635df06b1590a6cbd2db937fbdaa7",
+    "src/skodacad/ndt/geometry.py": "546af5c8b298622147683be32b9144c4d548fb1756c4356637ee699719541f91",
+    "src/skodacad/ndt/library.py": "738218651a1eca9fa041a2172fee6c1032dc0af4161f019ef36d93d43c477b81",
+    "src/skodacad/ndt/mt.py": "d1404ccbfed612a7209adc7fcda04626b37c36c56e0055973b19d37e83db1d3f",
+    "src/skodacad/ndt/plan.py": "9dfcce49c217e2225650b9a0caf8f376175b8362557ec199e3727fb843b6d741",
+    "src/skodacad/ndt/pt.py": "760d6a7a571387e3f1154ae36243097917b40802c2c017bf990a3e5d6eb522cf",
+    "src/skodacad/ndt/rt.py": "4cbcffe9793547e65c99178cb85623ae87269e5d070743942526ea9abc9f9eb1",
+    "src/skodacad/ndt/study.py": "0c50a21cd6c8e04ccaa92a99f5376ff4d7eb507f46b0cb6b473850bf031e111f",
+    "src/skodacad/ndt/ut.py": "597b63eba12eb8a70c3fd630b3e997a1ab8812c15dbf59be35ea19b719600cfe",
+    "src/skodacad/ndt/volume_coverage.py": "d63ce854a57ac82c0fb84db60d4430a83dde4b0fb0d455ee7e6efbab4cec3e79",
+    "src/skodacad/ndt/volume_drawing.py": "c49c809bd574f49c6a8acf3e7ae97fec724432360bac9a1e777a791050c692af",
+    "src/skodacad/ndt/welds.py": "1c902270ffe6e3ee627607777403876ce1ab5b3929c7ac81acc1d0aa057f7296",
+    "src/skodacad/picking.py": "9c2a6507db18b4d2ec9b34ca84db97d1dfb53e8137b3a3825e346e2515578428",
+    "src/skodacad/profile_edit.py": "ab841128c676948e84cb53f9a494a648078286c6fc15a194e5b4a6464096fe32",
+    "src/skodacad/projection.py": "16f45634f8eac07d7f20291bd0e94b56e3b3017cd599455ceffef54b9475f6e9",
+    "src/skodacad/properties.py": "9b40d8258f970dc086f51254e6dee68dbdba587fd2a9c438d5e8c4bb98a8b0be",
+    "src/skodacad/rebuild.py": "0f838fd53c9d09aa0908e4b3e266c6f755307659ef1554608c90fa8d76c03f38",
+    "src/skodacad/schema.py": "a9c8df1bc64807ded1605e3e25863816b35610f86b710d2dc2430d9da7d83113",
+    "src/skodacad/section.py": "b8ac46f6ad1c88565366e9f10b3f4289940c15725f2b1bad921a06019f3da4aa",
+    "src/skodacad/selectors.py": "64c4d35e7c093d9f8760dda3d6e040e681dd5a1799a7d29d4d95c293dadda5ad",
+    "src/skodacad/session.py": "4da57e80bbe253cb25ae8228499da590fdc011c5f466000c273fcb26fc7f9851",
+    "src/skodacad/solver.py": "05bba18366e9f37b50b70f0c74570cccf83fd8604aca9c4904ac3a6a3bf6e748",
+    "src/skodacad/standards.py": "588681fc22cf642b14ff081d037f2402df0687a071c9e556731d0aba63917623",
+    "src/skodacad/step_probe.py": "6608daf51bf8d98728592f0bdbe065f60decf756adb2986fd1e0067a607463a5",
+    "src/skodacad/step_source.py": "df1b503047e9cd2f3644878e680e8f1c2c05a43007d8973b6cc39850a888c365",
+    "src/skodacad/step_task.py": "0bcfe359cdcd79f1d97c406086f77525c35b148a7f1177b7380be2e74b58f48a",
+    "src/skodacad/thickness_map.py": "1ee46a385b4c73e91fe178b630ff2ec8a009422ed2fdc94ba7c029081aa86d24",
+    "src/skodacad/threads.py": "9dfa3a6237227374c003d44d2e3a265a141d66d3c6e994eb7af468f846abd0e7",
+    "src/skodacad/variable_fillet.py": "f9588ed4e54f5a239f5f99e290255459c4a882d8717ee461430190874eee148b",
+    "src/skodacad/worker.py": "046ab06e51d2bb6d3c4e85d7e3d77f36a07a984a9f277e4b246150bbc23a4ddf",
+    "tests/benchmark_p8.py": "959a6dd67b00c02af3ef7c205935f10a8a0dcc080d265a267673551515911ef7",
+    "tests/benchmark_p8_gui.py": "f62ee3c6474dea600c92338ec9e0ef4c1d758c847517d03874fb97ce7753017c",
+    "tests/profile_p8.py": "8fac3a2175eaae7a788f482950a794bb7f5a2044b6ab9c5635aeef53ef2163c7"
+  },
+  "repeats": 3,
+  "results": [
+    {
+      "case": "gui-assembly",
+      "cad_import_s": 1.9797852089977823,
+      "metrics": [
+        {
+          "name": "open-build-tree-render",
+          "warmups": 1,
+          "samples_s": [
+            0.3773940830142237,
+            0.35594770801253617,
+            0.3636812919867225
+          ],
+          "median_s": 0.3636812919867225,
+          "min_s": 0.35594770801253617,
+          "max_s": 0.3773940830142237,
+          "correctness": {
+            "instances": 800,
+            "constraints_ok": 0,
+            "volume_mm3": 800000.0
+          }
+        },
+        {
+          "name": "select-last-component",
+          "warmups": 1,
+          "samples_s": [
+            0.0368467079824768,
+            0.04136520897736773,
+            0.042411374975927174
+          ],
+          "median_s": 0.04136520897736773,
+          "min_s": 0.0368467079824768,
+          "max_s": 0.042411374975927174,
+          "correctness": {
+            "selected_id": "c799"
+          }
+        },
+        {
+          "name": "open-parameter-preview-back",
+          "warmups": 1,
+          "samples_s": [
+            0.7911620839731768,
+            0.7502087079919875,
+            0.6937375420238823
+          ],
+          "median_s": 0.7502087079919875,
+          "min_s": 0.6937375420238823,
+          "max_s": 0.7911620839731768,
+          "correctness": {
+            "model_unchanged": true
+          }
+        }
+      ],
+      "details": {
+        "first_window_ready_s": 0.832321707974188,
+        "first_window_from_case_entry_s": 3.1582366669899784,
+        "qt_timer_gaps_ms": {
+          "requested_interval_ms": 5,
+          "count": 133,
+          "median": 5.234582989942282,
+          "p95": 369.7020830004476,
+          "max": 832.4622910004109,
+          "note": "Zpoždění Qt časovače včetně synchronních operací; není to FPS ani latence kliknutí."
+        },
+        "native_view_ready": true,
+        "qt_gaps_by_operation": {
+          "open-build-tree-render": [
+            {
+              "count": 2,
+              "max_ms": 411.5787909831852
+            },
+            {
+              "count": 2,
+              "max_ms": 369.7020830004476
+            },
+            {
+              "count": 2,
+              "max_ms": 348.81408303044736
+            },
+            {
+              "count": 2,
+              "max_ms": 356.50216694921255
+            }
+          ],
+          "select-last-component": [
+            {
+              "count": 2,
+              "max_ms": 35.538709023967385
+            },
+            {
+              "count": 2,
+              "max_ms": 30.116791022010148
+            },
+            {
+              "count": 2,
+              "max_ms": 35.00004101078957
+            },
+            {
+              "count": 2,
+              "max_ms": 35.960207984317094
+            }
+          ],
+          "open-parameter-preview-back": [
+            {
+              "count": 5,
+              "max_ms": 443.5869579901919
+            },
+            {
+              "count": 5,
+              "max_ms": 447.56687502376735
+            },
+            {
+              "count": 6,
+              "max_ms": 447.5998330162838
+            },
+            {
+              "count": 6,
+              "max_ms": 426.3881249935366
+            }
+          ]
+        }
+      },
+      "memory": {
+        "parent_pid": 62603,
+        "observed_peak_rss_bytes": {
+          "62603": 786153472
+        },
+        "observed_pool_peak_rss_bytes": 786153472,
+        "samples": [
+          {
+            "at_s": 0.0009957500151358545,
+            "rss_bytes": {
+              "62603": 404946944
+            }
+          },
+          {
+            "at_s": 0.008139541023410857,
+            "rss_bytes": {
+              "62603": 405012480
+            }
+          },
+          {
+            "at_s": 0.12298616603948176,
+            "rss_bytes": {
+              "62603": 433979392
+            }
+          },
+          {
+            "at_s": 0.2367037910153158,
+            "rss_bytes": {
+              "62603": 445693952
+            }
+          },
+          {
+            "at_s": 0.34619608300272375,
+            "rss_bytes": {
+              "62603": 478838784
+            }
+          },
+          {
+            "at_s": 0.47485962498467416,
+            "rss_bytes": {
+              "62603": 516227072
+            }
+          },
+          {
+            "at_s": 1.1460342080099508,
+            "rss_bytes": {
+              "62603": 570294272
+            }
+          },
+          {
+            "at_s": 1.2599953750032,
+            "rss_bytes": {
+              "62603": 591970304
+            }
+          },
+          {
+            "at_s": 1.3977186660049483,
+            "rss_bytes": {
+              "62603": 617594880
+            }
+          },
+          {
+            "at_s": 1.5914034580346197,
+            "rss_bytes": {
+              "62603": 635518976
+            }
+          },
+          {
+            "at_s": 1.7069686659961008,
+            "rss_bytes": {
+              "62603": 651116544
+            }
+          },
+          {
+            "at_s": 1.8642325000255369,
+            "rss_bytes": {
+              "62603": 651116544
+            }
+          },
+          {
+            "at_s": 2.007182958011981,
+            "rss_bytes": {
+              "62603": 651116544
+            }
+          },
+          {
+            "at_s": 2.1381500830175355,
+            "rss_bytes": {
+              "62603": 652066816
+            }
+          },
+          {
+            "at_s": 2.282282375032082,
+            "rss_bytes": {
+              "62603": 653869056
+            }
+          },
+          {
+            "at_s": 2.463075708015822,
+            "rss_bytes": {
+              "62603": 653901824
+            }
+          },
+          {
+            "at_s": 2.59422850003466,
+            "rss_bytes": {
+              "62603": 653901824
+            }
+          },
+          {
+            "at_s": 2.731757000030484,
+            "rss_bytes": {
+              "62603": 653901824
+            }
+          },
+          {
+            "at_s": 2.8842791659990326,
+            "rss_bytes": {
+              "62603": 653901824
+            }
+          },
+          {
+            "at_s": 3.040394040988758,
+            "rss_bytes": {
+              "62603": 654147584
+            }
+          },
+          {
+            "at_s": 3.1744107080157846,
+            "rss_bytes": {
+              "62603": 656146432
+            }
+          },
+          {
+            "at_s": 3.3919723330182023,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 3.5363299580058083,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 3.69306466600392,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 3.8229791250196286,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 3.959927541029174,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 4.117003499995917,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 4.235497708024923,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 4.37228520802455,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 4.520901125040837,
+            "rss_bytes": {
+              "62603": 656588800
+            }
+          },
+          {
+            "at_s": 4.664948791032657,
+            "rss_bytes": {
+              "62603": 666714112
+            }
+          },
+          {
+            "at_s": 4.807946583023295,
+            "rss_bytes": {
+              "62603": 666730496
+            }
+          },
+          {
+            "at_s": 4.933397374988999,
+            "rss_bytes": {
+              "62603": 670269440
+            }
+          },
+          {
+            "at_s": 5.0464295410201885,
+            "rss_bytes": {
+              "62603": 688799744
+            }
+          },
+          {
+            "at_s": 5.1645135410362855,
+            "rss_bytes": {
+              "62603": 692404224
+            }
+          },
+          {
+            "at_s": 5.296845375036355,
+            "rss_bytes": {
+              "62603": 715472896
+            }
+          },
+          {
+            "at_s": 5.435986625030637,
+            "rss_bytes": {
+              "62603": 774144000
+            }
+          },
+          {
+            "at_s": 5.555627749999985,
+            "rss_bytes": {
+              "62603": 775880704
+            }
+          },
+          {
+            "at_s": 5.68498991598608,
+            "rss_bytes": {
+              "62603": 748273664
+            }
+          },
+          {
+            "at_s": 5.806617791007739,
+            "rss_bytes": {
+              "62603": 719994880
+            }
+          },
+          {
+            "at_s": 5.923634540988132,
+            "rss_bytes": {
+              "62603": 719994880
+            }
+          },
+          {
+            "at_s": 6.06142245803494,
+            "rss_bytes": {
+              "62603": 723927040
+            }
+          },
+          {
+            "at_s": 6.202903083001729,
+            "rss_bytes": {
+              "62603": 774864896
+            }
+          },
+          {
+            "at_s": 6.319624708034098,
+            "rss_bytes": {
+              "62603": 774881280
+            }
+          },
+          {
+            "at_s": 6.492304707993753,
+            "rss_bytes": {
+              "62603": 725123072
+            }
+          },
+          {
+            "at_s": 6.621450625010766,
+            "rss_bytes": {
+              "62603": 725221376
+            }
+          },
+          {
+            "at_s": 6.767485916032456,
+            "rss_bytes": {
+              "62603": 748748800
+            }
+          },
+          {
+            "at_s": 6.948638000001665,
+            "rss_bytes": {
+              "62603": 783761408
+            }
+          },
+          {
+            "at_s": 7.082505291036796,
+            "rss_bytes": {
+              "62603": 780566528
+            }
+          },
+          {
+            "at_s": 7.232387416006532,
+            "rss_bytes": {
+              "62603": 730710016
+            }
+          },
+          {
+            "at_s": 7.358911374991294,
+            "rss_bytes": {
+              "62603": 730710016
+            }
+          },
+          {
+            "at_s": 7.529425374988932,
+            "rss_bytes": {
+              "62603": 734429184
+            }
+          },
+          {
+            "at_s": 7.682046000030823,
+            "rss_bytes": {
+              "62603": 786038784
+            }
+          },
+          {
+            "at_s": 7.802571333013475,
+            "rss_bytes": {
+              "62603": 786153472
+            }
+          },
+          {
+            "at_s": 7.927562541037332,
+            "rss_bytes": {
+              "62603": 764444672
+            }
+          },
+          {
+            "at_s": 8.043187416042201,
+            "rss_bytes": {
+              "62603": 748208128
+            }
+          },
+          {
+            "at_s": 8.16186008299701,
+            "rss_bytes": {
+              "62603": 748208128
+            }
+          },
+          {
+            "at_s": 8.291042541037314,
+            "rss_bytes": {
+              "62603": 748208128
+            }
+          },
+          {
+            "at_s": 8.427792666014284,
+            "rss_bytes": {
+              "62603": 768950272
+            }
+          },
+          {
+            "at_s": 8.516174958029296,
+            "rss_bytes": {
+              "62603": 769179648
+            }
+          }
+        ],
+        "requested_interval_s": 0.1
+      },
+      "input_sha256": {
+        "assembly.json": "1987d267bccff7726c0870d6dcfe420b381b2a4797b80f2515c3dea8acaf136c",
+        "box.json": "6f05f9e1a61c97748351562c4dc1c73cc54adffb5b76f53b38d092a3a6c2caa9"
+      },
+      "mode": "control",
+      "status": "ok",
+      "exit": 0
+    },
+    {
+      "case": "gui-assembly",
+      "cad_import_s": 1.1910962910042144,
+      "metrics": [
+        {
+          "name": "open-build-tree-render",
+          "warmups": 1,
+          "samples_s": [
+            0.3569811249617487,
+            0.36995925003429875,
+            0.3921778340009041
+          ],
+          "median_s": 0.36995925003429875,
+          "min_s": 0.3569811249617487,
+          "max_s": 0.3921778340009041,
+          "correctness": {
+            "instances": 800,
+            "constraints_ok": 0,
+            "volume_mm3": 800000.0
+          },
+          "traces": [
+            {
+              "spans": {
+                "source_locate": {
+                  "calls": 800,
+                  "inclusive_s": 0.020513697003480047,
+                  "self_s": 0.020513697003480047
+                },
+                "source_read": {
+                  "calls": 800,
+                  "inclusive_s": 0.01985866151517257,
+                  "self_s": 0.01985866151517257
+                },
+                "build_level_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.1348840839928016,
+                  "self_s": 0.09451172547414899
+                },
+                "session_open": {
+                  "calls": 1,
+                  "inclusive_s": 0.1378921249997802,
+                  "self_s": 0.0030080410069786012
+                },
+                "tree": {
+                  "calls": 1,
+                  "inclusive_s": 0.014937250001821667,
+                  "self_s": 0.014937250001821667
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.0003613749868236482,
+                  "self_s": 0.0003613749868236482
+                },
+                "viewer_highlight": {
+                  "calls": 2,
+                  "inclusive_s": 0.003149999014567584,
+                  "self_s": 0.003149999014567584
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.0923119579674676,
+                  "self_s": 0.09110224997857586
+                },
+                "main_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.09298516600392759,
+                  "self_s": 0.0003118330496363342
+                },
+                "tree_visibility": {
+                  "calls": 1,
+                  "inclusive_s": 0.08489920798456296,
+                  "self_s": 0.08489920798456296
+                },
+                "window_refresh_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.2001566250110045,
+                  "self_s": 0.005394709995016456
+                },
+                "viewer_redraw": {
+                  "calls": 1,
+                  "inclusive_s": 0.0015920409932732582,
+                  "self_s": 0.0015920409932732582
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.35696970799472183,
+                  "self_s": 0.017328916990663856
+                }
+              },
+              "accounted_wall_s": 0.35696970799472183,
+              "timer_envelope_s": 1.1416967026889324e-05
+            },
+            {
+              "spans": {
+                "source_locate": {
+                  "calls": 800,
+                  "inclusive_s": 0.015182998962700367,
+                  "self_s": 0.015182998962700367
+                },
+                "source_read": {
+                  "calls": 800,
+                  "inclusive_s": 0.019391205394640565,
+                  "self_s": 0.019391205394640565
+                },
+                "build_level_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.13258295797277242,
+                  "self_s": 0.09800875361543149
+                },
+                "session_open": {
+                  "calls": 1,
+                  "inclusive_s": 0.1355862079653889,
+                  "self_s": 0.0030032499926164746
+                },
+                "tree": {
+                  "calls": 1,
+                  "inclusive_s": 0.01052412501303479,
+                  "self_s": 0.01052412501303479
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.00037925003562122583,
+                  "self_s": 0.00037925003562122583
+                },
+                "viewer_highlight": {
+                  "calls": 2,
+                  "inclusive_s": 0.004730415937956423,
+                  "self_s": 0.004730415937956423
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.1014992090058513,
+                  "self_s": 0.09930691804038361
+                },
+                "main_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.10219100001268089,
+                  "self_s": 0.00031254097120836377
+                },
+                "tree_visibility": {
+                  "calls": 1,
+                  "inclusive_s": 0.0910711659817025,
+                  "self_s": 0.0910711659817025
+                },
+                "window_refresh_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.21984420804074034,
+                  "self_s": 0.013519792060833424
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.3699505000258796,
+                  "self_s": 0.014520084019750357
+                }
+              },
+              "accounted_wall_s": 0.3699505000258796,
+              "timer_envelope_s": 8.750008419156075e-06
+            },
+            {
+              "spans": {
+                "source_locate": {
+                  "calls": 800,
+                  "inclusive_s": 0.01995566562982276,
+                  "self_s": 0.01995566562982276
+                },
+                "source_read": {
+                  "calls": 800,
+                  "inclusive_s": 0.01933712890604511,
+                  "self_s": 0.01933712890604511
+                },
+                "build_level_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.13380966696422547,
+                  "self_s": 0.0945168724283576
+                },
+                "session_open": {
+                  "calls": 1,
+                  "inclusive_s": 0.13652845897013322,
+                  "self_s": 0.002718792005907744
+                },
+                "tree": {
+                  "calls": 1,
+                  "inclusive_s": 0.010668208997230977,
+                  "self_s": 0.010668208997230977
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.0003190829884260893,
+                  "self_s": 0.0003190829884260893
+                },
+                "viewer_highlight": {
+                  "calls": 2,
+                  "inclusive_s": 0.01763941696844995,
+                  "self_s": 0.01763941696844995
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.13000058400211856,
+                  "self_s": 0.11436679202597588
+                },
+                "main_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.13063374999910593,
+                  "self_s": 0.00031408300856128335
+                },
+                "tree_visibility": {
+                  "calls": 1,
+                  "inclusive_s": 0.09377649996895343,
+                  "self_s": 0.09377649996895343
+                },
+                "window_refresh_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.24194287502905354,
+                  "self_s": 0.004858791071455926
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.39217241696314886,
+                  "self_s": 0.013701082963962108
+                }
+              },
+              "accounted_wall_s": 0.39217241696314886,
+              "timer_envelope_s": 5.417037755250931e-06
+            }
+          ]
+        },
+        {
+          "name": "select-last-component",
+          "warmups": 1,
+          "samples_s": [
+            0.03354024997679517,
+            0.04756379104219377,
+            0.03954420902300626
+          ],
+          "median_s": 0.03954420902300626,
+          "min_s": 0.03354024997679517,
+          "max_s": 0.04756379104219377,
+          "correctness": {
+            "selected_id": "c799"
+          },
+          "traces": [
+            {
+              "spans": {
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.0021512499661184847,
+                  "self_s": 0.0021512499661184847
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.03352212498430163,
+                  "self_s": 0.03137087501818314
+                }
+              },
+              "accounted_wall_s": 0.03352212498430163,
+              "timer_envelope_s": 1.812499249354005e-05
+            },
+            {
+              "spans": {
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.009080415999051183,
+                  "self_s": 0.009080415999051183
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.04753087501740083,
+                  "self_s": 0.03845045901834965
+                }
+              },
+              "accounted_wall_s": 0.04753087501740083,
+              "timer_envelope_s": 3.2916024792939425e-05
+            },
+            {
+              "spans": {
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.0077278329990804195,
+                  "self_s": 0.0077278329990804195
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.039527959015686065,
+                  "self_s": 0.031800126016605645
+                }
+              },
+              "accounted_wall_s": 0.039527959015686065,
+              "timer_envelope_s": 1.6250007320195436e-05
+            }
+          ]
+        },
+        {
+          "name": "open-parameter-preview-back",
+          "warmups": 1,
+          "samples_s": [
+            0.7009222080232576,
+            0.8089645000291057,
+            0.7702155830338597
+          ],
+          "median_s": 0.7702155830338597,
+          "min_s": 0.7009222080232576,
+          "max_s": 0.8089645000291057,
+          "correctness": {
+            "model_unchanged": true
+          },
+          "traces": [
+            {
+              "spans": {
+                "usage_analysis": {
+                  "calls": 5,
+                  "inclusive_s": 0.029608917015139014,
+                  "self_s": 0.029608917015139014
+                },
+                "usage_widgets_other": {
+                  "calls": 5,
+                  "inclusive_s": 0.045551958959549665,
+                  "self_s": 0.015943041944410652
+                },
+                "editor_widgets": {
+                  "calls": 1,
+                  "inclusive_s": 0.0351881249807775,
+                  "self_s": 0.004183250013738871
+                },
+                "viewer_redraw": {
+                  "calls": 4,
+                  "inclusive_s": 0.012151041999459267,
+                  "self_s": 0.012151041999459267
+                },
+                "source_hashes": {
+                  "calls": 2,
+                  "inclusive_s": 0.020472708041779697,
+                  "self_s": 0.020472708041779697
+                },
+                "source_locate": {
+                  "calls": 1600,
+                  "inclusive_s": 0.030556406592950225,
+                  "self_s": 0.030556406592950225
+                },
+                "source_read": {
+                  "calls": 1600,
+                  "inclusive_s": 0.05140545294852927,
+                  "self_s": 0.05140545294852927
+                },
+                "build_level_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.27029620797839016,
+                  "self_s": 0.18833434843691066
+                },
+                "session_preview": {
+                  "calls": 1,
+                  "inclusive_s": 0.17193883296567947,
+                  "self_s": 0.016478999925311655
+                },
+                "placement_comparison": {
+                  "calls": 1,
+                  "inclusive_s": 0.01016433403128758,
+                  "self_s": 0.01016433403128758
+                },
+                "preview_widgets_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.022750458971131593,
+                  "self_s": 0.012586124939844012
+                },
+                "viewer_open_view": {
+                  "calls": 1,
+                  "inclusive_s": 0.012152957962825894,
+                  "self_s": 0.012152957962825894
+                },
+                "viewer_initialize_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.022107249998953193,
+                  "self_s": 0.009954292036127299
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.000407625047955662,
+                  "self_s": 0.000407625047955662
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.09511416702298447,
+                  "self_s": 0.09511416702298447
+                },
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.01528908300679177,
+                  "self_s": 0.01528908300679177
+                },
+                "preview_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.17557970801135525,
+                  "self_s": 0.06476883293362334
+                },
+                "modal_event_loop_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.8810137079562992,
+                  "self_s": 0.08828845707466826
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.7009153749677353,
+                  "self_s": 0.023055333993397653
+                }
+              },
+              "accounted_wall_s": 0.7009153749677353,
+              "timer_envelope_s": 6.833055522292852e-06
+            },
+            {
+              "spans": {
+                "usage_analysis": {
+                  "calls": 5,
+                  "inclusive_s": 0.02964608301408589,
+                  "self_s": 0.02964608301408589
+                },
+                "usage_widgets_other": {
+                  "calls": 5,
+                  "inclusive_s": 0.03990645898738876,
+                  "self_s": 0.010260375973302871
+                },
+                "editor_widgets": {
+                  "calls": 1,
+                  "inclusive_s": 0.029566582990810275,
+                  "self_s": 0.004193081927951425
+                },
+                "viewer_redraw": {
+                  "calls": 5,
+                  "inclusive_s": 0.026923916942905635,
+                  "self_s": 0.026923916942905635
+                },
+                "source_hashes": {
+                  "calls": 2,
+                  "inclusive_s": 0.026354333967901766,
+                  "self_s": 0.026354333967901766
+                },
+                "source_locate": {
+                  "calls": 1600,
+                  "inclusive_s": 0.037726038426626474,
+                  "self_s": 0.037726038426626474
+                },
+                "source_read": {
+                  "calls": 1600,
+                  "inclusive_s": 0.04533341253409162,
+                  "self_s": 0.04533341253409162
+                },
+                "build_level_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.31807258300250396,
+                  "self_s": 0.23501313204178587
+                },
+                "session_preview": {
+                  "calls": 1,
+                  "inclusive_s": 0.17910487501649186,
+                  "self_s": 0.016225791012402624
+                },
+                "placement_comparison": {
+                  "calls": 1,
+                  "inclusive_s": 0.009595958050340414,
+                  "self_s": 0.009595958050340414
+                },
+                "preview_widgets_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.01673716597724706,
+                  "self_s": 0.007141207926906645
+                },
+                "viewer_open_view": {
+                  "calls": 1,
+                  "inclusive_s": 0.01284325000597164,
+                  "self_s": 0.01284325000597164
+                },
+                "viewer_initialize_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.02503904199693352,
+                  "self_s": 0.01219579199096188
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.00039804098196327686,
+                  "self_s": 0.00039804098196327686
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.09180925000691786,
+                  "self_s": 0.09180925000691786
+                },
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.01518108299933374,
+                  "self_s": 0.01518108299933374
+                },
+                "preview_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.17142754199448973,
+                  "self_s": 0.06403916800627485
+                },
+                "modal_event_loop_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.9509303749655373,
+                  "self_s": 0.09160945913754404
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.8089581669773906,
+                  "self_s": 0.07246879203012213
+                }
+              },
+              "accounted_wall_s": 0.8089581669773906,
+              "timer_envelope_s": 6.333051715046167e-06
+            },
+            {
+              "spans": {
+                "usage_analysis": {
+                  "calls": 5,
+                  "inclusive_s": 0.030037998978514224,
+                  "self_s": 0.030037998978514224
+                },
+                "usage_widgets_other": {
+                  "calls": 5,
+                  "inclusive_s": 0.04018670791992918,
+                  "self_s": 0.010148708941414952
+                },
+                "editor_widgets": {
+                  "calls": 1,
+                  "inclusive_s": 0.02947874995879829,
+                  "self_s": 0.004330791998654604
+                },
+                "viewer_redraw": {
+                  "calls": 5,
+                  "inclusive_s": 0.026549458038061857,
+                  "self_s": 0.026549458038061857
+                },
+                "source_hashes": {
+                  "calls": 2,
+                  "inclusive_s": 0.020468541944865137,
+                  "self_s": 0.020468541944865137
+                },
+                "source_locate": {
+                  "calls": 1600,
+                  "inclusive_s": 0.08169712743256241,
+                  "self_s": 0.08169712743256241
+                },
+                "source_read": {
+                  "calls": 1600,
+                  "inclusive_s": 0.04551696631824598,
+                  "self_s": 0.04551696631824598
+                },
+                "build_level_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.32372149993898347,
+                  "self_s": 0.19650740618817508
+                },
+                "session_preview": {
+                  "calls": 1,
+                  "inclusive_s": 0.17331158299930394,
+                  "self_s": 0.016522374062333256
+                },
+                "placement_comparison": {
+                  "calls": 1,
+                  "inclusive_s": 0.009859291021712124,
+                  "self_s": 0.009859291021712124
+                },
+                "preview_widgets_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.023277583008166403,
+                  "self_s": 0.013418291986454278
+                },
+                "viewer_open_view": {
+                  "calls": 1,
+                  "inclusive_s": 0.010981792001985013,
+                  "self_s": 0.010981792001985013
+                },
+                "viewer_initialize_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.020703707996290177,
+                  "self_s": 0.009721915994305164
+                },
+                "compound": {
+                  "calls": 1,
+                  "inclusive_s": 0.0004243329749442637,
+                  "self_s": 0.0004243329749442637
+                },
+                "viewer_show_part": {
+                  "calls": 1,
+                  "inclusive_s": 0.0926528749987483,
+                  "self_s": 0.0926528749987483
+                },
+                "viewer_highlight": {
+                  "calls": 1,
+                  "inclusive_s": 0.015373083995655179,
+                  "self_s": 0.015373083995655179
+                },
+                "preview_scene_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.17359191604191437,
+                  "self_s": 0.06514162407256663
+                },
+                "modal_event_loop_other": {
+                  "calls": 2,
+                  "inclusive_s": 0.9651208750437945,
+                  "self_s": 0.09674250206444412
+                },
+                "operation_other": {
+                  "calls": 1,
+                  "inclusive_s": 0.7702047089696862,
+                  "self_s": 0.0241096259560436
+                }
+              },
+              "accounted_wall_s": 0.7702047089696862,
+              "timer_envelope_s": 1.0874064173549414e-05
+            }
+          ]
+        }
+      ],
+      "details": {
+        "first_window_ready_s": 0.37966087501263246,
+        "first_window_from_case_entry_s": 1.8210166249773465,
+        "qt_timer_gaps_ms": {
+          "requested_interval_ms": 5,
+          "count": 134,
+          "median": 5.176791979465634,
+          "p95": 379.21879201894626,
+          "max": 469.3454169901088,
+          "note": "Zpoždění Qt časovače včetně synchronních operací; není to FPS ani latence kliknutí."
+        },
+        "native_view_ready": true,
+        "qt_gaps_by_operation": {
+          "open-build-tree-render": [
+            {
+              "count": 2,
+              "max_ms": 382.78320798417553
+            },
+            {
+              "count": 2,
+              "max_ms": 345.3682910185307
+            },
+            {
+              "count": 2,
+              "max_ms": 362.72237496450543
+            },
+            {
+              "count": 2,
+              "max_ms": 384.24645899794996
+            }
+          ],
+          "select-last-component": [
+            {
+              "count": 2,
+              "max_ms": 40.86520802229643
+            },
+            {
+              "count": 2,
+              "max_ms": 27.136958029586822
+            },
+            {
+              "count": 2,
+              "max_ms": 40.44841701397672
+            },
+            {
+              "count": 2,
+              "max_ms": 33.103666035458446
+            }
+          ],
+          "open-parameter-preview-back": [
+            {
+              "count": 5,
+              "max_ms": 469.3454169901088
+            },
+            {
+              "count": 5,
+              "max_ms": 449.6492919861339
+            },
+            {
+              "count": 5,
+              "max_ms": 461.11670800019056
+            },
+            {
+              "count": 5,
+              "max_ms": 461.63941599661484
+            }
+          ]
+        }
+      },
+      "memory": {
+        "parent_pid": 62671,
+        "observed_peak_rss_bytes": {
+          "62671": 821395456
+        },
+        "observed_pool_peak_rss_bytes": 821395456,
+        "samples": [
+          {
+            "at_s": 0.0006937500438652933,
+            "rss_bytes": {
+              "62671": 404783104
+            }
+          },
+          {
+            "at_s": 0.007170334050897509,
+            "rss_bytes": {
+              "62671": 404897792
+            }
+          },
+          {
+            "at_s": 0.11736016703071073,
+            "rss_bytes": {
+              "62671": 442613760
+            }
+          },
+          {
+            "at_s": 0.28719270904548466,
+            "rss_bytes": {
+              "62671": 486162432
+            }
+          },
+          {
+            "at_s": 0.5200314170215279,
+            "rss_bytes": {
+              "62671": 514834432
+            }
+          },
+          {
+            "at_s": 0.6433767090202309,
+            "rss_bytes": {
+              "62671": 593641472
+            }
+          },
+          {
+            "at_s": 0.7611007920349948,
+            "rss_bytes": {
+              "62671": 596541440
+            }
+          },
+          {
+            "at_s": 0.9975750840385444,
+            "rss_bytes": {
+              "62671": 652394496
+            }
+          },
+          {
+            "at_s": 1.1161679590004496,
+            "rss_bytes": {
+              "62671": 653672448
+            }
+          },
+          {
+            "at_s": 1.2593001670320518,
+            "rss_bytes": {
+              "62671": 653672448
+            }
+          },
+          {
+            "at_s": 1.382146209012717,
+            "rss_bytes": {
+              "62671": 653836288
+            }
+          },
+          {
+            "at_s": 1.5177304170210846,
+            "rss_bytes": {
+              "62671": 654508032
+            }
+          },
+          {
+            "at_s": 1.6357622920186259,
+            "rss_bytes": {
+              "62671": 655835136
+            }
+          },
+          {
+            "at_s": 1.8455687500536442,
+            "rss_bytes": {
+              "62671": 656031744
+            }
+          },
+          {
+            "at_s": 1.9656799170188606,
+            "rss_bytes": {
+              "62671": 656080896
+            }
+          },
+          {
+            "at_s": 2.116769792046398,
+            "rss_bytes": {
+              "62671": 656080896
+            }
+          },
+          {
+            "at_s": 2.26022787502734,
+            "rss_bytes": {
+              "62671": 656080896
+            }
+          },
+          {
+            "at_s": 2.415602667024359,
+            "rss_bytes": {
+              "62671": 656162816
+            }
+          },
+          {
+            "at_s": 2.567454333999194,
+            "rss_bytes": {
+              "62671": 656211968
+            }
+          },
+          {
+            "at_s": 2.799287292000372,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 2.9429181670420803,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.086230459040962,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.215380917012226,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.3760755420080386,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.6692644170252606,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.819621750037186,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 3.961348834040109,
+            "rss_bytes": {
+              "62671": 656343040
+            }
+          },
+          {
+            "at_s": 4.0895561670186,
+            "rss_bytes": {
+              "62671": 666124288
+            }
+          },
+          {
+            "at_s": 4.20905025000684,
+            "rss_bytes": {
+              "62671": 666255360
+            }
+          },
+          {
+            "at_s": 4.354790875047911,
+            "rss_bytes": {
+              "62671": 669483008
+            }
+          },
+          {
+            "at_s": 4.489198249997571,
+            "rss_bytes": {
+              "62671": 688472064
+            }
+          },
+          {
+            "at_s": 4.607348125020508,
+            "rss_bytes": {
+              "62671": 690159616
+            }
+          },
+          {
+            "at_s": 4.740164292044938,
+            "rss_bytes": {
+              "62671": 717373440
+            }
+          },
+          {
+            "at_s": 4.8671776670380495,
+            "rss_bytes": {
+              "62671": 780369920
+            }
+          },
+          {
+            "at_s": 4.994311667047441,
+            "rss_bytes": {
+              "62671": 789086208
+            }
+          },
+          {
+            "at_s": 5.137631292047445,
+            "rss_bytes": {
+              "62671": 742129664
+            }
+          },
+          {
+            "at_s": 5.256846334028523,
+            "rss_bytes": {
+              "62671": 730185728
+            }
+          },
+          {
+            "at_s": 5.373261625005398,
+            "rss_bytes": {
+              "62671": 730218496
+            }
+          },
+          {
+            "at_s": 5.509296542033553,
+            "rss_bytes": {
+              "62671": 754679808
+            }
+          },
+          {
+            "at_s": 5.659592375042848,
+            "rss_bytes": {
+              "62671": 810106880
+            }
+          },
+          {
+            "at_s": 5.779753625043668,
+            "rss_bytes": {
+              "62671": 810909696
+            }
+          },
+          {
+            "at_s": 5.895517584052868,
+            "rss_bytes": {
+              "62671": 762019840
+            }
+          },
+          {
+            "at_s": 6.008914584002923,
+            "rss_bytes": {
+              "62671": 750436352
+            }
+          },
+          {
+            "at_s": 6.118863292038441,
+            "rss_bytes": {
+              "62671": 750501888
+            }
+          },
+          {
+            "at_s": 6.2424540420179255,
+            "rss_bytes": {
+              "62671": 754860032
+            }
+          },
+          {
+            "at_s": 6.418869125016499,
+            "rss_bytes": {
+              "62671": 815366144
+            }
+          },
+          {
+            "at_s": 6.540205124998465,
+            "rss_bytes": {
+              "62671": 815644672
+            }
+          },
+          {
+            "at_s": 6.676611750037409,
+            "rss_bytes": {
+              "62671": 756350976
+            }
+          },
+          {
+            "at_s": 6.790583459020127,
+            "rss_bytes": {
+              "62671": 756334592
+            }
+          },
+          {
+            "at_s": 6.909644625033252,
+            "rss_bytes": {
+              "62671": 756334592
+            }
+          },
+          {
+            "at_s": 7.030363125028089,
+            "rss_bytes": {
+              "62671": 760594432
+            }
+          },
+          {
+            "at_s": 7.176019083999563,
+            "rss_bytes": {
+              "62671": 821395456
+            }
+          },
+          {
+            "at_s": 7.296325959032401,
+            "rss_bytes": {
+              "62671": 817987584
+            }
+          },
+          {
+            "at_s": 7.426376125018578,
+            "rss_bytes": {
+              "62671": 769949696
+            }
+          },
+          {
+            "at_s": 7.540231917053461,
+            "rss_bytes": {
+              "62671": 769867776
+            }
+          },
+          {
+            "at_s": 7.654815167014021,
+            "rss_bytes": {
+              "62671": 769867776
+            }
+          },
+          {
+            "at_s": 7.774031875014771,
+            "rss_bytes": {
+              "62671": 769867776
+            }
+          },
+          {
+            "at_s": 7.904669375042431,
+            "rss_bytes": {
+              "62671": 774389760
+            }
+          },
+          {
+            "at_s": 8.073259875003714,
+            "rss_bytes": {
+              "62671": 791183360
+            }
+          }
+        ],
+        "requested_interval_s": 0.1
+      },
+      "input_sha256": {
+        "assembly.json": "1987d267bccff7726c0870d6dcfe420b381b2a4797b80f2515c3dea8acaf136c",
+        "box.json": "6f05f9e1a61c97748351562c4dc1c73cc54adffb5b76f53b38d092a3a6c2caa9"
+      },
+      "mode": "spans",
+      "status": "ok",
+      "exit": 0
+    }
+  ],
+  "limits": [
+    "Instrumentace má režii; nejde o nové rychlostní výsledky.",
+    "Inclusive intervaly se překrývají, sčítat lze pouze self_s.",
+    "Self interval je čas na hodinách včetně čekání; není to čistý CPU čas.",
+    "Intervaly sledují volající hlavní vlákno, nikoli worker či GPU.",
+    "Neinstrumentovaný control a režimy mají stejné vstupy, vlastní procesy.",
+    "Případy GUI včetně událostí/čekání odpovídají P8.1, žádné glFinish/FPS."
+  ]
+}
