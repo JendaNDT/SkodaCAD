@@ -113,7 +113,9 @@ def test_duplicate_name_repair_delete_and_cancel_are_only_staged(request):
     dialog = AssemblyParametersDialog({"a": 10, "b": "a/2"}, calls.append)
     try:
         dialog.table.item(1, 0).setText("a")
-        assert "dvakrát" in dialog.message.text() and not dialog.apply_button.isEnabled()
+        assert "už existuje" in dialog.message.text()
+        assert dialog.table.item(1, 0).text() == "b"
+        assert dialog.parameters() == {"a": 10, "b": "a/2"}
         dialog.table.item(1, 0).setText("b")
         assert dialog.apply_button.isEnabled() and dialog.table.item(1, 2).text() == "5"
         dialog.table.setCurrentCell(1, 0)
