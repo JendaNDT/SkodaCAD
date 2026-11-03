@@ -1468,6 +1468,114 @@ def transparent_ids(window):
         p.wrapped.IsSame(i.part.wrapped) for p in window.viewer.transparent_parts)}
 
 
+def assert_tree_transparency_matches_leaf_rules(window):
+    """Původní obecný průchod zůstává nezávislou referencí nového souhrnu."""
+    for status in window.session.result.statuses:
+        item = visibility_row(window, status.ids)
+        values = window._branch_values(status.ids, window._transparency_value)
+        expected = ("vypnutá" if not any(values) else f"{values[0]} %"
+                    if min(values) == max(values)
+                    else f"různé ({min(values)}–{max(values)} %)")
+        assert item.toolTip(0).endswith(f"Průhlednost: {expected}.")
+        assert item.font(0).italic() == any(
+            window._branch_values(status.ids, window._is_transparent))
+
+
+def test_tree_appearance_reads_flat_leaves_linearly_without_changing_model(opened, monkeypatch):
+    w = opened
+    w.set_component_transparency(("vicko",), 35)
+    w.set_component_visible(("nozicka_1",), False)
+    document, result = w.session.assembly.to_dict(), w.session.result
+    history = (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    shown = list(w.viewer.parts)
+    calls = []
+    original = w._transparency_value
+
+    def value(ids):
+        calls.append(ids)
+        return original(ids)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(w, "_transparency_value", value)
+        w._refresh_tree_visibility()
+    assert sorted(calls) == sorted(s.ids for s in result.statuses)
+    assert_tree_transparency_matches_leaf_rules(w)
+    assert w.session.assembly.to_dict() == document and w.session.result is result
+    assert history == (len(w.session._undo), len(w.session._redo), w.session.dirty)
+    assert w.viewer.parts == shown
+    assert result.volume_mm3 == pytest.approx(31309.291656)
+
+
+def test_tree_appearance_handles_empty_missing_nested_branches_and_fresh_results(
+        main_window, tmp_path):
+    from test_assembly import assembly_data, component, part_data, write
+
+    write(tmp_path / "box.json", part_data())
+    write(tmp_path / "empty.json", assembly_data([]))
+    write(tmp_path / "module.json", assembly_data([
+        component("first", "box.json"), component("second", "box.json", position=(40, 0, 0)),
+        component("missing", "absent.json"), component("empty", "empty.json")]))
+    source = write(tmp_path / "root.json", assembly_data([
+        component("a", "module.json"), component("b", "module.json", position=(0, 80, 0))]))
+    w = main_window.open_assembly(source)
+    assert w.session.result.volume_mm3 == pytest.approx(24000)
+    w.set_component_transparency(("a",), 35)
+    w.set_component_transparency(("a", "second"), 85)
+    w.set_component_transparency(("a", "empty"), 55)
+    w.set_component_transparency(("a", "missing"), 75)
+    assert "různé (35–85 %)" in visibility_row(w, ("a",)).toolTip(0)
+    assert "Průhlednost: 55 %" in visibility_row(w, ("a", "empty")).toolTip(0)
+    assert "Průhlednost: 75 %" in visibility_row(w, ("a", "missing")).toolTip(0)
+    assert_tree_transparency_matches_leaf_rules(w)
+    w.set_component_visible(("a",), False)
+    w.select(("b",))
+    w.isolate_selected()
+    assert_tree_transparency_matches_leaf_rules(w)
+    assert visibility_row(w, ("a",)).font(0).italic()  # vzhled i skryté větve
+    assert len(w.visible_instances()) == 2
+    w.reset_transparency()
+    assert_tree_transparency_matches_leaf_rules(w)
+    assert not visibility_row(w, ("a",)).font(0).italic()
+    previous = w.session.result
+    write(tmp_path / "absent.json", part_data())
+    write(tmp_path / "empty.json", assembly_data([component("new", "box.json")]))
+    w.reload()
+    assert w.session.result is not previous
+    assert w.session.result.volume_mm3 == pytest.approx(48000)
+    w.set_component_transparency(("a", "empty", "new"), 45)
+    assert_tree_transparency_matches_leaf_rules(w)
+    assert "Průhlednost: 45 %" in visibility_row(w, ("a", "empty")).toolTip(0)
+    w.show_all()
+    assert len(w.visible_instances()) == 8
+    assert_tree_transparency_matches_leaf_rules(w)
+
+
+def test_tree_appearance_restores_signal_blocking_for_empty_and_failed_refresh(opened, monkeypatch):
+    w = opened
+    result = w.session.result
+    w.session.result = None
+    w._fill_tree(None)
+    w._refresh_tree_visibility()
+    assert not w.tree.signalsBlocked()
+    w.session.result = result
+    w._fill_tree(result)
+
+    def failed(_ids):
+        raise RuntimeError("pokusná chyba vzhledu")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(w, "visible_instances", lambda: [])
+        patch.setattr(w, "_manually_visible", failed)
+        with pytest.raises(RuntimeError, match="pokusná chyba"):
+            w._refresh_tree_visibility()
+    assert not w.tree.signalsBlocked()
+    w.tree.blockSignals(True)
+    w._refresh_tree_visibility()
+    assert w.tree.signalsBlocked()
+    w.tree.blockSignals(False)
+    assert_tree_transparency_matches_leaf_rules(w)
+
+
 def transparency_amounts(window):
     return {i.ids: amount for i in window.visible_instances()
             for part, amount in window.viewer.transparencies if part.wrapped.IsSame(i.part.wrapped)}

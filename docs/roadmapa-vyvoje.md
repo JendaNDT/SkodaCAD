@@ -52,7 +52,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1 sloučeno; [P8.2 profilování](p8-2-profilovani.md) místně ověřeno, čeká na kontroly obou OS | P8.3 první oddělená optimalizace aktualizace stromu, P8.4 dlouhý provoz a P8.5 přijetí |
+| P8 | P8.1/P8.2 vydané (`93843f4`); [P8.3 obnova stromu](p8-3-obnoveni-stromu.md) místně ověřena | úplné kontroly a vydání P8.3 obou OS, P8.4 dlouhý provoz a P8.5 přijetí |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
@@ -321,8 +321,15 @@ ani nový rozpočet rychlosti se tím ještě nezavádí.
 
 **P8.2 zahájeno navazujícím pokynem autora 3. 11. 2026:**
 [rozpad nákladů a návrh prvního zásahu](p8-2-profilovani.md). P8.1 je sloučeno
-jako `15ec3d4`; P8.2 má místní kontrolní i profilované běhy se shodnou geometrií.
-Před sloučením P8.2 zbývají úplné kontroly obou systémů. P8.3 nebyla zahájena.
+jako `15ec3d4`, oprava životnosti testových oken jako `734bf18`; P8.2 je vydané
+jako `93843f4` po úplných testech, profilech a stažených self-testech obou systémů.
+
+**P8.3 zahájeno 3. 11. 2026 odpovědí autora „ok, udělej to“:**
+[jediná dočasná agregace vzhledu stromu a srovnání před/po](p8-3-obnoveni-stromu.md).
+Na M4 obnova stromu 89,92 → 21,61 ms, celé otevření 800 kopií 363,68 → 305,54 ms;
+tři vzorky nejsou záruka rychlosti. Regrese zachovaly geometrii i stav modelu.
+Před sloučením zbývají celé kontroly, srovnání a stažené aplikace obou OS;
+samotná místní čísla nejsou hotové vydání. P8.4/P8.5 tím nejsou provedené.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
    studií; startup, přepočet, přenos, paměť, odezva a ukončení dlouhé úlohy.

@@ -49,6 +49,10 @@
 - **Navazující pokyn autora z 3. 11. 2026 „Takže můžeme pokračovat?“:** zahájit
   [P8.2 profilování](docs/p8-2-profilovani.md) na stejných vstupech. Produkční
   optimalizace P8.3 zůstávají samostatnou další dávkou.
+- **Navazující pokyn autora z 3. 11. 2026 „ok, udělej to“:** zahájit
+  [P8.3 obnovu vzhledu stromu](docs/p8-3-obnoveni-stromu.md). Agregace průhlednosti
+  smí žít jen v jednom `_refresh_tree_visibility`, bez trvalé cache a bez omezení
+  geometrických kontrol; porovnat před/po na stejných vstupech obou OS.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1653,7 +1657,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
 | P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 výkon/stabilizace | P8.1 sloučeno; [P8.2 profilování](docs/p8-2-profilovani.md) místně ověřeno, kontroly obou OS jsou bránou sloučení | P8.3 jeden měřený zásah do aktualizace stromu, P8.4 dlouhý provoz, P8.5 přijetí |
+| P8 výkon/stabilizace | P8.1/P8.2 vydané (`93843f4`); [P8.3 obnova stromu](docs/p8-3-obnoveni-stromu.md) místně ověřena | úplné kontroly a vydání P8.3 obou OS, P8.4 dlouhý provoz, P8.5 přijetí |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
@@ -1853,7 +1857,8 @@ Oprava Cocoa AX, potvrzení souřadnic Tabem, editor po vytvoření z výběru/s
 čitelnější rozbalený strom. Self-test „Modelování desky“ také kliká na skutečnou
 plochu a čtyři hrany přes Qt a OCCT projekci. Úplné výsledky v implementačním PR;
 nejde o autorskou přejímku P7.4.
-**P8 a NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
+**P8:** aktuální stav a oddělené dávky jsou v tabulce Plán výše.
+**NDT-17 — nezahájeno.** NDT-16 mimo rozsah; NDT-17 na něm nezávisí.
 **P7.5 — náhled nového prvku:** autor schválil Potvrdit/Zrušit.
 [Provedení a evidence](docs/p7-5-nahled-noveho-prvku.md): pracovní ModelSession,
 vlastní runner, potvrzení přes `_change(computed_result=…)`, jediný krok historie,

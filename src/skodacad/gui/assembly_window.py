@@ -2055,6 +2055,21 @@ class AssemblyWindow(QMainWindow):
             self.set_component_visible(tuple(data), item.checkState(0) != Qt.CheckState.Unchecked)
 
     def _refresh_tree_visibility(self) -> None:
+        # Jen pro toto obnovení: listy přispějí vzhledem všem svým předkům.
+        # Prázdná/chybějící podsestava bez potomků je sama listem jako v _branch_values.
+        statuses = self.session.result.statuses if self.session.result else []
+        parents = {status.ids[:-1] for status in statuses}
+        appearance: dict[tuple[str, ...], tuple[bool, int, int]] = {}
+        for status in statuses:
+            if status.ids in parents:
+                continue
+            transparent = self._is_transparent(status.ids)
+            amount = self._transparency_value(status.ids)
+            for n in range(1, len(status.ids)+1):
+                key = status.ids[:n]
+                previous = appearance.get(key, (False, amount, amount))
+                appearance[key] = (previous[0] or transparent,
+                                   min(previous[1], amount), max(previous[2], amount))
         shown: dict[tuple[str, ...], int] = {}
         totals: dict[tuple[str, ...], int] = {}
         for instances, counts in ((self.visible_instances(), shown),
@@ -2081,17 +2096,19 @@ class AssemblyWindow(QMainWindow):
             item.setForeground(0, QBrush() if ids in shown else QBrush(self.palette().color(
                 QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)))
             font = item.font(0)
-            appearance = self._branch_check_state(ids, self._is_transparent)
-            font.setItalic(appearance != Qt.CheckState.Unchecked)
+            branch = appearance.get(ids)
+            if branch is None:
+                amount = self._transparency_value(ids)
+                branch = (self._is_transparent(ids), amount, amount)
+            is_transparent, minimum, maximum = branch
+            font.setItalic(is_transparent)
             item.setFont(0, font)
             base = item.data(0, Qt.ItemDataRole.UserRole + 1) or ""
             manual = {Qt.CheckState.Checked: "viditelné", Qt.CheckState.Unchecked: "skryté",
                       Qt.CheckState.PartiallyChecked: "částečně viditelné"}[state]
             actual = f"{shown.get(ids, 0)}/{totals.get(ids, 0)} dílů"
-            values = self._branch_values(ids, self._transparency_value)
-            transparent = ("vypnutá" if not any(values) else f"{values[0]} %"
-                           if min(values) == max(values)
-                           else f"různé ({min(values)}–{max(values)} %)")
+            transparent = ("vypnutá" if minimum == maximum == 0 else f"{minimum} %"
+                           if minimum == maximum else f"různé ({minimum}–{maximum} %)")
             item.setToolTip(0, f"{base}\nRuční viditelnost: {manual}. V pohledu: {actual}."
                               f"\nPrůhlednost: {transparent}.")
             return state
