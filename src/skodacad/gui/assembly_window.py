@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from skodacad.assembly import CONSTRAINT_TYPES, AssemblyError
+from skodacad.assembly import CONSTRAINT_TYPES, Assembly, AssemblyError
 from skodacad.assembly_build import (
     CONSTRAINT_LABELS,
     LABELS,
@@ -68,6 +68,7 @@ from skodacad.assembly_build import (
     build_part,
 )
 from skodacad.assembly_check import NDT_NOTE, labels, total_mass
+from skodacad.assembly_parameter_usage import UsageTarget
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 from skodacad.gui.assembly_access import request_project_access
@@ -1397,14 +1398,52 @@ class AssemblyWindow(QMainWindow):
     def edit_parameters(self) -> None:
         if self.session.assembly is None:
             return
-        dialog = AssemblyParametersDialog(self.session.assembly.parameters,
+        source = self.session.assembly
+        dialog = AssemblyParametersDialog(source.parameters,
                                            self.apply_parameters, self,
-                                           assembly=self.session.assembly,
-                                           apply_renamed=self.apply_parameters)
+                                           assembly=source,
+                                           apply_renamed=self.apply_parameters,
+                                           select_usage=lambda target:
+                                           self.select_parameter_usage(target, source))
         try:
             self._exec_dialog(dialog)
         finally:
             dialog.deleteLater()
+
+    def select_parameter_usage(self, target: UsageTarget, source: Assembly) -> bool:
+        """Pouze výběr; odkaz ze starého editoru nesmí vybrat id z jiného modelu."""
+        if self.session.assembly is not source or self.session.result is None:
+            return False
+        if target.kind == "component" and any(c.id == target.id for c in source.components):
+            key = json.dumps([target.id])
+        elif target.kind == "constraint" and any(c.id == target.id for c in source.constraints):
+            key = json.dumps({"constraint": target.id})
+        else:
+            return False
+        iterator = QTreeWidgetItemIterator(self.tree)
+        item = None
+        while candidate := iterator.value():
+            if candidate.data(0, Qt.ItemDataRole.UserRole) == key:
+                item = candidate
+                break
+            iterator += 1
+        if item is None:
+            return False
+        self.viewer.cancel_selection_drag()
+        self.viewer.cancel_rotation_center_pick()
+        self._movement_panel_revision += 1  # odmítnout starý tah i při výběru stejného dílu
+        if target.kind == "component":
+            self.select((target.id,))
+        else:
+            self.select_constraint(target.id)
+        self._refresh_move_handles()
+        self.tree_dock.show()
+        parent = item.parent()
+        while parent is not None:
+            parent.setExpanded(True)
+            parent = parent.parent()
+        self.tree.scrollToItem(item)
+        return True
 
     @staticmethod
     def _exec_dialog(dialog):

@@ -2897,6 +2897,122 @@ def _self_test_assembly_parameter_rename(assembly, lines) -> bool:
         assert session.assembly.to_dict() == original
 
 
+def _self_test_assembly_parameter_navigation(assembly, lines) -> bool:
+    """Skutečné kliknutí v modálním editoru: výběr ve stromu i nativním 3D, bez přepočtu."""
+    import json
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
+
+    from skodacad.assembly_parameter_usage import UsageTarget
+    from skodacad.gui.assembly_parameters import AssemblyParametersDialog
+
+    session, viewer = assembly.session, assembly.viewer
+    mark = len(session._undo)
+    original = session.assembly.to_dict()
+    failures = []
+
+    def finish_cell(dialog, text):
+        field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+        field.selectAll()
+        QTest.keyClicks(field, text)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QTest.qWait(20)
+
+    def click(dialog, kind, id_):
+        row = dialog._usage_targets.index(UsageTarget(kind, id_))
+        item = dialog.usage_table.item(row, 0)
+        dialog.usage_table.scrollToItem(item)
+        QTest.mouseClick(dialog.usage_table.viewport(), Qt.MouseButton.LeftButton,
+                         pos=dialog.usage_table.visualItemRect(item).center())
+        QTest.qWait(30)
+
+    def interact():
+        dialog = QApplication.activeModalWidget()
+        try:
+            assert isinstance(dialog, AssemblyParametersDialog), "editor se neotevřel"
+            QTest.mouseClick(dialog.add_button, Qt.MouseButton.LeftButton)
+            finish_cell(dialog, "polovina")
+            dialog.table.setCurrentCell(1, 1)
+            dialog.table.editItem(dialog.table.item(1, 1))
+            finish_cell(dialog, "mezera/2")
+            dialog.table.setCurrentCell(0, 0)
+            QTest.mouseClick(dialog.rename_button, Qt.MouseButton.LeftButton)
+            finish_cell(dialog, "vule")
+            dialog.table.setCurrentCell(0, 1)
+            dialog.table.editItem(dialog.table.item(0, 1))
+            finish_cell(dialog, "12,5")
+            renames = list(dialog._renames)
+            assert ("mezera", "vule") in renames
+            click(dialog, "component", "nozicka_1")
+            assert assembly._selection == (("nozicka_1",),) and assembly._constraint is None
+            assert json.loads(assembly.tree.currentItem().data(0, Qt.ItemDataRole.UserRole)) == [
+                "nozicka_1"]
+            assert viewer._highlight is not None, "díl se ve 3D nezvýraznil"
+            viewer.selection_moved.emit(old_move)
+            assert session.assembly.to_dict() == before, "přijal se starý tah"
+            assembly.tree.collapseAll()
+            click(dialog, "constraint", "v1")
+            assert assembly._constraint == "v1" and not assembly._selection
+            assert json.loads(assembly.tree.currentItem().data(0, Qt.ItemDataRole.UserRole)) == {
+                "constraint": "v1"}
+            assert assembly.tree.currentItem().parent().isExpanded()
+            assert viewer._highlight is not None and len(session.constraint_faces("v1")) == 2
+            assert dialog.parameters() == {"vule": 12.5, "polovina": "vule/2"}
+            assert dialog._renames == renames and dialog.isVisible()
+            assert "Vybráno:" in dialog.usage_navigation.text()
+            dialog.grab().save(str(user_dir() / "self-test-vyber-z-pouziti-parametru.png"))
+            click(dialog, "parameter", "polovina")
+            assert dialog.table.currentRow() == 1 and assembly._constraint == "v1"
+            assert session.assembly is source and session.result is result
+            assert session.assembly.to_dict() == before
+            assert (len(session._undo), len(session._redo), session.dirty) == history
+            assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+            QTest.mouseClick(dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel),
+                             Qt.MouseButton.LeftButton)
+        except Exception:  # noqa: BLE001 -- chyby z událostí modálního dialogu do protokolu
+            failures.append(traceback.format_exc())
+            if dialog is not None:
+                dialog.reject()
+
+    try:
+        session.set_placement("nozicka_1", position=["mezera-32", -17, -3],
+                              rotation=[0, 0, "mezera"])
+        assembly._refresh()
+        assembly.select(("nozicka_1",))
+        assembly.raise_()
+        assembly.activateWindow()
+        QTest.qWait(100)
+        source, result = session.assembly, session.result
+        before = source.to_dict()
+        history = (len(session._undo), len(session._redo), session.dirty)
+        sources = {s.file: s.file.read_bytes() for s in result.statuses}
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        old_move = {"token": assembly._move_token(), "delta": [5, 0, 0]}
+        QTimer.singleShot(100, interact)
+        QTest.mouseClick(assembly.parameters_button, Qt.MouseButton.LeftButton)
+        assert not failures, "\n".join(failures)
+        assert session.assembly is source and session.result is result
+        assert session.assembly.to_dict() == before and assembly._constraint == "v1"
+        assert (len(session._undo), len(session._redo), session.dirty) == history
+        assert len(result.constraints) == 7 and all(c.state == "ok" for c in result.constraints)
+        assert all(path.read_bytes() == content for path, content in sources.items())
+        lines.append("✓ Výběr z použití parametru sestavy: skutečné kliknutí na díl, vazbu "
+                     "a navazující parametr; strom i nativní 3D zvýraznění, rozbalení vazeb, "
+                     "pracovní přejmenování a 12,5 zachovány; starý tah odmítnut, kamera, "
+                     "model, výsledek, historie a zdroje beze změn, 7 vazeb splněno, "
+                     "Zrušit ponechá pouze výběr")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika sestavené aplikace
+        lines.append("✕ Výběr z použití parametru sestavy:\n" + traceback.format_exc())
+        return False
+    finally:
+        while len(session._undo) > mark:
+            session.undo()
+        assert session.assembly.to_dict() == original
+
+
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
     """Zabalená aplikace: vazby P5.3 – řešič (numpy) v balíčku, ukázka plně určená."""
     sample = folder / "sestavy" / "krabicka_s_vazbami.json"
@@ -2929,6 +3045,7 @@ def _self_test_constraints(window, lines: list[str], folder) -> bool:
     if ok:
         ok = _self_test_assembly_parameters(assembly, lines) and ok
         ok = _self_test_assembly_parameter_rename(assembly, lines) and ok
+        ok = _self_test_assembly_parameter_navigation(assembly, lines) and ok
     session.dirty = False
     assembly.close()
     return ok

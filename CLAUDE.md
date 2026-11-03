@@ -1541,6 +1541,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Zpět. Název buňky má předchozí jméno v UserRole; položky nemazat kvůli přístupnosti.
   Nativní scénář „Přejmenování parametru sestavy“ ověřuje geometrii, kameru,
   všechny druhy odkazů, sedm vazeb, historii a Zrušit.
+- P7.35: kliknutí nebo Enter v přehledu použití vybírá `UsageTarget(kind, id)`;
+  nikdy neparsovat popisek ani hledat podle jména. Komponenta/vazba se vybere
+  ve stromu a existujícím 3D zvýrazněním, parametr v horní tabulce. Editor zůstává
+  modální a otevřený s pracovními hodnotami i přejmenováním. Zrušit zahodí úpravy,
+  výběr ponechá. Bez přepočtu, historie, změny kamery, izolace či viditelnosti.
+  Ověřit identitu původní sestavy, existenci id i položky stromu; úspěšný výběr
+  zvýší revizi pohybu a zruší tah/výběr reference i při stejném dílu. Enter řešit
+  vlastní zkratkou, ne souběhem cellClicked/cellActivated po obnově přehledu.
+  Nativní scénář „Výběr z použití parametru sestavy“ ověřuje skutečnou myš,
+  strom, 3D překryv, pracovní změny, odmítnutí starého tahu a zachovanou sestavu.
 
 - `Document.from_dict` dřív neznámé klíče přeskočil – soubor sestavy by otevřel jako
   **prázdný díl** a uložením přepsal. Proto kontrola `kind` hned po `format` a sestava má

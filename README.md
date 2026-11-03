@@ -315,6 +315,10 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   pole, původní výraz a přímá či nepřímá závislost přes další parametry.
   Přehled sleduje i úpravy v pracovní tabulce, aniž by přepočítal model. Týká se této
   úrovně sestavy; vazby mohou následně přemístit také další spojené díly.
+  Kliknutí na místo použití vybere díl nebo vazbu ve stromu i ve 3D; na navazující
+  parametr přejde v horní tabulce. Funguje i **Enter** na vybraném řádku přehledu.
+  Editor zůstane otevřený s rozepsanými hodnotami. Výběr nemění kameru, model ani
+  historii a nezobrazuje skryté díly. **Zrušit** zahodí úpravy, výběr ponechá.
   **Přejmenovat** (nebo úprava buňky názvu) automaticky přepíše odkazy v dalších
   parametrech, všech osách polohy a otočení i vzdálenostních vazbách. Například změna
   `D` nepřepíše `D2`. Obsazený či neplatný název se odmítne. Přejmenování je nejprve
