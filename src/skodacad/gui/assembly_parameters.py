@@ -34,13 +34,15 @@ class AssemblyParametersDialog(QDialog):
     def __init__(self, parameters: dict[str, Any], apply: Callable[[dict], None], parent=None,
                  *, assembly: Assembly | None = None,
                  apply_renamed: Callable[[dict, Sequence[tuple[str, str]]], None] | None = None,
-                 select_usage: Callable[[UsageTarget], bool] | None = None):
+                 select_usage: Callable[[UsageTarget], bool] | None = None,
+                 preview: Callable[[dict, Sequence[tuple[str, str]]], bool] | None = None):
         super().__init__(parent)
         self._apply = apply
         self._apply_renamed = apply_renamed
         self._renames: list[tuple[str, str]] = []
         self._assembly = copy.deepcopy(assembly)
         self._select_usage = select_usage
+        self._preview = preview
         self._usage_targets: list[UsageTarget | None] = []
         self.setWindowTitle("Parametry sestavy")
         self.resize(780, 640)
@@ -99,8 +101,8 @@ class AssemblyParametersDialog(QDialog):
         self.message.setWordWrap(True)
         self.message.setAccessibleName("Stav parametrů")
         layout.addWidget(self.message)
-        footnote = QLabel("Změna názvu upraví i jeho odkazy. Změny se projeví až po potvrzení, "
-                          "všechny najednou. "
+        footnote = QLabel("Změna názvu upraví i jeho odkazy. Náhled ukáže dopad před potvrzením; "
+                          "Použít změny přijme celou dávku najednou. "
                           "Zpět vrátí celou úpravu. Rozměry zdrojových dílů se zde nemění.")
         footnote.setWordWrap(True)
         layout.addWidget(footnote)
@@ -109,6 +111,10 @@ class AssemblyParametersDialog(QDialog):
         self.apply_button = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         self.apply_button.setText("Použít změny")
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Zrušit")
+        self.preview_button = self.buttons.addButton("Náhled změn",
+                                                     QDialogButtonBox.ButtonRole.ActionRole)
+        self.preview_button.setVisible(preview is not None)
+        self.preview_button.clicked.connect(self.show_preview)
         # Enter patří editoru buňky; celou dávku potvrzuje až tlačítko Použít změny.
         for button in self.buttons.buttons():
             button.setAutoDefault(False)
@@ -303,6 +309,7 @@ class AssemblyParametersDialog(QDialog):
         finally:
             self.table.blockSignals(False)
             self._selection_changed()
+            self.preview_button.setEnabled(self.apply_button.isEnabled())
 
     def _error(self, text):
         self.message.setText(text)
@@ -347,3 +354,14 @@ class AssemblyParametersDialog(QDialog):
         finally:
             QApplication.restoreOverrideCursor()
         super().accept()
+
+    def show_preview(self):
+        self.table.setFocus()  # převzít rozepsanou buňku stejně jako při Použít
+        self._update()
+        if not self.preview_button.isEnabled() or self._preview is None:
+            return
+        try:
+            if self._preview(self.parameters(), tuple(self._renames)):
+                super().accept()  # dávku už přijal náhled, nepoužívat ji podruhé
+        except AssemblyError as exc:
+            self._error(str(exc))
