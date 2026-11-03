@@ -53,6 +53,12 @@
   [P8.3 obnovu vzhledu stromu](docs/p8-3-obnoveni-stromu.md). Agregace průhlednosti
   smí žít jen v jednom `_refresh_tree_visibility`, bez trvalé cache a bez omezení
   geometrických kontrol; porovnat před/po na stejných vstupech obou OS.
+- **Navazující pokyn autora z 3. 11. 2026 „P8.4 dlouhý provoz s měřením paměti“:**
+  [P8.4 pracovní cykly a RSS](docs/p8-4-dlouhy-provoz.md) v jednom dlouho žijícím
+  nativním procesu. Primární cykly bez vynuceného GC nebo testového úklidu oken;
+  zvlášť rodič/oba worker pooly, správná geometrie a obnova po zrušení/pádu/STEP limitu.
+  MainWindow vlastní okna sestav: přijatý close je zruší, destroyed odstraní obálku
+  ze seznamu bez volání Qt metod. Zrušené zavírání neuložené sestavy ji musí zachovat.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1657,7 +1663,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
 | P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 výkon/stabilizace | P8.1/P8.2 vydané (`93843f4`); [P8.3 obnova stromu](docs/p8-3-obnoveni-stromu.md) místně ověřena | úplné kontroly a vydání P8.3 obou OS, P8.4 dlouhý provoz, P8.5 přijetí |
+| P8 výkon/stabilizace | P8.1–P8.3 vydané (`16b760c`); [P8.4 dlouhý provoz](docs/p8-4-dlouhy-provoz.md) rozpracován | úplné měření a kontroly P8.4 obou OS, P8.5 přijetí |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada

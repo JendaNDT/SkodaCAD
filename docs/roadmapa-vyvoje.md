@@ -52,7 +52,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1/P8.2 vydané (`93843f4`); [P8.3 obnova stromu](p8-3-obnoveni-stromu.md) místně ověřena | úplné kontroly a vydání P8.3 obou OS, P8.4 dlouhý provoz a P8.5 přijetí |
+| P8 | P8.1–P8.3 vydané (`16b760c`); [P8.4 dlouhý provoz](p8-4-dlouhy-provoz.md) rozpracován | úplné měření a kontroly P8.4 obou OS, P8.5 přijetí |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
@@ -328,8 +328,15 @@ jako `93843f4` po úplných testech, profilech a stažených self-testech obou s
 [jediná dočasná agregace vzhledu stromu a srovnání před/po](p8-3-obnoveni-stromu.md).
 Na M4 obnova stromu 89,92 → 21,61 ms, celé otevření 800 kopií 363,68 → 305,54 ms;
 tři vzorky nejsou záruka rychlosti. Regrese zachovaly geometrii i stav modelu.
-Před sloučením zbývají celé kontroly, srovnání a stažené aplikace obou OS;
-samotná místní čísla nejsou hotové vydání. P8.4/P8.5 tím nejsou provedené.
+P8.3 je vydané jako `16b760c` po úplných 2872 testech, sestavení, stažených
+self-testech a novém srovnání obou OS z main.
+
+**P8.4 zahájeno 3. 11. 2026 přímým pokynem autora:**
+[dlouhý provoz a měření paměti](p8-4-dlouhy-provoz.md). Jeden nativní proces,
+opakované editace/ukládání/rušení/export/obnova workeru a velká sestava.
+Diagnostický pilot prokázal zadržená zavřená okna sestav; oprava jejich vlastnictví
+má regresní důkaz. Úplný dlouhý běh a kontroly obou OS zůstávají branou vydání.
+P8.5 autorské přijetí a rozpočty tím nejsou provedené.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
    studií; startup, přepočet, přenos, paměť, odezva a ukončení dlouhé úlohy.

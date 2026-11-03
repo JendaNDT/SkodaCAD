@@ -1274,9 +1274,16 @@ class MainWindow(QMainWindow):
             self._assembly_runner = BackgroundRebuilder()  # vlastní – díl tu má svůj přepočet
         window = AssemblyWindow(self._viewer_factory, runner=self._assembly_runner,
                                 user_dir=self.user_dir, open_part=self._open_part_of_assembly)
-        self.assembly_windows = [w for w in self.assembly_windows if w.isVisible()]
+        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        window.destroyed.connect(lambda _object=None, owned=window:
+                                 self._assembly_window_destroyed(owned))
+        self.assembly_windows = [w for w in self.assembly_windows if isValid(w) and w.isVisible()]
         self.assembly_windows.append(window)
         return window
+
+    def _assembly_window_destroyed(self, window: AssemblyWindow) -> None:
+        # Identita Python obálky je bezpečná i po zrušení C++ objektu; žádné Qt metody.
+        self.assembly_windows = [w for w in self.assembly_windows if w is not window]
 
     def open_assembly(self, path: str | Path, template: bool = False) -> AssemblyWindow | None:
         """Otevře sestavu ve vlastním okně (ukázku jako šablonu – Uložit se zeptá kam)."""
@@ -3063,7 +3070,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         # Otevřené sestavy se zavřou s dílem (každá se zeptá na své neuložené změny).
-        if any(window.isVisible() and not window.close() for window in self.assembly_windows):
+        if any(isValid(window) and window.isVisible() and not window.close()
+               for window in self.assembly_windows):
             event.ignore()
             return
         if self._confirm_discard():
