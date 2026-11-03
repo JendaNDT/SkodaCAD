@@ -1398,7 +1398,8 @@ class AssemblyWindow(QMainWindow):
         if self.session.assembly is None:
             return
         dialog = AssemblyParametersDialog(self.session.assembly.parameters,
-                                           self.apply_parameters, self)
+                                           self.apply_parameters, self,
+                                           assembly=self.session.assembly)
         try:
             self._exec_dialog(dialog)
         finally:
