@@ -72,6 +72,7 @@ from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.assembly_panel import ComponentScroll, MovementTabs
+from skodacad.gui.assembly_parameters import AssemblyParametersDialog
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section
@@ -195,7 +196,14 @@ class AssemblyWindow(QMainWindow):
             "Izolace ji navíc omezuje na vybranou komponentu.")
         dock = self.tree_dock = QDockWidget("Komponenty", self)
         dock.setObjectName("assembly_components")
-        dock.setWidget(self.tree)
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.parameters_button = QPushButton("Parametry sestavy…")
+        self.parameters_button.clicked.connect(self.edit_parameters)
+        layout.addWidget(self.parameters_button)
+        layout.addWidget(self.tree)
+        dock.setWidget(panel)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
@@ -1008,6 +1016,7 @@ class AssemblyWindow(QMainWindow):
         self.constraint_action = self._action("Přidat vazbu…", self.add_constraint_dialog,
                                               "Ctrl+L")
         self.reload_action = self._action("Načíst díly znovu", self.reload, "F5")
+        self.parameters_action = self._action("Parametry sestavy…", self.edit_parameters)
         self.check_action = self._action("Zkontrolovat kolize a vůle", self.run_check, "F7")
         self.bill_action = self._action("Uložit kusovník CSV…", self.save_bill_dialog)
         self.export_action = self._action("Exportovat STEP…", self.export_dialog)
@@ -1051,7 +1060,8 @@ class AssemblyWindow(QMainWindow):
         file_menu.addAction(self._action("Zavřít sestavu", self.close, "Ctrl+W"))
         edit_menu = bar.addMenu("Ú&pravy")
         for action in (self.undo_action, self.redo_action, self.insert_action,
-                       self.remove_action, self.constraint_action, self.reload_action):
+                       self.remove_action, self.constraint_action, self.parameters_action,
+                       self.reload_action):
             edit_menu.addAction(action)
         check_menu = bar.addMenu("&Kontrola")
         check_menu.addAction(self.check_action)
@@ -1383,6 +1393,25 @@ class AssemblyWindow(QMainWindow):
             return
         if self.open_part is not None:
             self.open_part(file)
+
+    def edit_parameters(self) -> None:
+        if self.session.assembly is None:
+            return
+        dialog = AssemblyParametersDialog(self.session.assembly.parameters,
+                                           self.apply_parameters, self)
+        try:
+            self._exec_dialog(dialog)
+        finally:
+            dialog.deleteLater()
+
+    @staticmethod
+    def _exec_dialog(dialog):
+        return dialog.exec()
+
+    def apply_parameters(self, parameters: dict) -> None:
+        """Chyba zůstane v editoru; session přijímá jen celou platnou změnu."""
+        self.session.set_parameters(parameters)
+        self._refresh()
 
     def undo(self) -> None:
         if self.session.can_undo:
@@ -2115,7 +2144,7 @@ class AssemblyWindow(QMainWindow):
         self._refresh_summary(result)
         has = self.session.assembly is not None
         for action in (self.save_action, self.save_as_action, self.insert_action,
-                       self.reload_action):
+                       self.reload_action, self.parameters_action, self.parameters_button):
             action.setEnabled(has)
         self._refresh_pick_note()
         self._refresh_checks()

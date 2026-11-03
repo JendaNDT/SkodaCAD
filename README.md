@@ -304,6 +304,13 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
 - *Otevřít díl* otevře soubor dílu v hlavním okně. Po uložení a návratu do okna sestavy se
   změna projeví sama (nebo F5 *Načíst díly znovu*); když se díl od posledního uložení sestavy
   změnil, sestava upozorní „zkontroluj polohy“.
+- **Parametry sestavy…** nad stromem komponent (také *Úpravy → Parametry sestavy…*)
+  otevře tabulku názvů, hodnot nebo výrazů a vypočtených výsledků. Parametry lze přidávat,
+  měnit i mazat; podporují desetinnou čárku a odkazy na jiné parametry, např. `roztec/2`.
+  Názvy pak použij v polohách, otočeních nebo vzdálenostních vazbách. **Použít změny**
+  přepočítá celou úpravu jako jeden krok Zpět; **Zrušit** ponechá sestavu beze změny.
+  Chybný výraz, smazání používaného parametru nebo nový spor vazeb se nepřijme a důvod
+  zůstane v editoru. Parametry sestavy nemění rozměry zdrojových souborů dílů.
 - Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
   o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
   i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.
