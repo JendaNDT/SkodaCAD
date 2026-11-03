@@ -1532,6 +1532,15 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   soubory a vnitřní parametry podsestav se nečtou. Syntaxe s chybou nesmí být
   vydávána za „nepoužito“. Nativní scénář „Použití parametrů sestavy“ ověřuje
   skutečný výběr řádku i přímý/nepřímý odkaz.
+- P7.34: Přejmenovat nebo editace názvu přepíše přesné odkazy v pracovní tabulce
+  i v pracovní kopii poloh/otočení a vzdálenostních vazeb. AST určí UTF-8 rozsahy
+  tokenů (`assembly_parameter_rename.py`); komentáře, podobné názvy, id a soubory
+  zůstávají. Nečitelný výraz či obsazený/neplatný název se odmítne atomicky.
+  Session přijme finální parametry a pořadí přejmenování jako jednu transakci
+  (nepřepisovat parametry dvakrát). Samostatné API `rename_parameter` dává jeden
+  Zpět. Název buňky má předchozí jméno v UserRole; položky nemazat kvůli přístupnosti.
+  Nativní scénář „Přejmenování parametru sestavy“ ověřuje geometrii, kameru,
+  všechny druhy odkazů, sedm vazeb, historii a Zrušit.
 
 - `Document.from_dict` dřív neznámé klíče přeskočil – soubor sestavy by otevřel jako
   **prázdný díl** a uložením přepsal. Proto kontrola `kind` hned po `format` a sestava má

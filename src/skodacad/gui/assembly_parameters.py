@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import keyword
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -24,15 +24,19 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.assembly import Assembly, AssemblyError
+from skodacad.assembly_parameter_rename import rename_parameters, rename_references
 from skodacad.assembly_parameter_usage import parameter_usage
 from skodacad.expressions import CONSTANTS, FUNCTIONS, ExpressionError, resolve_parameters
 
 
 class AssemblyParametersDialog(QDialog):
     def __init__(self, parameters: dict[str, Any], apply: Callable[[dict], None], parent=None,
-                 *, assembly: Assembly | None = None):
+                 *, assembly: Assembly | None = None,
+                 apply_renamed: Callable[[dict, Sequence[tuple[str, str]]], None] | None = None):
         super().__init__(parent)
         self._apply = apply
+        self._apply_renamed = apply_renamed
+        self._renames: list[tuple[str, str]] = []
         self._assembly = copy.deepcopy(assembly)
         self.setWindowTitle("Parametry sestavy")
         self.resize(780, 640)
@@ -52,11 +56,14 @@ class AssemblyParametersDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table, 2)
+        layout.addWidget(self.table, 1)
         row = QHBoxLayout()
         self.add_button = QPushButton("Přidat parametr")
+        self.rename_button = QPushButton("Přejmenovat")
+        self.rename_button.setToolTip("Uprav název vybraného parametru; jeho odkazy se přepíší. "
+                                     "Vše potvrdíš tlačítkem Použít změny.")
         self.delete_button = QPushButton("Smazat vybraný")
-        for button in (self.add_button, self.delete_button):
+        for button in (self.add_button, self.rename_button, self.delete_button):
             button.setAutoDefault(False)
             row.addWidget(button)
         row.addStretch()
@@ -82,7 +89,8 @@ class AssemblyParametersDialog(QDialog):
         self.message.setWordWrap(True)
         self.message.setAccessibleName("Stav parametrů")
         layout.addWidget(self.message)
-        footnote = QLabel("Změny se projeví až po potvrzení, všechny najednou. "
+        footnote = QLabel("Změna názvu upraví i jeho odkazy. Změny se projeví až po potvrzení, "
+                          "všechny najednou. "
                           "Zpět vrátí celou úpravu. Rozměry zdrojových dílů se zde nemění.")
         footnote.setWordWrap(True)
         layout.addWidget(footnote)
@@ -98,10 +106,11 @@ class AssemblyParametersDialog(QDialog):
         layout.addWidget(self.buttons)
         for name, value in parameters.items():
             self._append(name, self._format(value))
-        self.table.itemChanged.connect(self._update)
+        self.table.itemChanged.connect(self._item_changed)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.currentCellChanged.connect(self._selection_changed)
         self.add_button.clicked.connect(self.add_parameter)
+        self.rename_button.clicked.connect(self.edit_parameter_name)
         self.delete_button.clicked.connect(self.delete_parameter)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
@@ -118,15 +127,19 @@ class AssemblyParametersDialog(QDialog):
         self.table.insertRow(row)
         for column, text in enumerate((name, value, "")):
             item = QTableWidgetItem(text)
+            if column == 0:
+                item.setData(Qt.ItemDataRole.UserRole, name.strip())
             if column == 2:
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, column, item)
         return row
 
-    def parameters(self):
+    def parameters(self, name_at=None):
         parameters = {}
         for row in range(self.table.rowCount()):
             name = self.table.item(row, 0).text().strip()
+            if name_at is not None and row == name_at[0]:
+                name = name_at[1]
             text = self.table.item(row, 1).text().strip()
             if (not name.isidentifier() or keyword.iskeyword(name)
                     or name in CONSTANTS or name in FUNCTIONS):
@@ -145,7 +158,43 @@ class AssemblyParametersDialog(QDialog):
 
     def _selection_changed(self, *_args):
         self.delete_button.setEnabled(self.table.currentRow() >= 0)
+        self.rename_button.setEnabled(self.table.currentRow() >= 0)
         self._refresh_usage()
+
+    def edit_parameter_name(self):
+        row = self.table.currentRow()
+        if row >= 0:
+            self.table.setCurrentCell(row, 0)
+            self.table.editItem(self.table.item(row, 0))
+
+    def _item_changed(self, item):
+        if item.column() != 0 or item.text().strip() == item.data(Qt.ItemDataRole.UserRole):
+            self._update()
+            return
+        old, new = item.data(Qt.ItemDataRole.UserRole), item.text().strip()
+        error = None
+        self.table.blockSignals(True)
+        try:
+            parameters = rename_parameters(self.parameters(name_at=(item.row(), old)), old, new)
+            candidate = copy.deepcopy(self._assembly)
+            if candidate is not None:
+                rename_references(candidate, old, new)
+            for row in range(self.table.rowCount()):
+                name_item = self.table.item(row, 0)
+                name = new if row == item.row() else name_item.text().strip()
+                name_item.setText(name)
+                name_item.setData(Qt.ItemDataRole.UserRole, name)
+                self.table.item(row, 1).setText(self._format(parameters[name]))
+            self._assembly = candidate
+            self._renames.append((old, new))
+        except AssemblyError as exc:
+            item.setText(old)
+            error = str(exc)
+        finally:
+            self.table.blockSignals(False)
+        self._update()
+        if error is not None:
+            self._error(error)
 
     def _refresh_usage(self):
         row = self.table.currentRow()
@@ -239,7 +288,13 @@ class AssemblyParametersDialog(QDialog):
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            self._apply(self.parameters())
+            if self._renames and self._apply_renamed is not None:
+                self._apply_renamed(self.parameters(), tuple(self._renames))
+            elif self._renames and self._assembly is not None:
+                raise AssemblyError("Přejmenování zde nelze potvrdit. Otevři editor "
+                                    "tlačítkem Parametry sestavy v okně sestavy.")
+            else:
+                self._apply(self.parameters())
         except AssemblyError as exc:
             self._error(str(exc))
             return

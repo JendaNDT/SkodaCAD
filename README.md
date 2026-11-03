@@ -315,6 +315,10 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   pole, původní výraz a přímá či nepřímá závislost přes další parametry.
   Přehled sleduje i úpravy v pracovní tabulce, aniž by přepočítal model. Týká se této
   úrovně sestavy; vazby mohou následně přemístit také další spojené díly.
+  **Přejmenovat** (nebo úprava buňky názvu) automaticky přepíše odkazy v dalších
+  parametrech, všech osách polohy a otočení i vzdálenostních vazbách. Například změna
+  `D` nepřepíše `D2`. Obsazený či neplatný název se odmítne. Přejmenování je nejprve
+  pracovní změna; **Použít změny** potvrdí celou dávku a **Zpět** ji vrátí najednou.
 - Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
   o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
   i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.

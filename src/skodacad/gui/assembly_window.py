@@ -1399,7 +1399,8 @@ class AssemblyWindow(QMainWindow):
             return
         dialog = AssemblyParametersDialog(self.session.assembly.parameters,
                                            self.apply_parameters, self,
-                                           assembly=self.session.assembly)
+                                           assembly=self.session.assembly,
+                                           apply_renamed=self.apply_parameters)
         try:
             self._exec_dialog(dialog)
         finally:
@@ -1409,9 +1410,9 @@ class AssemblyWindow(QMainWindow):
     def _exec_dialog(dialog):
         return dialog.exec()
 
-    def apply_parameters(self, parameters: dict) -> None:
+    def apply_parameters(self, parameters: dict, renames=()) -> None:
         """Chyba zůstane v editoru; session přijímá jen celou platnou změnu."""
-        self.session.set_parameters(parameters)
+        self.session.set_parameters(parameters, renames=renames)
         self._refresh()
 
     def undo(self) -> None:
