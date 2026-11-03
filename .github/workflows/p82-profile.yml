@@ -1,0 +1,64 @@
+name: P8.2 profilování hlavního vlákna
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "tests/profile_p8.py"
+      - "tests/test_p82_profile.py"
+      - ".github/workflows/p82-profile.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tests/profile_p8.py"
+      - "tests/test_p82_profile.py"
+      - ".github/workflows/p82-profile.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: p82-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  profile:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui]"
+      - name: Nativní podpora přístupnosti macOS
+        if: runner.os == 'macOS'
+        run: python packaging/build_macos_accessibility.py
+      - name: Účetnictví intervalů a geometrické reference
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_p82_profile.py tests/test_p81_reference.py
+      - name: Izolované kontrolní běhy a profily
+        run: python tests/profile_p8.py --output p82-profile.json --repeats 3
+      - name: Surové profily a evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p82-${{ matrix.os }}
+          path: |
+            p82-profile.json
+            p82-profile/**/result.json
+            p82-profile/**/process.log
+            p82-profile/**/native-window.png
+          retention-days: 30
