@@ -2674,6 +2674,101 @@ def _self_test_cylinder_rotation_axis(assembly, lines, *, kind="cylinder", singl
         assembly.show_all()
 
 
+def _self_test_assembly_parameters(assembly, lines) -> bool:
+    """Skutečný modální editor: zadání, vazba, Zpět/Znovu a odmítnuté smazání."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
+
+    from skodacad.gui.assembly_parameters import AssemblyParametersDialog
+
+    session, viewer = assembly.session, assembly.viewer
+    failures = []
+    before = session.assembly.to_dict()
+
+    def edit(dialog, row, column, text):
+        dialog.table.setFocus()
+        dialog.table.setCurrentCell(row, column)
+        dialog.table.editItem(dialog.table.item(row, column))
+        field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+        field.selectAll()
+        QTest.keyClicks(field, text)
+        QTest.keyClick(field, Qt.Key.Key_Return)
+        QTest.qWait(20)  # delegát buňky se zavírá odloženě
+
+    def interact(remove=False):
+        dialog = QApplication.activeModalWidget()
+        try:
+            assert isinstance(dialog, AssemblyParametersDialog), "editor se neotevřel"
+            if remove:
+                dialog.table.setCurrentCell(0, 0)
+                QTest.mouseClick(dialog.delete_button, Qt.MouseButton.LeftButton)
+                QTest.mouseClick(dialog.apply_button, Qt.MouseButton.LeftButton)
+                assert dialog.isVisible() and "mezera" in dialog.message.text()
+                assert session.assembly.to_dict() == before
+                QTest.mouseClick(dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel),
+                                 Qt.MouseButton.LeftButton)
+                return
+            edit(dialog, 0, 1, "12,5")
+            assert dialog.table.item(0, 2).text() == "12,5"
+            QTest.mouseClick(dialog.add_button, Qt.MouseButton.LeftButton)
+            field = next(e for e in dialog.table.findChildren(QLineEdit) if e.isVisible())
+            field.selectAll()
+            QTest.keyClicks(field, "polovina")
+            QTest.keyClick(field, Qt.Key.Key_Return)
+            QTest.qWait(20)
+            edit(dialog, 1, 1, "mezera/2")
+            assert dialog.table.item(1, 2).text() == "6,25"
+            assert session.assembly.to_dict() == before, "zadání předčasně změnilo sestavu"
+            QTest.qWait(50)
+            dialog.grab().save(str(user_dir() / "self-test-parametry-sestavy.png"))
+            QTest.mouseClick(dialog.apply_button, Qt.MouseButton.LeftButton)
+            assert not dialog.isVisible(), dialog.message.text()
+        except Exception:  # noqa: BLE001 -- výjimka z časovače nesmí zůstat mimo self-test
+            failures.append(traceback.format_exc())
+            if dialog is not None:
+                dialog.reject()
+
+    try:
+        assembly.raise_()
+        assembly.activateWindow()
+        assembly._refresh()
+        QTest.qWait(100)
+        direction, scale = viewer._view.Proj(), viewer._view.Scale()
+        history = len(session._undo)
+        bounds = next(i.part.bounding_box() for i in session.result.instances
+                      if i.ids == ("vicko",))
+        z_before = bounds.max.Z
+        QTimer.singleShot(100, interact)
+        QTest.mouseClick(assembly.parameters_button, Qt.MouseButton.LeftButton)
+        assert not failures, "\n".join(failures)
+        assert session.assembly.parameters == {"mezera": 12.5, "polovina": "mezera/2"}
+        lid = next(i.part for i in session.result.instances if i.ids == ("vicko",))
+        assert lid.is_valid and abs(lid.bounding_box().max.Z-z_before-12.5) < 1e-7
+        assert session.result.complete and all(c.state == "ok" for c in session.result.constraints)
+        assert len(session._undo) == history + 1
+        assert viewer._view.Proj() == direction and abs(viewer._view.Scale()-scale) < 1e-9
+        assembly.undo_action.trigger()
+        assert session.assembly.to_dict() == before and len(session._undo) == history
+        assembly.redo_action.trigger()
+        assert session.assembly.parameters["mezera"] == 12.5
+        assembly.undo_action.trigger()
+        result = session.result
+        history = (len(session._undo), len(session._redo), session.dirty)
+        QTimer.singleShot(100, lambda: interact(remove=True))
+        assembly.parameters_action.trigger()
+        assert not failures, "\n".join(failures)
+        assert session.assembly.to_dict() == before and session.result is result
+        assert (len(session._undo), len(session._redo), session.dirty) == history
+        lines.append("✓ Parametry sestavy: skutečný editor, Enter v buňce, desetinná čárka, "
+                     "závislý výraz, víčko +12,5 mm a 7 splněných vazeb; jeden krok Zpět/Znovu, "
+                     "kamera zachována, smazání používaného parametru odmítnuto, Zrušit beze změn")
+        return True
+    except Exception:  # noqa: BLE001 -- diagnostika sestavené aplikace
+        lines.append("✕ Parametry sestavy:\n" + traceback.format_exc())
+        return False
+
+
 def _self_test_constraints(window, lines: list[str], folder) -> bool:
     """Zabalená aplikace: vazby P5.3 – řešič (numpy) v balíčku, ukázka plně určená."""
     sample = folder / "sestavy" / "krabicka_s_vazbami.json"
@@ -2703,6 +2798,8 @@ def _self_test_constraints(window, lines: list[str], folder) -> bool:
         else:
             problems = "; ".join(result.problems) if result is not None else "bez výsledku"
             lines.append(f"✕ Vazby: {freedom}, víčko {lifted}; {problems}")
+    if ok:
+        ok = _self_test_assembly_parameters(assembly, lines) and ok
     session.dirty = False
     assembly.close()
     return ok

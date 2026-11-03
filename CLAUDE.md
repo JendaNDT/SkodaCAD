@@ -1512,6 +1512,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 
 ## Známé pasti (sestavy)
 
+- P7.32: **Parametry sestavy…** nad stromem a v Úpravy otevřou pracovní tabulku
+  (`gui/assembly_parameters.py`). Enter dokončí buňku; pouze Použít změny přijímá
+  celou dávku přes `AssemblySession.set_parameters`, jako jeden krok Zpět.
+  Session před přijetím ověří také použití ve všech polohách/otočeních a vzdálenostech
+  vazeb této úrovně. Smazání používaného parametru nesmí způsobit zmizení tělesa ani
+  neplatnou vazbu. Parametry podsestav a zdrojových dílů jsou samostatné.
+  Přepočet buněk zachovává položky tabulky; Enter potřebuje zpracování událostí Qt
+  pro odložené uzavření delegátu. Nativní self-test „Parametry sestavy“ měří skutečný
+  zdvih víčka, vazby, historii, kameru a odmítnutí smazání.
+
 - `Document.from_dict` dřív neznámé klíče přeskočil – soubor sestavy by otevřel jako
   **prázdný díl** a uložením přepsal. Proto kontrola `kind` hned po `format` a sestava má
   vlastní verzi 29 (díly se dál ukládají v nejnižší potřebné verzi 24–28).

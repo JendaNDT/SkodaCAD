@@ -80,7 +80,7 @@ jednom systému a otevřená na druhém) – vše úspěšně. Ruční zkouška 
 
 ## Omezení a zbývá
 
-- Okno nemá editor parametrů sestavy – výraz ve vzdálenosti jde změnit přímo v poli vazby.
+- Editor parametrů sestavy doplnila P7.32; výraz ve vzdálenosti lze měnit i přímo v poli vazby.
 - Vazby jen mezi komponentami nejvyšší úrovně; vazby uvnitř podsestavy se mění v jejím souboru.
 - Úhel, tečnost, hrany a body, tažení vázaných dílů myší a pohyb mechanismů jsou mimo P5.3.
 - Ruční zkouška na Windows a Macu a přijetí P5 (P5.5) jsou na autorovi; P5.4 kolize, kusovník

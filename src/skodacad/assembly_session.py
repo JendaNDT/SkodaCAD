@@ -747,7 +747,29 @@ class AssemblySession:
         return self._change(mutate)
 
     def set_parameters(self, parameters: dict[str, Any]) -> AssemblyResult:
+        """Parametry i jejich použití musí zůstat platné, jinak se změna nepřijme."""
         def mutate(a: Assembly) -> None:
+            try:
+                resolved = resolve_parameters(parameters)
+                for name, value in resolved.items():
+                    if not math.isfinite(value):
+                        raise AssemblyError(f"Parametr „{name}“ musí být konečné číslo.")
+                uses = [(f"Poloha komponenty „{c.label}“", [*c.position, *c.rotation])
+                        for c in a.components]
+                uses += [(f"Vzdálenost vazby „{c.label}“", [c.value])
+                         for c in a.constraints if c.type == "distance"]
+                for label, values in uses:
+                    for value in values:
+                        try:
+                            if not math.isfinite(evaluate(value, resolved)):
+                                raise ExpressionError("Hodnota musí být konečné číslo.")
+                        except ExpressionError as exc:
+                            raise AssemblyError(f"{label}: {exc} Úprava se nepřijala.") from None
+            except ExpressionError as exc:
+                raise AssemblyError(str(exc)) from None
+            except TypeError:
+                raise AssemblyError("Zkontroluj počet argumentů matematické funkce "
+                                    "ve výrazu. Úprava se nepřijala.") from None
             a.parameters = copy.deepcopy(parameters)
 
         return self._change(mutate)
