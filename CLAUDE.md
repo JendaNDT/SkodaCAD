@@ -1551,6 +1551,16 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   vlastní zkratkou, ne souběhem cellClicked/cellActivated po obnově přehledu.
   Nativní scénář „Výběr z použití parametru sestavy“ ověřuje skutečnou myš,
   strom, 3D překryv, pracovní změny, odmítnutí starého tahu a zachovanou sestavu.
+- P7.36: Náhled změn parametrů používá oddělenou AssemblySession a Cache.fork
+  (sdílet hotové tvary, ne mapy/frontu). Vlastní 3D dialog nemění hlavní model,
+  kameru, výběr, historii ani zdroje; respektuje viditelnost/izolaci/průhlednost.
+  Původní/náhled přepíná zobrazení, Zpět k parametrům zachová draft a Použít přijme
+  dávku jedním Zpět. Ověřit kompletní původní i nový výsledek, identitu/recept/cestu
+  modelu a bajty zdrojů před výpočtem i přijetím. Zastaralý model blokuje také přímé
+  Použít ze starého editoru. `viewer.highlight` chce wrapped tvary, ne build123d Edge;
+  první kreslení náhledu musí počkat na ready nativního prohlížeče. Nativní scénář
+  „Náhled parametrů sestavy“ měří skutečný zdvih víčka, porovnání, návrat, kameru,
+  jeden Zpět/Znovu a odmítnutí zastaralého návrhu.
 
 - `Document.from_dict` dřív neznámé klíče přeskočil – soubor sestavy by otevřel jako
   **prázdný díl** a uložením přepsal. Proto kontrola `kind` hned po `format` a sestava má
