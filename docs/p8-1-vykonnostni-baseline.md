@@ -14,7 +14,13 @@ python tests/benchmark_p8.py --output out/p8-baseline.json --repeats 3 --timeout
 Vyžaduje instalaci `.[dev,gui]` a pro dva případy GUI skutečnou obrazovku. Nastavení
 `QT_QPA_PLATFORM=offscreen` se pro nativní měření nepoužívá. Program vytváří vlastní
 profil a vstupy vedle výstupního JSON; neotvírá ani nezapisuje autorské projekty.
-Existující výstup a složku evidence odmítne přepsat. Výběr části sady:
+Existující výstup a složku evidence odmítne přepsat.
+
+Na macOS před prvním nativním spuštěním sestavit stávající podporu přístupnosti
+pomocí `python packaging/build_macos_accessibility.py` (systémový Xcode SDK).
+Nové workflow tento krok provádí také; přístupnost se při měření nevypíná.
+
+Výběr části sady:
 
 ```bash
 python tests/benchmark_p8.py --output out/p8-core.json --cases history-60,assembly-800
