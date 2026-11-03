@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import keyword
 import math
 from collections.abc import Callable
@@ -22,16 +23,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from skodacad.assembly import AssemblyError
-from skodacad.expressions import ExpressionError, resolve_parameters
+from skodacad.assembly import Assembly, AssemblyError
+from skodacad.assembly_parameter_usage import parameter_usage
+from skodacad.expressions import CONSTANTS, FUNCTIONS, ExpressionError, resolve_parameters
 
 
 class AssemblyParametersDialog(QDialog):
-    def __init__(self, parameters: dict[str, Any], apply: Callable[[dict], None], parent=None):
+    def __init__(self, parameters: dict[str, Any], apply: Callable[[dict], None], parent=None,
+                 *, assembly: Assembly | None = None):
         super().__init__(parent)
         self._apply = apply
+        self._assembly = copy.deepcopy(assembly)
         self.setWindowTitle("Parametry sestavy")
-        self.resize(680, 440)
+        self.resize(780, 640)
         layout = QVBoxLayout(self)
         note = QLabel("Pojmenované hodnoty pro polohy a vazby sestavy. "
                       "Například roztec = 120 a polovina = roztec/2. "
@@ -48,7 +52,7 @@ class AssemblyParametersDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        layout.addWidget(self.table)
+        layout.addWidget(self.table, 2)
         row = QHBoxLayout()
         self.add_button = QPushButton("Přidat parametr")
         self.delete_button = QPushButton("Smazat vybraný")
@@ -57,6 +61,23 @@ class AssemblyParametersDialog(QDialog):
             row.addWidget(button)
         row.addStretch()
         layout.addLayout(row)
+        self.usage_title = QLabel()
+        self.usage_title.setTextFormat(Qt.TextFormat.PlainText)
+        self.usage_title.setWordWrap(True)
+        layout.addWidget(self.usage_title)
+        self.usage_table = QTableWidget(0, 4)
+        self.usage_table.setAccessibleName("Použití vybraného parametru")
+        self.usage_table.setHorizontalHeaderLabels(["Místo", "Pole", "Výraz", "Závislost"])
+        self.usage_table.verticalHeader().hide()
+        self.usage_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.usage_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.usage_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.usage_table.setMinimumHeight(120)
+        layout.addWidget(self.usage_table, 1)
+        scope = QLabel("Odkazy v této sestavě, včetně návazností přes jiné parametry. "
+                       "Vazby mohou přemístit i další spojené díly.")
+        scope.setWordWrap(True)
+        layout.addWidget(scope)
         self.message = QLabel()
         self.message.setWordWrap(True)
         self.message.setAccessibleName("Stav parametrů")
@@ -79,10 +100,13 @@ class AssemblyParametersDialog(QDialog):
             self._append(name, self._format(value))
         self.table.itemChanged.connect(self._update)
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.table.currentCellChanged.connect(self._selection_changed)
         self.add_button.clicked.connect(self.add_parameter)
         self.delete_button.clicked.connect(self.delete_parameter)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        if self.table.rowCount():
+            self.table.setCurrentCell(0, 0)
         self._update()
 
     @staticmethod
@@ -104,7 +128,8 @@ class AssemblyParametersDialog(QDialog):
         for row in range(self.table.rowCount()):
             name = self.table.item(row, 0).text().strip()
             text = self.table.item(row, 1).text().strip()
-            if not name or keyword.iskeyword(name):
+            if (not name.isidentifier() or keyword.iskeyword(name)
+                    or name in CONSTANTS or name in FUNCTIONS):
                 raise AssemblyError(f"Řádek {row + 1}: zadej platný název, například roztec.")
             if name in parameters:
                 raise AssemblyError(f"Název „{name}“ je v tabulce dvakrát. Každý musí být jiný.")
@@ -118,8 +143,47 @@ class AssemblyParametersDialog(QDialog):
                 parameters[name] = int(number) if number.is_integer() else number
         return parameters
 
-    def _selection_changed(self):
+    def _selection_changed(self, *_args):
         self.delete_button.setEnabled(self.table.currentRow() >= 0)
+        self._refresh_usage()
+
+    def _refresh_usage(self):
+        row = self.table.currentRow()
+        if row < 0:
+            self.usage_title.setText("Vyber parametr pro přehled použití.")
+            self.usage_title.setToolTip("")
+            self.usage_table.setRowCount(0)
+            return
+        try:
+            parameters = self.parameters()
+        except AssemblyError as exc:
+            self.usage_title.setText(f"Přehled použití není dostupný: {exc}")
+            self.usage_title.setToolTip("")
+            self.usage_table.setRowCount(0)
+            return
+        name = self.table.item(row, 0).text().strip()
+        report = parameter_usage(self._assembly, parameters, name)
+        if report.warnings:
+            status = "Přehled není úplný: " + report.warnings[0]
+            if len(report.warnings) > 1:
+                status += f" Další nečitelné výrazy: {len(report.warnings) - 1}."
+        else:
+            status = (f"Počet míst: {len(report.uses)}." if report.uses
+                      else "V této sestavě se nepoužívá.")
+        self.usage_title.setText(f"Použití parametru „{name}“ — {status}")
+        self.usage_title.setToolTip("\n".join(report.warnings))
+        # Při přepínání zachovat existující buňky kvůli nativní přístupnosti.
+        self.usage_table.setRowCount(len(report.uses))
+        for index, use in enumerate(report.uses):
+            values = (use.place, use.field, self._format(use.expression),
+                      "Přes " + " → ".join(use.via) if use.via else "Přímo")
+            for column, text in enumerate(values):
+                item = self.usage_table.item(index, column)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.usage_table.setItem(index, column, item)
+                item.setText(text)
+                item.setToolTip(text)
 
     def _update(self, *_args):
         # Buňky ponecháváme na místě; přístupnost drží jejich indexy i při opravě chyby.

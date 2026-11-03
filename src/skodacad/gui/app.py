@@ -2709,6 +2709,8 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
                 QTest.mouseClick(dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel),
                                  Qt.MouseButton.LeftButton)
                 return
+            assert dialog.usage_table.rowCount() == 1
+            assert dialog.usage_table.item(0, 0).text() == "Vazba „Víčko na okraji“ (v1)"
             edit(dialog, 0, 1, "12,5")
             assert dialog.table.item(0, 2).text() == "12,5"
             QTest.mouseClick(dialog.add_button, Qt.MouseButton.LeftButton)
@@ -2717,8 +2719,18 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
             QTest.keyClicks(field, "polovina")
             QTest.keyClick(field, Qt.Key.Key_Return)
             QTest.qWait(20)
-            edit(dialog, 1, 1, "mezera/2")
+            edit(dialog, 1, 1, "6,25")
             assert dialog.table.item(1, 2).text() == "6,25"
+            assert "nepoužívá" in dialog.usage_title.text()
+            edit(dialog, 0, 1, "polovina * 2")
+            cell = dialog.table.visualItemRect(dialog.table.item(1, 0))
+            QTest.mouseClick(dialog.table.viewport(), Qt.MouseButton.LeftButton, pos=cell.center())
+            QTest.qWait(20)
+            rows = [tuple(dialog.usage_table.item(r, c).text() for c in range(4))
+                    for r in range(dialog.usage_table.rowCount())]
+            assert ("Parametr „mezera“", "Hodnota", "polovina * 2", "Přímo") in rows
+            assert ("Vazba „Víčko na okraji“ (v1)", "Vzdálenost [mm]",
+                    "mezera", "Přes mezera") in rows
             assert session.assembly.to_dict() == before, "zadání předčasně změnilo sestavu"
             QTest.qWait(50)
             dialog.grab().save(str(user_dir() / "self-test-parametry-sestavy.png"))
@@ -2742,7 +2754,7 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
         QTimer.singleShot(100, interact)
         QTest.mouseClick(assembly.parameters_button, Qt.MouseButton.LeftButton)
         assert not failures, "\n".join(failures)
-        assert session.assembly.parameters == {"mezera": 12.5, "polovina": "mezera/2"}
+        assert session.assembly.parameters == {"mezera": "polovina * 2", "polovina": 6.25}
         lid = next(i.part for i in session.result.instances if i.ids == ("vicko",))
         assert lid.is_valid and abs(lid.bounding_box().max.Z-z_before-12.5) < 1e-7
         assert session.result.complete and all(c.state == "ok" for c in session.result.constraints)
@@ -2751,7 +2763,7 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
         assembly.undo_action.trigger()
         assert session.assembly.to_dict() == before and len(session._undo) == history
         assembly.redo_action.trigger()
-        assert session.assembly.parameters["mezera"] == 12.5
+        assert session.result.parameters["mezera"] == 12.5
         assembly.undo_action.trigger()
         result = session.result
         history = (len(session._undo), len(session._redo), session.dirty)
@@ -2763,6 +2775,9 @@ def _self_test_assembly_parameters(assembly, lines) -> bool:
         lines.append("✓ Parametry sestavy: skutečný editor, Enter v buňce, desetinná čárka, "
                      "závislý výraz, víčko +12,5 mm a 7 splněných vazeb; jeden krok Zpět/Znovu, "
                      "kamera zachována, smazání používaného parametru odmítnuto, Zrušit beze změn")
+        lines.append("✓ Použití parametrů sestavy: skutečný výběr řádku, přímý odkaz do parametru "
+                     "mezera a nepřímý do vzdálenostní vazby přes mezera, živá změna pracovní "
+                     "závislosti, nepoužitá hodnota; prohlížení bez změny modelu a historie")
         return True
     except Exception:  # noqa: BLE001 -- diagnostika sestavené aplikace
         lines.append("✕ Parametry sestavy:\n" + traceback.format_exc())

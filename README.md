@@ -311,6 +311,10 @@ zůstává ve svém souboru, sestava na něj jen odkazuje a **nikdy ho nepřepí
   přepočítá celou úpravu jako jeden krok Zpět; **Zrušit** ponechá sestavu beze změny.
   Chybný výraz, smazání používaného parametru nebo nový spor vazeb se nepřijme a důvod
   zůstane v editoru. Parametry sestavy nemění rozměry zdrojových souborů dílů.
+  Po výběru řádku je dole **Použití parametru**: konkrétní komponenta nebo vazba,
+  pole, původní výraz a přímá či nepřímá závislost přes další parametry.
+  Přehled sleduje i úpravy v pracovní tabulce, aniž by přepočítal model. Týká se této
+  úrovně sestavy; vazby mohou následně přemístit také další spojené díly.
 - Ukázka: *Soubor → Otevřít ukázku → Sestavy → krabicka_s_vickem* (krabička, víčko otočené
   o 180° lemem dolů, čtyři nožičky). *Uložit* ukázky se zeptá kam a zkopíruje k sestavě
   i její díly (složka `dily/`) – vznikne samostatný projekt, ukázka zůstane beze změny.

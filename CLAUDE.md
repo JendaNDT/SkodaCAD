@@ -40,6 +40,9 @@
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
+  **Znovu potvrzeno autorem 3. 11. 2026:** doporučení patří i do závěrečných
+  automatických oznámení o vydání. U oznámení s předepsaným formátem je vlož
+  do textu zprávy; tiché kontroly bez novinek dál neoznamuj.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1521,6 +1524,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Přepočet buněk zachovává položky tabulky; Enter potřebuje zpracování událostí Qt
   pro odložené uzavření delegátu. Nativní self-test „Parametry sestavy“ měří skutečný
   zdvih víčka, vazby, historii, kameru a odmítnutí smazání.
+- P7.33: dolní tabulka editoru parametrů ukazuje použití vybraného řádku v dalších
+  parametrech, polohách/otočeních komponent a vzdálenostních vazbách. Čisté čtení
+  receptu v `assembly_parameter_usage.py`, přesné názvy z AST, návaznosti bez cyklů
+  a každé místo jednou s nejkratší cestou; není to simulace pohybu řešičem vazeb.
+  Pracovní výrazy se projeví po dokončení buňky, bez přepočtu a historie. Zdrojové
+  soubory a vnitřní parametry podsestav se nečtou. Syntaxe s chybou nesmí být
+  vydávána za „nepoužito“. Nativní scénář „Použití parametrů sestavy“ ověřuje
+  skutečný výběr řádku i přímý/nepřímý odkaz.
 
 - `Document.from_dict` dřív neznámé klíče přeskočil – soubor sestavy by otevřel jako
   **prázdný díl** a uložením přepsal. Proto kontrola `kind` hned po `format` a sestava má
