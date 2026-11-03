@@ -181,14 +181,28 @@ def tree_texts(w):
     return [w.tree.topLevelItem(i).text(0) for i in range(w.tree.topLevelItemCount())]
 
 
-def test_window_shows_progress_and_then_result(window, examples_dir):
+def test_window_shows_progress_and_then_result(window, examples_dir, monkeypatch):
     from PySide6.QtTest import QTest
 
+    from skodacad.gui.main_window import PENDING_DELAY
+
+    window._poll_timer.stop()  # připravit oba stavy před spuštěním GUI časovače
+    window.show()
     window.open_model(examples_dir / "deska.json", template=True)
     assert window.session.computing
     assert len(tree_texts(window)) == len(window.session.document.features)  # strom hned
-    QTest.qWait(400)  # delší než PENDING_DELAY → okno ukáže „Přepočítávám…“
-    if window.session.computing:
+    # Výsledek skutečného procesu převezmeme až po kontrole průběhu. Jinak
+    # rychlost výpočtu a pořadí časovačů rozhodovaly, zda se tato větev vůbec ověří.
+    with monkeypatch.context() as progress:
+        progress.setattr(window.session, "poll", lambda: False)
+        progress.setattr(window._runner, "started", time.monotonic())
+        window._poll()
+        assert not window.progress_label.isVisibleTo(window)  # krátký přepočet nebliká
+        progress.setattr(window._runner, "started", time.monotonic() - PENDING_DELAY - 1)
+        window._poll_timer.start()
+        deadline = time.monotonic() + 5
+        while not window.progress_label.isVisibleTo(window) and time.monotonic() < deadline:
+            QTest.qWait(20)  # počkat na stav, nikoli předpokládat přesný čas doručení timeru
         assert window.progress_label.isVisibleTo(window)
         assert window.progress_label.text().startswith("⏳ Přepočítávám")
         assert window.stop_action.isEnabled()

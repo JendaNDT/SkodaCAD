@@ -385,7 +385,14 @@ jednou. Absolutní poloha, název, smazání a otevření dílu jsou dostupné p
 Samotný výběr je stav okna, nepřidává kroky Zpět a neomezuje export celé sestavy.
 [Chování a ověření hromadného výběru](docs/p7-17-hromadny-vyber.md).
 
-**Hromadný posun:** při výběru více komponent se vpravo zobrazí **Společný posun [mm]**.
+**Panel pohybu:** záložky **Posun** a **Otočení** ukazují právě potřebné ovládání.
+Absolutní souřadnice a název i vzhled jsou v rozbalovacích sekcích pod nimi.
+Rozepsané hodnoty se přepínáním zachovají; rozpracovaný tah nebo výběr reference
+se bezpečně zruší. [Rozložení a ověření panelu](docs/p7-31-panel-pohybu.md).
+
+**Posun výběru:** pro jeden díl se vpravo zobrazí **Posun [mm]**, pro více
+komponent **Společný posun [mm]**. Oba panely umožňují číselný přírůstek i tažení
+[stejnými posouvacími rukojeťmi](docs/p7-30-posun-jednoho-dilu.md).
 Zadej přírůstky **X/Y/Z v osách celé sestavy** a stiskni **Posunout vybrané** nebo Enter.
 Posunou se všechny vybrané komponenty stejně, včetně skrytých, a zachovají vzájemné
 polohy i otočení. **Zpět** vrátí celý přesun jedním krokem, **Znovu** jej zopakuje.
@@ -399,10 +406,10 @@ Původní výrazy poloh zůstávají parametrické; výraz zadaný jako přírů
 jednou při posunu. Soubory zdrojových dílů a podsestav se nemění.
 [Pravidla a ověření hromadného posunu](docs/p7-18-hromadny-posun.md).
 
-**Tažení celého výběru:** vyber více komponent a táhni barevný konec rukojeti
+**Tažení výběru:** vyber jeden nebo více dílů a táhni barevný konec rukojeti
 **X, Y nebo Z** ve 3D. Celý výběr se posouvá po zvolené ose celé sestavy.
-V panelu **Společný posun [mm]** nastav **Krok tažení** (výchozí 1 mm, 0 = Volně)
-nebo vypni **Rukojeti ve 3D**. Rukojeti vycházejí ze středu viditelné části výběru;
+V panelu **Posun [mm]** nebo **Společný posun [mm]** nastav **Krok tažení** (výchozí 1 mm, 0 = Volně)
+nebo vypni **Posouvací rukojeti ve 3D**. Rukojeti vycházejí ze středu viditelné části výběru;
 posun zahrne i skryté vybrané díly. Pokud není nic vybraného vidět, rukojeti se nezobrazí.
 Při tahu vidíš náhled, puštění ověří vazby a potvrdí jeden krok Zpět.
 **Esc** náhled zruší. Při odmítnutí se obnoví původní poloha celého výběru.
@@ -1664,6 +1671,12 @@ i přijaté kolize, kterých se týká. Ukázka: `examples/sestavy/deska_se_srou
 (diakritika a velká písmena nevadí).
 
 ## Pro vývoj
+
+Související úpravy se připravují po dávkách. Během práce běží cílené místní
+testy; rozpracovaný návrh na GitHubu (draft PR) dlouhé kontroly přeskakuje.
+Označení dávky jako hotové spustí kontroly Windows a macOS. Před sloučením
+musí projít včetně kontroly sestavených balíčků. Vrácení návrhu do draftu
+zruší předchozí běžící kontroly; ruční spuštění a vydání z `main` zůstávají dostupné.
 
 Pravidla projektu, architektura a plán jsou v [CLAUDE.md](CLAUDE.md). Podkladové výzkumy
 jsou ve složce [docs/](docs/).

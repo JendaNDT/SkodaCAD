@@ -662,7 +662,8 @@ def test_batch_move_fixed_selection_is_explicitly_blocked_without_skipping_body(
     w.apply_batch_move()
     assert w.session.assembly.to_dict() == before and not w.session.can_undo
     w.select(("vicko",))
-    assert not w.move_box.isVisibleTo(w) and w.apply_button.isEnabled()
+    assert w.move_box.isVisibleTo(w) and w.apply_button.isEnabled()
+    assert w.move_button.isEnabled()
 
 
 def test_batch_move_constraint_failure_keeps_entire_selection_and_delta(constrained, dialogs):
@@ -806,6 +807,7 @@ def test_batch_rotation_enter_uses_whole_selection_center_and_preserves_view_fie
     w.select_many(ids)
     old = {i.ids: np.array(tuple(i.part.center())) for i in w.session.result.instances}
     center = (old[ids[0]]+old[ids[1]])/2  # stejné nožičky, nikoli průměr počátků sestavy
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_axis)
     assert w.batch_rotation_box.isVisibleTo(w) and w.batch_rotation_button.isEnabled()
     assert w.batch_rotation_axis.currentText() == "Z"
     w.move_edits[0].setText("2,5")
@@ -867,6 +869,7 @@ def test_batch_rotation_explains_fixed_nested_and_expressions(opened, nested_iso
     w.batch_rotation_axis.setCurrentText("Z")
     assert w.batch_rotation_button.isEnabled()
     w.select(("nozicka_1",))
+    w.component_scroll.ensureWidgetVisible(w.batch_rotation_axis)
     assert w.batch_rotation_box.isVisibleTo(w)
     assert w.batch_rotation_button.isEnabled()
 

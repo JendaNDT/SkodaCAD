@@ -44,7 +44,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -72,8 +71,10 @@ from skodacad.assembly_check import NDT_NOTE, labels, total_mass
 from skodacad.assembly_session import AssemblySession
 from skodacad.document import DocumentError
 from skodacad.gui.assembly_access import request_project_access
+from skodacad.gui.assembly_panel import ComponentScroll, MovementTabs
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.viewer_views import VIEW_LABELS
+from skodacad.gui.workspace import Section
 
 log = logging.getLogger(__name__)
 
@@ -202,13 +203,26 @@ class AssemblyWindow(QMainWindow):
     def _build_form(self) -> None:
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        self._movement_panel_revision = 0
         self.form_note = self._wrapped_label()
         layout.addWidget(self.form_note)
+        self._build_move_box()
+        self._build_batch_rotation_box()
+        self.movement_tabs = MovementTabs()
+        self.movement_tabs.setAccessibleName("Pohyb výběru")
+        self.movement_tabs.addTab(self.move_box, "Posun")
+        self.movement_tabs.addTab(self.batch_rotation_box, "Otočení")
+        self.movement_tabs.currentChanged.connect(self._movement_tab_changed)
+        layout.addWidget(self.movement_tabs)
+
+        appearance = QWidget()
+        appearance_layout = QVBoxLayout(appearance)
+        appearance_layout.setContentsMargins(8, 0, 0, 0)
         self.transparency_box = QCheckBox("Průhledná komponenta (T)")
         # Nativní přístupnost volá toggle(), které nevysílá clicked.
         self.transparency_box.checkStateChanged.connect(
             lambda _state: self.toggle_selected_transparency())
-        layout.addWidget(self.transparency_box)
+        appearance_layout.addWidget(self.transparency_box)
         transparency_row = QHBoxLayout()
         transparency_row.addWidget(QLabel("Průhlednost"))
         self.transparency_percent = QSpinBox()
@@ -221,13 +235,15 @@ class AssemblyWindow(QMainWindow):
             "Zadání hodnoty sjednotí celou vybranou podsestavu.")
         self.transparency_percent.valueChanged.connect(self._transparency_percent_changed)
         transparency_row.addWidget(self.transparency_percent, 1)
-        layout.addLayout(transparency_row)
-        self._build_move_box(layout)
-        self._build_batch_rotation_box(layout)
-        layout.addWidget(QLabel("Název"))
+        appearance_layout.addLayout(transparency_row)
+        self.appearance_section = Section("Vzhled výběru", appearance)
+        placement = QWidget()
+        placement_layout = QVBoxLayout(placement)
+        placement_layout.setContentsMargins(8, 0, 0, 0)
+        placement_layout.addWidget(QLabel("Název"))
         self.name_edit = QLineEdit()
         self.name_edit.setAccessibleName("Název komponenty")
-        layout.addWidget(self.name_edit)
+        placement_layout.addWidget(self.name_edit)
         self.position_edits = [QLineEdit() for _ in AXES]
         self.rotation_edits = [QLineEdit() for _ in AXES]
         coordinates = QGridLayout()
@@ -244,11 +260,11 @@ class AssemblyWindow(QMainWindow):
                 coordinates.addWidget(edit, row, column)
         coordinates.setColumnStretch(1, 1)
         coordinates.setColumnStretch(2, 1)
-        layout.addLayout(coordinates)
+        placement_layout.addLayout(coordinates)
         self.fixed_box = QCheckBox("Pevná komponenta")
         self.fixed_box.setToolTip("Pevnou komponentu nepřesune tažení ani vazby.")
         self.fixed_box.toggled.connect(self._fixed_toggled)
-        layout.addWidget(self.fixed_box)
+        placement_layout.addWidget(self.fixed_box)
         turns = QGridLayout()
         self.turn_buttons: list[QPushButton] = []
         for column, axis in enumerate(AXES):
@@ -257,11 +273,12 @@ class AssemblyWindow(QMainWindow):
                 button.clicked.connect(lambda _c=False, a=axis, d=degrees: self.turn(a, d))
                 turns.addWidget(button, row, column)
                 self.turn_buttons.append(button)
-        layout.addWidget(self._wrapped_label("Otočit kolem osy sestavy vedené počátkem dílu:"))
-        layout.addLayout(turns)
+        placement_layout.addWidget(self._wrapped_label(
+            "Otočit kolem osy sestavy vedené počátkem dílu:"))
+        placement_layout.addLayout(turns)
         self.apply_button = QPushButton("Použít polohu a název")
         self.apply_button.clicked.connect(self.apply_form)
-        layout.addWidget(self.apply_button)
+        placement_layout.addWidget(self.apply_button)
         buttons = QHBoxLayout()
         self.relink_button = QPushButton("Najít soubor…")
         self.relink_button.clicked.connect(self.relink_dialog)
@@ -269,7 +286,10 @@ class AssemblyWindow(QMainWindow):
         self.open_part_button.clicked.connect(self.open_selected_part)
         buttons.addWidget(self.relink_button)
         buttons.addWidget(self.open_part_button)
-        layout.addLayout(buttons)
+        placement_layout.addLayout(buttons)
+        self.placement_section = Section("Absolutní poloha a název", placement)
+        layout.addWidget(self.placement_section)
+        layout.addWidget(self.appearance_section)
         self.pick_note = self._wrapped_label()
         layout.addWidget(self.pick_note)
         layout.addWidget(self._build_constraint_box())
@@ -278,7 +298,7 @@ class AssemblyWindow(QMainWindow):
         layout.addWidget(self.summary)
         layout.addStretch(1)
         panel.setMinimumWidth(280)
-        scroll = self.component_scroll = QScrollArea()
+        scroll = self.component_scroll = ComponentScroll(self._reveal_component_widget)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(panel)
@@ -289,7 +309,21 @@ class AssemblyWindow(QMainWindow):
         dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
-    def _build_move_box(self, layout: QVBoxLayout) -> None:
+    def _reveal_component_widget(self, widget) -> None:
+        for page in (self.move_box, self.batch_rotation_box):
+            if widget is page or page.isAncestorOf(widget):
+                self.movement_tabs.setCurrentWidget(page)
+        for section in (self.placement_section, self.appearance_section):
+            if widget is section.content or section.content.isAncestorOf(widget):
+                section.set_expanded(True)
+
+    def _movement_tab_changed(self, _index) -> None:
+        self._movement_panel_revision += 1
+        self.viewer.cancel_selection_drag()
+        self.viewer.cancel_rotation_center_pick()
+        self._refresh_move_handles()
+
+    def _build_move_box(self) -> None:
         self.move_box = QGroupBox("Společný posun [mm]")
         grid = QGridLayout(self.move_box)
         self.move_edits = []
@@ -310,7 +344,7 @@ class AssemblyWindow(QMainWindow):
         self.move_button = QPushButton("Posunout vybrané")
         self.move_button.clicked.connect(self.apply_batch_move)
         grid.addWidget(self.move_button, 4, 0, 1, 2)
-        self.move_handles = QCheckBox("Rukojeti ve 3D")
+        self.move_handles = QCheckBox("Posouvací rukojeti ve 3D")
         self.move_handles.setChecked(True)
         self.move_handles.setToolTip("Táhni barevný konec osy X, Y nebo Z. Esc zruší náhled. "
                                     "Posune se celý výběr včetně jeho skrytých dílů.")
@@ -328,7 +362,6 @@ class AssemblyWindow(QMainWindow):
         self.move_step.setToolTip("Krok od začátku tahu; 0 = volně. Platí jen pro tažení myší.")
         self.move_step.valueChanged.connect(self._refresh_move_handles)
         grid.addWidget(self.move_step, 6, 1)
-        layout.addWidget(self.move_box)
 
     def _refresh_move_box(self) -> None:
         selection = self._selection
@@ -336,15 +369,17 @@ class AssemblyWindow(QMainWindow):
             for field in self.move_edits:
                 field.setText("0")
             self._move_selection = selection
-        self.move_box.setVisible(len(selection) > 1)
+        self.movement_tabs.setVisible(bool(selection))
+        self.move_box.setTitle(
+            "Posun [mm]" if len(selection) == 1 else "Společný posun [mm]")
         roots = self._selection_roots()
         problem = self._move_problem()
-        enabled = len(selection) > 1 and bool(roots) and not problem
+        enabled = bool(selection) and bool(roots) and not problem
         self.move_button.setEnabled(enabled)
         self.move_handles.setEnabled(enabled)
         self.move_step.setEnabled(enabled and self.move_handles.isChecked())
-        self.move_note.setText(problem or "X/Y/Z v osách celé sestavy. Všechny vybrané "
-                               "díly se posunou stejně; Zpět vrátí celý posun.")
+        self.move_note.setText(problem or "Přírůstek X/Y/Z v osách celé sestavy. "
+                               "Zpět vrátí celý posun.")
 
     def _move_problem(self) -> str:
         roots = self._selection_roots()
@@ -364,9 +399,10 @@ class AssemblyWindow(QMainWindow):
 
     def _move_token(self) -> tuple:
         return (self._selection, id(self.session.result),
-                json.dumps(self.session.assembly.to_dict(), sort_keys=True))
+                json.dumps(self.session.assembly.to_dict(), sort_keys=True),
+                self._movement_panel_revision)
 
-    def _build_batch_rotation_box(self, layout: QVBoxLayout) -> None:
+    def _build_batch_rotation_box(self) -> None:
         self.batch_rotation_box = QGroupBox("Společné otočení [°]")
         grid = QGridLayout(self.batch_rotation_box)
         grid.addWidget(QLabel("Osa otáčení"), 0, 0)
@@ -503,7 +539,6 @@ class AssemblyWindow(QMainWindow):
         self.rotation_step.valueChanged.connect(self._refresh_move_handles)
         grid.addWidget(self.rotation_step, 10, 1)
         self.rotation_center_mode.currentIndexChanged.connect(self._rotation_center_changed)
-        layout.addWidget(self.batch_rotation_box)
 
     def _rotation_center_values(self):
         if self._geometry_axis_kind():
@@ -596,6 +631,7 @@ class AssemblyWindow(QMainWindow):
         if not checked or not button.isEnabled():
             self._rotation_pick_finished()
             return
+        self._reveal_component_widget(button)
         self._rotation_pick_serial += 1
         token = (self._rotation_pick_signature(kind), self._rotation_pick_serial)
         self._rotation_pick_pending = token
@@ -690,7 +726,6 @@ class AssemblyWindow(QMainWindow):
 
     def _refresh_batch_rotation_box(self) -> None:
         has_selection = bool(self._selection)
-        self.batch_rotation_box.setVisible(has_selection)
         self.batch_rotation_box.setTitle(
             "Otočení [°]" if len(self._selection) == 1 else "Společné otočení [°]")
         problem = self._move_problem()
@@ -754,6 +789,7 @@ class AssemblyWindow(QMainWindow):
             "Použitý střed [mm]: " + ", ".join(f"{a} {v:.3f}" for a, v in zip("XYZ", center,
                                                                          strict=True))
             if center else "Střed otáčení není dostupný.")
+        self.movement_tabs.updateGeometry()
         self.batch_rotation_note.setText(problem or "Otočí celý výběr včetně skrytých dílů. "
                                         "Zpět vrátí celý pohyb jedním krokem.")
 
@@ -774,6 +810,8 @@ class AssemblyWindow(QMainWindow):
     def _choose_handles(self, rotating: bool, checked: bool) -> None:
         other = self.move_handles if rotating else self.rotation_handles
         if checked:
+            self._reveal_component_widget(
+                self.batch_rotation_box if rotating else self.move_box)
             blocked = other.blockSignals(True)
             other.setChecked(False)
             other.blockSignals(blocked)
@@ -799,8 +837,7 @@ class AssemblyWindow(QMainWindow):
                                       and self.rotation_handles.isChecked())
         data = None
         rotating = self.rotation_handles.isChecked()
-        if (self._selection and (rotating or (len(self._selection) > 1
-                                             and self.move_handles.isChecked()))
+        if (self._selection and (rotating or self.move_handles.isChecked())
                 and not self._move_problem()):
             roots = self._selection_roots()
             selected = [i for i in self.visible_instances()
@@ -827,7 +864,8 @@ class AssemblyWindow(QMainWindow):
         self.viewer.set_move_selection(data)
 
     def _selection_dragged(self, request: dict) -> None:
-        if (not self.move_handles.isChecked() or len(self._selection) < 2 or self._move_problem()
+        if (not self.move_handles.isChecked() or not self.move_handles.isEnabled()
+                or not self._selection or self._move_problem()
                 or request["token"] != self._move_token()):
             self.statusBar().showMessage("Výběr nebo sestava se změnily; tažení bylo zrušeno.")
             self._refresh_move_handles()

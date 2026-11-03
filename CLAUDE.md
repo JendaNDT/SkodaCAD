@@ -24,6 +24,19 @@
 - **Pokyn autora z 2. 11. 2026:** běžné ověření změn prováděj samostatně,
   automatickými testy i ovládáním aplikace. Ruční ověření autorem nenavrhuj jako
   výchozí další krok, pokud je můžeš provést sám.
+- **Pokyn autora z 2. 11. 2026 – dávky změn:** několik souvisejících úprav
+  shromažďuj v jedné pracovní větvi a rozpracovaném PR (draft). Po každé úpravě
+  proveď cílené místní ověření; dlouhé kontroly GitHubu spouštěj až nad hotovou
+  ucelenou dávkou před sloučením a sestavením. Nevytvářej hotové PR pro každou
+  drobnost. Konec jedné odpovědi automaticky neuzavírá dávku; další drobné
+  požadavky přidávej do stejného draftu. Dávku uzavři při uceleném výsledku nebo
+  na výslovný pokyn k novému sestavení. Potřebuje-li dávka další práci, vrať PR
+  do draftu; po dokončení jej znovu označ jako připravené. Hotovou ucelenou dávku
+  ověř a sestav automaticky, bez dalšího dotazu autora (výslovně potvrzeno 2. 11.).
+  Před označením hotové dávky nejprve vyčkej na ukončení přeskočených běhů
+  posledního nahrání do draftu; opožděný běh draftu by jinak mohl zrušit nové
+  kontroly hotové dávky. Potom ověř běžící kontroly aktuálního commitu.
+  Kontroly obou systémů před sloučením platí dál.
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -314,7 +327,8 @@
 - (30. 10. 2026, rozhodnutí autora „Ok“) **Méně zdvojeného testování**: workflow
   „Windows aplikace“ a „macOS aplikace“ spouští `push` jen ve větvi `main` (vydání); pracovní
   větve kontroluje jen `pull_request` – dřív běželo každé nahrání dvakrát nad stejným kódem.
-  Úplná sada `pytest -q` běží u každého PR na Windows i macOS; v cloudu se pouští celá jen
+  Úplná sada `pytest -q` běží u hotového PR na Windows i macOS
+  (od 2. 11. 2026 se rozpracované drafty přeskakují); v cloudu se pouští celá jen
   u změn společného jádra (pravidlo 6), jinak jen testy dotčené oblasti.
 
 - (31. 10. 2026, pokyn autora pokračovat) **P6.7 řízený obdélníkový přechod**
@@ -493,8 +507,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
    **Úplnou sadu `pytest -q` v cloudu pusť jen u změn společného jádra** – přepočet dílu
    (`rebuild.py`, `features.py`, `geometry_validation.py`), hledání ploch a hran
    (`selectors.py`, `picking.py`), formát dílu (`document.py`), `session.py`, pomocný proces
-   (`worker.py`) a `ndt/geometry.py`. Jinak ji spouští GitHub u každého PR na Windows i
-   macOS (workflow „Windows aplikace“ a „macOS aplikace“, včetně ruff) a **sloučit jde jen
+   (`worker.py`) a `ndt/geometry.py`. Jinak ji spouští GitHub u hotové dávky (PR mimo draft)
+   na Windows i macOS (workflow „Windows aplikace“ a „macOS aplikace“, včetně ruff) a **sloučit jde jen
    po jejím úspěchu na obou systémech** včetně kontroly staženého balíčku (rozhodnutí
    autora 30. 10. 2026). Když GitHub ohlásí chybu, oprav ji a cílené testy spusť znovu.
 7. Nové závislosti jen se zdůvodněním a se zamčenou verzí.
