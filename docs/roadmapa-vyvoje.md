@@ -26,7 +26,7 @@ Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
 `main` ani automatické slučování bez souhlasu autora.
 
-## Stav k 31. 10. 2026
+## Stav k 3. 11. 2026
 
 **Pokyn autora z 28. 10. 2026:** pokračovat v roadmapě samostatně; běžná rozhodnutí
 a sloučení po úspěšných kontrolách (úplná sada testů, obě workflow včetně kontroly
@@ -38,20 +38,25 @@ zůstávají na autorovi.
 přeskočit („to přeskočíme“). Zůstává neprovedená a neblokuje navazující P6;
 technické výsledky a známé meze P5 zůstávají v protokolu.
 
+**Pokyny autora z 31. 10. a 3. 11. 2026:** zkoušku P6 na vlastním dílu přeskočit,
+navázat ergonomií P7; po dávkách P7.32–P7.36 zahájit výchozí měření výkonu P8.1.
+Přeskočené autorské zkoušky tím nejsou označeny za provedené.
+
 | Etapa | Stav | Co zbývá |
 |---|---|---|
 | P0 | sloučeno (PR #30) | – |
-| P1 | přijato autorem 25. 10. 2026 | R03, R04/P16, R12, historická identita |
+| P1 | přijato autorem 25. 10. 2026; R03 atomický zápis a R12 dokumentace následně opraveny | R04/P16 a zbytkové riziko historické identity |
 | P2 | P2.1–P2.5 sloučeno (PR #42–45) | ruční zkouška a přijetí autorem |
 | P3 | P3.1–P3.5 + jednotky metry sloučeno (PR #46–48), formát 24 | přijetí autorem, soubory z jiných CADů |
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 | [Lineární proměnné zaoblení](p6-2-promenne-zaobleni.md): omezený pravoúhlý roh, průběh/tečnost/objem, směr a původ, formát 32, session a GUI; úplné výsledky v implementačním PR | P6.4 na autorském dílu; další kandidáti v návrhu P6.1 |
-| P7–P8 | nezahájeno | – |
-| NDT-17 | nezahájeno | – |
+| P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
+| P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P8 | [P8.1 výchozí měření](p8-1-vykonnostni-baseline.md) připraveno a ověřeno místně; kontroly obou systémů jsou bránou sloučení | P8.2 profilování, P8.3 měřené optimalizace, P8.4 dlouhý provoz a P8.5 přijetí |
+| NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
-Nejnovější formát je **33** (načítá verze 1–33; sestavy 29–31 podle vazeb a kontrol,
-díly s výslovným režimem stěny loftu 33, s proměnným zaoblením 32, ostatní 24–28).
+Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
+řízený přechod 34, výslovný režim stěny loftu 33, proměnné zaoblení 32, ostatní 24–28).
 Výkon: průniky NDT bez zápisu do
 vstupů a rychlejší ořez buněk objemu (PR #59, #60) – testy na Windows 26:55 → 14:53 min.
 Podrobnosti a odkazy na evidence jsou v `CLAUDE.md`, oddíl *Plán*.
@@ -309,6 +314,10 @@ staré recepty zachovány. Samostatný CAD přehled, P6.4 na vlastním dílu a v
    změny, zdokumentované zkratky a snímky skutečného GUI. Výstup: ověřené pracovní toky.
 
 ## P8 — výkon a závěrečná stabilizace
+
+**P8.1 zahájeno 3. 11. 2026 na pokyn autora:** [metodika, výchozí výsledky a meze](p8-1-vykonnostni-baseline.md).
+Měření má vlastní izolované procesy a nativní okna; žádná produkční optimalizace
+ani nový rozpočet rychlosti se tím ještě nezavádí.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
    studií; startup, přepočet, přenos, paměť, odezva a ukončení dlouhé úlohy.
