@@ -16,8 +16,8 @@ Enter dokončí buňku; až **Použít změny** přijme celou dávku přes
   spolu s rozepsanými hodnotami, aby je šlo opravit.
 - Session před přijetím ověří také použití parametrů v polohách, otočeních a
   vzdálenostních vazbách aktuální úrovně. Smazání nebo přejmenování používané hodnoty
-  nesmí odebrat těleso z výsledku ani zneplatnit vazbu. Přejmenování automaticky
-  nepřepisuje výrazy jinde v sestavě.
+  nesmí odebrat těleso z výsledku ani zneplatnit vazbu. P7.34 přidává bezpečné
+  přejmenování s automatickým přepsáním odkazů v této úrovni sestavy.
 - Nový spor vazeb se odmítá stávající kontrolou `_change`. Po odmítnutí zůstává
   původní model, výsledek a historie Zpět/Znovu.
 - Parametry podsestav a rozměry zdrojových dílů mají vlastní kontext, zde se nemění.
