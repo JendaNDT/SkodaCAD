@@ -147,7 +147,8 @@ def test_editor_updates_usage_on_invalid_repair_duplicate_delete_and_selection(r
         dialog.table.setCurrentCell(2, 0)
         assert "nepoužívá" in dialog.usage_title.text() and not usage_rows(dialog)
         dialog.table.item(2, 0).setText("a")
-        assert "není dostupný" in dialog.usage_title.text() and not usage_rows(dialog)
+        assert "už existuje" in dialog.message.text() and not usage_rows(dialog)
+        assert dialog.table.item(2, 0).text() == "volny"
         dialog.table.item(2, 0).setText("volny")
         for _ in range(3):
             dialog.delete_button.click()
