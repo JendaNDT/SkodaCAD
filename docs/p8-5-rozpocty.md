@@ -172,8 +172,62 @@ nesčítají; rozdíl wall a CPU ani vysoký load average neprokazují vytížen
 Dočasný workflow pracovní větve se do dokončené dávky neponechává.
 
 Původní měřiče P8.1–P8.4, fyzikální případy, vstupy, politika a ochranný rozpočet
-zůstávají nezměněné. Oprava čeká na nové úplné 2 + 20 měření a celé kontroly obou
-systémů. Přejímka NDT ani celodenního provozu se tím neprohlašuje.
+zůstávají nezměněné. Úplné místní měření opravy je uvedené níže; před přijetím stále zbývají nové
+kontroly skutečného aktuálního sestavení obou systémů. Přejímka NDT ani celodenního
+provozu se tím neprohlašuje.
+
+
+## Úplné měření opravy na autorově M4
+
+[Nový raw JSON](baselines/p8-5-response-macos-arm64.json) na commitu `7a5c7b1`
+dokončil **2 zahřívací + 20 měřených cyklů a všech 180 kontrolních bodů** za
+**583,318 s**, normální exit 0. Všech **23 předem uložených mezí prošlo**.
+Původní raw se nepřepisuje. Apple M4 / macOS 27.2 arm64, Python 3.12.14,
+build123d 0.13.0 / OCP 8.0.1.1.0 / PySide6 6.11.3.
+
+| Ukazatel | Naměřeno | Limit M4 |
+|---|---:|---:|
+| Otevření historie, p95 | 3,017 s | 5 s |
+| Editace + Zpět + Znovu, p95 | 8,555 s | 15 s |
+| Uložit a znovu otevřít, p95 | 3,004 s | 5 s |
+| Zastavit a obnovit, p95 | 3,188 s | 6 s |
+| Pád workeru a obnova, p95 | 3,252 s | 6 s |
+| STEP limit a obnova, p95 | 1,594 s | 4 s |
+| Sestava, náhled a zavření, p95 | 3,777 s | 7 s |
+| Konec cyklu, p95 | 0,259 s | 0,75 s |
+| Celý cyklus, p95 | 26,671 s | 45 s |
+| Horní hranice p95 intervalu Qt | 0,075 s | 0,25 s |
+| Nejdelší interval Qt v celé zkoušce | **1,314 s** | 2 s |
+| Vzorkované maximum rodiče | 1243,734 MiB | 1536 MiB |
+| Vzorkované současné maximum součtu procesů | 2846,844 MiB | 3072 MiB |
+| Rozdíl koncových mediánů rodiče | **−3,086 MiB** | +384 MiB |
+| Párový sklon | −1,196 MiB/cyklus | +24 MiB/cyklus |
+
+Záporný trend tohoto omezeného běhu není důkaz úspory RAM ani záruka absence
+úniku. Starší kladné trendy zůstávají platnou součástí evidence. Dva z 1313
+průběžných odběrů postrádaly RSS workeru; nejsou nahrazené nulou. Všech 180
+kontrolních bodů má úplné kladné RSS. Qt sonda zaznamenala 10340 doručení bez
+chyby; i pauza 1,314 s zůstává viditelná vedle nízkého p95.
+
+Ve všech 22 koncích cyklů zůstaly jen dva konkrétní workery hlavního dílu,
+žádné okno sestavy ani parametrický dialog; oba konkrétní workery sestavy byly
+ukončené. Po běžném zavření nezůstal žádný worker. Všechny čtyři snímky prvního
+a posledního měřeného cyklu byly prohlédnuty: skutečná sestava 800 kopií a historie
+s 60 kapsami / t=12. Přepočet, Zpět/Znovu, uložení/otevření, skutečné rušení a pád,
+STEP limit/obnova i nativní náhled proběhly původními fyzikálními zkouškami.
+
+Nový raw je bajtově shodná kopie výstupu, SHA-256
+`a422c9cf0d10958f570a2e8bf95d65ab5c5a9d35bde2b4f68c0fe60922e2de27`.
+Jeho commit je pravdivý HEAD měřené opravy. Pozdější doplnění tohoto textu a raw
+nemění žádný ze 150 měřených souborů. Vůči původnímu měření se liší jen dva
+produkční soubory (čtečka RSS a 3D prohlížeč) a vysvětlující docstring spouštěče;
+politika má stále SHA-256
+`fad48b7a7106447834897f7670fe4ef1bf9f0a449d0cd347f0b3f1f81f7b34f4`.
+
+Cílené regrese opravy prošly: **122 testů za 13,65 s**, normální exit 0, celý Ruff
+src/tests a kontrola diffu. Celá sada obsahuje 2954 testů; ověření skutečného PR
+a následného `main` na obou OS včetně stažených aplikací stále zbývá. Jediný krátký
+diagnostický cyklus ani tento místní výsledek sám neznamená dokončené vydání.
 
 Při běžné práci lze rozpočítaný přepočet zastavit akcí Zastavit; zachová se poslední
 výsledek. Po pádu pomocného procesu se ohlásí chyba, poslední geometrie zůstane
