@@ -82,7 +82,7 @@ class Trace:
 
 def child(folder):
     from PySide6.QtCore import Qt, QTimer
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QStyle
 
     import skodacad.worker as worker
     import soak_p8_gui
@@ -105,7 +105,8 @@ def child(folder):
                       "_build_side_panel", "_build_editor_panel", "_build_measure_panel",
                       "_build_map_panel", "_build_section_panel", "_build_ndt_panel",
                       "_build_audit_panel", "_build_design_panel", "_build_assistant_panel",
-                      "_build_menus", "_build_ribbon")),
+                      "_build_menus", "_build_ribbon", "_refresh_ui_icons")),
+        (QStyle, ("standardIcon",)),
         (AssemblyWindow, ("_poll", "_refresh", "_refresh_tree_visibility", "closeEvent",
                           "edit_parameters", "preview_parameters", "select",
                           "set_component_transparency", "isolate_selected", "show_all",
@@ -114,7 +115,8 @@ def child(folder):
         (AssemblyParametersDialog, ("__init__", "_update", "_refresh_usage", "show_preview")),
         (AssemblyParameterPreviewDialog, ("__init__", "_show_model")),
         (assembly_parameter_preview, ("placement_changes",)),
-        (OccViewer, ("_initialize", "_open_view", "show_part", "_sync_size")),
+        (OccViewer, ("_initialize", "_open_view", "_style", "_fit_camera",
+                     "show_part", "_sync_size")),
         (soak_p8_gui.Driver, ("ready", "edit")),
         (soak_p8_gui, ("preview_and_close", "step_roundtrip", "inspect_history", "inspect_assembly",
                        "make_assembly", "write")),

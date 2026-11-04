@@ -69,6 +69,68 @@ def test_screen_scale_change_requests_resize_and_paint(viewer, monkeypatch):
     update.assert_called_once_with()
 
 
+@pytest.mark.parametrize("immediate", [False, True])
+def test_fit_draws_one_complete_frame_and_restores_immediate_mode(viewer, immediate):
+    from build123d import Box
+
+    state = SimpleNamespace(immediate=immediate, frames=0)
+    def mode(value):
+        previous, state.immediate = state.immediate, value
+        return previous
+
+    def fit(*_args):
+        # OCCT FitAll(false) přesto kreslí, pokud je immediate update zapnuté.
+        state.frames += state.immediate
+
+    viewer._context = Mock()
+    viewer._view.SetImmediateUpdate.side_effect = mode
+    viewer._view.FitAll.side_effect = fit
+    viewer._view.Redraw.side_effect = lambda: setattr(state, "frames", state.frames+1)
+    viewer.show_part(Box(10, 10, 10), fit=True)
+    assert state.frames == 1
+    assert state.immediate is immediate
+    viewer.fit_all()
+    assert state.frames == 2
+    assert state.immediate is immediate
+
+
+def test_failed_fit_restores_immediate_mode(viewer):
+    state = SimpleNamespace(immediate=True)
+    def mode(value):
+        previous, state.immediate = state.immediate, value
+        return previous
+
+    viewer._view.SetImmediateUpdate.side_effect = mode
+    viewer._view.FitAll.side_effect = RuntimeError("fit failed")
+    with pytest.raises(RuntimeError, match="fit failed"):
+        viewer.fit_all()
+    assert state.immediate is True
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_initial_style_does_not_draw_partial_frames_and_restores_mode(viewer, fail):
+    state = SimpleNamespace(immediate=True, frames=0)
+    def mode(value):
+        previous, state.immediate = state.immediate, value
+        return previous
+
+    def implicit_draw(*_args):
+        state.frames += state.immediate
+
+    viewer._context = Mock()
+    viewer._view.SetImmediateUpdate.side_effect = mode
+    viewer._view.SetBgGradientColors.side_effect = implicit_draw
+    viewer._view.TriedronDisplay.side_effect = implicit_draw
+    viewer._view.SetProj.side_effect = RuntimeError("style failed") if fail else implicit_draw
+    if fail:
+        with pytest.raises(RuntimeError, match="style failed"):
+            viewer._style()
+    else:
+        viewer._style()
+    assert state.frames == 0
+    assert state.immediate is True
+
+
 def test_part_transparency_changes_material_without_replacing_geometry_or_selection(viewer):
     from build123d import Box, Compound, Location
 

@@ -489,7 +489,7 @@ class OccViewer(QWidget):
         self._highlight_fill(True)
         if fit:
             self._sync_size()
-            self._view.FitAll(0.08, False)
+            self._fit_camera()
         self.picked_point = None
         self.selection_changed.emit([])
         self._view.Redraw()
@@ -1621,9 +1621,18 @@ class OccViewer(QWidget):
         if self.ready:
             self._remove_move_handles()  # rukojeti nesmějí ovlivnit měřítko kamery
             self._sync_size()
-            self._view.FitAll(0.08, False)
+            self._fit_camera()
             self._draw_move_handles()
             self._view.Redraw()
+
+    def _fit_camera(self) -> None:
+        # FitAll(false) stále volá Update při zapnutém immediate režimu OCCT.
+        # Kamera se přizpůsobí celá; hotový snímek kreslí až volající.
+        immediate = self._view.SetImmediateUpdate(False)
+        try:
+            self._view.FitAll(0.08, False)
+        finally:
+            self._view.SetImmediateUpdate(immediate)
 
     def set_standard_view(self, name: str) -> None:
         self.cancel_selection_drag()
@@ -1691,6 +1700,8 @@ class OccViewer(QWidget):
             self._pending = None
             self.show_part(part, fit=fit, accent=accent, transparent=transparent)
             self.set_move_selection(move_data)
+        else:
+            self._view.Redraw()
         if self._pending_guides is not None:
             self.show_guides(self._pending_guides)
 
@@ -1711,20 +1722,26 @@ class OccViewer(QWidget):
 
     def _style(self) -> None:
         view, context = self._view, self._context
-        view.SetBgGradientColors(_rgb(0.95, 0.96, 0.98), _rgb(0.72, 0.77, 0.84),
-                                 Aspect_GFM_VER, False)
-        view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(Quantity_NOC_BLACK), 0.08,
-                             V3d_ZBUFFER)
-        params = view.ChangeRenderingParams()
-        params.NbMsaaSamples = 4
-        params.IsAntialiasingEnabled = True
-        context.SetDisplayMode(AIS_Shaded, False)
-        for kind, color in ((Prs3d_TypeOfHighlight_LocalSelected, _rgb(1.0, 0.55, 0.0)),
-                            (Prs3d_TypeOfHighlight_LocalDynamic, _rgb(0.0, 0.65, 1.0))):
-            style = context.HighlightStyle(kind)
-            style.SetColor(color)
-            style.SetDisplayMode(1)  # vybranou plochu vyplnit barvou, ne jen obtáhnout
-        view.SetProj(V3d_XposYnegZpos)
+        # Stejný immediate režim se vztahuje i na pozadí a projekci. Nekreslit
+        # rozpracovaný vzhled opakovaně; _initialize vykreslí hotový pohled.
+        immediate = view.SetImmediateUpdate(False)
+        try:
+            view.SetBgGradientColors(_rgb(0.95, 0.96, 0.98), _rgb(0.72, 0.77, 0.84),
+                                     Aspect_GFM_VER, False)
+            view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(Quantity_NOC_BLACK), 0.08,
+                                 V3d_ZBUFFER)
+            params = view.ChangeRenderingParams()
+            params.NbMsaaSamples = 4
+            params.IsAntialiasingEnabled = True
+            context.SetDisplayMode(AIS_Shaded, False)
+            for kind, color in ((Prs3d_TypeOfHighlight_LocalSelected, _rgb(1.0, 0.55, 0.0)),
+                                (Prs3d_TypeOfHighlight_LocalDynamic, _rgb(0.0, 0.65, 1.0))):
+                style = context.HighlightStyle(kind)
+                style.SetColor(color)
+                style.SetDisplayMode(1)  # vybranou plochu vyplnit barvou, ne jen obtáhnout
+            view.SetProj(V3d_XposYnegZpos)
+        finally:
+            view.SetImmediateUpdate(immediate)
 
     def _fail(self, stage: str, exc: Exception) -> None:
         self.failed_stage = stage
