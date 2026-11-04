@@ -242,10 +242,56 @@ plochy c799, průhlednost a jeden hotový snímek každé operace. Ověřila tak
 Tato zkouška operací není úplná výkonnostní přejímka.
 
 Změněné jsou dva produkční zdroje, proto předchozí úplná M4 baseline níže
-zůstává pouze historií. Nová úplná místní přejímka i aktuální CI této opravy
-ještě zbývají; vydání není dokončené. Politika, fyzikální měřiče a všechny
-historické raw výsledky zůstávají beze změny. Dočasný Windows diagnostický
-workflow je z hotové dávky odstraněný.
+zůstává pouze historií. Nová úplná místní přejímka této opravy prošla; aktuální
+CI a vydání ještě zbývají. Politika, fyzikální měřiče a všechny historické raw
+výsledky zůstávají beze změny. Dočasný Windows diagnostický workflow je z hotové
+dávky odstraněný.
+
+## Úplné měření obnovené prezentace na autorově M4
+
+[Nový samostatný raw JSON](baselines/p8-5-retained-presentation-macos-arm64.json)
+měří commit `64f5a8db4a8bddb9217341b6f7b230fba62bb1fb`. Jeho SHA-256 je
+`6246304e4ef9833459dc1bbb23bc3c0d4105e08569166b0da9921a7f192644a8`.
+Dokončil **2 zahřívací + 20 měřených cyklů, 180 kontrolních bodů a všech 23
+zmrazených mezí** za **488,773 s**, nativní exit 0. Prostředí je Apple M4 /
+macOS 27.2 arm64, Python 3.12.14, build123d 0.13.0 / OCP 8.0.1.1.0 / Qt 6.11.3.
+
+
+
+| Ukazatel | Naměřeno | Limit M4 |
+|---|---:|---:|
+| Otevření historie, p95 | 2,475 s | 5 s |
+| Editace + Zpět + Znovu, p95 | 6,712 s | 15 s |
+| Uložit a znovu otevřít, p95 | 2,406 s | 5 s |
+| Zastavit a obnovit, p95 | 2,605 s | 6 s |
+| Pád workeru a obnova, p95 | 2,652 s | 6 s |
+| STEP limit a obnova, p95 | 1,586 s | 4 s |
+| Sestava, náhled a zavření, p95 | 3,659 s | 7 s |
+| Konec cyklu, p95 | 0,252 s | 0,75 s |
+| Celý cyklus, p95 | 22,246 s | 45 s |
+| Horní hranice p95 intervalu Qt | 0,100 s | 0,25 s |
+| Nejdelší interval Qt v celé zkoušce | 1,187 s | 2 s |
+| Vzorkované maximum rodiče | 1163,391 MiB | 1536 MiB |
+| Vzorkované současné maximum součtu procesů | 2767,266 MiB | 3072 MiB |
+| Rozdíl koncových mediánů rodiče | −29,422 MiB | 384 MiB |
+| Párový sklon | +0,880 MiB/cyklus | 24 MiB/cyklus |
+
+Qt časovač pokrývá celou nativní zkoušku včetně inicializace, vnořených smyček,
+oddělené diagnostiky GC a zavření: **8523 doručení, žádná chyba**. RSS dohled má
+**1126 odběrů, žádné chybějící čtení**; maxima pokrývají všech 180 úplných
+kladných kontrolních bodů. Současný vzorkovaný součet není unikátní RAM ani GPU
+paměť. Rozdíl mediánů **−29,422 MiB** a sklon **+0,880 MiB/cyklus** zachovávají
+svá znaménka; nejsou důkazem absence úniků, celodenní stability ani přejímky NDT.
+
+Všech 22 konců cyklů má nula oken sestav a parametrických dialogů a pouze dva
+konkrétní workery hlavního dílu. Oba workery každé zavřené sestavy jsou ukončené;
+po běžném zavření nezůstává žádný vlastněný worker. Původní validátor znovu ověřil
+fyziku historie, Zpět/Znovu, uložení/otevření, zrušení, skutečný pád, STEP limit
+a obnovu i sestavu 800 dílů s nativním náhledem. Čtyři snímky prvního a posledního
+měřeného cyklu byly skutečně prohlédnuté: čistá sestava 800 kopií / c799 a historie
+s 60 kapsami / t=12; odpovídající dvojice jsou bajtově shodné. Všech 150 měřených
+otisků a tři vstupy odpovídají tomuto commitu. Aktuální úplné CI Windows včetně
+P8.5 a kontroly správnosti, sestavení a stažených aplikací obou OS ještě zbývají.
 
 ## Úplné měření předchozí opravy na autorově M4
 
