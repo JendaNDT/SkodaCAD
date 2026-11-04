@@ -211,6 +211,13 @@ class MainWindow(QMainWindow):
         available = self.screen().availableGeometry()
         self.resize(min(1400, available.width()), min(800, available.height() - 36))
         self.workspace = Workspace(self, user_dir / "okno.json" if user_dir else None)
+        self._icon_timer = QTimer(self)
+        self._icon_timer.setSingleShot(True)
+        self._icon_timer.timeout.connect(self._refresh_next_standard_icon)
+        self._standard_icon_queue = []
+        self._icon_generation = 0
+        self._icons_after_view = False
+        self._icon_loader_closed = False
         self._build_ribbon()
         self._had_part = False
         self._build_progress()
@@ -1194,8 +1201,36 @@ class MainWindow(QMainWindow):
         color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         for action, kind in getattr(self, "_icon_actions", []):
             action.setIcon(cad_icon(kind, color))
-        for action, standard in getattr(self, "_standard_icons", []):
-            action.setIcon(self.style().standardIcon(standard))
+        # Native style icons can wait on OS resources. Keep their work out of
+        # construction and load one action per Qt turn after the first 3D setup.
+        self._icon_generation += 1
+        self._standard_icon_queue = list(getattr(self, "_standard_icons", []))
+        self._icons_after_view = False
+        self._icon_timer.stop()
+        self._schedule_standard_icons()
+
+    def _schedule_standard_icons(self):
+        if (isValid(self) and not self._icon_loader_closed and self.isVisible()
+                and self._standard_icon_queue):
+            self._icon_timer.start(1)
+
+    def _refresh_next_standard_icon(self):
+        if self._icon_loader_closed or not self.isVisible() or not self._standard_icon_queue:
+            return
+        if not getattr(self.viewer, "ready", True) and not getattr(self.viewer, "error", ""):
+            self._icon_timer.start(16)
+            return
+        if not self._icons_after_view:
+            # First let the completed layout/view setup return to the event loop.
+            self._icons_after_view = True
+            self._schedule_standard_icons()
+            return
+        action, standard = self._standard_icon_queue.pop(0)
+        generation = self._icon_generation
+        icon = self.style().standardIcon(standard)
+        if generation == self._icon_generation and not self._icon_loader_closed and isValid(action):
+            action.setIcon(icon)
+        self._schedule_standard_icons()
 
     def _choose_ndt_method(self, method):
         combo = self.ndt_panel.method_combo
@@ -1207,7 +1242,11 @@ class MainWindow(QMainWindow):
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         if hasattr(self, "workspace"):
+            if self._icon_loader_closed:
+                self._icon_loader_closed = False
+                self._refresh_ui_icons()
             self.workspace.restore()
+            self._schedule_standard_icons()
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
@@ -3080,6 +3119,9 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         if self._confirm_discard():
+            self._icon_loader_closed = True
+            self._icon_timer.stop()
+            self._standard_icon_queue.clear()
             self.cancel_feature_preview()
             self.workspace.save()
             self.assistant_panel.shutdown()  # rozpracovaná odpověď AI se zastaví

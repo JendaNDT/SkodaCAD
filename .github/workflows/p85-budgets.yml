@@ -41,8 +41,9 @@ jobs:
         include:
           - os: windows-latest
             profile: ci-windows
-          - os: macos-15
-            profile: ci-macos
+          # Autor 4. 11. 2026 výslovně vynechal hostovanou výkonnostní přejímku
+          # Macu. Platí úplná místní M4 evidence při shodě všech měřených zdrojů.
+          # Profil ci-macos a jeho zmrazené meze zůstávají v politice jako historie.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 50
     steps:

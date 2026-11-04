@@ -66,14 +66,29 @@ povolený změněný zdroj, nativní okna, výsledky, zahřátí/vzorky a rozdě
 intervalů s tolerancí měřiče. Inclusive intervaly se nesčítají. Nevyžaduje předem
 vymyšlený rychlostní práh a zveřejňuje i zpomalení ostatních operací.
 
-Workflow `p83-tree-appearance.yml` porovnává na každém OS na témže runneru pevný
-základ `93843f4` a aktuální sestavení v oddělených procesech. `PYTHONPATH` explicitně
-vybírá příslušný zdroj, aby baseline nepoužila instalovaný candidate. Na Macu se
-sestaví podpora přístupnosti obou checkoutů. Artefakt obsahuje oba původní JSONy,
-souhrn, procesní protokoly a snímky skutečných oken. Při budoucí změně dalšího
-produkčního souboru je nutné vědomě vybrat nový základ srovnání, nikoli oslabit kontrolu.
+Původní workflow `p83-tree-appearance.yml` porovnával na každém OS na témže runneru
+pevný základ `93843f4` a tehdejší sestavení v oddělených procesech. Při změně dalších
+produkčních souborů v P8.5 srovnávač správně odmítl tento již nesrovnatelný pár.
+Nešlo o překročení rychlostního prahu; kontrola vyžaduje jediný změněný zdroj.
 
-Před sloučením zbývají úplné kontroly Windows/macOS (očekáváno **2872 testů**),
+Navazující workflow proto vytváří kontrolovanou referenci ze skutečného aktuálního
+commitu. Jen metodu `AssemblyWindow._refresh_tree_visibility` nahradí její původní
+verzí z pevného `93843f4`; všechny ostatní současné metody, produkční soubory,
+vstupy a měřiče ponechá totožné. Reference dostane skutečný místní Git commit
+s aktuálním kandidátem jako jediným rodičem. Kontrola rozdílu vyžaduje právě
+`assembly_window.py` a původní nezměněný srovnávač dále kontroluje všechny otisky.
+Výsledek tak izoluje obnovu vzhledu stromu i po pozdějších opravách P8.4/P8.5.
+
+`p83-baseline-context.json` uchovává oba commity, strom a rodiče reference,
+původ historické metody a otisky obou metod. Surový report „před“ uvádí nový
+skutečný commit reference, nikoli identitu starého vydání. `PYTHONPATH` vybírá
+příslušný zdroj; na Macu se sestaví přístupnost obou checkoutů. Artefakt uchovává
+kontext, oba neupravované JSONy, srovnání, procesní protokoly a nativní snímky.
+Příprava reference prošla místním ověřením Git stromu, rodiče a přesné shody všeho
+mimo uvedenou metodu s LF i CRLF. Nové úplné nativní porovnání obou OS ještě čeká
+na CI; historické výsledky a baselines výše se nepřepisují.
+
+Požadavkem původní dávky byly úplné kontroly Windows/macOS (**2872 případů**),
 build, pět sestavových scénářů self-testu stažené aplikace, STEP a nové srovnání
 před/po obou OS. Potom je nutné stejně ověřit skutečné vydání z main a nové ZIPy.
 P8.4 dlouhý provoz a P8.5 autorské přijetí tato dávka neprohlašuje za provedené.

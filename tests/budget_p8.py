@@ -1,7 +1,7 @@
 """P8.5: předem uložené rozpočty nad skutečnými cykly P8.4 a Qt časovačem.
 
 python tests/budget_p8.py --profile author-m4 --output out/p85.json
-Původní měřiče i produkční kód zůstávají beze změny. Výstup se nepřepisuje.
+Původní fyzikální měřiče a zmrazené limity zůstávají beze změny. Výstup se nepřepisuje.
 """
 from __future__ import annotations
 

@@ -66,6 +66,38 @@
   kandidátním měřením, zvlášť autorův M4 a oba hostované OS. Stejná nativní zátěž
   P8.4, navíc skutečný Qt časovač; při překročení se nesmí automaticky povolit práh
   nebo změnit fyzikální zkoušky. Rozsah 20 cyklů není celodenní záruka či přejímka NDT.
+- **Upřesnění autora z 4. 11. 2026 po vysvětlení hostovaných Maců:** aplikace je pro
+  autora a případně jeho kolegy; vzdálenou výkonnostní zkoušku Macu výslovně
+  přeskočil („Dobře, tak jo. Tak to přeskoč“, následně „Dobře, souhlasím“).
+  Pro vydání P8.5 tedy stačí úspěšná úplná místní M4 přejímka při přesné shodě
+  všech 150 měřených zdrojů a nové úplné P8.5 ověření Windows. Hostovaná Mac
+  P8.5 diagnostika ani splnění profilu `ci-macos` již nejsou podmínkou vydání.
+  Jeho dřívější překročení zůstávají neúspěšnou historií; limity, raw a fyzikální
+  zkoušky se nemění a nesmějí být přepsány na úspěch. Standardní testy správnosti,
+  sestavení a self-test skutečně stažené aplikace obou OS zůstávají požadované.
+- **Navazující oprava návratu z izolace:** okno sestavy vlastní nejvýše jednu
+  skrytou plnou prezentaci AIS. Před každým obnovením modelu a při přijatém close
+  ji odstraní; zrušený close ji zachová. Skrytý AIS není aktivní pro výběr,
+  návrat obnoví aktuální průhlednost, výběr ploch/hran a hotový snímek. Osm nových
+  regresí a související sady mají 615 úspěšných testů, kolekce 2978 případů.
+  Nová úplná M4 baseline `p8-5-retained-presentation-macos-arm64.json` měří
+  commit `64f5a8d`: 2 + 20 cyklů, 180 bodů, všech 23 zmrazených mezí prošlo.
+  Qt max 1,187 s, vzorkované současné RSS maximum 2767,266 MiB; trend není
+  důkaz absence úniků ani přejímka NDT. Aktuální CI obou OS a vydání zbývají.
+  Historické M4/Windows výsledky zůstávají historií; dřívější maximum Qt
+  se této změně nepřisuzuje jako prokázaná příčina.
+- **Místní ověření po dotazu autora z 4. 11. 2026:** „A nemůžeš to ověřit tady
+  lokálně?“ odhalilo předčasnou kontrolu odloženého 3D startu v balíčku. Oprava
+  čeká omezeně na ready, zruší zkušební widget i při chybě a předá Qt událost
+  bez Python vlastníka. Šest nových regresí, 299 souvisejících a úplných 2984
+  místních testů prošlo; nový rozbalený arm64 balíček má celý self-test OK.
+  Aktuální M4 baseline `p8-5-native-lifecycle-macos-arm64.json` měří snapshot
+  `b9df458`: 2 + 20 cyklů / 180 bodů, všech 23 mezí prošlo; Qt max 0,840 s,
+  současné vzorkované maximum RSS 2927,578 MiB. Ze 1130 průběžných odběrů
+  mají tři neúplné RSS workerů; všech 180 kontrolních bodů je úplných.
+  Místní P8.3/P8.4 mají úplné důkazy a prohlédnuté snímky. Místní důkaz není
+  hostovaný GitHub PASS ani ověřené vydání; aktuální Windows/PR/MAIN/vydání
+  zůstávají samostatné. Starší 150otiskové výsledky nejsou důkazem nových hashů.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1670,7 +1702,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
 | P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); [P8.5 rozpočty](docs/p8-5-rozpocty.md) rozpracovány | zmrazené limity, nové měření M4 a kontroly obou OS |
+| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](docs/p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | místní oprava životnosti: 2984 testů a zabalený self-test prošly; nová M4/P8.3/P8.4 ověřené, aktuální Windows/CI/vydání zbývají; hosted Mac P8.5 výkon vynechán autorem |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada

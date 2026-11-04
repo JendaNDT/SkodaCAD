@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +127,7 @@ class AssemblyWindow(QMainWindow):
         self._selection: tuple[tuple[str, ...], ...] = ()
         self._isolated: tuple[tuple[str, ...], ...] | None = None  # jen pohled
         self._visibility: dict[tuple[str, ...], bool] = {}  # nejbližší předek určuje stav
+        self._view_is_full = False
         self._transparency: dict[tuple[str, ...], bool] = {}  # jen vzhled, stejná pravidla id
         self._transparency_levels: dict[tuple[str, ...], int] = {}  # pamatuje míru i při vypnutí
         self._constraint: str | None = None  # vybraná vazba (místo komponenty)
@@ -2142,22 +2144,35 @@ class AssemblyWindow(QMainWindow):
         self._refresh_view(fit=True)
 
     def _refresh_view(self, fit: bool) -> None:
-        self._show_visible(fit=fit)
-        self._refresh_tree_visibility()
-        self._refresh_highlight()
-        self._refresh_isolation_actions()
-        self._refresh_summary(self.session.result)
-        self._refresh_title()
+        # A viewer_factory may supply a lightweight viewer without frame batching.
+        with getattr(self.viewer, "batch_update", nullcontext)():
+            self._show_visible(fit=fit)
+            self._refresh_tree_visibility()
+            self._refresh_highlight()
+            self._refresh_isolation_actions()
+            self._refresh_summary(self.session.result)
+            self._refresh_title()
 
     def _show_visible(self, fit: bool = False) -> None:
         self._picks = []  # skryté plochy nesmějí zůstat vstupem pro přidání vazby
         self._refresh_pick_note()
         result = self.session.result
         visible = self.visible_instances()
+        full = bool(result and visible and len(visible) == len(result.instances))
+        transparent = [(i.part, self._transparency_level(i.ids)/100)
+                       for i in visible if self._is_transparent(i.ids)]
+        if self._view_is_full and not full:
+            retain = getattr(self.viewer, "retain_part", None)
+            if retain is not None:
+                retain()
+        if full and not self._view_is_full:
+            restore = getattr(self.viewer, "restore_part", None)
+            if restore is not None and restore(fit=fit, transparent=transparent):
+                self._view_is_full = True
+                return
         part = result.compound(visible_ids={i.ids for i in visible}) if visible else None
-        self.viewer.show_part(part, fit=fit,
-                              transparent=[(i.part, self._transparency_level(i.ids)/100)
-                                           for i in visible if self._is_transparent(i.ids)])
+        self.viewer.show_part(part, fit=fit, transparent=transparent)
+        self._view_is_full = full
 
     def _refresh_isolation_actions(self) -> None:
         result, roots = self.session.result, self._selection_roots()
@@ -2230,6 +2245,10 @@ class AssemblyWindow(QMainWindow):
         return True
 
     def _refresh(self, fit: bool = False) -> None:
+        clear = getattr(self.viewer, "clear_retained_part", None)
+        if clear is not None:
+            clear()
+        self._view_is_full = False
         result = self.session.result
         self._start_next()
         valid = {s.ids for s in result.statuses} if result else set()
@@ -2530,6 +2549,10 @@ class AssemblyWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self.viewer.cancel_rotation_center_pick()
         if self._confirm_discard():
+            clear = getattr(self.viewer, "clear_retained_part", None)
+            if clear is not None:
+                clear()
+            self._view_is_full = False
             self._timer.stop()
             if self._check_job is not None:
                 self.runner.cancel()
