@@ -1,0 +1,77 @@
+{
+  "schema": "skodacad-p8.5-budgets-v1",
+  "fixed_before_candidate_run": "2026-11-04",
+  "reference_release": "1d95045418ba5db0b6b028e2f6d80ed1a489f4c7",
+  "scope": "2 warmups + 20 measured cycles; 122-feature history and 800-instance assembly",
+  "profiles": {
+    "author-m4": {
+      "system_prefix": "macOS-",
+      "cpu": "Apple M4",
+      "phase_p95_s": {
+        "open": 5,
+        "edit-undo-redo": 15,
+        "save-reopen": 5,
+        "cancel-recover": 6,
+        "crash-recover": 6,
+        "step-limit-recover": 4,
+        "assembly-preview-close": 7,
+        "cycle-end": 0.75
+      },
+      "limits": {
+        "parent.peak_mib": 1536,
+        "processes.peak_mib": 3072,
+        "parent.growth_mib": 384,
+        "parent.slope_mib_per_cycle": 24,
+        "cycle.p95_s": 45,
+        "qt.p95_gap_s": 0.25,
+        "qt.max_gap_s": 2
+      }
+    },
+    "ci-macos": {
+      "system_prefix": "macOS-",
+      "cpu": null,
+      "phase_p95_s": {
+        "open": 10,
+        "edit-undo-redo": 30,
+        "save-reopen": 10,
+        "cancel-recover": 12,
+        "crash-recover": 12,
+        "step-limit-recover": 6,
+        "assembly-preview-close": 12,
+        "cycle-end": 1
+      },
+      "limits": {
+        "parent.peak_mib": 1536,
+        "processes.peak_mib": 3072,
+        "parent.growth_mib": 384,
+        "parent.slope_mib_per_cycle": 24,
+        "cycle.p95_s": 90,
+        "qt.p95_gap_s": 0.5,
+        "qt.max_gap_s": 3
+      }
+    },
+    "ci-windows": {
+      "system_prefix": "Windows-",
+      "cpu": null,
+      "phase_p95_s": {
+        "open": 10,
+        "edit-undo-redo": 30,
+        "save-reopen": 10,
+        "cancel-recover": 12,
+        "crash-recover": 12,
+        "step-limit-recover": 6,
+        "assembly-preview-close": 12,
+        "cycle-end": 1
+      },
+      "limits": {
+        "parent.peak_mib": 1536,
+        "processes.peak_mib": 3072,
+        "parent.growth_mib": 384,
+        "parent.slope_mib_per_cycle": 24,
+        "cycle.p95_s": 90,
+        "qt.p95_gap_s": 0.5,
+        "qt.max_gap_s": 3
+      }
+    }
+  }
+}
