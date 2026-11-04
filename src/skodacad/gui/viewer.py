@@ -404,6 +404,8 @@ class OccViewer(QWidget):
         self._context = None
         self._window = None
         self._ais: AIS_Shape | None = None
+        # One erased full-assembly presentation, invalidated by its owning window.
+        self._retained_part: tuple[Any, list[tuple[Any, float]]] | None = None
         self._highlight: AIS_Shape | None = None
         self._guide_objects: list[Any] = []
         self._pending_guides = None
@@ -481,20 +483,7 @@ class OccViewer(QWidget):
             self._pending_guides = None
             return
         context = self._context
-        if self._ais is not None:
-            context.Remove(self._ais, False)
-            self._ais = None
-        self._remove_highlight()
-        self._remove_guides()
-        self._remove_measurement()
-        self._remove_map()
-        self._remove_probe()
-        self._remove_target()
-        self._remove_design_ghost()
-        self._remove_coverage()
-        self._remove_points()
-        self._remove_plan()
-        self._transparent_parts = []
+        self._clear_part_presentation()
         if part is not None:
             ais = AIS_ColoredShape(part.wrapped)  # jako AIS_Shape, navíc barva po plochách
             ais.SetMaterial(Graphic3d_MaterialAspect(Graphic3d_NameOfMaterial_Plastified))
@@ -526,6 +515,92 @@ class OccViewer(QWidget):
         self.picked_point = None
         self.selection_changed.emit([])
         self._request_redraw()
+
+    def _clear_part_presentation(self) -> None:
+        if self._ais is not None:
+            self._context.Remove(self._ais, False)
+            self._ais = None
+        self._remove_highlight()
+        self._remove_guides()
+        self._remove_measurement()
+        self._remove_map()
+        self._remove_probe()
+        self._remove_target()
+        self._remove_design_ghost()
+        self._remove_coverage()
+        self._remove_points()
+        self._remove_plan()
+        self._transparent_parts = []
+
+    @_complete_frame
+    def retain_part(self) -> bool:
+        """Keep one unchanged assembly presentation while showing a filtered view.
+
+        The assembly window must clear it whenever geometry changes or it closes.
+        Erased geometry has no active selection owners and is never pickable.
+        """
+        self.clear_retained_part()
+        if not self.ready or self._ais is None:
+            return False
+        self.set_move_selection(None)
+        self.cancel_guide_drag()
+        ais = self._ais
+        self._context.ClearDetected(False)
+        self._context.ClearSelected(False)
+        self._context.Deactivate(ais)
+        self._context.Erase(ais, False)
+        self._retained_part = (ais, self._transparent_parts)
+        self._ais = None
+        self._transparent_parts = []
+        self._request_redraw()
+        return True
+
+    def clear_retained_part(self) -> None:
+        """Release the erased presentation, without touching the displayed model."""
+        previous, self._retained_part = self._retained_part, None
+        if previous is not None and self.ready:
+            self._context.Remove(previous[0], False)
+
+    @_complete_frame
+    def restore_part(self, fit: bool = False,
+                     transparent: list[tuple[Any, float]] | None = None) -> bool:
+        """Restore that full assembly with current appearance and fresh picking."""
+        values = _part_transparencies(transparent)
+        if not self.ready or self._retained_part is None:
+            return False
+        (ais, previous), self._retained_part = self._retained_part, None
+        try:
+            self.set_move_selection(None)
+            self.cancel_guide_drag()
+            self._guides_data = None
+            self._clear_part_presentation()
+            for shape, _amount in previous:
+                ais.SetCustomTransparency(shape, 0.)
+            for shape, amount in values:
+                ais.SetCustomTransparency(shape, amount)
+            self._transparent_parts = values
+            self._ais = ais
+            self._context.ClearDetected(False)
+            self._context.SetDisplayMode(ais, AIS_Shaded, False)
+            self._context.Display(ais, False)
+            self._context.Deactivate(ais)
+            self._context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_FACE))
+            self._context.Activate(ais, AIS_Shape.SelectionMode_s(TopAbs_EDGE))
+            self._context.RecomputePrsOnly(ais, False)
+            self._highlight_fill(True)
+            if fit:
+                self._sync_size()
+                self._fit_camera()
+            self.picked_point = None
+            self.selection_changed.emit([])
+            self._request_redraw()
+        except Exception:
+            self._context.Remove(ais, False)
+            if self._ais is ais:
+                self._ais = None
+                self._transparent_parts = []
+            raise
+        return True
 
     def set_transparent_parts(self, parts: list[tuple[Any, float]]) -> None:
         """Změní pouze vzhled částí aktuálního dílu; zachová kameru i vybrané plochy.

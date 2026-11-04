@@ -52,7 +52,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | M4 2 + 20 / 23 mezí prošel; autor přeskočil hostovaný Mac P8.5; nové aktuální testy, Windows P8.5 a sestavení obou OS ještě zbývají |
+| P8 | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | předchozí M4 baseline je historie; znovupoužití prezentace čeká na nové M4/aktuální CI; hosted Mac P8.5 výslovně vynechán autorem |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
@@ -355,6 +355,14 @@ bere úplné místní M4 měření při shodě všech 150 měřených zdrojů; h
 neúspěch zůstává neúspěšnou historií a jeho meze se nepovolují. Nové Windows
 P8.5 a standardní kontroly správnosti, sestavení a stažených aplikací obou OS
 zůstávají podmínkou vydání. Automatická diagnostika Mac P8.5 se odstraňuje.
+
+**Navazující znovupoužití prezentace sestavy:** návrat z izolace může obnovit
+jediný vlastněný skrytý AIS místo nového vytváření stejné plné sestavy. Změna
+geometrie a přijatý close jej zruší, výběr a aktuální průhlednost se obnoví.
+615 cílených testů prošlo, kolekce má 2978 případů; omezená nativní zkouška
+ověřila celé zobrazení, skutečný výběr a zrušení při změně modelu/Zpět/close.
+Dva změněné produkční zdroje vyžadují novou úplnou M4 přejímku a aktuální CI.
+Předchozí baselines zůstávají historické; dosud nevydáno.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
    studií; startup, přepočet, přenos, paměť, odezva a ukončení dlouhé úlohy.

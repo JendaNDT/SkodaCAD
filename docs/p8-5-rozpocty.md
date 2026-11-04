@@ -206,7 +206,7 @@ palety se starý čekající výsledek nepoužije. Přijaté zavření nebo zán
 původní cache. Místní nativní sonda nezopakovala dlouhé čekání hostitele, proto
 se nepřisuzuje jediné konkrétní ikoně ani vytížení hostitelského stroje.
 
-Současné GUI regrese prošly v cílené sadě **313 testů**; celá kolekce má **2969
+GUI regrese tehdejší opravy prošly v cílené sadě **313 testů**; tehdejší kolekce měla **2969
 případů**. Zachované geometrické a transakční pojistky mají samostatné cílené
 ověření. Jeden místní nativní diagnostický cyklus potvrdil všechny původní
 fyzikální případy, zavření oken a procesů; nepředstavuje úplnou přejímku.
@@ -217,7 +217,37 @@ kontroly skutečného aktuálního sestavení obou systémů. Přejímka NDT ani
 provozu se tím neprohlašuje.
 
 
-## Úplné měření celé opravy na autorově M4
+## Vrácení z izolace s již vytvořenou prezentací sestavy
+
+Následná diagnostika Windows ukázala konkrétní cenu opětovného vytvoření
+prezentace při návratu na stejnou plnou sestavu. Samotný diagnostický cyklus
+nezopakoval dřívější překročení maximálního intervalu Qt a neurčuje jeho
+historickou příčinu. Původní kontrola platnosti všech 800 dílů i celé pořadí
+pracovních kroků zůstávají nezměněné.
+
+Okno sestavy nyní může ponechat právě jednu skrytou prezentaci plné sestavy
+a při návratu ji obnovit. Skrytý objekt je vyřazený z výběru; obnovení znovu
+aktivuje plochy i hrany, nastaví aktuální průhlednost a podle původního požadavku
+přizpůsobí kameru. Každá změna geometrie nebo nové načtení ji zruší. Přijaté
+zavření ji odstraní z nativního kontextu; zrušené zavření ji zachová. Nejde
+o rostoucí cache pohledů a neukládají se předchozí výsledky sestavy.
+
+Osm nových regresí ověřuje skutečný AIS a jeho vzhled, omezení na jeden uložený
+objekt, čekající inicializaci, chybný vstup i neúspěšné obnovení, změnu modelu
+a Zpět se stejnými id komponent a přijaté/zrušené zavření. Související sady mají
+celkem **615 úspěšných testů**, úplná kolekce **2978 případů**. Samostatná omezená
+nativní zkouška skutečné implementace zachovala 800 dílů, původní objem, výběr
+plochy c799, průhlednost a jeden hotový snímek každé operace. Ověřila také,
+že úprava a Zpět nepoužijí starou geometrii a přijaté zavření odstraní skrytý AIS.
+Tato zkouška operací není úplná výkonnostní přejímka.
+
+Změněné jsou dva produkční zdroje, proto předchozí úplná M4 baseline níže
+zůstává pouze historií. Nová úplná místní přejímka i aktuální CI této opravy
+ještě zbývají; vydání není dokončené. Politika, fyzikální měřiče a všechny
+historické raw výsledky zůstávají beze změny. Dočasný Windows diagnostický
+workflow je z hotové dávky odstraněný.
+
+## Úplné měření předchozí opravy na autorově M4
 
 [Samostatný raw JSON](baselines/p8-5-gui-response-macos-arm64.json) měří commit
 `04692953aa1b4b260e111c3e1c6d5ce30da5e39f`, tedy novou validaci, sloučení snímků

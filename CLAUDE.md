@@ -75,6 +75,14 @@
   Jeho dřívější překročení zůstávají neúspěšnou historií; limity, raw a fyzikální
   zkoušky se nemění a nesmějí být přepsány na úspěch. Standardní testy správnosti,
   sestavení a self-test skutečně stažené aplikace obou OS zůstávají požadované.
+- **Navazující oprava návratu z izolace:** okno sestavy vlastní nejvýše jednu
+  skrytou plnou prezentaci AIS. Před každým obnovením modelu a při přijatém close
+  ji odstraní; zrušený close ji zachová. Skrytý AIS není aktivní pro výběr,
+  návrat obnoví aktuální průhlednost, výběr ploch/hran a hotový snímek. Osm nových
+  regresí a související sady mají 615 úspěšných testů, kolekce 2978 případů.
+  Omezená nativní zkouška operací není přejímka: dva nové produkční otisky
+  vyžadují novou úplnou M4 baseline a aktuální CI. Historické M4/Windows výsledky
+  zůstávají historií; dřívější maximum Qt se této změně nepřisuzuje jako prokázaná příčina.
 - Použití: strojní díly, NDT, 3D tisk, krabičky na elektroniku – všechno.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
@@ -1679,7 +1687,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
 | P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](docs/p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | M4 2 + 20 / 23 mezí prošel; autor výslovně přeskočil hostovaný Mac P8.5; nové aktuální testy, Windows P8.5 a sestavení obou OS ještě zbývají |
+| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](docs/p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | předchozí M4 baseline je historie; znovupoužití prezentace sestavy čeká na nové M4/aktuální CI; hosted Mac P8.5 výslovně vynechán autorem |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada
