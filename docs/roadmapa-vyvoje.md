@@ -52,7 +52,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1–P8.4 vydané (`1d95045`); [P8.5 rozpočty](p8-5-rozpocty.md) rozpracovány | zmrazené limity, nové měření M4 a kontroly obou OS |
+| P8 | P8.1–P8.4 vydané (`1d95045`); P8.5 po PR #118 zatím nepřijato, [oprava odezvy](p8-5-rozpocty.md) v PR #119 | limity neměnit; nové 2 + 20 měření a celé kontroly obou OS |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,

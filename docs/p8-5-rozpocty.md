@@ -88,7 +88,7 @@ znamená splněné rozpočty. Dokončená, ale nadlimitní zkouška má exit 1 a
 neúspěšné položky. Neúplná měření jsou odmítnutá. Výsledek P8.5 čeká na kontroly
 aktuální dávky na obou OS; původní P8.4 nesmí nahradit Qt sondu.
 
-## Nové úplné měření na autorově M4
+## Původní úplné měření na autorově M4 před PR #118
 
 [Původní raw JSON](baselines/p8-5-macos-arm64.json) dokončil 2 zahřívací a 20 měřených
 cyklů, všech 180 kontrolních bodů, za **598,567 s**, normální exit 0. Všech **23 mezí
@@ -135,7 +135,45 @@ neúplný pokus je zachován pouze v ignored out, není přejímkovým výsledke
 Konečná cílená sada P8.5/P8.4 a fyzikálních referencí prošla: **69 testů za 3,55 s**,
 normální exit 0, celé Ruff src/tests, diff check a YAML parse. Celá sada má 2936
 testů; její běh patří před sloučením na oba systémy GitHubu. Ve zdrojích aplikace
-nejsou žádné změny, proto se místně neopakuje celá sada podle pravidla 6 projektu.
+této původní dávky nebyly žádné změny; úplná sada podle pravidla 6 patřila do CI.
+
+## Navazující oprava odezvy v PR #119
+
+PR #118 byl sloučen, ale následné měření na skutečném `main` překročilo na macOS
+časové limity. Dokončené fyzikální cykly ani zveřejnění instalačních ZIPů proto
+neznamenaly přijetí P8.5. Původní raw výše zůstává zachovaný a nenahrazuje nové
+ověření produkčních změn.
+
+Diagnostika oddělila dvě konkrétní zbytečné režie. Dohled paměti na macOS opakovaně
+spouštěl `ps`. Nyní čte aktuální RSS přímo přes `libproc.proc_pidinfo`
+(`PROC_PIDTASKINFO`). Každé čtení má nový buffer; ukládá se jen vazba na API,
+nikoli hodnota RSS nebo PID. Úplný nulový záznam se odlišuje od chyby či neúplného
+čtení. Shoda s nezávislým `ps`, souběžná čtení, zánik procesu a skutečné odmítnutí
+STEP při nedostatečné paměti mají regresní testy. Čtečky Windows a Linuxu se nemění.
+Nejde o snížení spotřeby RAM ani o důkaz příčiny všech původních překročení.
+
+Při otevření okna se navíc řetězilo sestavení rozhraní se spuštěním 3D ovladače.
+Nativní plocha nyní naplánuje inicializaci vlastněným jednorázovým Qt časovačem;
+skrytí nebo zrušení plochy požadavek zastaví. Čekající model zůstane zachován.
+Žádné vnořené `processEvents` se nepřidává. Samotné oddělení inicializace ještě
+neprokázalo splnění všech limitů.
+
+Nativní sonda se softwarovým vykreslováním a [zdroj OCCT 8](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/Visualization/TKV3d/V3d/V3d_View.cxx)
+potvrdily další mechanismus: `FitAll(false)` při zapnutém immediate režimu přesto
+volá aktualizaci pohledu. Následoval další výslovný `Redraw`. Při nastavení kamery
+a počátečního vzhledu je nyní immediate režim dočasně vypnutý a obnoví se i při
+výjimce. Hotový pohled se vykreslí celý. Geometrie, výběr ploch a hran, antialiasing,
+hardwarový ovladač i jeho macOS softwarová záloha zůstávají stejné.
+
+Krátká diagnostika `tests/diagnose_p85.py --output <nová-složka>` je určena pro
+macOS a obsahuje právě jeden cyklus bez zahřívání. Zaznamenává časové a CPU úseky
+a skutečné mezery Qt, ale **nikdy není přejímkou rozpočtů**. Vnořené úseky se
+nesčítají; rozdíl wall a CPU ani vysoký load average neprokazují vytížení hostitele.
+Dočasný workflow pracovní větve se do dokončené dávky neponechává.
+
+Původní měřiče P8.1–P8.4, fyzikální případy, vstupy, politika a ochranný rozpočet
+zůstávají nezměněné. Oprava čeká na nové úplné 2 + 20 měření a celé kontroly obou
+systémů. Přejímka NDT ani celodenního provozu se tím neprohlašuje.
 
 Při běžné práci lze rozpočítaný přepočet zastavit akcí Zastavit; zachová se poslední
 výsledek. Po pádu pomocného procesu se ohlásí chyba, poslední geometrie zůstane
