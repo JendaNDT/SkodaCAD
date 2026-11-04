@@ -80,7 +80,7 @@ from OCP.V3d import (
     V3d_Zneg,
     V3d_Zpos,
 )
-from PySide6.QtCore import QEvent, QPoint, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QLabel, QStackedLayout, QWidget
 
@@ -292,6 +292,9 @@ class _NativeSurface(QWidget):
             self.setAttribute(attribute)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._initialize_timer = QTimer(self)
+        self._initialize_timer.setSingleShot(True)
+        self._initialize_timer.timeout.connect(self._initialize_visible)
 
     def event(self, event):
         if event.type() in (QEvent.Type.FocusOut, QEvent.Type.WindowDeactivate,
@@ -311,7 +314,18 @@ class _NativeSurface(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        self._owner._initialize()
+        if not self._owner.ready and not self._owner.error:
+            # Neřetězit tvorbu okna/layoutu a ovladače OpenGL v jedné obsluze.
+            # Plocha i časovač zůstávají vlastněné Qt; žádné vnořené processEvents.
+            self._initialize_timer.start(1)
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._initialize_timer.stop()
+        super().hideEvent(event)
+
+    def _initialize_visible(self) -> None:
+        if self.isVisible():
+            self._owner._initialize()
 
     def paintEvent(self, event) -> None:  # noqa: N802
         self._owner._redraw()
