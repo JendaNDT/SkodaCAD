@@ -261,13 +261,45 @@ Raw je bajtově shodná kopie nového výstupu, SHA-256
 `2e5fdb84fc80c28770a151eb8030e1e3518815345d1d991b1e7d2d01e1cba701`.
 Původní dvě baselines zůstávají beze změny. Všech 150 otisků zdrojů, politika,
 tři vstupy a shoda JSONL, footeru a Qt záznamu byly ověřené. Následný commit
-baseline a dokumentace měřené zdroje nemění. Cílená sada GUI má **313 úspěšných
+baseline a dokumentace měřené zdroje nemění. Tehdejší cílená sada GUI měla **313 úspěšných
 testů**, úplná kolekce **2969 případů**; geometrické a transakční pojistky mají
 samostatné cílené ověření. Úplný Ruff a kontrola diffu prošly.
 
-Toto je místní přejímka omezené zátěže modelování a sestav. Přijetí P8.5 a vydání
-ještě vyžaduje nové úplné kontroly aktuálního PR i následného MAIN, oba hostované
-OS a skutečně stažené aplikace. Nejde o přejímku NDT nebo celodenního provozu.
+Navazující úplná sada macOS odhalila jeden neúspěšný regresní test opětovného
+zobrazení plochy: po pevném čekání 20 ms ještě nebyl zavolaný mock inicializace.
+Tento jednotkový test nyní čeká omezeně na skutečný signál vlastněného Qt časovače,
+potom stále vyžaduje právě jednu inicializaci. Nadále ověřuje okamžitý návrat ze
+show bez inicializace, zachování čekajícího modelu, zastavení časovače při hide
+a bezpečné zrušení při zániku. Přidaný případ se záměrným doručením za 50 ms
+ověřuje, že správnost nestojí na pevném spánku. Všech **6 testů inicializace prošlo**;
+nová úplná kolekce má **2970 případů**, její celé CI ověření ještě zbývá.
+Produkční plánování, všech 150 měřených zdrojů, native přejímka i zmrazené časové
+rozpočty a sonda Qt se touto úpravou testu nemění.
+
+Toto je místní přejímka omezené zátěže modelování a sestav. Nejde o přejímku NDT
+nebo celodenního provozu.
+
+### Výslovně zúžená přejímka autora z 4. 11. 2026
+
+Po vysvětlení, že čeká vzdálený Mac GitHubu a nikoli jeho zapnutý počítač,
+autor rozhodl hostovanou výkonnostní zkoušku Macu přeskočit a znovu to potvrdil.
+Aplikace je určená pro něj a případně jeho kolegy, ne pro obecnou distribuci
+na všech konfiguracích Macu. Podmínkou P8.5 na Macu je výše uvedená úplná místní
+M4 přejímka, při doložené shodě všech 150 měřených zdrojů, politiky a vstupů.
+Samotné úpravy testovacího čekání, porovnávacího workflow a dokumentace tyto
+zdroje nemění, proto nevyžadují nové měření stejných místních cyklů.
+
+Hostovaný profil `ci-macos` ani jeho následná diagnostika už nejsou podmínkou
+tohoto vydání a automatická P8.5 matice spouští pouze Windows. Politika a meze
+obou původních profilů se nemění. Historický hostovaný Mac běh zůstal neúspěšný
+kvůli maximální prodlevě Qt a sklonu RSS; nebyl opraven ani označen za úspěch.
+Výjimka autora nezaručuje výkon nebo dlouhodobou stabilitu na jiném Macu.
+
+Vydání stále vyžaduje nové úplné kontroly aktuálního PR i následného MAIN:
+Windows P8.5 a standardní testy správnosti, sestavení a self-test skutečně
+stažených aplikací obou OS. Dočasný diagnostický workflow byl odstraněn;
+jeho případný již čekající běh není přejímkou ani blokující podmínkou.
+Vydání zatím dokončené není.
 
 ## Historické úplné měření první opravy na autorově M4
 

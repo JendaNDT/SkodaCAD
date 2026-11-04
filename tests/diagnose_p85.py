@@ -166,9 +166,7 @@ def read_worker_trace(path):
     return records, partial_tail_bytes
 
 
-def child(folder, cycles=1):
-    if cycles not in (1, 3):
-        raise ValueError("Diagnostic cycles must be 1 or 3; this is never budget acceptance")
+def child(folder):
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication, QStyle
 
@@ -240,7 +238,7 @@ def child(folder, cycles=1):
     timer.timeout.connect(tick)
     timer.start(50)
     try:
-        soak_p8.child(folder, cycles, 0, 3072 * 1024**2)
+        soak_p8.child(folder, 1, 0, 3072 * 1024**2)
     finally:
         worker._worker_main = original_worker_main
         timer.stop()
@@ -248,7 +246,7 @@ def child(folder, cycles=1):
         trace.stream.close()
         baseline.write(folder / "timing-summary.json", {
             "diagnostic_only": True, "budget_acceptance": False,
-            "cycles": cycles, "warmups": 0, "ticks": ticks, "max_gap_s": maximum,
+            "cycles": 1, "warmups": 0, "ticks": ticks, "max_gap_s": maximum,
             "span_totals_inclusive_do_not_sum": trace.totals,
             "errors": trace.errors, "record_count": trace.count})
     if trace.errors:

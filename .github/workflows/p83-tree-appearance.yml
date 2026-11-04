@@ -46,6 +46,72 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: candidate
+      - name: Stejné současné zdroje, pouze původní obnova vzhledu před P8.3
+        shell: python
+        run: |
+          import ast
+          import hashlib
+          import json
+          from pathlib import Path
+          import subprocess
+
+          root = Path.cwd()
+          baseline, candidate = root / "baseline", root / "candidate"
+          source = "src/skodacad/gui/assembly_window.py"
+          historical = "93843f4790ef13b518b10fea26e3e794ff0d79bf"
+
+          def git(tree, *args, text=None, raw=False):
+              output = subprocess.run(["git", "-C", str(tree), *args], input=text,
+                  text=True, encoding="utf-8", stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE, check=True).stdout
+              return output if raw else output.strip()
+
+          def method(text):
+              classes = [node for node in ast.parse(text).body
+                         if isinstance(node, ast.ClassDef) and node.name == "AssemblyWindow"]
+              assert len(classes) == 1
+              methods = [node for node in classes[0].body
+                         if isinstance(node, ast.FunctionDef)
+                         and node.name == "_refresh_tree_visibility"]
+              assert len(methods) == 1 and not methods[0].decorator_list
+              node = methods[0]
+              return node.lineno - 1, node.end_lineno
+
+          actual = git(candidate, "rev-parse", "HEAD")
+          original = git(baseline, "show", historical + ":" + source, raw=True)
+          current = git(candidate, "show", actual + ":" + source, raw=True)
+          old_start, old_end = method(original)
+          start, end = method(current)
+          old_method = "".join(original.splitlines(keepends=True)[old_start:old_end])
+          current_method = "".join(current.splitlines(keepends=True)[start:end])
+          assert old_method != current_method
+          lines = current.splitlines(keepends=True)
+          controlled = "".join(lines[:start]) + old_method + "".join(lines[end:])
+          ast.parse(controlled)
+          # Skutečný místní commit: žádná přepsaná identita starého měření.
+          git(baseline, "fetch", "--no-tags", "--depth=1", "origin", actual)
+          git(baseline, "read-tree", actual)
+          blob = git(baseline, "hash-object", "-w", "--stdin", text=controlled)
+          git(baseline, "update-index", "--cacheinfo", "100644," + blob + "," + source)
+          tree = git(baseline, "write-tree")
+          before = git(baseline, "-c", "user.name=P83 controlled reference",
+              "-c", "user.email=p83-reference@users.noreply.github.com", "commit-tree",
+              tree, "-p", actual, text="P83 controlled baseline of " + actual
+              + ": only _refresh_tree_visibility from " + historical + "\n")
+          assert git(baseline, "diff", "--name-only", actual, before).splitlines() == [source]
+          git(baseline, "checkout", "--force", "--detach", before)
+          assert not git(baseline, "status", "--porcelain")
+          context = {"schema": "skodacad-p83-controlled-baseline-v1",
+              "candidate_commit": actual, "baseline_commit": before,
+              "baseline_tree": tree, "baseline_parent": actual,
+              "historical_method_commit": historical, "source": source,
+              "method": "AssemblyWindow._refresh_tree_visibility",
+              "historical_method_sha256": hashlib.sha256(old_method.encode()).hexdigest(),
+              "candidate_method_sha256": hashlib.sha256(current_method.encode()).hexdigest(),
+              "changed_sources": [source],
+              "scope": "Only the historical method is restored; all other current code and meters remain identical."}
+          with (root / "p83-baseline-context.json").open("x", encoding="utf-8") as output:
+              json.dump(context, output, ensure_ascii=False, indent=2)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -84,6 +150,7 @@ jobs:
         with:
           name: p83-${{ matrix.os }}
           path: |
+            p83-baseline-context.json
             p83-before.json
             p83-after.json
             p83-comparison.json

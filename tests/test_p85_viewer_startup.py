@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 from shiboken6 import isValid
 
@@ -32,21 +32,27 @@ def test_show_returns_before_native_initialization_and_keeps_pending_model(start
     initialize.assert_not_called()
     assert widget._pending == (model, False, None, [])
     assert not widget.ready
-    QTest.qWait(20)
+    assert QSignalSpy(widget._surface._initialize_timer.timeout).wait(1000)
     initialize.assert_called_once_with()
     app.processEvents()
     initialize.assert_called_once_with()
 
 
-def test_hide_before_first_turn_cancels_initialization_until_shown_again(startup_viewer):
+@pytest.mark.parametrize("delivery_delay_ms", [1, 50])
+def test_hide_before_first_turn_cancels_initialization_until_shown_again(
+        startup_viewer, delivery_delay_ms):
     _app, widget, initialize = startup_viewer
     widget.show()
     widget.hide()
+    assert not widget._surface._initialize_timer.isActive()
     QTest.qWait(20)
     initialize.assert_not_called()
     widget.show()
     initialize.assert_not_called()
-    QTest.qWait(20)
+    assert widget._surface._initialize_timer.isActive()
+    # Testujeme i opožděné doručení: 20 ms není smluvní lhůta Qt události.
+    widget._surface._initialize_timer.start(delivery_delay_ms)
+    assert QSignalSpy(widget._surface._initialize_timer.timeout).wait(1000)
     initialize.assert_called_once_with()
 
 
