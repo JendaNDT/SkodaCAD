@@ -247,7 +247,94 @@ CI a vydání ještě zbývají. Politika, fyzikální měřiče a všechny hist
 výsledky zůstávají beze změny. Dočasný Windows diagnostický workflow je z hotové
 dávky odstraněný.
 
-## Úplné měření obnovené prezentace na autorově M4
+## Aktuální místní oprava životnosti 3D ploch
+
+Po dotazu autora „A nemůžeš to ověřit tady lokálně?“ byly zbývající zkoušky
+provedeny na jeho skutečném M4. Původní balíček `1187ae7` dokončil self-test
+s chybou kontroly životnosti 3D ploch: po jediném `processEvents` ještě nemusela
+doběhnout záměrně odložená inicializace. V protokolu byly také tři výjimky
+události Qt bez Python vlastníka plochy. Původní neúspěšný výsledek
+a jeho ZIP zůstávají zachované; nejde o nový úspěšný výsledek této verze.
+
+Oprava čeká omezeně na skutečnou připravenost 3D pohledu, zachovává všechny
+čtyři zkoušky plného vykreslení a zničí zkušební okno i při chybě. Událost
+plochy bez Python vlastníka se předá základnímu Qt widgetu. Šest nových regresí
+před opravou selhalo, po opravě prošlo spolu se souvisejícími **299 testy**.
+Úplná místní sada má **2984 úspěšných případů, žádné přeskočené ani chyby**,
+normální exit 0. Prošly Ruff a všech šest původních referenčních případů P0.
+
+Samostatná aplikace byla sestavena oficiálním spec, zabalena a znovu rozbalena
+pomocí `ditto`. Skutečný arm64 spustitelný soubor, podpis, jeho podmínka
+a vložený commit byly ověřené na disku. Self-test této rozbalené aplikace
+skončil **VÝSLEDEK: OK, exit 0**, bez Python override/AttributeError/Traceback
+chyb. Zachoval skutečná Qt tlačítka a 3D náhled, desetinnou čárku, závislé
+výrazy a přejmenování, zdvih víčka o 12,5 mm se sedmi splněnými vazbami,
+návrat a zrušení bez změny modelu/výsledku/receptu/historie/zdrojů/kamery,
+použití jedním Zpět/Znovu a odmítnutí chybného nebo zastaralého náhledu.
+
+[Aktuální samostatný raw JSON](baselines/p8-5-native-lifecycle-macos-arm64.json)
+měří skutečný místní commit `b9df4585679d058c415ba33de6e4c1a0e1d5c170`
+(tree `703a303e49ec258bbfd66be79b986f134063454d`), SHA-256 raw
+`0eb469eb82813a23668911d6d861d4b2a2c69395810e1dfd13074503c5c3fdfb`. Dva měřené zdroje se proti `1187ae7` změnily,
+proto vznikla tato nová přejímka. Všech **150 otisků zdrojů a tři vstupy**
+odpovídají měřenému snapshotu; politika, pracovní kroky a fyzika se neměnily.
+Dokončil **2 zahřívací + 20 měřených cyklů, 180 kontrolních bodů a všech
+23 zmrazených mezí** za **490,755 s**. Nativní i přímo
+pozorovaný návrat spouštěče mají exit 0. Apple M4 / macOS 27.2 arm64,
+Python 3.12.14, build123d 0.13.0 / OCP 8.0.1.1.0 / PySide6 6.11.3.
+
+| Ukazatel | Naměřeno | Limit M4 |
+|---|---:|---:|
+| Otevření historie, p95 | 2,409 s | 5 s |
+| Editace + Zpět + Znovu, p95 | 6,711 s | 15 s |
+| Uložit a znovu otevřít, p95 | 2,403 s | 5 s |
+| Zastavit a obnovit, p95 | 2,585 s | 6 s |
+| Pád workeru a obnova, p95 | 2,650 s | 6 s |
+| STEP limit a obnova, p95 | 1,592 s | 4 s |
+| Sestava, náhled a zavření, p95 | 3,651 s | 7 s |
+| Konec cyklu, p95 | 0,253 s | 0,75 s |
+| Celý cyklus, p95 | 22,152 s | 45 s |
+| Horní hranice p95 intervalu Qt | 0,100 s | 0,25 s |
+| Nejdelší interval Qt | 0,840 s | 2 s |
+| Vzorkované maximum rodiče | 1322,891 MiB | 1536 MiB |
+| Vzorkované současné maximum součtu procesů | 2927,578 MiB | 3072 MiB |
+| Rozdíl koncových mediánů rodiče | −42,766 MiB | +384 MiB |
+| Párový sklon | −1,315 MiB/cyklus | +24 MiB/cyklus |
+
+Qt sonda měřila celou nativní zkoušku včetně inicializace, vnořených smyček,
+diagnostiky GC a běžného zavření: **8520 doručení,
+žádná chyba**. RSS dohled má **1130 průběžných
+odběrů, z toho 3 s neúplným RSS workerů**.
+Nejsou nahrazené nulou. Všech **180 kontrolních bodů** má úplné kladné RSS
+a vzorkovaná maxima je pokrývají. Agregovaný čítač neurčuje místo ani příčinu
+neúplných průběžných odběrů. Původní validátor tento rozdíl mezi průběžným
+odběrem a povinným úplným kontrolním bodem zachovává; meze se nepovolovaly.
+
+Ve všech 22 koncích cyklů zůstali pouze dva konkrétní workery hlavního dílu,
+žádné okno sestavy ani parametrický dialog. Po běžném zavření nezůstal žádný
+vlastněný worker. Původní validátor ověřil analytickou geometrii historie,
+Zpět/Znovu, uložení/otevření, zrušení, skutečný pád, STEP limit a obnovu,
+800 dílů, výběr c799 a skutečný náhled. Čtyři nativní snímky byly prohlédnuté:
+čistá sestava 800 kopií / c799 a historie s 60 kapsami / t=12; obě dvojice
+první/poslední jsou bajtově shodné.
+
+Samostatné aktuální místní P8.3 prošlo původním přísným porovnáním před/po.
+Řízená reference má jako jediného rodiče tento měřený snapshot a vrací pouze
+historickou metodu obnovy vzhledu z `93843f4`; všech 146 otisků, skutečné
+vstupy, intervaly i fyzika jsou ověřené. Aktuální místní P8.4 dokončilo
+2 + 20 cyklů / 180 bodů s původní validací, 148 otisky a třemi vstupy;
+normální exit 0 a běžné zavření bez workerů. Všech osm snímků obou zkoušek
+bylo skutečně prohlédnutých. P8.4 se neoznačuje za P8.5 rozpočtový výsledek.
+
+Jde o místní důkazy na tomto M4, nikoli úspěšný hostovaný workflow nebo
+self-test staženého artefaktu GitHubu. Nová úplná kontrola Windows, aktuální
+PR/MAIN a skutečné vydání ještě zbývají. Výslovné přeskočení hostovaného
+Mac **výkonu** se nemění a není přeskočením testů správnosti. Současný
+vzorkovaný součet RSS není unikátní RAM nebo GPU paměť. Záporný trend není
+úspora připsaná opravě, důkaz absence úniků, celodenní stability nebo přejímka NDT.
+Všechny starší baselines a neúspěšné výsledky zůstávají historií.
+
+## Předchozí úplné měření obnovené prezentace na autorově M4
 
 [Nový samostatný raw JSON](baselines/p8-5-retained-presentation-macos-arm64.json)
 měří commit `64f5a8db4a8bddb9217341b6f7b230fba62bb1fb`. Jeho SHA-256 je

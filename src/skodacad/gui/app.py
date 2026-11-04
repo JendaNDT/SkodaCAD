@@ -618,7 +618,8 @@ def _self_test_viewer_lifecycle(window, lines) -> bool:
     """Destroy real native surfaces while Qt is alive, including Python reference cycles."""
     import gc
 
-    from PySide6.QtCore import QEvent
+    from PySide6.QtCore import QDeadlineTimer, QEvent
+    from PySide6.QtTest import QTest
 
     from skodacad.gui.viewer import OccViewer
 
@@ -628,23 +629,27 @@ def _self_test_viewer_lifecycle(window, lines) -> bool:
     try:
         for _ in range(4):
             viewer = OccViewer()
-            viewer.resize(640, 480)
-            viewer.show()
-            QApplication.processEvents()
-            assert viewer.ready, viewer.error
-            _check_render_size(viewer)
-            viewer.show_part(window.session.result.part, fit=True)
-            viewer.resize(720, 520)
-            QApplication.processEvents()
-            _check_render_size(viewer)
-            viewer.fit_all()
-            assert viewer.dump(str(user_dir() / "self-test-zivotnost-3d.png"))
-            viewer.close()
-            viewer.deleteLater()
-            QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-            del viewer
-            gc.collect()
-            QApplication.processEvents()
+            try:
+                viewer.resize(640, 480)
+                viewer.show()
+                deadline = QDeadlineTimer(5000)
+                while not viewer.ready and not viewer.error and not deadline.hasExpired():
+                    QTest.qWait(10)
+                assert viewer.ready, viewer.error or "Nativní 3D plocha se do 5 s nespustila"
+                _check_render_size(viewer)
+                viewer.show_part(window.session.result.part, fit=True)
+                viewer.resize(720, 520)
+                QApplication.processEvents()
+                _check_render_size(viewer)
+                viewer.fit_all()
+                assert viewer.dump(str(user_dir() / "self-test-zivotnost-3d.png"))
+            finally:
+                viewer.close()
+                viewer.deleteLater()
+                QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+                del viewer
+                gc.collect()
+                QApplication.processEvents()
         lines.append("✓ Životnost 3D ploch: 4× otevření, změna velikosti, plné rozlišení "
                      "OpenGL před exportem, kreslení, zavření a zničení nativního widgetu")
         return True

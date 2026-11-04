@@ -299,6 +299,9 @@ class _NativeSurface(QWidget):
         self._initialize_timer.timeout.connect(self._initialize_visible)
 
     def event(self, event):
+        owner = getattr(self, "_owner", None)
+        if owner is None:
+            return super().event(event)
         if event.type() in (QEvent.Type.FocusOut, QEvent.Type.WindowDeactivate,
                             QEvent.Type.Hide, QEvent.Type.UngrabMouse):
             self._owner.cancel_guide_drag()
