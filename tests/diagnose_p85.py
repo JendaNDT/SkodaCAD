@@ -18,6 +18,43 @@ import budget_p8
 import soak_p8
 
 
+def load_average():
+    """An unavailable host statistic is explicit, never a zero load sample."""
+    getter = getattr(os, "getloadavg", None)
+    if getter is None:
+        return {"available": False, "values": None, "reason": "not_supported"}
+    try:
+        return {"available": True, "values": list(getter()), "reason": None}
+    except OSError as exc:
+        return {"available": False, "values": None, "reason": type(exc).__name__}
+
+
+def diagnostic_application(trace):
+    """Time actual Qt dispatch; retain only primitive receiver descriptions."""
+    from PySide6.QtWidgets import QApplication
+
+    class Application(QApplication):
+        def notify(self, receiver, event):
+            if trace.stream.closed:
+                return super().notify(receiver, event)
+            wall, cpu, thread = time.perf_counter(), time.process_time(), time.thread_time()
+            event_type = int(event.type())
+            receiver_type = type(receiver).__name__
+            try:
+                return super().notify(receiver, event)
+            finally:
+                elapsed = time.perf_counter() - wall
+                if elapsed >= .05:
+                    trace.emit({"type": "qt_notify", "receiver_type": receiver_type,
+                                "event_type": event_type, "start_s": wall-trace.started,
+                                "wall_s": elapsed, "process_cpu_s": time.process_time()-cpu,
+                                "thread_cpu_s": time.thread_time()-thread,
+                                "main_thread": threading.get_ident() == trace.main,
+                                "active": list(getattr(trace.local, "stack", []))})
+
+    return Application([])
+
+
 class Trace:
     def __init__(self, folder, prefix="", started=None):
         self.stream = (folder / f"{prefix}timing.jsonl").open("x", encoding="utf-8")
@@ -168,7 +205,7 @@ def read_worker_trace(path):
 
 def child(folder):
     from PySide6.QtCore import Qt, QTimer
-    from PySide6.QtWidgets import QApplication, QStyle
+    from PySide6.QtWidgets import QStyle
 
     import skodacad.worker as worker
     import soak_p8_gui
@@ -180,8 +217,8 @@ def child(folder):
     from skodacad.gui.main_window import MainWindow
     from skodacad.gui.viewer import OccViewer
 
-    app = QApplication([])
     trace = Trace(folder)
+    app = diagnostic_application(trace)
     os.environ["SKODACAD_P85_TRACE_FOLDER"] = str(folder)
     os.environ["SKODACAD_P85_TRACE_EPOCH"] = str(trace.started)
     original_worker_main = worker._worker_main
@@ -231,7 +268,7 @@ def child(folder):
             trace.emit({"type": "qt_gap", "start_s": last - trace.started,
                         "end_s": now - trace.started, "wall_s": gap,
                         "active": list(getattr(trace.local, "stack", [])),
-                        "recent": list(trace.recent), "loadavg": list(os.getloadavg()),
+                        "recent": list(trace.recent), "host_load_average": load_average(),
                         "process_cpu_s": time.process_time()})
         last = now
 
