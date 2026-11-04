@@ -188,6 +188,28 @@ neověřitelného podtvaru. Diagnostika nyní zaznamenává také skutečný wor
 identitu požadavku a CPU/wall úseky přepočtu, validace, kódování a odeslání.
 Tato úprava má cílené ověření; nové úplné přejímkové měření ji teprve čeká.
 
+Další záznamy rozlišily opakované explicitní snímky při obnově sestavy. Signál
+výběru během `show_part` synchronně obnovuje zvýraznění a pohybové rukojeti;
+každá obsluha dříve kreslila zvlášť. Krátká synchronní dávka nyní zachová všechny
+změny scény i signály a vykreslí až hotový stav. Platí i pro vnořenou obnovu;
+po výjimce se dávka ukončí a mimo ni se kreslí bez odkladu. V nativní sondě stejné
+sestavy přešla izolace i obnovení 800 kopií ze sedmi explicitních snímků na jeden,
+se stejnou geometrií, výběrem, receptem a historií. Počet snímků není měření FPS
+ani přejímka rozpočtů.
+
+Načítání systémových ikon už netvoří součást konstrukce hlavního okna. Vlastní
+Qt časovač po ustálení viditelného okna a spuštění 3D doplňuje jednu akci v každém
+průchodu smyčkou. Akce, nabídky a klávesové zkratky zůstávají stejné; při změně
+palety se starý čekající výsledek nepoužije. Přijaté zavření nebo zánik vlastníka
+čekající práci zruší. Vektorové CAD ikony zůstávají synchronní a používají svou
+původní cache. Místní nativní sonda nezopakovala dlouhé čekání hostitele, proto
+se nepřisuzuje jediné konkrétní ikoně ani vytížení hostitelského stroje.
+
+Současné GUI regrese prošly v cílené sadě **313 testů**; celá kolekce má **2969
+případů**. Zachované geometrické a transakční pojistky mají samostatné cílené
+ověření. Jeden místní nativní diagnostický cyklus potvrdil všechny původní
+fyzikální případy, zavření oken a procesů; nepředstavuje úplnou přejímku.
+
 Původní měřiče P8.1–P8.4, fyzikální případy, vstupy, politika a ochranný rozpočet
 zůstávají nezměněné. Úplné místní měření opravy je uvedené níže; před přijetím stále zbývají nové
 kontroly skutečného aktuálního sestavení obou systémů. Přejímka NDT ani celodenního

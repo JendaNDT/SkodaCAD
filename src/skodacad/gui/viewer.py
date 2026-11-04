@@ -18,6 +18,8 @@ import ctypes
 import logging
 import math
 import sys
+from contextlib import contextmanager
+from functools import wraps
 from typing import Any
 
 from OCP.AIS import (
@@ -358,6 +360,14 @@ class _NativeSurface(QWidget):
         self._owner._wheel(event)
 
 
+def _complete_frame(function):
+    @wraps(function)
+    def update(self, *args, **kwargs):
+        with self.batch_update():
+            return function(self, *args, **kwargs)
+    return update
+
+
 class OccViewer(QWidget):
     """3D prohlížeč dílu. Když se OpenGL nepodaří spustit, ukáže místo pádu zprávu."""
 
@@ -424,6 +434,8 @@ class OccViewer(QWidget):
         self._last: QPoint | None = None
         self._dragging = False
         self._known_size: tuple[int, int] | None = None
+        self._redraw_depth = 0
+        self._redraw_pending = False
         self.software = False  # macOS bez grafické karty: OpenGL kreslí procesor
         self._failed: list[Any] = []  # nepovedený pokus o OpenGL – na Macu se neruší dřív než okno
 
@@ -433,6 +445,27 @@ class OccViewer(QWidget):
     def ready(self) -> bool:
         return self._view is not None
 
+    @contextmanager
+    def batch_update(self):
+        """Finish synchronous scene/selection changes before drawing their frame."""
+        self._redraw_depth += 1
+        try:
+            yield
+        finally:
+            self._redraw_depth -= 1
+            if self._redraw_depth == 0 and self._redraw_pending:
+                self._redraw_pending = False
+                if self.ready:
+                    self._view.Redraw()
+
+    def _request_redraw(self):
+        if self.ready:
+            if self._redraw_depth:
+                self._redraw_pending = True
+            else:
+                self._view.Redraw()
+
+    @_complete_frame
     def show_part(self, part: Any | None, fit: bool = False,
                   accent: list[Any] | None = None,
                   transparent: list[tuple[Any, float]] | None = None) -> None:
@@ -492,7 +525,7 @@ class OccViewer(QWidget):
             self._fit_camera()
         self.picked_point = None
         self.selection_changed.emit([])
-        self._view.Redraw()
+        self._request_redraw()
 
     def set_transparent_parts(self, parts: list[tuple[Any, float]]) -> None:
         """Změní pouze vzhled částí aktuálního dílu; zachová kameru i vybrané plochy.
@@ -519,7 +552,7 @@ class OccViewer(QWidget):
             # vybraných ploch musí zůstat stejní pro rozepsanou vazbu.
             self._context.RecomputePrsOnly(self._ais, False)
             self._context.HilightSelected(False)
-            self._view.Redraw()
+            self._request_redraw()
         self._transparent_parts = shapes
 
     def disable_model_selection(self) -> None:
@@ -542,7 +575,7 @@ class OccViewer(QWidget):
         if self._ais is not None:
             self._context.Deactivate(self._ais)
         self._design_ghost = ghost
-        self._view.Redraw()
+        self._request_redraw()
 
     def _remove_design_ghost(self) -> None:
         if self.ready and self._design_ghost is not None:
@@ -568,7 +601,7 @@ class OccViewer(QWidget):
             return
         if self.ready:
             self._context.ClearSelected(False)
-            self._view.Redraw()
+            self._request_redraw()
         self.picked_point = None
         self.selection_changed.emit([])
         self.selection_cleared.emit()
@@ -595,7 +628,7 @@ class OccViewer(QWidget):
             self._context.Deactivate(ais)
             self._context.SetZLayer(ais, Graphic3d_ZLayerId_Topmost)
             self._highlight = ais
-        self._view.Redraw()
+        self._request_redraw()
 
     def show_guides(self, data: dict | None) -> None:
         """Přesné kubické křivky z čísel session; řídicí polygon odděleně čárkovaně."""
@@ -610,7 +643,7 @@ class OccViewer(QWidget):
     def _draw_guides(self, data) -> None:
         self._remove_guides()
         if data is None:
-            self._view.Redraw()
+            self._request_redraw()
             return
         for i, guide in enumerate(data["guides"]):
             poles = guide["poles"]
@@ -642,7 +675,7 @@ class OccViewer(QWidget):
                     p = poles[j]
                     self._guide_objects += self._marker_objects(
                         p, p, f"{letter} řízení {j}", color, point_size=6.0)
-        self._view.Redraw()
+        self._request_redraw()
 
     def set_guide_drag_step(self, step: float) -> None:
         """Volba pohledu; rozpracovaný tah se při změně kroku zruší."""
@@ -768,7 +801,7 @@ class OccViewer(QWidget):
         self._dragging = False
         self._surface.setFocus()
         self._surface.setCursor(Qt.CursorShape.CrossCursor)
-        self._view.Redraw()
+        self._request_redraw()
         return True
 
     def cancel_rotation_center_pick(self, *, redraw=True, notify=True) -> bool:
@@ -789,7 +822,7 @@ class OccViewer(QWidget):
             self._context.ClearDetected(False)
             if redraw:
                 self._draw_move_handles()
-                self._view.Redraw()
+                self._request_redraw()
         if notify:
             self.rotation_center_pick_finished.emit(data["token"])
             self.selection_drag_message.emit("Výběr reference zrušen; osa, střed ani díly "
@@ -818,7 +851,7 @@ class OccViewer(QWidget):
                             context.Deactivate(marker)
                             context.SetZLayer(marker, Graphic3d_ZLayerId_Topmost)
                             data.update(first=shape, marker=marker)
-                            self._view.Redraw()
+                            self._request_redraw()
                             self.selection_drag_message.emit(
                                 "První vrchol převzat (oranžový bod). Klikni na druhý vrchol; "
                                 "směr osy povede od prvního ke druhému. Esc = zrušit.")
@@ -908,7 +941,7 @@ class OccViewer(QWidget):
                 self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
                 self._move_objects.append(shown)
             self._move_tips.append((axis, tuple(tip)))
-        self._view.Redraw()
+        self._request_redraw()
 
     def _draw_rotation_handles(self) -> None:
         center = self._move_data["anchor"]
@@ -967,7 +1000,7 @@ class OccViewer(QWidget):
                 self._move_objects.append(shown)
             self._move_tips.append((axis, tip))
             self._move_rings.append(points)
-        self._view.Redraw()
+        self._request_redraw()
 
     def _rotation_frame_axis(self, axis):
         return self._move_data["axis_direction"] if axis == 3 else axis
@@ -1038,7 +1071,7 @@ class OccViewer(QWidget):
             "puštění = potvrdit · Esc = zrušit")
         if rotating:
             self._draw_move_handles()
-        self._view.Redraw()
+        self._request_redraw()
         return True
 
     def _move_selection_drag(self, pos) -> None:
@@ -1085,7 +1118,7 @@ class OccViewer(QWidget):
         drag["preview"].SetLocalTransformation(transform)
         if self._highlight is not None:
             self._highlight.SetLocalTransformation(transform)
-        self._view.Redraw()
+        self._request_redraw()
         self.selection_drag_message.emit(
             f"Otočení {self._rotation_axis_label(axis)}: {drag['angle']:g}° · "
             "puštění = potvrdit · Esc = zrušit")
@@ -1131,7 +1164,7 @@ class OccViewer(QWidget):
         for start, end, text in lines:
             self._measure_objects += self._marker_objects(start, end, text,
                                                           _rgb(0.0, 0.22, 0.07))
-        self._view.Redraw()
+        self._request_redraw()
 
     def show_probe(self, body: Any, state: str, start: Any, end: Any, text: str,
                    beam: Any = ()) -> None:
@@ -1150,13 +1183,13 @@ class OccViewer(QWidget):
         self._context.Deactivate(shown)
         self._probe_objects = [shown, *self._marker_objects(start, end, text, color),
                                *self._beam_objects(beam, color)]
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_probe(self) -> None:
         if not self.ready:
             return
         self._remove_probe()
-        self._view.Redraw()
+        self._request_redraw()
 
     def _remove_probe(self) -> None:
         for shown in self._probe_objects:
@@ -1190,12 +1223,12 @@ class OccViewer(QWidget):
             self._context.Deactivate(edges)
             self._context.SetZLayer(edges, Graphic3d_ZLayerId_Topmost)
             self._target_objects.append(edges)
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_target(self) -> None:
         if self.ready:
             self._remove_target()
-            self._view.Redraw()
+            self._request_redraw()
 
     def show_points(self, points: list, colors: list) -> None:
         """Barevné body (kuličky) navrch dílu – mapa kontaktních ploch návrhu poloh sondy.
@@ -1221,12 +1254,12 @@ class OccViewer(QWidget):
             self._context.Deactivate(shown)
             self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
             self._point_objects.append(shown)
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_points(self) -> None:
         if self.ready:
             self._remove_points()
-            self._view.Redraw()
+            self._request_redraw()
 
     def _remove_points(self) -> None:
         for shown in self._point_objects:
@@ -1276,12 +1309,12 @@ class OccViewer(QWidget):
             self._context.Display(box, False)
             self._context.Deactivate(box)
             self._plan_objects.append(box)
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_plan(self) -> None:
         if self.ready:
             self._remove_plan()
-            self._view.Redraw()
+            self._request_redraw()
 
     def _remove_plan(self) -> None:
         for shown in self._plan_objects:
@@ -1363,20 +1396,20 @@ class OccViewer(QWidget):
                 self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
             if self._ais is not None:
                 self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
-            self._view.Redraw()
+            self._request_redraw()
             self._context.Remove(shown, False)
             if self._ais is not None:
                 self._context.SetDisplayMode(self._ais, AIS_Shaded, False)
-            self._view.Redraw()
+            self._request_redraw()
             return
         if variant == "probe":  # průhledné těleso (virtuální NDT sonda)
             body = AIS_Shape(BRepPrimAPI_MakeBox(10, 10, 10).Shape())
             body.SetColor(_rgb(*PROBE_COLORS["ok"]))
             body.SetTransparency(0.35)
             self._context.Display(body, False)
-            self._view.Redraw()
+            self._request_redraw()
             self._context.Remove(body, False)
-            self._view.Redraw()
+            self._request_redraw()
             return
         if variant == "points":  # mapa kontaktních ploch návrhu poloh (etapa 09)
             self.show_points([(0, 0, 0), (10, 0, 0), (0, 10, 0)],
@@ -1401,9 +1434,9 @@ class OccViewer(QWidget):
                 colored.SetCustomColor(face, _rgb(0.82, 0.38, 0.33))
                 break
             self._context.Display(colored, False)
-            self._view.Redraw()
+            self._request_redraw()
             self._context.Remove(colored, False)
-            self._view.Redraw()
+            self._request_redraw()
             return
         if variant in ("point", "ball"):
             marker = Aspect_TOM_BALL if variant == "ball" else Aspect_TOM_POINT
@@ -1418,9 +1451,9 @@ class OccViewer(QWidget):
                 shown.SetFontAspect(Font_FA_Bold)
         self._context.Display(shown, False)
         self._context.SetZLayer(shown, Graphic3d_ZLayerId_Topmost)
-        self._view.Redraw()
+        self._request_redraw()
         self._context.Remove(shown, False)
-        self._view.Redraw()
+        self._request_redraw()
 
     def show_thickness_map(self, nodes: list, triangles: list, colors: list,
                            marker: tuple[Any, str] | None = None,
@@ -1466,13 +1499,13 @@ class OccViewer(QWidget):
         if self._ais is not None:
             self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
         self._highlight_fill(False)  # výběr jen obtáhnout, ať nezakryje barvy mapy
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_thickness_map(self) -> None:
         if not self.ready:
             return
         self._remove_map()
-        self._view.Redraw()
+        self._request_redraw()
 
     def show_coverage_map(self, nodes: list, triangles: list, colors: list,
                           fill: list[Any] | None = None, topmost: bool = False) -> None:
@@ -1496,7 +1529,7 @@ class OccViewer(QWidget):
             self._context.Deactivate(cut_faces)
             self._coverage_objects.append(cut_faces)
         if not triangles:
-            self._view.Redraw()
+            self._request_redraw()
             return
         from OCP.OCP.collections import HArray1_int
 
@@ -1520,12 +1553,12 @@ class OccViewer(QWidget):
         if self._ais is not None:
             self._context.SetDisplayMode(self._ais, AIS_WireFrame, False)
         self._highlight_fill(False)
-        self._view.Redraw()
+        self._request_redraw()
 
     def hide_coverage_map(self) -> None:
         if self.ready:
             self._remove_coverage()
-            self._view.Redraw()
+            self._request_redraw()
 
     def _remove_coverage(self) -> None:
         for shown in self._coverage_objects:
@@ -1623,7 +1656,7 @@ class OccViewer(QWidget):
             self._sync_size()
             self._fit_camera()
             self._draw_move_handles()
-            self._view.Redraw()
+            self._request_redraw()
 
     def _fit_camera(self) -> None:
         # FitAll(false) stále volá Update při zapnutém immediate režimu OCCT.
@@ -1701,7 +1734,7 @@ class OccViewer(QWidget):
             self.show_part(part, fit=fit, accent=accent, transparent=transparent)
             self.set_move_selection(move_data)
         else:
-            self._view.Redraw()
+            self._request_redraw()
         if self._pending_guides is not None:
             self.show_guides(self._pending_guides)
 
@@ -1760,7 +1793,7 @@ class OccViewer(QWidget):
     def _redraw(self) -> None:
         if self.ready:
             self._sync_size()
-            self._view.Redraw()
+            self._request_redraw()
 
     def _resized(self) -> None:
         self.cancel_rotation_center_pick()

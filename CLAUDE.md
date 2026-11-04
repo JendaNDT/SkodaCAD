@@ -1670,7 +1670,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
 | P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); P8.5 po PR #118 zatím nepřijato, [oprava odezvy](docs/p8-5-rozpocty.md) v rozpracovaném PR #119 | limity neměnit; původní M4 2 + 20 prošlo, hostovaný Mac ne; další oprava opakované analýzy geometrie čeká na přejímku |
+| P8 výkon/stabilizace | P8.1–P8.4 vydané (`1d95045`); P8.5 po PR #118 zatím nepřijato, [oprava odezvy](docs/p8-5-rozpocty.md) v rozpracovaném PR #119 | limity neměnit; původní M4 2 + 20 prošlo, hostovaný Mac ne; nová validace, sloučení snímků a načítání ikon čekají na přejímku |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
 Slučování do main: podle pokynu autora z 28. 10. 2026 po úspěšných kontrolách (úplná sada

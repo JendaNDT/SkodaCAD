@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Iterable
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -2142,12 +2143,14 @@ class AssemblyWindow(QMainWindow):
         self._refresh_view(fit=True)
 
     def _refresh_view(self, fit: bool) -> None:
-        self._show_visible(fit=fit)
-        self._refresh_tree_visibility()
-        self._refresh_highlight()
-        self._refresh_isolation_actions()
-        self._refresh_summary(self.session.result)
-        self._refresh_title()
+        # A viewer_factory may supply a lightweight viewer without frame batching.
+        with getattr(self.viewer, "batch_update", nullcontext)():
+            self._show_visible(fit=fit)
+            self._refresh_tree_visibility()
+            self._refresh_highlight()
+            self._refresh_isolation_actions()
+            self._refresh_summary(self.session.result)
+            self._refresh_title()
 
     def _show_visible(self, fit: bool = False) -> None:
         self._picks = []  # skryté plochy nesmějí zůstat vstupem pro přidání vazby

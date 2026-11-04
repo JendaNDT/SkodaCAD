@@ -51,6 +51,10 @@ class Trace:
         @functools.wraps(original)
         def measured(*args, **kwargs):
             main = threading.get_ident() == self.main
+            detail = {}
+            if name == "_refresh_next_standard_icon" and args[0]._standard_icon_queue:
+                action, standard = args[0]._standard_icon_queue[0]
+                detail = {"icon_action": action.text(), "standard_icon": int(standard)}
             wall, cpu, thread = time.perf_counter(), time.process_time(), time.thread_time()
             stack = getattr(self.local, "stack", [])
             self.local.stack = stack
@@ -69,7 +73,7 @@ class Trace:
                        "start_s": wall - self.started, "wall_s": elapsed,
                        "process_cpu_s": process_cpu, "thread_cpu_s": thread_cpu,
                        "main_thread": main, "parents": list(stack),
-                       "job_context": dict(self.context)}
+                       "job_context": dict(self.context), **detail}
                 with self.lock:
                     key = label + (":main" if main else ":other")
                     total = self.totals.setdefault(key, {"calls": 0, "wall_s": 0.,
@@ -191,7 +195,8 @@ def child(folder):
                       "_build_side_panel", "_build_editor_panel", "_build_measure_panel",
                       "_build_map_panel", "_build_section_panel", "_build_ndt_panel",
                       "_build_audit_panel", "_build_design_panel", "_build_assistant_panel",
-                      "_build_menus", "_build_ribbon", "_refresh_ui_icons")),
+                      "_build_menus", "_build_ribbon", "_refresh_ui_icons",
+                      "_refresh_next_standard_icon")),
         (QStyle, ("standardIcon",)),
         (AssemblyWindow, ("_poll", "_refresh", "_refresh_tree_visibility", "closeEvent",
                           "edit_parameters", "preview_parameters", "select",

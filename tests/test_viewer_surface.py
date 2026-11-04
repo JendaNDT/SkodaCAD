@@ -107,6 +107,57 @@ def test_failed_fit_restores_immediate_mode(viewer):
     assert state.immediate is True
 
 
+def test_show_part_draws_one_finished_frame_including_selection_signal(viewer):
+    from build123d import Box
+
+    viewer._context = Mock()
+    signals = []
+
+    def selection_changed(shapes):
+        signals.append(shapes)
+        # MainWindow/AssemblyWindow refresh highlight synchronously on this signal.
+        viewer.highlight([])
+
+    viewer.selection_changed.connect(selection_changed)
+    viewer.show_part(Box(10, 10, 10), fit=True)
+    assert signals == [[]]
+    assert viewer._ais is not None
+    assert viewer._view.Redraw.call_count == 1
+
+
+def test_nested_scene_updates_draw_once_with_latest_highlight(viewer):
+    from build123d import Box
+
+    viewer._context = Mock()
+    box = Box(10, 10, 10)
+    with viewer.batch_update():
+        viewer.show_part(box, fit=True)
+        with viewer.batch_update():
+            viewer.highlight([box.edges()[0].wrapped])
+            viewer.set_transparent_parts([(box.wrapped, .35)])
+        assert viewer._view.Redraw.call_count == 0
+    assert viewer._view.Redraw.call_count == 1
+    assert viewer._highlight is not None
+    assert viewer._transparent_parts[0][1] == .35
+    viewer.highlight([])
+    assert viewer._view.Redraw.call_count == 2  # normal calls remain immediate
+
+
+def test_scene_batch_unwinds_after_an_exception_and_does_not_keep_a_closed_view(viewer):
+    with pytest.raises(ValueError, match="interrupted"):
+        with viewer.batch_update():
+            viewer._request_redraw()
+            raise ValueError("interrupted")
+    assert viewer._view.Redraw.call_count == 1
+    assert viewer._redraw_depth == 0 and not viewer._redraw_pending
+    view = viewer._view
+    with viewer.batch_update():
+        viewer._request_redraw()
+        viewer._view = None
+    assert view.Redraw.call_count == 1
+    assert viewer._redraw_depth == 0 and not viewer._redraw_pending
+
+
 @pytest.mark.parametrize("fail", [False, True])
 def test_initial_style_does_not_draw_partial_frames_and_restores_mode(viewer, fail):
     state = SimpleNamespace(immediate=True, frames=0)
