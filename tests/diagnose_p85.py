@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import importlib
 import json
 import os
 import subprocess
@@ -18,9 +19,9 @@ import soak_p8
 
 
 class Trace:
-    def __init__(self, folder):
-        self.stream = (folder / "timing.jsonl").open("x", encoding="utf-8")
-        self.started = time.perf_counter()
+    def __init__(self, folder, prefix="", started=None):
+        self.stream = (folder / f"{prefix}timing.jsonl").open("x", encoding="utf-8")
+        self.started = time.perf_counter() if started is None else started
         self.main = threading.get_ident()
         self.lock = threading.RLock()
         self.local = threading.local()
@@ -28,6 +29,10 @@ class Trace:
         self.totals = {}
         self.count = self.serial = 0
         self.errors = []
+        self.context = {}
+        self.emit({"type": "identity", "pid": os.getpid(), "parent_pid": os.getppid(),
+                   "epoch_perf_s": self.started, "at_s": time.perf_counter()-self.started,
+                   "process_cpu_s": time.process_time()})
 
     def emit(self, row):
         with self.lock:
@@ -36,7 +41,7 @@ class Trace:
                     self.errors.append("Diagnostic record cap reached")
                 return
             self.count += 1
-            self.stream.write(json.dumps(row, allow_nan=False) + "\n")
+            self.stream.write(json.dumps({"pid": os.getpid(), **row}, allow_nan=False) + "\n")
             self.stream.flush()
 
     def wrap(self, owner, name):
@@ -63,21 +68,98 @@ class Trace:
                 row = {"type": "span", "id": number, "label": label,
                        "start_s": wall - self.started, "wall_s": elapsed,
                        "process_cpu_s": process_cpu, "thread_cpu_s": thread_cpu,
-                       "main_thread": main, "parents": list(stack)}
+                       "main_thread": main, "parents": list(stack),
+                       "job_context": dict(self.context)}
                 with self.lock:
                     key = label + (":main" if main else ":other")
                     total = self.totals.setdefault(key, {"calls": 0, "wall_s": 0.,
-                        "thread_cpu_s": 0., "max_wall_s": 0.})
+                        "process_cpu_s": 0., "thread_cpu_s": 0., "max_wall_s": 0.})
                     total["calls"] += 1
                     total["wall_s"] += elapsed
+                    total["process_cpu_s"] += process_cpu
                     total["thread_cpu_s"] += thread_cpu
                     total["max_wall_s"] = max(total["max_wall_s"], elapsed)
                     if main and elapsed >= .05:
                         self.recent.append(row)
                 if elapsed >= .05:
                     self.emit(row)
+                if owner is TracedConnection and name == "send":
+                    self.snapshot(args[0].summary)
 
         setattr(owner, name, measured)
+
+    def snapshot(self, path, loop_finished=False):
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({
+            "diagnostic_only": True, "budget_acceptance": False, "pid": os.getpid(),
+            "epoch_perf_s": self.started, "record_count": self.count,
+            "loop_finished": loop_finished, "last_job_context": dict(self.context),
+            "span_totals_inclusive_do_not_sum": self.totals, "errors": self.errors,
+        }, allow_nan=False, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(path)
+
+
+class TracedConnection:
+    """Forward the original messages without changing the worker protocol."""
+
+    def __init__(self, connection, trace, summary):
+        self.connection, self.trace, self.summary = connection, trace, summary
+
+    def recv(self):
+        message = self.connection.recv()
+        if isinstance(message, tuple) and len(message) >= 3:
+            kind, job, data = message[:3]
+            self.trace.context = {"kind": kind, "job": job,
+                "features": len(data.get("features", ())) if isinstance(data, dict) else None}
+            self.trace.emit({"type": "request", "at_s": time.perf_counter()-self.trace.started,
+                             **self.trace.context})
+        return message
+
+    def send(self, message):
+        self.connection.send(message)
+        self.trace.emit({"type": "reply", "at_s": time.perf_counter()-self.trace.started,
+                         "kind": message[0], "job": message[1]})
+        # Production close/cancel terminates workers. Keep totals after each reply,
+        # rather than relying on a finally block that SIGTERM would bypass.
+        self.trace.snapshot(self.summary)
+
+
+def traced_worker_main(connection, step_phase):
+    """Top-level spawn target; the production worker loop stays unchanged."""
+    from skodacad import features, worker
+
+    rebuild = importlib.import_module("skodacad.rebuild")
+    folder = Path(os.environ["SKODACAD_P85_TRACE_FOLDER"])
+    prefix = f"worker-{os.getpid()}-"
+    summary = folder / f"{prefix}summary.json"
+    trace = Trace(folder, prefix, float(os.environ["SKODACAD_P85_TRACE_EPOCH"]))
+    for owner, names in ((worker, ("encode_result", "_shape_bytes")),
+                         (rebuild, ("rebuild", "_run_feature", "inspect_volume")),
+                         (features, ("inspect_volume",)),
+                         (TracedConnection, ("recv", "send"))):
+        for name in names:
+            trace.wrap(owner, name)
+    try:
+        worker._worker_main(TracedConnection(connection, trace, summary), step_phase)
+    finally:
+        # Terminated workers may have no summary; flushed rows still identify them.
+        trace.stream.close()
+        trace.snapshot(summary, loop_finished=True)
+
+
+def read_worker_trace(path):
+    """An owned worker can be terminated mid-write; only its partial last row is optional."""
+    raw = path.read_bytes()
+    lines, records = raw.splitlines(), []
+    partial_tail_bytes = 0
+    for index, line in enumerate(lines):
+        try:
+            records.append(json.loads(line))
+        except (ValueError, UnicodeDecodeError):
+            if index != len(lines)-1 or raw.endswith(b"\n"):
+                raise
+            partial_tail_bytes = len(line)
+    return records, partial_tail_bytes
 
 
 def child(folder):
@@ -96,9 +178,13 @@ def child(folder):
 
     app = QApplication([])
     trace = Trace(folder)
+    os.environ["SKODACAD_P85_TRACE_FOLDER"] = str(folder)
+    os.environ["SKODACAD_P85_TRACE_EPOCH"] = str(trace.started)
+    original_worker_main = worker._worker_main
+    worker._worker_main = traced_worker_main
     targets = (
         (worker, ("decode_result", "_shape_from")),
-        (worker.BackgroundRebuilder, ("poll", "_spawn", "close")),
+        (worker.BackgroundRebuilder, ("poll", "_spawn", "_submit", "cancel", "close")),
         (main_window, ("install_macos_accessibility",)),
         (MainWindow, ("__init__", "show", "open_model", "open_assembly", "_poll", "_reload_all",
                       "_refresh_all", "_assembly_window_destroyed", "_create_actions",
@@ -149,6 +235,7 @@ def child(folder):
     try:
         soak_p8.child(folder, 1, 0, 3072 * 1024**2)
     finally:
+        worker._worker_main = original_worker_main
         timer.stop()
         tick()
         trace.stream.close()
@@ -198,6 +285,22 @@ def main():
         raise RuntimeError(error)
     footer = json.loads((folder / "footer.json").read_text())
     soak_p8.validate_runtime(rows, footer, 1, 0)
+    worker_logs = sorted(folder.glob("worker-*-timing.jsonl"))
+    if not worker_logs:
+        raise RuntimeError("Worker CPU diagnostic is missing")
+    worker_traces = []
+    for path in worker_logs:
+        records, partial = read_worker_trace(path)
+        if not records or len(records) >= 20000 or records[0]["type"] != "identity":
+            raise RuntimeError(f"Incomplete diagnostic worker trace: {path.name}")
+        worker_traces.append({"file": path.name, "pid": records[0]["pid"],
+                              "records": len(records), "partial_tail_bytes": partial})
+    for path in folder.glob("worker-*-summary.json"):
+        if json.loads(path.read_text())["errors"]:
+            raise RuntimeError(f"Worker diagnostic errors: {path.name}")
+    baseline.write(folder / "worker-traces.json", {
+        "diagnostic_only": True, "budget_acceptance": False, "workers": worker_traces,
+        "note": "Owned cancellation/crash/close can terminate a worker before its summary."})
     print("Diagnostic cycle complete; NOT a budget acceptance or release pass")
 
 

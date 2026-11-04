@@ -171,6 +171,23 @@ a skutečné mezery Qt, ale **nikdy není přejímkou rozpočtů**. Vnořené ú
 nesčítají; rozdíl wall a CPU ani vysoký load average neprokazují vytížení hostitele.
 Dočasný workflow pracovní větve se do dokončené dávky neponechává.
 
+Úplné navazující PR ověření této verze na hostovaném macOS znovu překročilo
+časové meze, ačkoli fyzikální případy a paměťové meze prošly. PR proto zůstává
+rozpracovaný. Místní M4 raw níže platí pro tehdejší zdroje, nikoli automaticky
+pro další úpravy.
+
+Cílená sonda přepočtu poté lokalizovala další opakovanou práci: kontrola celého
+tvaru a každého jeho solidu zakládala oddělený analyzátor OCCT. Nyní každé volání
+`inspect_volume` vytváří jeden čerstvý `BRepCheck_Analyzer`; jeho vlastní mapa
+podtvarů slouží pro kontrolu celku **i výslovnou kontrolu každého solidu**.
+Použití pro podtvary je součástí [API OCCT 8](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKTopAlgo/BRepCheck/BRepCheck_Analyzer.hxx).
+Mezi voláními se výsledek neukládá. Kontroly uzavřených shellů, konečných
+souřadnic, všech složek, objemového součtu a účinku operace se nemění.
+Regrese zahrnují i změnu nativního tvaru ve stejném Python objektu a odmítnutí
+neověřitelného podtvaru. Diagnostika nyní zaznamenává také skutečný worker,
+identitu požadavku a CPU/wall úseky přepočtu, validace, kódování a odeslání.
+Tato úprava má cílené ověření; nové úplné přejímkové měření ji teprve čeká.
+
 Původní měřiče P8.1–P8.4, fyzikální případy, vstupy, politika a ochranný rozpočet
 zůstávají nezměněné. Úplné místní měření opravy je uvedené níže; před přijetím stále zbývají nové
 kontroly skutečného aktuálního sestavení obou systémů. Přejímka NDT ani celodenního
@@ -218,15 +235,16 @@ STEP limit/obnova i nativní náhled proběhly původními fyzikálními zkoušk
 
 Nový raw je bajtově shodná kopie výstupu, SHA-256
 `a422c9cf0d10958f570a2e8bf95d65ab5c5a9d35bde2b4f68c0fe60922e2de27`.
-Jeho commit je pravdivý HEAD měřené opravy. Pozdější doplnění tohoto textu a raw
-nemění žádný ze 150 měřených souborů. Vůči původnímu měření se liší jen dva
+Jeho commit je pravdivý HEAD měřené opravy. Dokumentační commit `0836200`
+nezměnil žádný ze 150 měřených souborů. V této zaznamenané verzi se vůči původnímu měření liší jen dva
 produkční soubory (čtečka RSS a 3D prohlížeč) a vysvětlující docstring spouštěče;
 politika má stále SHA-256
 `fad48b7a7106447834897f7670fe4ef1bf9f0a449d0cd347f0b3f1f81f7b34f4`.
 
 Cílené regrese opravy prošly: **122 testů za 13,65 s**, normální exit 0, celý Ruff
-src/tests a kontrola diffu. Celá sada obsahuje 2954 testů; ověření skutečného PR
-a následného `main` na obou OS včetně stažených aplikací stále zbývá. Jediný krátký
+src/tests a kontrola diffu. Tato zaznamenaná sada obsahovala 2954 testů. Standardní
+PR buildy a stažené aplikace prošly, přejímkové meze hostovaného Macu však ne.
+Po další úpravě validace se musí ověřit nové sestavení. Jediný krátký
 diagnostický cyklus ani tento místní výsledek sám neznamená dokončené vydání.
 
 Při běžné práci lze rozpočítaný přepočet zastavit akcí Zastavit; zachová se poslední

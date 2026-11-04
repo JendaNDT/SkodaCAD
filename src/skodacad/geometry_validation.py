@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from build123d import Part
 from OCP.BRep import BRep_Tool
+from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_COMPSOLID, TopAbs_SOLID
 from OCP.TopoDS import TopoDS_Iterator
 
@@ -70,7 +71,12 @@ def inspect_volume(shape: Part | None) -> VolumeFacts:
                 "těleso nemá žádný objem – zkontroluj uzavření a rozměry profilu."
             )
         _only_volume_components(shape)
-        if not shape.is_valid:
+        # Jeden čerstvý analyzátor ověřuje celek i jeho jednotlivé solidy. Jeho
+        # mapa zahrnuje všechny podtvary; další analyzátor pro každý solid by
+        # stejné geometrické kontroly počítal znovu. Nic nesdílíme mezi voláními.
+        analyzer = BRepCheck_Analyzer(shape.wrapped)
+        analyzer.SetParallel(True)  # stejné nastavení jako build123d Shape.is_valid
+        if not analyzer.IsValid():
             raise GeometryValidationError(
                 "tvar není platné objemové těleso – uprav poslední prvek nebo použij Zpět."
             )
@@ -81,7 +87,7 @@ def inspect_volume(shape: Part | None) -> VolumeFacts:
                 raise GeometryValidationError(
                     "tvar obsahuje neuzavřenou objemovou složku – uprav profil nebo poslední prvek."
                 )
-            if not solid.is_valid:
+            if not analyzer.IsValid(solid.wrapped):
                 raise GeometryValidationError(
                     "tvar obsahuje neplatnou objemovou složku – uprav poslední prvek."
                 )
