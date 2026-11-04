@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,42 @@ def _worker(conn: Any, source: bytes | Path) -> None:
                    else f"Kontrola STEP selhala ({type(exc).__name__})."))
     finally:
         conn.close()
+
+
+@lru_cache(maxsize=1)
+def _macos_task_api():
+    """Libproc ABI from Apple's sys/proc_info.h; cache API, never process data."""
+    import ctypes
+
+    class TaskInfo(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "virtual_size", "resident_size", "total_user", "total_system",
+            "threads_user", "threads_system")] + [(name, ctypes.c_int32) for name in (
+            "policy", "faults", "pageins", "cow_faults", "messages_sent", "messages_received",
+            "syscalls_mach", "syscalls_unix", "csw", "threadnum", "numrunning", "priority")]
+
+    library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    reader = library.proc_pidinfo
+    reader.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                       ctypes.c_void_p, ctypes.c_int]
+    reader.restype = ctypes.c_int
+    return reader, TaskInfo
+
+
+def _macos_resident_bytes(pid: int) -> int | None:
+    import ctypes
+
+    try:
+        reader, info_type = _macos_task_api()
+        info = info_type()  # vlastní buffer pro každé vlákno/čtení, žádná cache RSS nebo PID
+        size = ctypes.sizeof(info)
+        # PROC_PIDTASKINFO=4, pti_resident_size je v bajtech (nikoli footprint/peak).
+        read = reader(pid, 4, 0, ctypes.byref(info), size)
+        # Úplný úspěšný záznam může mít při exec nového procesu RSS 0.
+        # Nejde o chybějící údaj: ten poznáme podle návratové délky API.
+        return int(info.resident_size) if read == size else None
+    except (OSError, AttributeError, ValueError):
+        return None
 
 
 def _resident_bytes(pid: int) -> int | None:
@@ -76,7 +113,9 @@ def _resident_bytes(pid: int) -> int | None:
                 handle, ctypes.byref(data), data.cb) else None
         finally:
             kernel.CloseHandle(handle)
-    if sys.platform == "darwin" or sys.platform.startswith("linux"):
+    if sys.platform == "darwin":
+        return _macos_resident_bytes(pid)
+    if sys.platform.startswith("linux"):
         try:
             result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True,
                                     text=True, timeout=2, check=True)
