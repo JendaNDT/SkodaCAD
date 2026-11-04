@@ -86,6 +86,10 @@ def child(folder):
 
     import skodacad.worker as worker
     import soak_p8_gui
+    from skodacad.assembly_session import AssemblySession
+    from skodacad.gui import assembly_parameter_preview, main_window
+    from skodacad.gui.assembly_parameter_preview import AssemblyParameterPreviewDialog
+    from skodacad.gui.assembly_parameters import AssemblyParametersDialog
     from skodacad.gui.assembly_window import AssemblyWindow
     from skodacad.gui.main_window import MainWindow
     from skodacad.gui.viewer import OccViewer
@@ -95,12 +99,23 @@ def child(folder):
     targets = (
         (worker, ("decode_result", "_shape_from")),
         (worker.BackgroundRebuilder, ("poll", "_spawn", "close")),
-        (MainWindow, ("open_model", "open_assembly", "_poll", "_reload_all",
-                      "_refresh_all", "_assembly_window_destroyed")),
-        (AssemblyWindow, ("_poll", "_refresh", "_refresh_tree_visibility", "closeEvent")),
+        (main_window, ("install_macos_accessibility",)),
+        (MainWindow, ("__init__", "open_model", "open_assembly", "_poll", "_reload_all",
+                      "_refresh_all", "_assembly_window_destroyed", "_create_actions",
+                      "_build_side_panel", "_build_editor_panel", "_build_measure_panel",
+                      "_build_map_panel", "_build_section_panel", "_build_ndt_panel",
+                      "_build_audit_panel", "_build_design_panel", "_build_assistant_panel",
+                      "_build_menus", "_build_ribbon")),
+        (AssemblyWindow, ("_poll", "_refresh", "_refresh_tree_visibility", "closeEvent",
+                          "edit_parameters", "preview_parameters")),
+        (AssemblySession, ("preview_parameters", "rebuild")),
+        (AssemblyParametersDialog, ("__init__", "_update", "_refresh_usage", "show_preview")),
+        (AssemblyParameterPreviewDialog, ("__init__", "_show_model")),
+        (assembly_parameter_preview, ("placement_changes",)),
         (OccViewer, ("show_part", "_sync_size")),
         (soak_p8_gui.Driver, ("ready", "edit")),
-        (soak_p8_gui, ("preview_and_close", "step_roundtrip", "inspect_history")),
+        (soak_p8_gui, ("preview_and_close", "step_roundtrip", "inspect_history",
+                       "make_assembly", "write")),
         (soak_p8.Memory, ("sample",)),
     )
     for owner, names in targets:
