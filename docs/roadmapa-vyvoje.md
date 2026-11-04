@@ -52,7 +52,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1–P8.3 vydané (`16b760c`); [P8.4 dlouhý provoz](p8-4-dlouhy-provoz.md) rozpracován | úplné měření a kontroly P8.4 obou OS, P8.5 přijetí |
+| P8 | P8.1–P8.4 vydané (`1d95045`); [P8.5 rozpočty](p8-5-rozpocty.md) rozpracovány | zmrazené limity, nové měření M4 a kontroly obou OS |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
@@ -338,8 +338,16 @@ Diagnostický pilot prokázal zadržená zavřená okna sestav; oprava jejich vl
 má regresní důkaz. CI navíc ukázalo ponechaný pool bez otevřené sestavy: navazující
 oprava jej ukončí po posledním vlastněném okně, při příštím otevření vznikne nový.
 Historická baseline první opravy se zachovává. Nový úplný dlouhý běh s uvolněním
-poolu a kontroly obou OS zůstávají branou vydání.
-P8.5 autorské přijetí a rozpočty tím nejsou provedené.
+poolu prošlo; P8.4 je vydané jako `1d95045` po 2899 testech, nativních cyklech,
+sestavení a stažených self-testech obou OS. RSS během omezené zkoušky rostlo;
+uvolnění konkrétních oken a procesů není záruka odstranění všech úniků.
+
+**P8.5 zahájeno 4. 11. 2026 odpovědí autora „ok, udělej to“:**
+[rozpočty paměti a odezvy](p8-5-rozpocty.md) pro historii 122 prvků a sestavu
+800 kopií. M4 má vlastní profil, hostované systémy samostatné profily. Vedle
+dokončení pracovních kroků se měří skutečné intervaly obsluhy Qt; nový výsledek
+musí splnit předem uložené limity i původní fyzikální důkazy P8.4.
+Přejímka dalších modelů autora, NDT a celodenního provozu se tím netvrdí.
 
 1. **P8.1 Rozšíření baseline** (P0, P1–P7): velké historie, importy, sestavy a více NDT
    studií; startup, přepočet, přenos, paměť, odezva a ukončení dlouhé úlohy.

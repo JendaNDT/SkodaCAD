@@ -2,7 +2,10 @@
 
 Zadání autora 3. 11. 2026: „P8.4 dlouhý provoz s měřením paměti“.
 Výchozí vydání je P8.3, `16b760c3a24924b8a5ccd384f2cdd8265fddb799`.
-P8.5 autorská přejímka a rozpočty paměti/odezvy tím nejsou schválené ani provedené.
+V době této dávky P8.5 ještě nebyla schválená ani provedená. P8.4 je nyní vydané
+jako `1d95045` po úplném ověření 2899 testů, nativních 2 + 20 cyklů, sestavení
+a stažených self-testů obou systémů. Navazující pokyn autora 4. 11. 2026 zahájil
+[samostatnou P8.5](p8-5-rozpocty.md); nemění historické raw ani závěry níže.
 
 ## Co zkouška skutečně provádí
 

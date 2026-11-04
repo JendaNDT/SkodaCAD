@@ -1,0 +1,73 @@
+name: P8.5 rozpočty paměti a odezvy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    paths:
+      - "src/**"
+      - "tests/budget_p8.py"
+      - "tests/p85-budgets.json"
+      - "tests/test_p85*.py"
+      - "tests/soak_p8*.py"
+      - ".github/workflows/p85-budgets.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/budget_p8.py"
+      - "tests/p85-budgets.json"
+      - "tests/test_p85*.py"
+      - "tests/soak_p8*.py"
+      - ".github/workflows/p85-budgets.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: p85-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONFAULTHANDLER: "1"
+
+jobs:
+  budgets:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            profile: ci-windows
+          - os: macos-15
+            profile: ci-macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Instalace
+        run: python -m pip install -e ".[dev,gui]"
+      - name: Nativní podpora přístupnosti macOS
+        if: runner.os == 'macOS'
+        run: python packaging/build_macos_accessibility.py
+      - name: Ověření odmítnutých důkazů a překročených rozpočtů
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q tests/test_p85_budgets.py tests/test_p84_soak.py tests/test_p84_windows.py tests/test_p81_reference.py
+      - name: Nativní rozpočty nad dvěma zahřívacími a dvaceti pracovními cykly
+        run: python tests/budget_p8.py --profile ${{ matrix.profile }} --output p85-budget.json
+      - name: Úplná původní evidence i neúspěšné výsledky
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p85-${{ matrix.os }}
+          path: |
+            p85-budget.json
+            p85-budget/**
+          retention-days: 30
