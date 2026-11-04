@@ -186,7 +186,8 @@ souřadnic, všech složek, objemového součtu a účinku operace se nemění.
 Regrese zahrnují i změnu nativního tvaru ve stejném Python objektu a odmítnutí
 neověřitelného podtvaru. Diagnostika nyní zaznamenává také skutečný worker,
 identitu požadavku a CPU/wall úseky přepočtu, validace, kódování a odeslání.
-Tato úprava má cílené ověření; nové úplné přejímkové měření ji teprve čeká.
+Tato úprava má cílené ověření a nové úplné místní měření uvedené níže;
+nové hostované přejímky aktuálního sestavení ještě zbývají.
 
 Další záznamy rozlišily opakované explicitní snímky při obnově sestavy. Signál
 výběru během `show_part` synchronně obnovuje zvýraznění a pohybové rukojeti;
@@ -216,7 +217,59 @@ kontroly skutečného aktuálního sestavení obou systémů. Přejímka NDT ani
 provozu se tím neprohlašuje.
 
 
-## Úplné měření opravy na autorově M4
+## Úplné měření celé opravy na autorově M4
+
+[Samostatný raw JSON](baselines/p8-5-gui-response-macos-arm64.json) měří commit
+`04692953aa1b4b260e111c3e1c6d5ce30da5e39f`, tedy novou validaci, sloučení snímků
+i frontu systémových ikon spolu s předchozími opravami RSS a 3D inicializace.
+Dokončil **2 zahřívací + 20 měřených cyklů, 180 kontrolních bodů a všech 23
+zmrazených mezí** za **488,615 s**, normální exit 0. Prostředí je Apple M4 /
+macOS 27.2 arm64, Python 3.12.14, build123d 0.13.0 / OCP 8.0.1.1.0 / Qt 6.11.3.
+
+| Ukazatel | Naměřeno | Limit M4 |
+|---|---:|---:|
+| Otevření historie, p95 | 2,404 s | 5 s |
+| Editace + Zpět + Znovu, p95 | 6,746 s | 15 s |
+| Uložit a znovu otevřít, p95 | 2,402 s | 5 s |
+| Zastavit a obnovit, p95 | 2,591 s | 6 s |
+| Pád workeru a obnova, p95 | 2,667 s | 6 s |
+| STEP limit a obnova, p95 | 1,601 s | 4 s |
+| Sestava, náhled a zavření, p95 | 3,708 s | 7 s |
+| Konec cyklu, p95 | 0,251 s | 0,75 s |
+| Celý cyklus, p95 | 22,251 s | 45 s |
+| Horní hranice p95 intervalu Qt | 0,100 s | 0,25 s |
+| Nejdelší interval Qt v celé zkoušce | 1,255 s | 2 s |
+| Vzorkované maximum rodiče | 1264,047 MiB | 1536 MiB |
+| Vzorkované současné maximum součtu procesů | 2867,656 MiB | 3072 MiB |
+| Rozdíl koncových mediánů rodiče | −77,188 MiB | +384 MiB |
+| Párový sklon | −4,114 MiB/cyklus | +24 MiB/cyklus |
+
+Qt sonda běžela po celou nativní zkoušku a zaznamenala **8486 doručení bez chyby**;
+maximální pauza 1,255 s zůstává součástí výsledku. Ze 1124 průběžných odběrů
+RSS chyběla dvě čtení workeru; nejsou nahrazena nulou. Všech 180 kontrolních bodů
+má úplné kladné RSS. Záporný trend tohoto běhu není důkaz úspory RAM, absence
+úniků ani celodenní stability; historické kladné trendy zůstávají platné.
+
+Všech 22 konců cyklů má nula oken sestav a parametrických dialogů a pouze dva
+konkrétní workery hlavního dílu. Oba konkrétní workery sestavy jsou ukončené;
+po běžném zavření nezůstává žádný worker. Přepočet, Zpět/Znovu, uložení/otevření,
+rušení, skutečný pád, STEP limit a obnova i náhled sestavy prošly původními
+fyzikálními podmínkami. Všechny čtyři snímky prvního a posledního měřeného cyklu
+byly prohlédnuté: čistá sestava 800 kopií a historie s 60 kapsami / t=12.
+
+Raw je bajtově shodná kopie nového výstupu, SHA-256
+`2e5fdb84fc80c28770a151eb8030e1e3518815345d1d991b1e7d2d01e1cba701`.
+Původní dvě baselines zůstávají beze změny. Všech 150 otisků zdrojů, politika,
+tři vstupy a shoda JSONL, footeru a Qt záznamu byly ověřené. Následný commit
+baseline a dokumentace měřené zdroje nemění. Cílená sada GUI má **313 úspěšných
+testů**, úplná kolekce **2969 případů**; geometrické a transakční pojistky mají
+samostatné cílené ověření. Úplný Ruff a kontrola diffu prošly.
+
+Toto je místní přejímka omezené zátěže modelování a sestav. Přijetí P8.5 a vydání
+ještě vyžaduje nové úplné kontroly aktuálního PR i následného MAIN, oba hostované
+OS a skutečně stažené aplikace. Nejde o přejímku NDT nebo celodenního provozu.
+
+## Historické úplné měření první opravy na autorově M4
 
 [Nový raw JSON](baselines/p8-5-response-macos-arm64.json) na commitu `7a5c7b1`
 dokončil **2 zahřívací + 20 měřených cyklů a všech 180 kontrolních bodů** za
