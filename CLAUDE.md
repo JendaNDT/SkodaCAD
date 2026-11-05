@@ -118,6 +118,10 @@
   pro díl a sestavu, Enter zopakuje poslední dostupný. Historie je jen v paměti
   `FavoriteStore` do zavření aplikace (žádné ukládání na disk); zapisuje ji
   `FavoriteBar` při `triggered` katalogizovaných akcí, připnutí ji nemění.
+  [P7.40](docs/p7-40-filtr-stromu-prvku.md) (draft PR #123): filtr stromu prvků
+  dílu `gui/tree_filter.py`, Ctrl+F, hledá v `SEARCH_ROLE` (popis, id, slovo stavu).
+  Řádky jen `setHidden`, nikdy nemazat (Cocoa AX); vybraný řádek vždy viditelný;
+  `_refresh_tree` filtr znovu použije, Otevřít/Nový ho vyprázdní. Jen pohled.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 

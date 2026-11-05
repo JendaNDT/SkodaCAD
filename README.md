@@ -102,6 +102,11 @@ aplikace. Hledání si pamatuje až šest příkazů zvlášť pro díl a sestav
 Poslední dostupný příkaz můžeš zopakovat rovnou Enterem.
 [Podrobnosti P7.39](docs/p7-39-naposledy-pouzite-prikazy.md).
 
+Dlouhý strom prvků dílu zúžíš filtrem nad ním: **Ctrl+F** (na Macu ⌘+F), napiš
+část názvu nebo id prvku (např. `srazeni`, `chyba`) a Enter vybere první nalezený.
+Esc filtr zruší. Vybraný prvek zůstává vidět vždy; model se filtrem nemění.
+[Podrobnosti P7.40](docs/p7-40-filtr-stromu-prvku.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).

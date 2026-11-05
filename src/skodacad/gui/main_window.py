@@ -72,6 +72,7 @@ from skodacad.gui.macos_accessibility import install as install_macos_accessibil
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
+from skodacad.gui.tree_filter import SEARCH_ROLE, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section, Workspace
@@ -114,6 +115,7 @@ _MEASURE_COLOR = QColor("#1b7f3b")
 _SLIDER_STEPS = 1000  # jemnost posuvníku řezu
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
+_STATUS_WORDS = {"ok": "", "error": "chyba", "skipped": "přeskočeno", "pending": ""}
 _STATUS_COLORS = {"ok": QColor("#1b7f3b"), "error": QColor("#c0392b"), "skipped": QColor("#888"),
                   "pending": QColor("#8a8a8a")}
 PENDING_DELAY = 0.25  # s – kratší přepočet se v okně neukazuje (žádné blikání)
@@ -264,6 +266,8 @@ class MainWindow(QMainWindow):
         self.undo_action = self._action("Zpět", self.undo, "Ctrl+Z")
         self.redo_action = self._action("Znovu", self.redo, "Ctrl+Y")
         self.edit_feature_action = self._action("Upravit prvek", self.start_feature_edit, "Ctrl+E")
+        self.tree_filter_action = self._action("Filtrovat strom prvků", self.focus_tree_filter,
+                                               "Ctrl+F")
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))
@@ -399,6 +403,9 @@ class MainWindow(QMainWindow):
         self.tree.setRootIsDecorated(False)
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
         self.tree.itemDoubleClicked.connect(lambda _item, _column: self.start_feature_edit())
+        self.tree_filter = TreeFilter(self.tree, placeholder="Filtr prvků (Ctrl+F)…",
+                                      nouns=("prvku", "prvků", "prvků"))
+        tree_layout.addWidget(self.tree_filter)
         tree_layout.addWidget(self.tree)
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
@@ -990,6 +997,7 @@ class MainWindow(QMainWindow):
 
         edit_menu = bar.addMenu("Ú&pravy")
         edit_menu.addAction(self.edit_feature_action)
+        edit_menu.addAction(self.tree_filter_action)
         for action in (self.undo_action, self.redo_action):
             edit_menu.addAction(action)
             toolbar.addAction(action)
@@ -1287,11 +1295,18 @@ class MainWindow(QMainWindow):
 
     # --- práce se souborem -------------------------------------------------------
 
+    def focus_tree_filter(self) -> None:
+        """Ctrl+F: otevře strom modelu (je-li skrytý) a dá fokus do filtru prvků."""
+        if not self.workspace.model_action.isChecked():
+            self.workspace.model_action.trigger()
+        self.tree_filter.focus()
+
     def new_model(self) -> bool:
         if not self._confirm_discard():
             return False
         self.session.new_document()
         self._selected_id = None
+        self.tree_filter.clear()  # filtr patří k předchozímu dílu
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         self.statusBar().showMessage("Nový díl – začni tlačítkem „Přidat prvek“ → Skica.", 10000)
@@ -1321,6 +1336,7 @@ class MainWindow(QMainWindow):
             return False
         log.info("Otevřen model %s", path)
         self._selected_id = None
+        self.tree_filter.clear()  # filtr patří k předchozímu dílu
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         return True
@@ -2148,6 +2164,7 @@ class MainWindow(QMainWindow):
                 item.setForeground(column, status_color(status))
             item.setToolTip(0, f"{label}\n{message or key}")
             item.setToolTip(1, message)
+            item.setData(0, SEARCH_ROLE, f"{label} {key} {_STATUS_WORDS[status]}")
             if key == self._selected_id:
                 chosen = item
         for item in previous.values():
@@ -2156,6 +2173,7 @@ class MainWindow(QMainWindow):
             self.tree.setCurrentItem(chosen)
         if self._selected_id not in {row[0] for row in rows}:
             self._selected_id = None
+        self.tree_filter.apply()  # nové řádky také podle filtru, vybraný zůstane vidět
         self.tree.blockSignals(False)
         problem = self.session.model_problem if document is not None else ""
         self.error_label.setText(problem)
