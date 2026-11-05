@@ -299,3 +299,54 @@ def test_packaged_search_driver_uses_keyboard_after_activation(app, tmp_path, as
     finally:
         owner.session.dirty = False
         owner.close()
+
+
+def test_cancelled_search_text_returns_selected_and_run_clears_it(menu_window):
+    """P7.43: Zrušit si text pamatuje (označený), spuštění příkazu ho vyprázdní."""
+    from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
+
+    owner, menu, save, submenu, export = menu_window
+    owner.save_action, owner.export_action = save, export
+    owner.favorite_bar = FavoriteBar(owner, FavoriteStore(), "part")
+    calls = []
+    save.triggered.connect(lambda: calls.append(True))
+
+    def type_and_cancel():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.query.text() == ""
+        QTest.keyClicks(dialog.query, "step")
+        QTest.keyClick(dialog.query, Qt.Key.Key_Escape)
+
+    with dialog_response(type_and_cancel):
+        show_command_search(owner)
+    assert owner._command_search_text == "step"
+
+    def restored_text_is_replaced_by_typing():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.query.text() == "step" and dialog.query.selectedText() == "step"
+        assert labels(dialog) == ["STEP"]
+        QTest.keyClicks(dialog.query, "ulozit")  # psaní označený text přepíše
+        assert dialog.query.text() == "ulozit" and dialog.current_command().action is save
+        QTest.keyClick(dialog.query, Qt.Key.Key_Return)
+
+    with dialog_response(restored_text_is_replaced_by_typing):
+        show_command_search(owner)
+    assert calls == [True] and owner._command_search_text == ""
+
+    def empty_after_run_shows_recent():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.query.text() == ""
+        assert dialog.current_command().action is save  # P7.39 beze změny
+        QTest.keyClicks(dialog.query, "step")
+        assert dialog.current_command().action is export
+        QTest.keyClick(dialog.query, Qt.Key.Key_Backspace)
+        QTest.keyClick(dialog.query, Qt.Key.Key_Backspace)
+        QTest.keyClick(dialog.query, Qt.Key.Key_Backspace)
+        QTest.keyClick(dialog.query, Qt.Key.Key_Backspace)
+        assert dialog.query.text() == ""
+        assert dialog.current_command().action is save  # prázdné pole = zase nedávný
+        dialog.reject()
+
+    with dialog_response(empty_after_run_shows_recent):
+        show_command_search(owner)
+    assert calls == [True] and owner._command_search_text == ""

@@ -17,6 +17,18 @@ from skodacad.gui.tree_filter import SEARCH_ROLE, TreeFilter  # noqa: E402
 from test_gui import FakeViewer, app  # noqa: E402, F401
 
 
+@pytest.fixture(autouse=True)
+def fail_instead_of_dialog(monkeypatch):
+    """Dialog by test zasekl navždy (pravidlo 11) – místo čekání raději selhat."""
+    from PySide6.QtWidgets import QMessageBox
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"neočekávaný dialog: {args[1:3]}")
+
+    for name in ("question", "information", "warning", "critical"):
+        monkeypatch.setattr(QMessageBox, name, refuse)
+
+
 @pytest.fixture
 def window(app, examples_dir, tmp_path):  # noqa: F811
     model = tmp_path / "priruba.json"
@@ -288,3 +300,150 @@ def test_assembly_shift_range_skips_rows_hidden_by_filter(assembly):
     # skryté Víčko a Nožičky 1–3 mezi nimi se nevyberou ani neodkryjí
     assert w._selection == (("krabicka",), ("nozicka_4",))
     assert [k for k in shown_keys(w) if isinstance(k, list)] == [["krabicka"], ["nozicka_4"]]
+
+
+# --- P7.42: filtr parametrů dílu ---------------------------------------------------
+
+
+def shown_params(w):
+    return [name for name, field in w._param_fields.items()
+            if w.params_form.isRowVisible(field)]
+
+
+def test_param_filter_by_name_and_value_without_changes(window):
+    w = window
+    before = snapshot(w)
+    fields = dict(w._param_fields)
+    w.param_filter_action.trigger()
+    assert w.param_filter.field.hasFocus()
+    QTest.keyClicks(w.param_filter.field, "d")  # velikost písmen nerozhoduje: D, d, dh
+    assert shown_params(w) == ["D", "d", "dh"]
+    assert "3 z 7 parametrů" in w.param_filter.note.text()
+    w.param_filter.field.setText("dh")
+    assert shown_params(w) == ["dh"]
+    w.param_filter.field.setText("18")  # i podle hodnoty: t = 18, dh = 18
+    assert shown_params(w) == ["t", "dh"]
+    w.param_filter.field.setText("zzz")
+    assert shown_params(w) == [] and "Žádný řádek" in w.param_filter.note.text()
+    QTest.keyClick(w.param_filter.field, Qt.Key.Key_Escape)
+    assert shown_params(w) == list(fields) and not w.param_filter.note.isVisibleTo(w)
+    assert w._param_fields == fields  # pole se jen skrývají, nevznikají znovu
+    assert snapshot(w) == before
+
+
+def test_param_filter_enter_edits_first_match_and_keeps_errors_visible(window):
+    w = window
+    QTest.keyClicks(w.param_filter.field, "dh")
+    QTest.keyClick(w.param_filter.field, Qt.Key.Key_Return)
+    field = w._param_fields["dh"]
+    assert field.hasFocus() and field.selectedText() == "18"
+    QTest.keyClicks(field, "17")
+    QTest.keyClick(field, Qt.Key.Key_Return)
+    assert w.session.document.parameters["dh"] == 17 and w.session.can_undo
+    w.param_filter.clear()
+    w._param_fields["s"].setText("x +")  # chybný výraz zůstane červený a vidět
+    w._param_fields["s"].editingFinished.emit()
+    assert w._param_fields["s"].styleSheet()
+    w.param_filter.field.setFocus()
+    QTest.keyClicks(w.param_filter.field, "dh")
+    assert shown_params(w) == ["dh", "s"]
+    assert "1 z 7" in w.param_filter.note.text()
+
+
+def test_param_filter_survives_undo_and_clears_on_open(window, examples_dir):
+    w = window
+    edit_parameter(w, "D", "170")
+    w.param_filter.field.setText("D")
+    w.undo()  # obnoví pole parametrů znovu
+    assert w.session.document.parameters["D"] == 165
+    assert shown_params(w) == ["D", "d", "dh"]
+    w.session.dirty = False  # jinak by se Otevřít ptalo na uložení
+    assert w.open_model(examples_dir / "krabicka.json")
+    assert w.param_filter.field.text() == ""
+    assert shown_params(w) == list(w._param_fields)
+
+
+def test_param_filter_hidden_without_parameters_and_ctrl_shift_f_opens_group(window):
+    w = window
+    w.sidebar_sections["parameters"].set_expanded(False)
+    QTest.keyClick(w, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier
+                   | Qt.KeyboardModifier.ShiftModifier)
+    assert w.sidebar_sections["parameters"].expanded and w.param_filter.field.hasFocus()
+    w.session.dirty = False
+    assert w.new_model()
+    assert not w.param_filter.isVisibleTo(w)  # nový díl nemá parametry
+
+
+def test_packaged_param_filter_driver(window):
+    from skodacad.gui.app import _self_test_param_filter
+
+    w = window
+    before = snapshot(w)
+    lines = []
+    assert _self_test_param_filter(w, lines), lines
+    assert lines[-1].startswith("✓ Filtr parametrů")
+    assert w.param_filter.field.text() == "" and shown_params(w) == list(w._param_fields)
+    assert snapshot(w) == before
+
+
+# --- P7.44: filtr uložených měření --------------------------------------------------
+
+
+@pytest.fixture
+def tube(app, examples_dir, tmp_path):  # noqa: F811
+    model = tmp_path / "trubka.json"
+    shutil.copy(examples_dir / "trubka.json", model)
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(model)
+    w.resize(1400, 900)
+    w.show()
+    w.activateWindow()
+    assert QTest.qWaitForWindowActive(w)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def shown_saved(w):
+    return [w.saved_list.item(row).data(Qt.ItemDataRole.UserRole)
+            for row in range(w.saved_list.count()) if not w.saved_list.item(row).isHidden()]
+
+
+def test_saved_measurement_filter_by_name_keeps_selection_and_model(tube):
+    w = tube
+    before = snapshot(w)
+    assert shown_saved(w) == ["m1", "m2", "m3"]
+    w.saved_filter_action.trigger()  # otevře panel Měření a dá fokus do filtru
+    assert w.saved_filter.field.hasFocus() and not w.measure_dock.isHidden()
+    QTest.keyClicks(w.saved_filter.field, "tloustka")
+    assert shown_saved(w) == ["m1", "m2"]
+    assert "2 z 3 měření" in w.saved_filter.note.text()
+    QTest.keyClick(w.saved_filter.field, Qt.Key.Key_Return)  # vybere první nalezené
+    assert w._current_saved_id() == "m1" and w.saved_list.hasFocus()
+    w.saved_filter.field.setText("prumer")
+    assert shown_saved(w) == ["m1", "m3"]  # vybrané měření zůstává vidět
+    w.saved_filter.field.setText("m2")  # i podle id
+    assert shown_saved(w) == ["m1", "m2"]
+    w.saved_filter.focus()
+    QTest.keyClick(w.saved_filter.field, Qt.Key.Key_Escape)
+    assert shown_saved(w) == ["m1", "m2", "m3"]
+    assert snapshot(w) == before
+
+
+def test_saved_measurement_filter_survives_rebuild_and_hides_without_records(tube, examples_dir):
+    w = tube
+    w.saved_filter.field.setText("vnejsi")
+    w.rebuild()  # přepočet seznam měření sestaví znovu
+    assert shown_saved(w) == ["m3"]
+    w.session.dirty = False
+    assert w.open_model(examples_dir / "krabicka.json")
+    assert w.saved_filter.field.text() == "" and not w.saved_filter.isVisibleTo(w)
+
+
+def test_packaged_saved_filter_driver_opens_tube(window):
+    from skodacad.gui.app import _self_test_saved_filter
+
+    lines = []
+    assert _self_test_saved_filter(window, lines), lines
+    assert lines[-1].startswith("✓ Filtr uložených měření")
+    assert window.saved_filter.field.text() == "" and shown_saved(window) == ["m1", "m2", "m3"]

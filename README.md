@@ -112,6 +112,16 @@ dílu a vazby podle komponent, které spojují. S aktivním filtrem vybere **Ctr
 nalezené komponenty – např. `sroub`, Ctrl+A a **H** skryje všechny šrouby. Filtr
 zkracuje jen strom, ve 3D zůstává vše. [Podrobnosti P7.41](docs/p7-41-filtr-stromu-sestavy.md).
 
+Parametry dílu mají filtr také: **Ctrl+Shift+F** (na Macu ⌘+Shift+F) rozbalí skupinu
+*Parametry dílu*, hledá podle názvu i hodnoty a Enter skočí rovnou do pole prvního
+nalezeného parametru. Pole s chybou zůstává vidět vždy.
+[Podrobnosti P7.42](docs/p7-42-filtr-parametru-dilu.md).
+
+Hledání příkazů zavřené bez spuštění (Esc) se příště otevře se stejným, označeným
+textem; po spuštění příkazu je prázdné s naposledy použitými nahoře. Uložená měření
+mají vlastní filtr (*Úpravy → Filtrovat uložená měření*).
+[Podrobnosti P7.43 a P7.44](docs/p7-43-text-hledani-a-filtr-mereni.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).
