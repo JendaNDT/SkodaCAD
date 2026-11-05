@@ -92,6 +92,11 @@ třeba `ulozit` nebo `pruhlednost`; hledat lze také podle nabídky. Šipkami vy
 Enter spustí a Esc zavře hledání. Nedostupné příkazy zůstávají viditelné,
 ale nelze je spustit. [Podrobnosti P7.37](docs/p7-37-hledani-prikazu.md).
 
+V hledání vyber příkaz a klikni na **Připnout do lišty**. Řádek **Oblíbené**
+nabídne až šest tlačítek. **Upravit…** je seřadí nebo odebere; díl a sestava mají
+vlastní seznam, který zůstane uložený i po zavření aplikace.
+[Podrobnosti P7.38](docs/p7-38-oblibene-prikazy.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).

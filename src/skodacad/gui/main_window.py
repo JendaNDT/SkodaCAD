@@ -63,6 +63,7 @@ from skodacad.gui.audit_panel import AuditPanel
 from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.design_panel import DesignPanel
 from skodacad.gui.direct_edit_dialog import DirectEditDialog
+from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.feature_preview import FeaturePreviewPanel
 from skodacad.gui.file_dialogs import FILE_OPTIONS
@@ -147,7 +148,8 @@ def _reference_parts(folder: Path) -> list[tuple[str, Path]]:
 class MainWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
                  examples_dir: Path | None = None, user_dir: Path | None = None,
-                 runner: BackgroundRebuilder | None = None) -> None:
+                 runner: BackgroundRebuilder | None = None,
+                 favorite_store: FavoriteStore | None = None) -> None:
         super().__init__()
         install_macos_accessibility()
         # S ``runner`` se model přepočítává na pozadí v pomocném procesu (okno je živé).
@@ -219,6 +221,14 @@ class MainWindow(QMainWindow):
         self._icons_after_view = False
         self._icon_loader_closed = False
         self._build_ribbon()
+        favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
+        self.favorite_store = (favorite_store if favorite_store is not None
+                               else FavoriteStore(favorites_path, self))
+        self.favorite_bar = FavoriteBar(
+            self, self.favorite_store, "part", self.ribbon.command_groups,
+            (("workspace", self.workspace), ("ndt", self.ndt_panel),
+             ("assistant", self.assistant_panel)))
+        self.view_menu.addAction(self.favorite_bar.manage_action)
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -963,13 +973,15 @@ class MainWindow(QMainWindow):
             "Importovat STEP…", self.import_step_dialog)
         file_menu.addAction(import_action)
         toolbar.addAction(import_action)
-        file_menu.addAction(self._action("Obnovit zdroj STEP…", self.restore_step_dialog))
+        self.restore_step_action = self._action("Obnovit zdroj STEP…", self.restore_step_dialog)
+        file_menu.addAction(self.restore_step_action)
         file_menu.addAction(self.save_action)
         toolbar.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
         export_menu = self.export_menu = file_menu.addMenu("Exportovat")
         for fmt, label in EXPORT_FORMATS:
             action = self._action(label + "…", lambda f=fmt: self.export_dialog(f))
+            action.setProperty("favorite_id", f"export.{fmt}")
             self.export_actions.append(action)
             export_menu.addAction(action)
         file_menu.addSeparator()
@@ -1319,7 +1331,8 @@ class MainWindow(QMainWindow):
 
             self._assembly_runner = BackgroundRebuilder()  # vlastní – díl tu má svůj přepočet
         window = AssemblyWindow(self._viewer_factory, runner=self._assembly_runner,
-                                user_dir=self.user_dir, open_part=self._open_part_of_assembly)
+                                user_dir=self.user_dir, open_part=self._open_part_of_assembly,
+                                favorite_store=self.favorite_store)
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         window.destroyed.connect(lambda _object=None, owned=window:
                                  self._assembly_window_destroyed(owned))

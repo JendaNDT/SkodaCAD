@@ -244,10 +244,12 @@ def _self_test_step(lines: list[str]) -> bool:
 def _self_test_window(lines: list[str], model: Path | None) -> bool:
     """Otevře hlavní okno se skutečným 3D prohlížečem a v něm ukázku ``model`` (jako
     uživatel – přes ModelSession). Selhání OpenGL není chyba aplikace."""
+    from skodacad.gui.favorite_commands import FavoriteStore
     from skodacad.gui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication(["skodacad-gui"])
-    window = MainWindow(examples_dir=examples_dir(), user_dir=user_dir())
+    window = MainWindow(examples_dir=examples_dir(), user_dir=user_dir(),
+                        favorite_store=FavoriteStore())  # osobní lištu při zkoušce neměníme
     window.resize(900, 600)
     window.show()
     for _ in range(20):
@@ -288,14 +290,14 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_plate_workflow(window, lines) and ok
     ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
-    ok = _self_test_command_search(window, lines) and ok
+    ok = _self_test_command_search(window, lines, check_favorites=True) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
 
 
-def _self_test_command_search(window, lines) -> bool:
+def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
     """Native shortcut, keyboard search/cancel and one existing toggle in each window."""
     import copy
 
@@ -309,6 +311,8 @@ def _self_test_command_search(window, lines) -> bool:
     action = window.files_action if assembly else window.workspace.collapse_action
     query = "zobrazeni"  # multiple results, accent-insensitive menu path in both windows
     original_checked = action.isChecked()
+    favorites = window.favorite_bar
+    original_pins = favorites.keys
     errors = []
 
     def snapshot():
@@ -328,7 +332,7 @@ def _self_test_command_search(window, lines) -> bool:
         # Let Qt deliver native focus restoration after the preceding modal dialog.
         QTest.qWait(100)
 
-    def search(cancel):
+    def search(cancel, *, pin=False):
         activate()
         visited = []
 
@@ -355,6 +359,11 @@ def _self_test_command_search(window, lines) -> bool:
                 assert dialog.current_command().action is action, (
                     f"šipky vybraly {dialog.current_command().action.text()!r}, "
                     f"očekáváno {action.text()!r}")
+                if pin:
+                    assert dialog.pin_button.isEnabled(), "příkaz nejde připnout"
+                    QTest.mouseClick(dialog.pin_button, Qt.MouseButton.LeftButton)
+                    assert dialog.isVisible() and dialog.results.currentItem().text(0).startswith(
+                        "★ "), "připnutí nezůstalo v hledání"
                 QTest.keyClick(dialog.query, Qt.Key.Key_Escape if cancel else Qt.Key.Key_Return)
             except Exception as exc:
                 errors.append(f"{type(exc).__name__}: {exc}")
@@ -370,10 +379,12 @@ def _self_test_command_search(window, lines) -> bool:
         # If the shortcut failed there was no nested dialog loop to deliver choose().
         timer.stop()
         timer.deleteLater()
-        mode = "Zrušit" if cancel else "Spustit"
+        mode = "Připnout" if pin else ("Zrušit" if cancel else "Spustit")
         assert visited and not errors, "; ".join(errors) or f"{mode}: zkratka neotevřela hledání"
 
     try:
+        if check_favorites:
+            assert favorites.store.path is None and not original_pins, "neizolovaná zkušební lišta"
         activate()
         before, view_before = snapshot(), camera()
         search(cancel=True)
@@ -383,16 +394,30 @@ def _self_test_command_search(window, lines) -> bool:
         try:
             search(cancel=False)
             assert toggles == [not original_checked], "příkaz se nespustil právě jednou"
+            if check_favorites:
+                search(cancel=True, pin=True)
+                assert toggles == [not original_checked], "připnutí spustilo příkaz"
+                QTest.qWait(60)
+                button, = favorites.pinned_buttons()
+                assert button.isVisible() and button.isChecked() == action.isChecked()
+                QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+                assert toggles == [not original_checked, original_checked]
+                assert button.isChecked() == action.isChecked()
         finally:
             action.toggled.disconnect(toggles.append)
         assert snapshot() == before, "pohledový příkaz změnil model nebo historii"
         lines.append(f"✓ Hledání příkazů ({title}): zkratka, bez diakritiky, šipky, Esc beze změn, "
                      "Enter spustí existující příkaz jednou")
+        if check_favorites:
+            lines.append(f"✓ Oblíbené příkazy ({title}): připnutí z hledání bez spuštění, "
+                         "tlačítko spustí původní příkaz jednou a přebírá jeho stav")
         return True
     except Exception as exc:
         lines.append(f"✕ Hledání příkazů ({title}): {exc}")
         return False
     finally:
+        if check_favorites and favorites.store.path is None:
+            favorites.store.replace(favorites.kind, original_pins)
         if action.isChecked() != original_checked:
             action.trigger()
 
@@ -1161,7 +1186,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         lines.append(f"✓ Sestava: {result.volume_mm3:.0f} mm³, 6 komponent, víčko z = 26…32"
                      f"{drawn}")
         ok = _self_test_assembly_layout(assembly, lines) and ok
-        ok = _self_test_command_search(assembly, lines) and ok
+        ok = _self_test_command_search(assembly, lines, check_favorites=True) and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok

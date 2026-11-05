@@ -241,11 +241,12 @@ def test_assembly_search_uses_current_window(app, tmp_path):  # noqa: F811
 def test_packaged_search_driver_uses_keyboard_after_activation(app, tmp_path, assembly):  # noqa: F811
     from skodacad.gui.app import _self_test_command_search
     from skodacad.gui.assembly_window import AssemblyWindow
+    from skodacad.gui.favorite_commands import FavoriteStore
     from skodacad.gui.main_window import MainWindow
     from test_gui import FakeViewer
 
     kind = AssemblyWindow if assembly else MainWindow
-    owner = kind(viewer_factory=FakeViewer, user_dir=tmp_path)
+    owner = kind(viewer_factory=FakeViewer, user_dir=tmp_path, favorite_store=FavoriteStore())
     owner.viewer._view = None  # This unit test covers keys; native packages cover the OCCT camera.
     if assembly:
         assert owner.new_assembly(tmp_path / "keyboard.json")
@@ -255,7 +256,10 @@ def test_packaged_search_driver_uses_keyboard_after_activation(app, tmp_path, as
     owner.show()
     lines = []
     try:
-        assert _self_test_command_search(owner, lines), lines
+        assert _self_test_command_search(owner, lines, check_favorites=True), lines
+        assert any(line.startswith("✓ Oblíbené příkazy") for line in lines)
+        assert owner.favorite_bar.keys == ()
+        assert not (tmp_path / "oblibene-prikazy.json").exists()
     finally:
         owner.session.dirty = False
         owner.close()

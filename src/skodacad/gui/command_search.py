@@ -46,14 +46,15 @@ class Command:
                                     for action in (*self.parents, self.action))
 
 
-def collect_commands(menu_bar, groups=(), exclude=()):
+def collect_commands(menu_bar, groups=(), exclude=(), *, include_hidden=False):
     """Menu leaves first, then ribbon-only commands; reuse each QAction just once."""
     commands = []
     seen = {id(action) for action in exclude}
 
     def visit(actions, path, parents=()):
         for action in actions:
-            if not isValid(action) or action.isSeparator() or not action.isVisible():
+            if (not isValid(action) or action.isSeparator()
+                    or (not include_hidden and not action.isVisible())):
                 continue
             if menu := action.menu():
                 visit(menu.actions(), (*path, plain_label(action.text())), (*parents, action))
@@ -68,12 +69,13 @@ def collect_commands(menu_bar, groups=(), exclude=()):
 
 
 class CommandSearchDialog(QDialog):
-    def __init__(self, commands, parent=None):
+    def __init__(self, commands, parent=None, *, favorites=None):
         super().__init__(parent)
         self.setWindowTitle("Najít příkaz")
         self.setObjectName("command_search")
         self.resize(680, 460)
         self.commands = commands
+        self.favorites = favorites
         self.selected_command = None
         layout = QVBoxLayout(self)
         label = QLabel("&Hledat podle názvu nebo nabídky:")
@@ -101,6 +103,13 @@ class CommandSearchDialog(QDialog):
         cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
         cancel.setText("Zavřít")
         cancel.setAutoDefault(False)
+        self.pin_button = None
+        if favorites is not None:
+            self.pin_button = buttons.addButton("Připnout do lišty",
+                                                QDialogButtonBox.ButtonRole.ActionRole)
+            self.pin_button.setObjectName("pin_command")
+            self.pin_button.setAutoDefault(False)
+            self.pin_button.clicked.connect(self._toggle_pin)
         self.run_button = buttons.addButton("Spustit", QDialogButtonBox.ButtonRole.AcceptRole)
         self.run_button.setDefault(True)
         buttons.accepted.connect(self.accept)
@@ -143,6 +152,9 @@ class CommandSearchDialog(QDialog):
         for _, command in matches:
             action = command.action
             name = plain_label(action.text())
+            if (self.favorites is not None
+                    and self.favorites.command_keys.get(action) in self.favorites.keys):
+                name = "★ " + name
             if not command.available:
                 name += " [nedostupné]"
             item = QTreeWidgetItem([name, command.path,
@@ -168,6 +180,22 @@ class CommandSearchDialog(QDialog):
         item = self.results.currentItem()
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
 
+    def _pin_key(self, command):
+        if self.favorites is not None and command is not None and command.visible:
+            return self.favorites.command_keys.get(command.action)
+        return None
+
+    def _toggle_pin(self):
+        key = self._pin_key(self.current_command())
+        if key is None:
+            return
+        try:
+            self.favorites.toggle(key)
+        except OSError:
+            self.note.setText("Oblíbené příkazy se nepodařilo uložit. Zkus to znovu.")
+        else:
+            self.refresh()
+
     def _selection_changed(self, *_):
         command = self.current_command()
         available = command is not None and command.available
@@ -181,6 +209,17 @@ class CommandSearchDialog(QDialog):
             state = ("Zapnuto. " if command.action.isChecked() else "Vypnuto. ") \
                 if command.action.isCheckable() else ""
             self.note.setText(state + hint)
+        if self.pin_button is not None:
+            key = self._pin_key(command)
+            pinned = key in self.favorites.keys
+            self.pin_button.setText("Odepnout z lišty" if pinned else "Připnout do lišty")
+            self.pin_button.setEnabled(key is not None and (pinned or self.favorites.can_add))
+            if command is not None and key is None:
+                self.pin_button.setToolTip("Tento příkaz nelze připnout.")
+            elif not pinned and not self.favorites.can_add:
+                self.pin_button.setToolTip("Lišta je plná. Nejdřív některý příkaz odepni.")
+            else:
+                self.pin_button.setToolTip("Upraví horní lištu bez spuštění příkazu.")
 
     def eventFilter(self, watched, event):
         if watched in (self.query, self.results) and event.type() == QEvent.Type.KeyPress:
@@ -208,8 +247,8 @@ class CommandSearchDialog(QDialog):
 
 
 def show_command_search(window, groups=()):
-    dialog = CommandSearchDialog(collect_commands(window.menuBar(), groups,
-                                                 exclude=(window.command_search_action,)), window)
+    commands = collect_commands(window.menuBar(), groups, exclude=(window.command_search_action,))
+    dialog = CommandSearchDialog(commands, window, favorites=getattr(window, "favorite_bar", None))
     try:
         execute = getattr(window, "_exec_dialog", lambda d: d.exec())
         accepted = execute(dialog) == QDialog.DialogCode.Accepted

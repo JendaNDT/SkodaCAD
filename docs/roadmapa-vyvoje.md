@@ -45,8 +45,9 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 **Po ověřeném vydání P8.5:** autor řekl „tu přejímku přeskočíme“ k doporučené
 automatické zkoušce na reprezentativní NDT úloze. Zůstává neprovedená, další vývoj
 neblokuje a nenahrazuje odbornou validaci NDT-17. Dne 5. 11. zvolil pokračování
-**Ovládání a pracovní postupy**; navazující rozpracovaná dávka
-[P7.37](p7-37-hledani-prikazu.md) přidává společné hledání příkazů.
+**Ovládání a pracovní postupy**. Společné hledání příkazů
+[P7.37](p7-37-hledani-prikazu.md) je sloučené a ověřeně vydané ([PR #120](https://github.com/JendaNDT/SkodaCAD/pull/120)).
+Na pokyn autora navazuje [P7.38 – oblíbené příkazy v horní liště](p7-38-oblibene-prikazy.md).
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|
