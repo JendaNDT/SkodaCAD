@@ -28,9 +28,9 @@ prohlížeč modelu v Inventoru nebo Solid Edge.
 - Řádky stromu se jen skrývají, nikdy nemažou ani nevytvářejí znovu. To chrání
   přístupnost Cocoa na Macu (pád `libqcocoa` při mazání buněk, viz P5.5/P7.3).
 - Během náhledu nového prvku a práce AI je strom i filtr zamčený jako dosud.
-- Prohledává se jen strom prvků dílu. Parametry, měření, NDT studie a strom
-  sestavy filtr zatím nemají; sestava je kandidát dalšího kroku (sdílený
-  `gui/tree_filter.py` už umí vnořené řádky a nechá vidět rodiče nalezených).
+- Prohledává se jen strom prvků dílu. Parametry, měření a NDT studie filtr
+  nemají; strom sestavy ho dostal v [P7.41](p7-41-filtr-stromu-sestavy.md)
+  (sdílený `gui/tree_filter.py` umí vnořené řádky a nechá vidět rodiče nalezených).
 - Bez změny formátu modelů, geometrie a závislostí.
 
 ## Ověření

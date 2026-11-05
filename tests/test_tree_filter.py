@@ -151,3 +151,140 @@ def test_packaged_tree_filter_driver_uses_real_keys(window):
     assert lines[-1].startswith("✓ Filtr stromu prvků")
     assert w._selected_id == "deska" and len(visible(w)) == 6  # výběr vrácen, filtr prázdný
     assert snapshot(w) == before
+
+
+# --- P7.41: filtr stromu komponent v okně sestavy ---------------------------------
+
+from test_assembly_gui import dialogs, main_window, project  # noqa: E402, F401
+
+
+@pytest.fixture
+def assembly(main_window, project):  # noqa: F811
+    window = main_window.open_assembly(project / "sestavy" / "krabicka_s_vazbami.json")
+    assert window is not None
+    window.resize(1400, 900)
+    window.show()
+    window.activateWindow()
+    assert QTest.qWaitForWindowActive(window)
+    return window
+
+
+def all_rows(tree):
+    found = []
+
+    def walk(item):
+        found.append(item)
+        for index in range(item.childCount()):
+            walk(item.child(index))
+
+    for index in range(tree.topLevelItemCount()):
+        walk(tree.topLevelItem(index))
+    return found
+
+
+def shown_keys(w):
+    import json
+
+    return [json.loads(item.data(0, Qt.ItemDataRole.UserRole)) for item in all_rows(w.tree)
+            if not item.isHidden() and (item.parent() is None or not item.parent().isHidden())]
+
+
+def assembly_snapshot(w):
+    session = w.session
+    return (session.assembly.to_dict(), session.result, list(session._undo),
+            list(session._redo), session.dirty, dict(w._visibility), w._isolated)
+
+
+def test_assembly_filter_components_and_constraints_without_changes(assembly):
+    w = assembly
+    before = assembly_snapshot(w)
+    rows = all_rows(w.tree)
+    shown_parts = len(w.visible_instances())
+    w.tree_filter_action.trigger()
+    assert w.tree_filter.field.hasFocus()
+    QTest.keyClicks(w.tree_filter.field, "nozicka")  # i, t, h jsou zkratky okna – pole je přijme
+    assert w.tree_filter.field.text() == "nozicka"
+    keys = shown_keys(w)
+    assert [k for k in keys if isinstance(k, list)] == [[f"nozicka_{i}"] for i in range(1, 5)]
+    # vazby nožiček se najdou podle názvu komponenty; skupina „Vazby“ zůstane jako rodič
+    assert [k["constraint"] for k in keys if isinstance(k, dict)] == ["v4", "v5", "v6", "v7"]
+    assert None in keys
+    assert "z 14 položek" in w.tree_filter.note.text()
+    w.tree_filter.field.setText("vazba")
+    assert [k for k in shown_keys(w) if isinstance(k, list)] == []
+    assert len([k for k in shown_keys(w) if isinstance(k, dict)]) == 7
+    w.tree_filter.field.setText("dily/vicko.json")  # podle souboru dílu
+    assert [k for k in shown_keys(w) if isinstance(k, list)] == [["vicko"]]
+    QTest.keyClick(w.tree_filter.field, Qt.Key.Key_Escape)
+    assert len(shown_keys(w)) == len(rows) and all_rows(w.tree) == rows
+    assert len(w.visible_instances()) == shown_parts  # filtr nikdy neskrývá 3D
+    assert assembly_snapshot(w) == before
+
+
+def test_assembly_filter_keeps_selection_visible_and_ctrl_a_selects_matches(assembly):
+    w = assembly
+    w.select_many([("krabicka",)])
+    w.tree_filter.field.setText("nozicka")
+    assert ["krabicka"] in shown_keys(w)  # vybraná komponenta se neskryje
+    w.tree.setFocus()
+    QTest.keyClick(w.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert w._selection == tuple((f"nozicka_{i}",) for i in range(1, 5))
+    assert ["krabicka"] not in shown_keys(w)  # už není vybraná, filtru neodpovídá
+    before = len(w.visible_instances())
+    QTest.keyClick(w.tree, Qt.Key.Key_H)  # skryje právě nalezené nožičky
+    assert len(w.visible_instances()) == before - 4
+    w.tree_filter.clear()
+    w.tree.setFocus()
+    QTest.keyClick(w.tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert len(w._selection) == 6  # bez filtru jako dosud všechny komponenty
+
+
+def test_assembly_filter_enter_selects_and_3d_pick_reveals_row(assembly):
+    w = assembly
+    QTest.keyClicks(w.tree_filter.field, "vicko na okraji")
+    QTest.keyClick(w.tree_filter.field, Qt.Key.Key_Return)
+    assert w._constraint == "v1" and w.tree.hasFocus()
+    w.tree_filter.field.setText("krabicka")
+    assert ["nozicka_2"] not in shown_keys(w)
+    w.select_many([("nozicka_2",)])  # jako klik ve 3D: signály stromu jsou blokované
+    assert ["nozicka_2"] in shown_keys(w) and ["krabicka"] in shown_keys(w)
+
+
+def test_assembly_filter_survives_rebuild_and_clears_on_open(assembly, project):  # noqa: F811
+    w = assembly
+    w.tree_filter.field.setText("nozicka")
+    w.reload_action.trigger()  # znovu načíst díly = nové výsledky ve stejných řádcích
+    assert [k for k in shown_keys(w) if isinstance(k, list)] == [[f"nozicka_{i}"] for i in
+                                                               range(1, 5)]
+    assert w.open_assembly(project / "sestavy" / "krabicka_s_vickem.json")
+    assert w.tree_filter.field.text() == ""
+    assert all(not item.isHidden() for item in all_rows(w.tree))
+
+
+def test_packaged_assembly_tree_filter_driver(assembly):
+    from skodacad.gui.app import _self_test_assembly_tree_filter
+
+    w = assembly
+    w.select_many([("vicko",)])
+    before = assembly_snapshot(w)
+    lines = []
+    assert _self_test_assembly_tree_filter(w, lines), lines
+    assert lines[-1].startswith("✓ Filtr stromu komponent")
+    assert w._selection == (("vicko",),) and w.tree_filter.field.text() == ""
+    assert assembly_snapshot(w) == before
+
+
+def test_assembly_shift_range_skips_rows_hidden_by_filter(assembly):
+    w = assembly
+    w.select_many([("krabicka",)])
+    w.tree_filter.field.setText("4")  # Nožička 4 a její vazba; krabička zůstane jako vybraná
+    first = next(i for i in all_rows(w.tree) if i.data(0, SEARCH_ROLE).startswith("Krabička"))
+    last = next(i for i in all_rows(w.tree) if i.data(0, SEARCH_ROLE).startswith("Nožička 4"))
+    w.tree.setFocus()
+    QTest.mouseClick(w.tree.viewport(), Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.NoModifier, w.tree.visualItemRect(first).center())
+    QTest.mouseClick(w.tree.viewport(), Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.ShiftModifier, w.tree.visualItemRect(last).center())
+    # skryté Víčko a Nožičky 1–3 mezi nimi se nevyberou ani neodkryjí
+    assert w._selection == (("krabicka",), ("nozicka_4",))
+    assert [k for k in shown_keys(w) if isinstance(k, list)] == [["krabicka"], ["nozicka_4"]]

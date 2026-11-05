@@ -122,6 +122,12 @@
   dílu `gui/tree_filter.py`, Ctrl+F, hledá v `SEARCH_ROLE` (popis, id, slovo stavu).
   Řádky jen `setHidden`, nikdy nemazat (Cocoa AX); vybraný řádek vždy viditelný;
   `_refresh_tree` filtr znovu použije, Otevřít/Nový ho vyprázdní. Jen pohled.
+  [P7.41](docs/p7-41-filtr-stromu-sestavy.md): týž filtr nad stromem komponent
+  sestavy. Vidět zůstává current **i každý vybraný** řádek (`isSelected`) a rodiče
+  nalezených; `_sync_tree_selection` blokuje signály, proto filtr volá sám (výběr
+  ze 3D řádek odkryje). Ctrl+A s aktivním filtrem = jen `visible_matches()`
+  komponent; filtr nikdy nemění `_visibility`/izolaci/3D. Shift-rozsah skryté
+  řádky přeskakuje (ověřeno testem).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 

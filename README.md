@@ -107,6 +107,11 @@ Dlouhý strom prvků dílu zúžíš filtrem nad ním: **Ctrl+F** (na Macu ⌘+F
 Esc filtr zruší. Vybraný prvek zůstává vidět vždy; model se filtrem nemění.
 [Podrobnosti P7.40](docs/p7-40-filtr-stromu-prvku.md).
 
+Stejný filtr má i strom komponent sestavy (Ctrl+F): hledá podle názvu, id i souboru
+dílu a vazby podle komponent, které spojují. S aktivním filtrem vybere **Ctrl+A** jen
+nalezené komponenty – např. `sroub`, Ctrl+A a **H** skryje všechny šrouby. Filtr
+zkracuje jen strom, ve 3D zůstává vše. [Podrobnosti P7.41](docs/p7-41-filtr-stromu-sestavy.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).

@@ -2,7 +2,9 @@
 
 Rows are only hidden (``setHidden``), never removed: Cocoa accessibility keeps
 references to tree cells, so the filter must not rebuild the tree. The current row
-always stays visible, so the selected item and its editor never disappear.
+and every selected row always stay visible, so nothing selected is ever hidden
+(a hidden selected row could be changed by a later command without being seen).
+Hiding a row only shortens the tree; it never hides geometry in the 3D view.
 """
 
 from PySide6.QtCore import QEvent, Qt, Signal
@@ -33,7 +35,8 @@ class TreeFilter(QWidget):
         self.field.setClearButtonEnabled(True)
         self.field.setToolTip("Zobrazí jen řádky, které obsahují zadaný text. "
                               "Velikost písmen ani diakritika nerozhoduje. "
-                              "Enter vybere první nalezený, Esc filtr zruší. Model se nemění.")
+                              "Enter vybere první nalezený, Esc filtr zruší. Vybrané řádky "
+                              "zůstávají vidět. Mění jen strom – model ani 3D se nemění.")
         layout.addWidget(self.field)
         self.note = QLabel()
         self.note.setObjectName("tree_filter_note")
@@ -44,6 +47,7 @@ class TreeFilter(QWidget):
         self.field.textChanged.connect(self.apply)
         self.field.installEventFilter(self)
         tree.currentItemChanged.connect(self.apply)
+        tree.itemSelectionChanged.connect(self.apply)
 
     @property
     def active(self) -> bool:
@@ -94,7 +98,7 @@ class TreeFilter(QWidget):
                 total += 1
                 hit = not tokens or self.matches(item)
                 child_visible = visit(item)
-                visible = hit or child_visible or item is current
+                visible = hit or child_visible or item is current or item.isSelected()
                 shown += hit
                 if item.isHidden() == visible:  # change only what differs (AX friendly)
                     item.setHidden(not visible)
