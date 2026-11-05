@@ -235,3 +235,27 @@ def test_assembly_search_uses_current_window(app, tmp_path):  # noqa: F811
         owner.command_search_action.trigger()
     assert (owner.session.assembly, owner.session.result, owner.session.dirty) == before
     owner.close()
+
+
+@pytest.mark.parametrize("assembly", [False, True], ids=["part", "assembly"])
+def test_packaged_search_driver_uses_keyboard_after_activation(app, tmp_path, assembly):  # noqa: F811
+    from skodacad.gui.app import _self_test_command_search
+    from skodacad.gui.assembly_window import AssemblyWindow
+    from skodacad.gui.main_window import MainWindow
+    from test_gui import FakeViewer
+
+    kind = AssemblyWindow if assembly else MainWindow
+    owner = kind(viewer_factory=FakeViewer, user_dir=tmp_path)
+    owner.viewer._view = None  # This unit test covers keys; native packages cover the OCCT camera.
+    if assembly:
+        assert owner.new_assembly(tmp_path / "keyboard.json")
+    else:
+        owner.session.new_document()
+        owner._reload_all()
+    owner.show()
+    lines = []
+    try:
+        assert _self_test_command_search(owner, lines), lines
+    finally:
+        owner.session.dirty = False
+        owner.close()

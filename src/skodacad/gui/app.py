@@ -321,7 +321,15 @@ def _self_test_command_search(window, lines) -> bool:
         view = window.viewer._view
         return (view.Proj(), view.At(), view.Eye(), view.Scale()) if view else None
 
+    def activate():
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro klávesovou zkratku"
+        # Let Qt deliver native focus restoration after the preceding modal dialog.
+        QTest.qWait(100)
+
     def search(cancel):
+        activate()
         visited = []
 
         def choose():
@@ -336,12 +344,20 @@ def _self_test_command_search(window, lines) -> bool:
                 row = next(i for i, item in enumerate(matches)
                            if item.data(0, Qt.ItemDataRole.UserRole).action is action)
                 assert row > 0, "scénář neověřuje pohyb mezi výsledky"
-                for _ in range(row):
-                    QTest.keyClick(dialog.query, Qt.Key.Key_Down)
-                assert dialog.current_command().action is action
+                current = dialog.results.indexOfTopLevelItem(dialog.results.currentItem())
+                # Filtering preserves an existing selection; typing need not leave row zero.
+                if current == row:
+                    QTest.keyClick(dialog.query, Qt.Key.Key_Up)
+                    current -= 1
+                key = Qt.Key.Key_Down if row > current else Qt.Key.Key_Up
+                for _ in range(abs(row-current)):
+                    QTest.keyClick(dialog.query, key)
+                assert dialog.current_command().action is action, (
+                    f"šipky vybraly {dialog.current_command().action.text()!r}, "
+                    f"očekáváno {action.text()!r}")
                 QTest.keyClick(dialog.query, Qt.Key.Key_Escape if cancel else Qt.Key.Key_Return)
             except Exception as exc:
-                errors.append(str(exc))
+                errors.append(f"{type(exc).__name__}: {exc}")
                 if isinstance(dialog, CommandSearchDialog):
                     dialog.reject()
 
@@ -354,12 +370,11 @@ def _self_test_command_search(window, lines) -> bool:
         # If the shortcut failed there was no nested dialog loop to deliver choose().
         timer.stop()
         timer.deleteLater()
-        assert visited and not errors, "; ".join(errors) or "zkratka neotevřela hledání"
+        mode = "Zrušit" if cancel else "Spustit"
+        assert visited and not errors, "; ".join(errors) or f"{mode}: zkratka neotevřela hledání"
 
     try:
-        window.raise_()
-        window.activateWindow()
-        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro klávesovou zkratku"
+        activate()
         before, view_before = snapshot(), camera()
         search(cancel=True)
         assert snapshot() == before and camera() == view_before, "Zrušit změnilo model nebo kameru"
