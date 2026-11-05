@@ -141,10 +141,10 @@ def test_reorder_cancel_remove_and_sync_open_assemblies(app, tmp_path):  # noqa:
 
 def test_profile_validation_limit_and_write_failure(app, tmp_path):  # noqa: F811
     path = tmp_path / "oblibene-prikazy.json"
-    path.write_text("neúplný JSON")
+    path.write_text("neúplný JSON", encoding="utf-8")
     assert FavoriteStore(path).get("part") == ()
     path.write_text(json.dumps({"version": 1, "part": [7, "x", "x", *map(str, range(9))],
-                                "assembly": ["sestava"]}))
+                                "assembly": ["sestava"]}), encoding="utf-8")
     store = FavoriteStore(path)
     assert store.get("part") == ("x", "0", "1", "2", "3", "4")
     assert store.get("assembly") == ("sestava",)
