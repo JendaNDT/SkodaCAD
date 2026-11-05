@@ -533,6 +533,7 @@ def _self_test_shortcuts(window, lines, label: str, groups=()) -> bool:
 
     def inspect(dialog):
         rows = dialog.rows
+        seen.setdefault("places", []).append(dialog.current_place())
         seen["commands"] = sum(row.place not in ("Myš ve 3D", "Ve stromu a filtrech")
                                for row in rows)
         seen["other"] = len(rows) - seen["commands"]
@@ -560,10 +561,13 @@ def _self_test_shortcuts(window, lines, label: str, groups=()) -> bool:
         assert seen["commands"] >= 10 and seen["other"] >= 5, f"málo řádků: {seen}"
         assert seen["found"] == ["Uložit", "Uložit jako"], f"filtr našel {seen['found']}"
         assert seen["restored"], "Esc neobnovil všechny řádky přehledu"
+        window.controls_action.trigger()  # Nápověda → Ovládání myší…
+        assert seen["places"] == [None, "Myš ve 3D"], f"Ovládání myší: {seen['places']}"
         assert snapshot() == before, "přehled zkratek změnil model nebo historii"
         lines.append(f"✓ Přehled zkratek ({label}): F1, {seen['commands']} zkratek příkazů "
                      f"+ {seen['other']} ovládání myší a kláves, filtr „ulozit“ = 2, "
-                     "Esc, bez kolizí a beze změny modelu")
+                     "Esc, Ovládání myší otevře skupinu Myš ve 3D, bez kolizí "
+                     "a beze změny modelu")
         return True
     except Exception as exc:
         lines.append(f"✕ Přehled zkratek ({label}): {exc}")
