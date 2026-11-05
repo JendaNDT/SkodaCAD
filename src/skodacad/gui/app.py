@@ -307,7 +307,7 @@ def _self_test_command_search(window, lines) -> bool:
     assembly = hasattr(window.session, "assembly")
     title = "sestava" if assembly else "díl"
     action = window.files_action if assembly else window.workspace.collapse_action
-    query = "soubory ve stromu" if assembly else "sbalit pas"
+    query = "zobrazeni"  # multiple results, accent-insensitive menu path in both windows
     original_checked = action.isChecked()
     errors = []
 
@@ -335,6 +335,7 @@ def _self_test_command_search(window, lines) -> bool:
                            for i in range(dialog.results.topLevelItemCount())]
                 row = next(i for i, item in enumerate(matches)
                            if item.data(0, Qt.ItemDataRole.UserRole).action is action)
+                assert row > 0, "scénář neověřuje pohyb mezi výsledky"
                 for _ in range(row):
                     QTest.keyClick(dialog.query, Qt.Key.Key_Down)
                 assert dialog.current_command().action is action
@@ -358,7 +359,7 @@ def _self_test_command_search(window, lines) -> bool:
     try:
         window.raise_()
         window.activateWindow()
-        QTest.qWait(150)
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro klávesovou zkratku"
         before, view_before = snapshot(), camera()
         search(cancel=True)
         assert snapshot() == before and camera() == view_before, "Zrušit změnilo model nebo kameru"
