@@ -72,7 +72,7 @@ from skodacad.gui.macos_accessibility import install as install_macos_accessibil
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
-from skodacad.gui.tree_filter import SEARCH_ROLE, TreeFilter
+from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section, Workspace
@@ -268,6 +268,8 @@ class MainWindow(QMainWindow):
         self.edit_feature_action = self._action("Upravit prvek", self.start_feature_edit, "Ctrl+E")
         self.tree_filter_action = self._action("Filtrovat strom prvků", self.focus_tree_filter,
                                                "Ctrl+F")
+        self.param_filter_action = self._action("Filtrovat parametry dílu",
+                                                self.focus_param_filter, "Ctrl+Shift+F")
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))
@@ -379,6 +381,10 @@ class MainWindow(QMainWindow):
         params_box = QWidget()
         params_layout = QVBoxLayout(params_box)
         self.params_form = QFormLayout()
+        self.param_filter = FormFilter(self.params_form,
+                                       placeholder="Filtr parametrů (Ctrl+Shift+F)…",
+                                       nouns=("parametru", "parametrů", "parametrů"))
+        params_layout.addWidget(self.param_filter)
         params_layout.addLayout(self.params_form)
         params_buttons = QHBoxLayout()
         for action in (self.add_parameter_action, self.delete_parameter_action):
@@ -998,6 +1004,7 @@ class MainWindow(QMainWindow):
         edit_menu = bar.addMenu("Ú&pravy")
         edit_menu.addAction(self.edit_feature_action)
         edit_menu.addAction(self.tree_filter_action)
+        edit_menu.addAction(self.param_filter_action)
         for action in (self.undo_action, self.redo_action):
             edit_menu.addAction(action)
             toolbar.addAction(action)
@@ -1301,12 +1308,21 @@ class MainWindow(QMainWindow):
             self.workspace.model_action.trigger()
         self.tree_filter.focus()
 
+    def focus_param_filter(self) -> None:
+        """Ctrl+Shift+F: otevře strom modelu a skupinu Parametry dílu, fokus do filtru."""
+        if not self.workspace.model_action.isChecked():
+            self.workspace.model_action.trigger()
+        self.sidebar_sections["parameters"].set_expanded(True)
+        self.param_filter.show()
+        self.param_filter.focus()
+
     def new_model(self) -> bool:
         if not self._confirm_discard():
             return False
         self.session.new_document()
         self._selected_id = None
         self.tree_filter.clear()  # filtr patří k předchozímu dílu
+        self.param_filter.clear()
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         self.statusBar().showMessage("Nový díl – začni tlačítkem „Přidat prvek“ → Skica.", 10000)
@@ -1337,6 +1353,7 @@ class MainWindow(QMainWindow):
         log.info("Otevřen model %s", path)
         self._selected_id = None
         self.tree_filter.clear()  # filtr patří k předchozímu dílu
+        self.param_filter.clear()
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         return True
@@ -1903,6 +1920,13 @@ class MainWindow(QMainWindow):
             field.editingFinished.connect(lambda n=name: self._parameter_edited(n))
             self.params_form.addRow(name, field)
             self._param_fields[name] = field
+        self._refresh_param_filter()
+
+    def _refresh_param_filter(self) -> None:
+        """Filtr parametrů platí i po obnovení polí; bez parametrů se nezobrazuje."""
+        has_fields = bool(self._param_fields)
+        self.param_filter.setVisible(has_fields or self.param_filter.active)
+        self.param_filter.apply()
 
     def _parameter_edited(self, name: str) -> None:
         field = self._param_fields[name]

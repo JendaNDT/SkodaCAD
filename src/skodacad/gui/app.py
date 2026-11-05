@@ -292,6 +292,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_viewer_lifecycle(window, lines) and ok
     ok = _self_test_command_search(window, lines, check_favorites=True) and ok
     ok = _self_test_tree_filter(window, lines) and ok
+    ok = _self_test_param_filter(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -498,6 +499,63 @@ def _self_test_tree_filter(window, lines) -> bool:
             if item.data(0, Qt.ItemDataRole.UserRole) == previous:
                 tree.setCurrentItem(item)
                 break
+
+
+def _self_test_param_filter(window, lines) -> bool:
+    """P7.42: real Ctrl+Shift+F, typing, Enter into the first field and Esc."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    flt, form, fields = window.param_filter, window.params_form, window._param_fields
+    section = window.sidebar_sections["parameters"]
+    was_expanded = section.expanded
+
+    def snapshot():
+        session = window.session
+        return (copy.deepcopy(session.document.to_dict()), session.result, session.dirty,
+                list(session._undo), list(session._redo), dict(fields))
+
+    def shown():
+        return [name for name, field in fields.items() if form.isRowVisible(field)]
+
+    try:
+        before = snapshot()
+        assert len(fields) >= 2, "díl nemá dost parametrů pro zkoušku filtru"
+        query = next((name for name in reversed(fields)
+                      if sum(name.casefold() in other.casefold() for other in fields) == 1
+                      and not any(name.casefold() in f.text().casefold()
+                                  for f in fields.values())), None)
+        assert query is not None, "žádný název parametru není jednoznačný"
+        section.set_expanded(False)
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro zkratku"
+        QTest.qWait(100)
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier
+                       | Qt.KeyboardModifier.ShiftModifier)
+        assert section.expanded, "Ctrl+Shift+F nerozbalilo Parametry dílu"
+        assert flt.field.hasFocus(), "Ctrl+Shift+F nedalo fokus do filtru parametrů"
+        QTest.keyClicks(flt.field, query)
+        assert flt.field.text() == query, "zkratky okna pohltily písmena filtru"
+        assert shown() == [query], f"filtr ukazuje {shown()} místo [{query}]"
+        QTest.keyClick(flt.field, Qt.Key.Key_Return)
+        assert fields[query].hasFocus(), "Enter nepřesunul fokus do pole parametru"
+        flt.focus()
+        QTest.keyClick(flt.field, Qt.Key.Key_Escape)
+        assert not flt.field.text() and shown() == list(fields)
+        assert snapshot() == before, "filtr změnil díl, historii nebo pole parametrů"
+        lines.append(f"✓ Filtr parametrů: Ctrl+Shift+F rozbalí skupinu, psaní, Enter skočí "
+                     f"do „{query}“, Esc obnoví všechny parametry ({len(fields)}) "
+                     "beze změny dílu")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Filtr parametrů: {exc}")
+        return False
+    finally:
+        flt.clear()
+        section.set_expanded(was_expanded)
 
 
 def _self_test_plate_workflow(window, lines) -> bool:

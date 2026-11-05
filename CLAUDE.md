@@ -127,7 +127,11 @@
   nalezených; `_sync_tree_selection` blokuje signály, proto filtr volá sám (výběr
   ze 3D řádek odkryje). Ctrl+A s aktivním filtrem = jen `visible_matches()`
   komponent; filtr nikdy nemění `_visibility`/izolaci/3D. Shift-rozsah skryté
-  řádky přeskakuje (ověřeno testem).
+  řádky přeskakuje (ověřeno testem). PR #123 sloučený a ověřeně vydaný z `7f41598`.
+  [P7.42](docs/p7-42-filtr-parametru-dilu.md): `FormFilter` nad `params_form`
+  (sdílený základ `FilterBox`), Ctrl+Shift+F rozbalí *Parametry dílu*; řádky jen
+  `setRowVisible`, hledá název i text pole, upravované a chybné (červené) pole
+  zůstává vidět. `_rebuild_param_fields` filtr znovu použije; bez parametrů skrytý.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 

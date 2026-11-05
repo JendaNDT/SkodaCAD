@@ -53,7 +53,9 @@ neblokuje a nenahrazuje odbornou validaci NDT-17. Dne 5. 11. zvolil pokračován
 je sloučená a ověřeně vydaná ([PR #122](https://github.com/JendaNDT/SkodaCAD/pull/122), `c537087`).
 [P7.40 – filtr stromu prvků v dílu](p7-40-filtr-stromu-prvku.md) a
 [P7.41 – filtr stromu komponent v sestavě](p7-41-filtr-stromu-sestavy.md) jsou
-v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokumentací P7.39.
+v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokumentací P7.39
+(sloučeno a ověřeně vydáno z `7f41598`).
+[P7.42 – filtr parametrů dílu](p7-42-filtr-parametru-dilu.md) začíná další dávku.
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|
