@@ -132,6 +132,11 @@
   (sdílený základ `FilterBox`), Ctrl+Shift+F rozbalí *Parametry dílu*; řádky jen
   `setRowVisible`, hledá název i text pole, upravované a chybné (červené) pole
   zůstává vidět. `_rebuild_param_fields` filtr znovu použije; bez parametrů skrytý.
+  [P7.43/P7.44](docs/p7-43-text-hledani-a-filtr-mereni.md) (draft PR #124):
+  `show_command_search` pamatuje v `window._command_search_text` text hledání zavřeného
+  bez spuštění (označený), po spuštění prázdné (P7.39); vyprázdnění pole znovu předvybere
+  nedávný příkaz (`_query_changed`). `ListFilter` nad `saved_list` (SEARCH_ROLE název+id),
+  akce *Filtrovat uložená měření* bez zkratky, vybrané měření zůstává vidět.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 

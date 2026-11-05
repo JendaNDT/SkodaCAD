@@ -384,3 +384,66 @@ def test_packaged_param_filter_driver(window):
     assert lines[-1].startswith("✓ Filtr parametrů")
     assert w.param_filter.field.text() == "" and shown_params(w) == list(w._param_fields)
     assert snapshot(w) == before
+
+
+# --- P7.44: filtr uložených měření --------------------------------------------------
+
+
+@pytest.fixture
+def tube(app, examples_dir, tmp_path):  # noqa: F811
+    model = tmp_path / "trubka.json"
+    shutil.copy(examples_dir / "trubka.json", model)
+    w = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert w.open_model(model)
+    w.resize(1400, 900)
+    w.show()
+    w.activateWindow()
+    assert QTest.qWaitForWindowActive(w)
+    yield w
+    w.session.dirty = False
+    w.close()
+
+
+def shown_saved(w):
+    return [w.saved_list.item(row).data(Qt.ItemDataRole.UserRole)
+            for row in range(w.saved_list.count()) if not w.saved_list.item(row).isHidden()]
+
+
+def test_saved_measurement_filter_by_name_keeps_selection_and_model(tube):
+    w = tube
+    before = snapshot(w)
+    assert shown_saved(w) == ["m1", "m2", "m3"]
+    w.saved_filter_action.trigger()  # otevře panel Měření a dá fokus do filtru
+    assert w.saved_filter.field.hasFocus() and not w.measure_dock.isHidden()
+    QTest.keyClicks(w.saved_filter.field, "tloustka")
+    assert shown_saved(w) == ["m1", "m2"]
+    assert "2 z 3 měření" in w.saved_filter.note.text()
+    QTest.keyClick(w.saved_filter.field, Qt.Key.Key_Return)  # vybere první nalezené
+    assert w._current_saved_id() == "m1" and w.saved_list.hasFocus()
+    w.saved_filter.field.setText("prumer")
+    assert shown_saved(w) == ["m1", "m3"]  # vybrané měření zůstává vidět
+    w.saved_filter.field.setText("m2")  # i podle id
+    assert shown_saved(w) == ["m1", "m2"]
+    w.saved_filter.focus()
+    QTest.keyClick(w.saved_filter.field, Qt.Key.Key_Escape)
+    assert shown_saved(w) == ["m1", "m2", "m3"]
+    assert snapshot(w) == before
+
+
+def test_saved_measurement_filter_survives_rebuild_and_hides_without_records(tube, examples_dir):
+    w = tube
+    w.saved_filter.field.setText("vnejsi")
+    w.rebuild()  # přepočet seznam měření sestaví znovu
+    assert shown_saved(w) == ["m3"]
+    w.session.dirty = False
+    assert w.open_model(examples_dir / "krabicka.json")
+    assert w.saved_filter.field.text() == "" and not w.saved_filter.isVisibleTo(w)
+
+
+def test_packaged_saved_filter_driver_opens_tube(window):
+    from skodacad.gui.app import _self_test_saved_filter
+
+    lines = []
+    assert _self_test_saved_filter(window, lines), lines
+    assert lines[-1].startswith("✓ Filtr uložených měření")
+    assert window.saved_filter.field.text() == "" and shown_saved(window) == ["m1", "m2", "m3"]

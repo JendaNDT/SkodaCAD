@@ -293,6 +293,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_command_search(window, lines, check_favorites=True) and ok
     ok = _self_test_tree_filter(window, lines) and ok
     ok = _self_test_param_filter(window, lines) and ok
+    ok = _self_test_saved_filter(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -334,7 +335,7 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
         # Let Qt deliver native focus restoration after the preceding modal dialog.
         QTest.qWait(100)
 
-    def search(cancel, *, pin=False, recent=False):
+    def search(cancel, *, pin=False, recent=False, restored=""):
         activate()
         visited = []
 
@@ -344,9 +345,16 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
                 assert isinstance(dialog, CommandSearchDialog), "hledání se neotevřelo zkratkou"
                 visited.append(True)
                 assert dialog.query.hasFocus(), "hledání nemá fokus"
+                # P7.43: po Zrušit se vrátí označený text, po spuštění je pole prázdné.
+                assert dialog.query.text() == restored, (
+                    f"hledání ukazuje {dialog.query.text()!r}, očekáváno {restored!r}")
+                assert dialog.query.selectedText() == restored, "obnovený text není označený"
                 if recent:
-                    assert not dialog.query.text()
-                    assert dialog.current_command().action is action
+                    if restored:
+                        QTest.keyClick(dialog.query, Qt.Key.Key_Backspace)
+                    assert not dialog.query.text(), f"Backspace nesmazal {dialog.query.text()!r}"
+                    assert dialog.current_command().action is action, (
+                        f"nahoře je {dialog.current_command().action.text()!r}")
                     assert dialog.results.currentItem().text(1).startswith("Nedávno · ")
                     QTest.keyClick(dialog.query, Qt.Key.Key_Return)
                     return
@@ -396,12 +404,12 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
             assert favorites.store.path is None and not original_pins, "neizolovaná zkušební lišta"
         activate()
         before, view_before = snapshot(), camera()
-        search(cancel=True)
+        search(cancel=True, restored=getattr(window, "_command_search_text", ""))
         assert snapshot() == before and camera() == view_before, "Zrušit změnilo model nebo kameru"
         toggles = []
         action.toggled.connect(toggles.append)
         try:
-            search(cancel=False)
+            search(cancel=False, restored=query)
             assert toggles == [not original_checked], "příkaz se nespustil právě jednou"
             if check_favorites:
                 search(cancel=True, pin=True)
@@ -412,13 +420,15 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
                 QTest.mouseClick(button, Qt.MouseButton.LeftButton)
                 assert toggles == [not original_checked, original_checked]
                 assert button.isChecked() == action.isChecked()
-                search(cancel=False, recent=True)
+                search(cancel=False, recent=True, restored=query)
                 assert toggles == [not original_checked, original_checked, not original_checked]
         finally:
             action.toggled.disconnect(toggles.append)
         assert snapshot() == before, "pohledový příkaz změnil model nebo historii"
         lines.append(f"✓ Hledání příkazů ({title}): zkratka, bez diakritiky, šipky, Esc beze změn, "
                      "Enter spustí existující příkaz jednou")
+        lines.append(f"✓ Text hledání ({title}): po Zrušit se vrátí označený, "
+                     "po spuštění příkazu je pole prázdné")
         if check_favorites:
             lines.append(f"✓ Oblíbené příkazy ({title}): připnutí z hledání bez spuštění, "
                          "tlačítko spustí původní příkaz jednou a přebírá jeho stav")
@@ -429,6 +439,7 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
         lines.append(f"✕ Hledání příkazů ({title}): {exc}")
         return False
     finally:
+        window._command_search_text = ""  # zkouška nemá ovlivnit další hledání
         if check_favorites and favorites.store.path is None:
             favorites.store.replace(favorites.kind, original_pins)
         if action.isChecked() != original_checked:
@@ -556,6 +567,50 @@ def _self_test_param_filter(window, lines) -> bool:
     finally:
         flt.clear()
         section.set_expanded(was_expanded)
+
+
+def _self_test_saved_filter(window, lines) -> bool:
+    """P7.44: saved measurement filter on the tube example (three saved measurements)."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    flt, saved = window.saved_filter, window.saved_list
+
+    def shown():
+        return [saved.item(r).data(Qt.ItemDataRole.UserRole) for r in range(saved.count())
+                if not saved.item(r).isHidden()]
+
+    try:
+        assert window.open_model(examples_dir() / "trubka.json", template=True)
+        before = (copy.deepcopy(window.session.document.to_dict()), window.session.result,
+                  list(window.session._undo))
+        assert shown() == ["m1", "m2", "m3"], f"ukázka má měření {shown()}"
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní"
+        window.saved_filter_action.trigger()
+        QTest.qWait(50)
+        assert flt.field.hasFocus(), "příkaz nedal fokus do filtru uložených měření"
+        QTest.keyClicks(flt.field, "tloustka")
+        assert shown() == ["m1", "m2"], f"filtr ukazuje {shown()}"
+        QTest.keyClick(flt.field, Qt.Key.Key_Return)
+        assert window._current_saved_id() == "m1", "Enter nevybral první měření"
+        flt.focus()
+        QTest.keyClick(flt.field, Qt.Key.Key_Escape)
+        assert shown() == ["m1", "m2", "m3"], "Esc neobnovil všechna měření"
+        after = (copy.deepcopy(window.session.document.to_dict()), window.session.result,
+                 list(window.session._undo))
+        assert after == before, "filtr změnil díl nebo historii"
+        lines.append("✓ Filtr uložených měření: trubka, „tloustka“ = 2 ze 3, Enter vybere "
+                     "první, Esc obnoví všechna beze změny dílu")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Filtr uložených měření: {exc}")
+        return False
+    finally:
+        flt.clear()
 
 
 def _self_test_plate_workflow(window, lines) -> bool:

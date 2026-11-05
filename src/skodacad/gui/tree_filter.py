@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -228,3 +230,49 @@ class FormFilter(FilterBox):
             found[0].setFocus(Qt.FocusReason.OtherFocusReason)
             if isinstance(found[0], QLineEdit):
                 found[0].selectAll()
+
+
+class ListFilter(FilterBox):
+    """Filter above a QListWidget (P7.44: saved measurements); the current row stays."""
+
+    def __init__(self, widget: QListWidget, *, placeholder: str, nouns: tuple[str, str, str],
+                 parent=None):
+        super().__init__(
+            placeholder=placeholder, nouns=nouns, name="list_filter", parent=parent,
+            tooltip="Zobrazí jen položky, které obsahují zadaný text (název, hodnotu, id). "
+                    "Velikost písmen ani diakritika nerozhoduje. Enter vybere první "
+                    "nalezenou, Esc filtr zruší. Vybraná položka zůstává vidět. "
+                    "Model se filtrem nemění.")
+        self.list = widget
+        widget.currentItemChanged.connect(self.apply)
+
+    def items(self) -> list[QListWidgetItem]:
+        return [self.list.item(row) for row in range(self.list.count())]
+
+    def matches(self, item: QListWidgetItem) -> bool:
+        extra = item.data(SEARCH_ROLE)
+        return self.hits(f"{item.text()} {extra if isinstance(extra, str) else ''}")
+
+    def visible_matches(self) -> list[QListWidgetItem]:
+        return [item for item in self.items() if not item.isHidden() and self.matches(item)]
+
+    def apply(self, *_) -> None:
+        current = self.list.currentItem()
+        shown = total = 0
+        for item in self.items():
+            total += 1
+            hit = not self.active or self.matches(item)
+            shown += hit
+            visible = hit or item is current
+            if item.isHidden() == visible:
+                item.setHidden(not visible)
+        self._report(shown, total)
+
+    def _jump(self, key) -> None:
+        found = self.visible_matches() if self.active else []
+        if found:
+            self.list.setCurrentItem(found[0])
+            self.list.scrollToItem(found[0])
+            self.list.setFocus(Qt.FocusReason.OtherFocusReason)
+        elif key == Qt.Key.Key_Down and not self.active:
+            self.list.setFocus(Qt.FocusReason.OtherFocusReason)

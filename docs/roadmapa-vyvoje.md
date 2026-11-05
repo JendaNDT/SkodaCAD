@@ -55,7 +55,9 @@ je sloučená a ověřeně vydaná ([PR #122](https://github.com/JendaNDT/SkodaC
 [P7.41 – filtr stromu komponent v sestavě](p7-41-filtr-stromu-sestavy.md) jsou
 v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokumentací P7.39
 (sloučeno a ověřeně vydáno z `7f41598`).
-[P7.42 – filtr parametrů dílu](p7-42-filtr-parametru-dilu.md) začíná další dávku.
+[P7.42 – filtr parametrů dílu](p7-42-filtr-parametru-dilu.md) začíná další dávku
+([PR #124](https://github.com/JendaNDT/SkodaCAD/pull/124)), v níž jsou i
+[P7.43 a P7.44 – zapamatovaný text hledání a filtr uložených měření](p7-43-text-hledani-a-filtr-mereni.md).
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|

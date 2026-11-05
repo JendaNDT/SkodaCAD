@@ -72,7 +72,7 @@ from skodacad.gui.macos_accessibility import install as install_macos_accessibil
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
-from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, TreeFilter
+from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, ListFilter, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section, Workspace
@@ -270,6 +270,8 @@ class MainWindow(QMainWindow):
                                                "Ctrl+F")
         self.param_filter_action = self._action("Filtrovat parametry dílu",
                                                 self.focus_param_filter, "Ctrl+Shift+F")
+        self.saved_filter_action = self._action("Filtrovat uložená měření",
+                                                self.focus_saved_filter)
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))
@@ -504,6 +506,9 @@ class MainWindow(QMainWindow):
             saved_buttons.addWidget(self._tool_button(action))
         saved_buttons.addStretch()
         saved_layout.addLayout(saved_buttons)
+        self.saved_filter = ListFilter(self.saved_list, placeholder="Filtr uložených měření…",
+                                       nouns=("měření", "měření", "měření"))
+        saved_layout.addWidget(self.saved_filter)
         self.saved_list.setMinimumHeight(60)
         saved_layout.addWidget(self.saved_list)
         layout.addWidget(saved_box, stretch=1)
@@ -1005,6 +1010,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.edit_feature_action)
         edit_menu.addAction(self.tree_filter_action)
         edit_menu.addAction(self.param_filter_action)
+        edit_menu.addAction(self.saved_filter_action)
         for action in (self.undo_action, self.redo_action):
             edit_menu.addAction(action)
             toolbar.addAction(action)
@@ -1316,6 +1322,12 @@ class MainWindow(QMainWindow):
         self.param_filter.show()
         self.param_filter.focus()
 
+    def focus_saved_filter(self) -> None:
+        """Otevře panel Měření a dá fokus do filtru uložených měření (P7.44)."""
+        self.workspace.show_panel("measure")
+        self.saved_filter.show()
+        self.saved_filter.focus()
+
     def new_model(self) -> bool:
         if not self._confirm_discard():
             return False
@@ -1323,6 +1335,7 @@ class MainWindow(QMainWindow):
         self._selected_id = None
         self.tree_filter.clear()  # filtr patří k předchozímu dílu
         self.param_filter.clear()
+        self.saved_filter.clear()
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         self.statusBar().showMessage("Nový díl – začni tlačítkem „Přidat prvek“ → Skica.", 10000)
@@ -1354,6 +1367,7 @@ class MainWindow(QMainWindow):
         self._selected_id = None
         self.tree_filter.clear()  # filtr patří k předchozímu dílu
         self.param_filter.clear()
+        self.saved_filter.clear()
         self._reload_all(fit=True)
         self.assistant_panel.model_replaced()
         return True
@@ -2497,6 +2511,7 @@ class MainWindow(QMainWindow):
                 text = result.text
             item = QListWidgetItem(text)
             item.setData(_FEATURE_ID, record["id"])
+            item.setData(SEARCH_ROLE, f"{record.get('name') or ''} {record['id']}")
             if result is not None and result.value is None:
                 item.setForeground(_STATUS_COLORS["error"])
                 item.setToolTip(result.error)
@@ -2505,6 +2520,8 @@ class MainWindow(QMainWindow):
             self.saved_list.addItem(item)
             if record["id"] == selected:
                 self.saved_list.setCurrentItem(item)
+        self.saved_filter.setVisible(bool(records) or self.saved_filter.active)
+        self.saved_filter.apply()  # nové položky také podle filtru, vybraná zůstane vidět
         self.saved_list.blockSignals(False)
         if self._current_saved() is not None and not self._measured:
             self._show_measure_line(self._current_saved().value)  # díl je nový – čáru znovu

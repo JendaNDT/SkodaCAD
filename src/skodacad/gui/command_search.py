@@ -69,7 +69,7 @@ def collect_commands(menu_bar, groups=(), exclude=(), *, include_hidden=False):
 
 
 class CommandSearchDialog(QDialog):
-    def __init__(self, commands, parent=None, *, favorites=None):
+    def __init__(self, commands, parent=None, *, favorites=None, initial=""):
         super().__init__(parent)
         self.setWindowTitle("Najít příkaz")
         self.setObjectName("command_search")
@@ -115,7 +115,9 @@ class CommandSearchDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.query.textChanged.connect(self.refresh)
+        # P7.43: text hledání zavřeného bez spuštění se vrátí označený (psaní ho přepíše).
+        self.query.setText(initial)
+        self.query.textChanged.connect(self._query_changed)
         self.query.installEventFilter(self)
         self.results.installEventFilter(self)
         self.results.currentItemChanged.connect(self._selection_changed)
@@ -127,6 +129,7 @@ class CommandSearchDialog(QDialog):
         self.finished.connect(self._disconnect)
         self.refresh()
         self.query.setFocus()
+        self.query.selectAll()
 
     def _disconnect(self, *_):
         watched, self._watched = self._watched, []
@@ -188,6 +191,13 @@ class CommandSearchDialog(QDialog):
         self.results.setCurrentItem(current)
         self.results.blockSignals(False)
         self._selection_changed()
+
+    def _query_changed(self, text):
+        if not searchable(text).split():
+            # Prázdné pole = nabídka nedávných (P7.39): předvybrat poslední použitý příkaz,
+            # ne ten, který zůstal vybraný z předchozího textu.
+            self.results.setCurrentItem(None)
+        self.refresh()
 
     def current_command(self):
         item = self.results.currentItem()
@@ -260,13 +270,20 @@ class CommandSearchDialog(QDialog):
 
 
 def show_command_search(window, groups=()):
+    """Hledání příkazů; text zavřeného hledání bez spuštění si okno pamatuje (P7.43).
+
+    Po spuštění příkazu se příště otevře prázdné, aby nahoře byly naposledy použité
+    příkazy a Enter zopakoval poslední (P7.39). Pamatuje se jen v paměti okna."""
     commands = collect_commands(window.menuBar(), groups, exclude=(window.command_search_action,))
-    dialog = CommandSearchDialog(commands, window, favorites=getattr(window, "favorite_bar", None))
+    dialog = CommandSearchDialog(commands, window, favorites=getattr(window, "favorite_bar", None),
+                                 initial=getattr(window, "_command_search_text", ""))
+    accepted = False
     try:
         execute = getattr(window, "_exec_dialog", lambda d: d.exec())
         accepted = execute(dialog) == QDialog.DialogCode.Accepted
         command = dialog.selected_command
     finally:
+        window._command_search_text = "" if accepted else dialog.query.text()
         dialog._disconnect()
         dialog.deleteLater()
     # Close the search first: commands may open their own modal dialog or close the owner.
