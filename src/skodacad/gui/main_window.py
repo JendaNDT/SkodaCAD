@@ -242,6 +242,11 @@ class MainWindow(QMainWindow):
         return action
 
     def _create_actions(self) -> None:
+        from skodacad.gui.command_search import show_command_search
+
+        self.command_search_action = self._action(
+            "Najít příkaz…", lambda: show_command_search(self, self.ribbon.command_groups),
+            "Ctrl+Shift+P")
         self.new_action = self._action("Nový", self.new_model, "Ctrl+N")
         self.open_action = self._action("Otevřít…", self.open_dialog, "Ctrl+O")
         self.save_action = self._action("Uložit", self.save, "Ctrl+S")
@@ -1060,6 +1065,7 @@ class MainWindow(QMainWindow):
                 toolbar.addAction(action)
 
         help_menu = bar.addMenu("&Nápověda")
+        help_menu.addAction(self.command_search_action)
         help_menu.addAction(self._action("Ovládání", self.show_controls))
         help_menu.addAction(self._action("O aplikaci", self.show_about))
 
@@ -1112,7 +1118,8 @@ class MainWindow(QMainWindow):
         ]
         self._refresh_ui_icons()
         self.ribbon = Ribbon((self.new_action, self.open_action, self.save_action,
-                              self.undo_action, self.redo_action))
+                              self.undo_action, self.redo_action),
+                             search_action=self.command_search_action)
         self.toolbar.clear()
         self.toolbar.addWidget(self.ribbon)
         self.toolbar.setFloatable(False)

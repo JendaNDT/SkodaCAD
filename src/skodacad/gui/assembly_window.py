@@ -1011,6 +1011,10 @@ class AssemblyWindow(QMainWindow):
         return table
 
     def _create_actions(self) -> None:
+        from skodacad.gui.command_search import show_command_search
+
+        self.command_search_action = self._action(
+            "Najít příkaz…", lambda: show_command_search(self), "Ctrl+Shift+P")
         self.new_action = self._action("Nová sestava…", self.new_dialog)
         self.open_action = self._action("Otevřít sestavu…", self.open_dialog)
         self.save_action = self._action("Uložit", self.save, "Ctrl+S")
@@ -1065,6 +1069,8 @@ class AssemblyWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self._action("Zavřít sestavu", self.close, "Ctrl+W"))
         edit_menu = bar.addMenu("Ú&pravy")
+        edit_menu.addAction(self.command_search_action)
+        edit_menu.addSeparator()
         for action in (self.undo_action, self.redo_action, self.insert_action,
                        self.remove_action, self.constraint_action, self.parameters_action,
                        self.reload_action):
@@ -1113,6 +1119,8 @@ class AssemblyWindow(QMainWindow):
         isolate_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         toolbar.addAction(self.visibility_action)
         toolbar.addAction(self.restore_visibility_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.command_search_action)
 
     def reset_layout(self) -> None:
         """Kompaktní panely; pouze rozložení, bez změny sestavy, výběru či kamery."""

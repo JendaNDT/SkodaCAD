@@ -288,10 +288,97 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_plate_workflow(window, lines) and ok
     ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
+    ok = _self_test_command_search(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
     return ok
+
+
+def _self_test_command_search(window, lines) -> bool:
+    """Native shortcut, keyboard search/cancel and one existing toggle in each window."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.command_search import CommandSearchDialog
+
+    assembly = hasattr(window.session, "assembly")
+    title = "sestava" if assembly else "díl"
+    action = window.files_action if assembly else window.workspace.collapse_action
+    query = "soubory ve stromu" if assembly else "sbalit pas"
+    original_checked = action.isChecked()
+    errors = []
+
+    def snapshot():
+        session = window.session
+        model = session.assembly if assembly else session.document
+        return (copy.deepcopy(model.to_dict()), session.result, session.dirty,
+                list(session._undo), list(session._redo))
+
+    def camera():
+        view = window.viewer._view
+        return (view.Proj(), view.At(), view.Eye(), view.Scale()) if view else None
+
+    def search(cancel):
+        visited = []
+
+        def choose():
+            dialog = QApplication.activeModalWidget()
+            try:
+                assert isinstance(dialog, CommandSearchDialog), "hledání se neotevřelo zkratkou"
+                visited.append(True)
+                assert dialog.query.hasFocus(), "hledání nemá fokus"
+                QTest.keyClicks(dialog.query, query)
+                matches = [dialog.results.topLevelItem(i)
+                           for i in range(dialog.results.topLevelItemCount())]
+                row = next(i for i, item in enumerate(matches)
+                           if item.data(0, Qt.ItemDataRole.UserRole).action is action)
+                for _ in range(row):
+                    QTest.keyClick(dialog.query, Qt.Key.Key_Down)
+                assert dialog.current_command().action is action
+                QTest.keyClick(dialog.query, Qt.Key.Key_Escape if cancel else Qt.Key.Key_Return)
+            except Exception as exc:
+                errors.append(str(exc))
+                if isinstance(dialog, CommandSearchDialog):
+                    dialog.reject()
+
+        timer = QTimer(window)
+        timer.setSingleShot(True)
+        timer.timeout.connect(choose)
+        timer.start(150)
+        QTest.keyClick(window, Qt.Key.Key_P,
+                       Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        # If the shortcut failed there was no nested dialog loop to deliver choose().
+        timer.stop()
+        timer.deleteLater()
+        assert visited and not errors, "; ".join(errors) or "zkratka neotevřela hledání"
+
+    try:
+        window.raise_()
+        window.activateWindow()
+        QTest.qWait(150)
+        before, view_before = snapshot(), camera()
+        search(cancel=True)
+        assert snapshot() == before and camera() == view_before, "Zrušit změnilo model nebo kameru"
+        toggles = []
+        action.toggled.connect(toggles.append)
+        try:
+            search(cancel=False)
+            assert toggles == [not original_checked], "příkaz se nespustil právě jednou"
+        finally:
+            action.toggled.disconnect(toggles.append)
+        assert snapshot() == before, "pohledový příkaz změnil model nebo historii"
+        lines.append(f"✓ Hledání příkazů ({title}): zkratka, bez diakritiky, šipky, Esc beze změn, "
+                     "Enter spustí existující příkaz jednou")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Hledání příkazů ({title}): {exc}")
+        return False
+    finally:
+        if action.isChecked() != original_checked:
+            action.trigger()
 
 
 def _self_test_plate_workflow(window, lines) -> bool:
@@ -1058,6 +1145,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         lines.append(f"✓ Sestava: {result.volume_mm3:.0f} mm³, 6 komponent, víčko z = 26…32"
                      f"{drawn}")
         ok = _self_test_assembly_layout(assembly, lines) and ok
+        ok = _self_test_command_search(assembly, lines) and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok

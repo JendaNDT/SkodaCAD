@@ -26,7 +26,7 @@ Nový formát modelu,
 změnu architektury a nové závislosti nejprve předložit autorovi. Žádné sloučení do
 `main` ani automatické slučování bez souhlasu autora.
 
-## Stav k 3. 11. 2026
+## Stav k 5. 11. 2026
 
 **Pokyn autora z 28. 10. 2026:** pokračovat v roadmapě samostatně; běžná rozhodnutí
 a sloučení po úspěšných kontrolách (úplná sada testů, obě workflow včetně kontroly
@@ -42,6 +42,12 @@ technické výsledky a známé meze P5 zůstávají v protokolu.
 navázat ergonomií P7; po dávkách P7.32–P7.36 zahájit výchozí měření výkonu P8.1.
 Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 
+**Po ověřeném vydání P8.5:** autor řekl „tu přejímku přeskočíme“ k doporučené
+automatické zkoušce na reprezentativní NDT úloze. Zůstává neprovedená, další vývoj
+neblokuje a nenahrazuje odbornou validaci NDT-17. Dne 5. 11. zvolil pokračování
+**Ovládání a pracovní postupy**; navazující rozpracovaná dávka
+[P7.37](p7-37-hledani-prikazu.md) přidává společné hledání příkazů.
+
 | Etapa | Stav | Co zbývá |
 |---|---|---|
 | P0 | sloučeno (PR #30) | – |
@@ -52,7 +58,7 @@ Přeskočené autorské zkoušky tím nejsou označeny za provedené.
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
 | P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
-| P8 | P8.1–P8.4 vydané (`1d95045`); [P8.5 oprava odezvy](p8-5-rozpocty.md) v rozpracovaném PR #119, dosud nevydáno | místní oprava životnosti: 2984 testů a zabalený self-test prošly; nová M4/P8.3/P8.4 ověřené, aktuální Windows/CI/vydání zbývají; hosted Mac P8.5 výkon vynechán autorem |
+| P8 | P8.1–P8.5 vydané; [P8.5 ověřené vydání](p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
 Nejnovější formát je **34** (načítá verze 1–34; sestavy 29–31 podle vazeb a kontrol,
