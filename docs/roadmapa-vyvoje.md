@@ -55,7 +55,7 @@ je sloučená a ověřeně vydaná ([PR #122](https://github.com/JendaNDT/SkodaC
 [P7.41 – filtr stromu komponent v sestavě](p7-41-filtr-stromu-sestavy.md) jsou
 v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokumentací P7.39
 (sloučeno a ověřeně vydáno z `7f41598`).
-[P7.42 – filtr parametrů dílu](p7-42-filtr-parametru-dilu.md) začíná další dávku
+[P7.42 – filtr parametrů dílu](p7-42-filtr-parametru-dilu.md) otevírá další dávku
 ([PR #124](https://github.com/JendaNDT/SkodaCAD/pull/124)), v níž jsou i
 [P7.43 a P7.44 – zapamatovaný text hledání a filtr uložených měření](p7-43-text-hledani-a-filtr-mereni.md).
 
@@ -68,7 +68,7 @@ v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokume
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
-| P7 | implementační dávky P7.1–P7.41; poslední [filtr stromu dílu a sestavy](p7-41-filtr-stromu-sestavy.md) v PR #123 | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 | implementační dávky P7.1–P7.44; poslední [filtry parametrů a měření, text hledání](p7-43-text-hledani-a-filtr-mereni.md) v PR #124 | formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 | P8.1–P8.5 vydané; [P8.5 ověřené vydání](p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 
