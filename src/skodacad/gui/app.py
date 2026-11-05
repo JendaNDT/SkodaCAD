@@ -332,7 +332,7 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
         # Let Qt deliver native focus restoration after the preceding modal dialog.
         QTest.qWait(100)
 
-    def search(cancel, *, pin=False):
+    def search(cancel, *, pin=False, recent=False):
         activate()
         visited = []
 
@@ -342,6 +342,12 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
                 assert isinstance(dialog, CommandSearchDialog), "hledání se neotevřelo zkratkou"
                 visited.append(True)
                 assert dialog.query.hasFocus(), "hledání nemá fokus"
+                if recent:
+                    assert not dialog.query.text()
+                    assert dialog.current_command().action is action
+                    assert dialog.results.currentItem().text(1).startswith("Nedávno · ")
+                    QTest.keyClick(dialog.query, Qt.Key.Key_Return)
+                    return
                 QTest.keyClicks(dialog.query, query)
                 matches = [dialog.results.topLevelItem(i)
                            for i in range(dialog.results.topLevelItemCount())]
@@ -379,7 +385,8 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
         # If the shortcut failed there was no nested dialog loop to deliver choose().
         timer.stop()
         timer.deleteLater()
-        mode = "Připnout" if pin else ("Zrušit" if cancel else "Spustit")
+        mode = "Zopakovat" if recent else ("Připnout" if pin else
+                                          ("Zrušit" if cancel else "Spustit"))
         assert visited and not errors, "; ".join(errors) or f"{mode}: zkratka neotevřela hledání"
 
     try:
@@ -403,6 +410,8 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
                 QTest.mouseClick(button, Qt.MouseButton.LeftButton)
                 assert toggles == [not original_checked, original_checked]
                 assert button.isChecked() == action.isChecked()
+                search(cancel=False, recent=True)
+                assert toggles == [not original_checked, original_checked, not original_checked]
         finally:
             action.toggled.disconnect(toggles.append)
         assert snapshot() == before, "pohledový příkaz změnil model nebo historii"
@@ -411,6 +420,8 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
         if check_favorites:
             lines.append(f"✓ Oblíbené příkazy ({title}): připnutí z hledání bez spuštění, "
                          "tlačítko spustí původní příkaz jednou a přebírá jeho stav")
+            lines.append(f"✓ Naposledy použité příkazy ({title}): Enter zopakuje poslední "
+                         "příkaz bez psaní")
         return True
     except Exception as exc:
         lines.append(f"✕ Hledání příkazů ({title}): {exc}")

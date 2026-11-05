@@ -47,7 +47,8 @@ automatické zkoušce na reprezentativní NDT úloze. Zůstává neprovedená, d
 neblokuje a nenahrazuje odbornou validaci NDT-17. Dne 5. 11. zvolil pokračování
 **Ovládání a pracovní postupy**. Společné hledání příkazů
 [P7.37](p7-37-hledani-prikazu.md) je sloučené a ověřeně vydané ([PR #120](https://github.com/JendaNDT/SkodaCAD/pull/120)).
-Na pokyn autora navazuje [P7.38 – oblíbené příkazy v horní liště](p7-38-oblibene-prikazy.md).
+[P7.38 – oblíbené příkazy v horní liště](p7-38-oblibene-prikazy.md) je ověřeně vydaná.
+P7.39 zobrazuje naposledy použité příkazy při otevření hledání.
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|

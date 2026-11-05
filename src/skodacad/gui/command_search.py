@@ -137,6 +137,13 @@ class CommandSearchDialog(QDialog):
     def refresh(self, *_):
         previous = self.current_command()
         tokens = searchable(self.query.text()).split()
+        history = ()
+        recent = {}
+        if not tokens and self.favorites is not None:
+            history = self.favorites.store.recent(self.favorites.kind)
+            recent = {self.favorites.commands[key].action: index
+                      for index, key in enumerate(history)
+                      if key in self.favorites.commands}
         matches = []
         for command in self.commands:
             if not command.visible:
@@ -145,33 +152,39 @@ class CommandSearchDialog(QDialog):
             haystack = f"{name} {searchable(command.path)}"
             if all(token in haystack for token in tokens):
                 matches.append((not all(token in name for token in tokens), command))
-        matches.sort(key=lambda item: item[0])  # stable: menu order within each rank
+        # Keep the original menu order within each rank.
+        matches.sort(key=lambda item: (recent.get(item[1].action, len(history)), item[0]))
         self.results.blockSignals(True)
         self.results.clear()
         current = None
+        first_available_recent = None
         for _, command in matches:
             action = command.action
             name = plain_label(action.text())
             if (self.favorites is not None
                     and self.favorites.command_keys.get(action) in self.favorites.keys):
                 name = "★ " + name
-            if not command.available:
+            available = command.available
+            if not available:
                 name += " [nedostupné]"
-            item = QTreeWidgetItem([name, command.path,
+            path = f"Nedávno · {command.path}" if action in recent else command.path
+            item = QTreeWidgetItem([name, path,
                                    action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)])
             item.setData(0, Qt.ItemDataRole.UserRole, command)
-            if not command.available:
+            if not available:
                 brush = QBrush(secondary_color(self.palette()))
                 for column in range(3):
                     item.setForeground(column, brush)
-            details = "Nyní nedostupné. " if not command.available else ""
+            details = "" if available else "Nyní nedostupné. "
             item.setToolTip(0, details + plain_label(action.text()))
-            item.setToolTip(1, command.path)
+            item.setToolTip(1, path)
             self.results.addTopLevelItem(item)
+            if available and action in recent and first_available_recent is None:
+                first_available_recent = item
             if previous is not None and command.action is previous.action:
                 current = item
         if current is None and matches:
-            current = self.results.topLevelItem(0)
+            current = first_available_recent or self.results.topLevelItem(0)
         self.results.setCurrentItem(current)
         self.results.blockSignals(False)
         self._selection_changed()
