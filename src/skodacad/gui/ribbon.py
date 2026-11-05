@@ -46,7 +46,7 @@ class Ribbon(QWidget):
     collapsed_changed = Signal(bool)
     page_changed = Signal(str)
 
-    def __init__(self, quick_actions, parent=None):
+    def __init__(self, quick_actions, parent=None, search_action=None):
         super().__init__(parent)
         self.setObjectName("cad_ribbon")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -54,6 +54,7 @@ class Ribbon(QWidget):
         self._pages = []
         self._collapsed = False
         self.buttons = []
+        self.command_groups = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 0, 2, 0)
         layout.setSpacing(0)
@@ -76,6 +77,11 @@ class Ribbon(QWidget):
         self.tabs.tabBarDoubleClicked.connect(
             lambda _index: self.set_collapsed(not self._collapsed))
         header.addWidget(self.tabs, 1)
+        if search_action is not None:
+            search_button = QToolButton()
+            search_button.setDefaultAction(search_action)
+            search_button.setAccessibleName(search_action.text())
+            header.addWidget(search_button)
         self.collapse_button = QToolButton()
         self.collapse_button.setObjectName("ribbon_collapse")
         self.collapse_button.clicked.connect(lambda: self.set_collapsed(not self._collapsed))
@@ -92,6 +98,9 @@ class Ribbon(QWidget):
         row_layout.setContentsMargins(4, 3, 4, 3)
         row_layout.setSpacing(10)
         for label, commands in groups:
+            self.command_groups.append(((title, label),
+                                        [action for action, _text, _menu in commands
+                                         if action is not None]))
             group = QWidget()
             group_layout = QVBoxLayout(group)
             group_layout.setContentsMargins(0, 0, 0, 0)

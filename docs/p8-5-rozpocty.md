@@ -1,5 +1,11 @@
 # P8.5 — ověřitelné rozpočty paměti a odezvy
 
+**Konečný stav:** PR #119 je sloučený, vydání `e7f5e6d` ověřené včetně obou
+skutečných veřejných ZIPů. [Protokol vydání](p8-5-overeni-vydani.md) uzavírá
+průběžné stavy níže; historické neúspěchy a vynechání hostovaného Mac výkonu
+se nepřepisují na úspěch. Autor následně přeskočil doporučenou reprezentativní
+NDT přejímku, která zůstává neprovedená.
+
 Autor 4. 11. 2026 odpověděl „ok, udělej to“ na stanovení měřitelných limitů
 paměti a odezvy. Výchozí vydání je P8.4 `1d95045418ba5db0b6b028e2f6d80ed1a489f4c7`.
 Tato dávka zavádí automatickou technickou přejímku dvou přesně vymezených úloh.

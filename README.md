@@ -86,6 +86,12 @@ Přidání či nahrazení hran vybraného prvku výběrem ve 3D také otevře te
 
 ### Ovládání
 
+**Najít příkaz…** v horní liště nebo **Ctrl+Shift+P** (na Macu **⌘+Shift+P**)
+vyhledá příkaz v aktuálním okně dílu nebo sestavy. Stačí část názvu bez diakritiky,
+třeba `ulozit` nebo `pruhlednost`; hledat lze také podle nabídky. Šipkami vyber,
+Enter spustí a Esc zavře hledání. Nedostupné příkazy zůstávají viditelné,
+ale nelze je spustit. [Podrobnosti P7.37](docs/p7-37-hledani-prikazu.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).
