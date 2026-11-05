@@ -79,6 +79,7 @@ from skodacad.gui.assembly_parameter_preview import AssemblyParameterPreviewDial
 from skodacad.gui.assembly_parameters import AssemblyParametersDialog
 from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.file_dialogs import FILE_OPTIONS
+from skodacad.gui.tree_filter import SEARCH_ROLE, TreeFilter
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section
 
@@ -213,6 +214,9 @@ class AssemblyWindow(QMainWindow):
         self.parameters_button = QPushButton("Parametry sestavy…")
         self.parameters_button.clicked.connect(self.edit_parameters)
         layout.addWidget(self.parameters_button)
+        self.tree_filter = TreeFilter(self.tree, placeholder="Filtr komponent (Ctrl+F)…",
+                                      nouns=("položky", "položek", "položek"))
+        layout.addWidget(self.tree_filter)
         layout.addWidget(self.tree)
         dock.setWidget(panel)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
@@ -1032,6 +1036,8 @@ class AssemblyWindow(QMainWindow):
                                               "Ctrl+L")
         self.reload_action = self._action("Načíst díly znovu", self.reload, "F5")
         self.parameters_action = self._action("Parametry sestavy…", self.edit_parameters)
+        self.tree_filter_action = self._action("Filtrovat strom komponent",
+                                               self.focus_tree_filter, "Ctrl+F")
         self.check_action = self._action("Zkontrolovat kolize a vůle", self.run_check, "F7")
         self.bill_action = self._action("Uložit kusovník CSV…", self.save_bill_dialog)
         self.export_action = self._action("Exportovat STEP…", self.export_dialog)
@@ -1075,6 +1081,7 @@ class AssemblyWindow(QMainWindow):
         file_menu.addAction(self._action("Zavřít sestavu", self.close, "Ctrl+W"))
         edit_menu = bar.addMenu("Ú&pravy")
         edit_menu.addAction(self.command_search_action)
+        edit_menu.addAction(self.tree_filter_action)
         edit_menu.addSeparator()
         for action in (self.undo_action, self.redo_action, self.insert_action,
                        self.remove_action, self.constraint_action, self.parameters_action,
@@ -1150,6 +1157,7 @@ class AssemblyWindow(QMainWindow):
             return False
         def work():
             self.session.open(path)
+            self.tree_filter.clear()  # filtr patří k předchozí sestavě
             self._selection = ()
             self._constraint = None
             self._isolated = None
@@ -1167,6 +1175,7 @@ class AssemblyWindow(QMainWindow):
             return False
         def work():
             self.session.new(path, name)
+            self.tree_filter.clear()  # filtr patří k předchozí sestavě
             self._selection = ()
             self._constraint = None
             self._isolated = None
@@ -1795,8 +1804,21 @@ class AssemblyWindow(QMainWindow):
         self._refresh_selection()
 
     def select_all_components(self) -> None:
+        """Ctrl/⌘+A: všechny komponenty, s aktivním filtrem jen nalezené (P7.41)."""
         result = self.session.result
-        self.select_many(s.ids for s in result.statuses) if result else self.select(None)
+        if result is None:
+            self.select(None)
+        elif self.tree_filter.active:
+            found = [json.loads(item.data(0, Qt.ItemDataRole.UserRole))
+                     for item in self.tree_filter.visible_matches()]
+            self.select_many(tuple(path) for path in found if isinstance(path, list))
+        else:
+            self.select_many(s.ids for s in result.statuses)
+
+    def focus_tree_filter(self) -> None:
+        """Ctrl+F: ukáže strom komponent (je-li skrytý) a dá fokus do jeho filtru."""
+        self.tree_dock.show()
+        self.tree_filter.focus()
 
     def clear_component_selection(self) -> None:
         if self.viewer.cancel_rotation_center_pick():
@@ -1835,6 +1857,8 @@ class AssemblyWindow(QMainWindow):
             self.tree.setCurrentItem(chosen[0] if chosen else None, 0,
                                      QItemSelectionModel.SelectionFlag.NoUpdate)
         self.tree.blockSignals(blocked)
+        # Signály byly blokované: výběr ze 3D nebo z kódu musí filtr odkrýt sám.
+        self.tree_filter.apply()
 
     def _clear_finding(self) -> None:
         self._finding = None
@@ -2372,6 +2396,7 @@ class AssemblyWindow(QMainWindow):
             for column in range(3):
                 item.setToolTip(column, tip)
             item.setData(0, Qt.ItemDataRole.UserRole + 1, tip)
+            item.setData(0, SEARCH_ROLE, f"{name} {status.ids[-1]} {status.source} {state}")
             items[status.ids] = item
         constraints = [c for c in result.constraints if c.depth == 0] if result else []
         chosen = None
@@ -2387,6 +2412,9 @@ class AssemblyWindow(QMainWindow):
                            state], group, index)
                 for column in range(3):
                     item.setToolTip(column, constraint.reason)
+                item.setData(0, SEARCH_ROLE, " ".join(
+                    ["vazba", constraint.label, constraint.type_label,
+                     *constraint.components, state]))
                 if key == self._constraint:
                     chosen = item
         # Remove children before their parents, without resetting unrelated rows.

@@ -291,6 +291,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_native_accessibility(lines) and ok
     ok = _self_test_viewer_lifecycle(window, lines) and ok
     ok = _self_test_command_search(window, lines, check_favorites=True) and ok
+    ok = _self_test_tree_filter(window, lines) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -431,6 +432,72 @@ def _self_test_command_search(window, lines, *, check_favorites=False) -> bool:
             favorites.store.replace(favorites.kind, original_pins)
         if action.isChecked() != original_checked:
             action.trigger()
+
+
+def _self_test_tree_filter(window, lines) -> bool:
+    """P7.40: real Ctrl+F, typing, Enter and Esc in the feature tree filter."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    tree, flt = window.tree, window.tree_filter
+    previous = window._selected_id
+
+    def snapshot():
+        session = window.session
+        return (copy.deepcopy(session.document.to_dict()), session.result, session.dirty,
+                list(session._undo), list(session._redo))
+
+    def rows():
+        return [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+
+    try:
+        before, items = snapshot(), rows()
+        assert len(items) >= 2, "strom nemá dost prvků pro zkoušku filtru"
+        # Id prvku, které odpovídá právě jednomu řádku (nezávisle na otevřeném dílu).
+        query = target = None
+        for item in reversed(items):
+            key = item.data(0, Qt.ItemDataRole.UserRole)
+            flt.field.setText(key)
+            if len(flt.visible_matches()) == 1:
+                query, target = key, item
+                break
+        flt.clear()
+        assert target is not None, "žádné id prvku není jednoznačné"
+        tree.setCurrentItem(None)
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro zkratku"
+        QTest.qWait(100)
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+        assert flt.field.hasFocus(), "Ctrl+F nedalo fokus do filtru stromu"
+        QTest.keyClicks(flt.field, query)
+        shown = [item for item in rows() if not item.isHidden()]
+        assert shown == [target], f"filtr ukazuje {len(shown)} řádků místo jednoho"
+        assert flt.note.isVisible() and f"1 z {len(items)}" in flt.note.text()
+        QTest.keyClick(flt.field, Qt.Key.Key_Return)
+        assert tree.currentItem() is target and window._selected_id == query
+        assert tree.hasFocus(), "Enter nepřesunul fokus do stromu"
+        flt.focus()
+        QTest.keyClick(flt.field, Qt.Key.Key_Escape)
+        assert not flt.field.text() and not flt.note.isVisible()
+        assert all(not item.isHidden() for item in rows()), "Esc neobnovil všechny řádky"
+        assert rows() == items, "filtr změnil řádky stromu"
+        assert snapshot() == before, "filtr změnil model nebo historii"
+        lines.append(f"✓ Filtr stromu prvků: Ctrl+F, psaní, Enter vybere „{query}“, "
+                     "Esc obnoví všech "
+                     f"{len(items)} řádků beze změny modelu")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Filtr stromu prvků: {exc}")
+        return False
+    finally:
+        flt.clear()
+        for item in rows():
+            if item.data(0, Qt.ItemDataRole.UserRole) == previous:
+                tree.setCurrentItem(item)
+                break
 
 
 def _self_test_plate_workflow(window, lines) -> bool:
@@ -1198,6 +1265,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
                      f"{drawn}")
         ok = _self_test_assembly_layout(assembly, lines) and ok
         ok = _self_test_command_search(assembly, lines, check_favorites=True) and ok
+        ok = _self_test_assembly_tree_filter(assembly, lines) and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok
@@ -1229,6 +1297,97 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
     assembly.close()
     ok = _self_test_constraints(window, lines, folder) and ok
     return _self_test_checks(window, lines, folder) and ok
+
+
+def _self_test_assembly_tree_filter(window, lines) -> bool:
+    """P7.41: real Ctrl+F/typing/Enter/Esc/Ctrl+A in the component tree filter."""
+    import copy
+    import json
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    tree, flt = window.tree, window.tree_filter
+    previous = window._selection
+
+    def snapshot():
+        session = window.session
+        return (copy.deepcopy(session.assembly.to_dict()), session.result, session.dirty,
+                list(session._undo), list(session._redo), dict(window._visibility),
+                window._isolated, len(window.visible_instances()))
+
+    def components():
+        found = []
+
+        def walk(item):
+            if isinstance(json.loads(item.data(0, Qt.ItemDataRole.UserRole)), list):
+                found.append(item)
+            for index in range(item.childCount()):
+                walk(item.child(index))
+
+        for index in range(tree.topLevelItemCount()):
+            walk(tree.topLevelItem(index))
+        return found
+
+    def shown(item):  # řádek i všichni jeho rodiče jsou vidět
+        while item is not None:
+            if item.isHidden():
+                return False
+            item = item.parent()
+        return True
+
+    try:
+        before, rows = snapshot(), components()
+        assert len(rows) >= 2, "sestava nemá dost komponent pro zkoušku filtru"
+        query = target = None
+        window.select(None)
+        for item in reversed(rows):  # id komponenty, které odpovídá právě jednomu řádku
+            path = json.loads(item.data(0, Qt.ItemDataRole.UserRole))
+            flt.field.setText(path[-1])
+            if [m for m in flt.visible_matches() if m in rows] == [item]:
+                query, target = path, item
+                break
+        flt.clear()
+        assert target is not None, "žádné id komponenty není jednoznačné"
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno sestavy není aktivní"
+        QTest.qWait(100)
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+        assert flt.field.hasFocus(), "Ctrl+F nedalo fokus do filtru komponent"
+        QTest.keyClicks(flt.field, query[-1])
+        assert flt.field.text() == query[-1], "zkratky okna pohltily písmena filtru"
+        assert [m for m in flt.visible_matches() if m in rows] == [target] and shown(target)
+        assert sum(map(shown, components())) < len(rows), "filtr nic neskryl"
+        QTest.keyClick(flt.field, Qt.Key.Key_Return)
+        assert window._selection == (tuple(query),) and tree.hasFocus()
+        flt.field.setText("zzz-nenalezeno")  # nic neodpovídá, vybraný řádek zůstane vidět
+        assert flt.visible_matches() == [] and shown(target)
+        window.select(None)
+        assert not any(map(shown, components())), "nevybrané neodpovídající řádky jsou vidět"
+        flt.clear()
+        tree.setFocus()
+        QTest.keyClick(tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+        assert len(window._selection) == len(rows), "Ctrl+A bez filtru nevybralo vše"
+        flt.field.setText(query[-1])
+        tree.setFocus()
+        QTest.keyClick(tree, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+        assert window._selection == (tuple(query),), "Ctrl+A s filtrem vybralo i skryté"
+        flt.focus()
+        QTest.keyClick(flt.field, Qt.Key.Key_Escape)
+        assert not flt.field.text() and all(map(shown, components()))
+        window.select_many(previous)
+        assert snapshot() == before, "filtr změnil sestavu, historii, viditelnost nebo 3D"
+        lines.append(f"✓ Filtr stromu komponent: Ctrl+F, psaní, Enter vybere „{query[-1]}“, "
+                     "vybraný řádek zůstane vidět, Ctrl+A jen nalezené, Esc obnoví "
+                     f"{len(rows)} komponent beze změny sestavy")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Filtr stromu komponent: {exc}")
+        return False
+    finally:
+        flt.clear()
+        window.select_many(previous)
 
 
 def _self_test_assembly_layout(assembly, lines) -> bool:

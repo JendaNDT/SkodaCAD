@@ -47,8 +47,13 @@ automatické zkoušce na reprezentativní NDT úloze. Zůstává neprovedená, d
 neblokuje a nenahrazuje odbornou validaci NDT-17. Dne 5. 11. zvolil pokračování
 **Ovládání a pracovní postupy**. Společné hledání příkazů
 [P7.37](p7-37-hledani-prikazu.md) je sloučené a ověřeně vydané ([PR #120](https://github.com/JendaNDT/SkodaCAD/pull/120)).
-[P7.38 – oblíbené příkazy v horní liště](p7-38-oblibene-prikazy.md) je ověřeně vydaná.
-P7.39 zobrazuje naposledy použité příkazy při otevření hledání.
+[P7.38 – oblíbené příkazy v horní liště](p7-38-oblibene-prikazy.md) je ověřeně vydaná
+([PR #121](https://github.com/JendaNDT/SkodaCAD/pull/121)).
+[P7.39 – naposledy použité příkazy v hledání](p7-39-naposledy-pouzite-prikazy.md)
+je sloučená a ověřeně vydaná ([PR #122](https://github.com/JendaNDT/SkodaCAD/pull/122), `c537087`).
+[P7.40 – filtr stromu prvků v dílu](p7-40-filtr-stromu-prvku.md) a
+[P7.41 – filtr stromu komponent v sestavě](p7-41-filtr-stromu-sestavy.md) jsou
+v dávce [PR #123](https://github.com/JendaNDT/SkodaCAD/pull/123) spolu s dokumentací P7.39.
 
 | Etapa | Stav | Co zbývá |
 |---|---|---|
@@ -59,7 +64,7 @@ P7.39 zobrazuje naposledy použité příkazy při otevření hledání.
 | P4 | P4.1–P4.4 pracovní výkres sloučen (PR #49–58), formáty 25–28 | P4.5 přejímka (tisk, DXF v jiném CADu, oba OS) |
 | P5 | [Polohy](p5-2-jadro-sestav.md), [vazby](p5-3-vazby-overeni.md) a [kontroly](p5-4-kontroly-overeni.md) sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 | vybrané operace implementovány: [proměnné zaoblení](p6-2-promenne-zaobleni.md), [režimy stěny](p6-4-rezim-steny-loftu.md), [CAD přehled stěny](p6-5-prehled-steny-loftu.md), [řízený přechod](p6-7-rizeny-prechod.md) a rukojeti | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 zůstávají rozšíření |
-| P7 | implementační dávky P7.1–P7.36 sloučeny; poslední [náhled parametrů](p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 | implementační dávky P7.1–P7.41; poslední [filtr stromu dílu a sestavy](p7-41-filtr-stromu-sestavy.md) v PR #123 | formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 | P8.1–P8.5 vydané; [P8.5 ověřené vydání](p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena |
 | NDT-17 | odborná validace nezahájena | protokoly a fyzické/odborné porovnání; NDT-16 mimo rozsah |
 

@@ -100,6 +100,17 @@ vlastní seznam, který zůstane uložený i po zavření aplikace.
 Bez zadaného textu jsou nahoře naposledy použité příkazy z aktuálního spuštění
 aplikace. Hledání si pamatuje až šest příkazů zvlášť pro díl a sestavu.
 Poslední dostupný příkaz můžeš zopakovat rovnou Enterem.
+[Podrobnosti P7.39](docs/p7-39-naposledy-pouzite-prikazy.md).
+
+Dlouhý strom prvků dílu zúžíš filtrem nad ním: **Ctrl+F** (na Macu ⌘+F), napiš
+část názvu nebo id prvku (např. `srazeni`, `chyba`) a Enter vybere první nalezený.
+Esc filtr zruší. Vybraný prvek zůstává vidět vždy; model se filtrem nemění.
+[Podrobnosti P7.40](docs/p7-40-filtr-stromu-prvku.md).
+
+Stejný filtr má i strom komponent sestavy (Ctrl+F): hledá podle názvu, id i souboru
+dílu a vazby podle komponent, které spojují. S aktivním filtrem vybere **Ctrl+A** jen
+nalezené komponenty – např. `sroub`, Ctrl+A a **H** skryje všechny šrouby. Filtr
+zkracuje jen strom, ve 3D zůstává vše. [Podrobnosti P7.41](docs/p7-41-filtr-stromu-sestavy.md).
 
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
