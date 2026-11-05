@@ -413,7 +413,10 @@ def test_saved_measurement_filter_by_name_keeps_selection_and_model(tube):
     w = tube
     before = snapshot(w)
     assert shown_saved(w) == ["m1", "m2", "m3"]
-    w.saved_filter_action.trigger()  # otevře panel Měření a dá fokus do filtru
+    assert w.saved_filter_action.shortcut().toString() == "Ctrl+Shift+M"
+    w.workspace.show_panel("editor")  # panel Měření je zavřený, zkratka ho otevře
+    QTest.keyClick(w, Qt.Key.Key_M,
+                   Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
     assert w.saved_filter.field.hasFocus() and not w.measure_dock.isHidden()
     QTest.keyClicks(w.saved_filter.field, "tloustka")
     assert shown_saved(w) == ["m1", "m2"]

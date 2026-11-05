@@ -22,6 +22,17 @@ na hledání příkazů [P7.37](p7-37-hledani-prikazu.md) a filtry
   Příkaz se spouští dál přes *Najít příkaz* (Ctrl+Shift+P).
 - Na Macu se zkratky ukazují systémovým zápisem (⌘, ⇧, ⌥).
 
+## Zkratka filtru uložených měření
+
+Na pokyn autora ve stejné dávce: *Úpravy → Filtrovat uložená měření*
+([P7.44](p7-43-text-hledani-a-filtr-mereni.md)) má nově **Ctrl+Shift+M**
+(M = měření; na Macu ⌘+Shift+M). Otevře panel Měření a dá fokus do filtru.
+Záměrně ne Ctrl+Alt+F: ve Windows je Ctrl+Alt totéž co AltGr a na české
+klávesnici AltGr+F píše „[“, takže by se zkratka spouštěla při psaní.
+Zkratka je volná v dílu i v systému a hlídá ji kontrola kolizí. Test filtru
+měření i self-test balíčku teď mačkají skutečnou klávesu („✓ Filtr uložených
+měření: Ctrl+Shift+M …“) a přehled F1 ji ukazuje v *Úpravy*.
+
 ## Jak to funguje
 
 - `gui/shortcut_overview.py`: `collect_shortcuts` čte zkratky přímo ze

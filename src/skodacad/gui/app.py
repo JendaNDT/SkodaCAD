@@ -650,9 +650,11 @@ def _self_test_saved_filter(window, lines) -> bool:
         window.raise_()
         window.activateWindow()
         assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní"
-        window.saved_filter_action.trigger()
+        QTest.qWait(100)
+        QTest.keyClick(window, Qt.Key.Key_M,
+                       Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
         QTest.qWait(50)
-        assert flt.field.hasFocus(), "příkaz nedal fokus do filtru uložených měření"
+        assert flt.field.hasFocus(), "Ctrl+Shift+M nedalo fokus do filtru uložených měření"
         QTest.keyClicks(flt.field, "tloustka")
         assert shown() == ["m1", "m2"], f"filtr ukazuje {shown()}"
         QTest.keyClick(flt.field, Qt.Key.Key_Return)
@@ -663,7 +665,8 @@ def _self_test_saved_filter(window, lines) -> bool:
         after = (copy.deepcopy(window.session.document.to_dict()), window.session.result,
                  list(window.session._undo))
         assert after == before, "filtr změnil díl nebo historii"
-        lines.append("✓ Filtr uložených měření: trubka, „tloustka“ = 2 ze 3, Enter vybere "
+        lines.append("✓ Filtr uložených měření: Ctrl+Shift+M, trubka, „tloustka“ = 2 ze 3, "
+                     "Enter vybere "
                      "první, Esc obnoví všechna beze změny dílu")
         return True
     except Exception as exc:

@@ -23,8 +23,8 @@ Panel **Měření** má nad seznamem **Uložená měření** pole filtru (stejn�
 ovládání jako filtr stromu a parametrů, společný základ `FilterBox`):
 
 - **Úpravy → Filtrovat uložená měření** otevře panel Měření a dá fokus do filtru
-  (vlastní klávesovou zkratku nemá; Ctrl+F a Ctrl+Shift+F patří stromu
-  a parametrům).
+  (původně bez zkratky; od [P7.45](p7-45-prehled-klavesovych-zkratek.md)
+  **Ctrl+Shift+M**, na Macu ⌘+Shift+M).
 - Hledá v textu položky (název a hodnota měření, např. „Vnější průměr: 114.30 mm“)
   i v id (`m2`), bez
   rozlišení velikosti písmen a diakritiky. „Filtr: 2 z 3 měření“.

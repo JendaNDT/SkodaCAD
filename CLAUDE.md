@@ -136,7 +136,8 @@
   `show_command_search` pamatuje v `window._command_search_text` text hledání zavřeného
   bez spuštění (označený), po spuštění prázdné (P7.39); vyprázdnění pole znovu předvybere
   nedávný příkaz (`_query_changed`). `ListFilter` nad `saved_list` (SEARCH_ROLE název+id),
-  akce *Filtrovat uložená měření* bez zkratky, vybrané měření zůstává vidět.
+  akce *Filtrovat uložená měření* (od P7.45 Ctrl+Shift+M; ne Ctrl+Alt = AltGr ve Windows),
+  vybrané měření zůstává vidět.
   [P7.45](docs/p7-45-prehled-klavesovych-zkratek.md): F1 / Nápověda → Klávesové
   zkratky v dílu i sestavě (`gui/shortcut_overview.py`). Zkratky jen z `QAction`
   přes `collect_commands`; myš a místní klávesy jsou pevné řádky ověřené proti

@@ -271,8 +271,10 @@ class MainWindow(QMainWindow):
                                                "Ctrl+F")
         self.param_filter_action = self._action("Filtrovat parametry dílu",
                                                 self.focus_param_filter, "Ctrl+Shift+F")
+        # Ctrl+Shift+M (M = měření). Ne Ctrl+Alt+…: ve Windows je to AltGr a na české
+        # klávesnici AltGr+F píše „[“ – zkratka by se spouštěla při psaní.
         self.saved_filter_action = self._action("Filtrovat uložená měření",
-                                                self.focus_saved_filter)
+                                                self.focus_saved_filter, "Ctrl+Shift+M")
         self.rebuild_action = self._action("Přepočítat", self.rebuild, "F5")
         self.add_feature_actions = {
             key: self._action(schema.label, lambda k=key: self.start_feature_preview(k))

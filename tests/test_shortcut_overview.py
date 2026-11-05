@@ -98,6 +98,7 @@ def test_part_overview_lists_menu_shortcuts_and_mouse_without_changes(window, mo
     assert ("Soubor", native("Ctrl+S"), "Uložit") in rows
     assert ("Soubor", native("Ctrl+Shift+S"), "Uložit jako") in rows
     assert ("Úpravy", native("Ctrl+F"), "Filtrovat strom prvků") in rows
+    assert ("Úpravy", native("Ctrl+Shift+M"), "Filtrovat uložená měření") in rows
     assert ("Zobrazení", native("F9"), "Strom modelu") in rows
     assert ("Nápověda", native("F1"), "Klávesové zkratky") in rows
     places = [row[0] for row in rows]

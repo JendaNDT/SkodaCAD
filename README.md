@@ -119,7 +119,7 @@ nalezeného parametru. Pole s chybou zůstává vidět vždy.
 
 Hledání příkazů zavřené bez spuštění (Esc) se příště otevře se stejným, označeným
 textem; po spuštění příkazu je prázdné s naposledy použitými nahoře. Uložená měření
-mají vlastní filtr (*Úpravy → Filtrovat uložená měření*).
+mají vlastní filtr (*Úpravy → Filtrovat uložená měření*, **Ctrl+Shift+M**, na Macu ⌘+Shift+M).
 [Podrobnosti P7.43 a P7.44](docs/p7-43-text-hledani-a-filtr-mereni.md).
 
 **F1** (*Nápověda → Klávesové zkratky…*) ukáže přehled všech zkratek dílu nebo
