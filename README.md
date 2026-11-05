@@ -122,6 +122,11 @@ textem; po spuštění příkazu je prázdné s naposledy použitými nahoře. U
 mají vlastní filtr (*Úpravy → Filtrovat uložená měření*).
 [Podrobnosti P7.43 a P7.44](docs/p7-43-text-hledani-a-filtr-mereni.md).
 
+**F1** (*Nápověda → Klávesové zkratky…*) ukáže přehled všech zkratek dílu nebo
+sestavy včetně ovládání myší ve 3D, s filtrem. Zkratky se čtou přímo z příkazů,
+takže přehled vždy odpovídá verzi aplikace.
+[Podrobnosti P7.45](docs/p7-45-prehled-klavesovych-zkratek.md).
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).

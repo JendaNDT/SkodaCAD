@@ -294,6 +294,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_tree_filter(window, lines) and ok
     ok = _self_test_param_filter(window, lines) and ok
     ok = _self_test_saved_filter(window, lines) and ok
+    ok = _self_test_shortcuts(window, lines, "díl", window.ribbon.command_groups) and ok
     ok = _self_test_assembly(window, lines) and ok
     window.session.dirty = False
     window.close()
@@ -510,6 +511,65 @@ def _self_test_tree_filter(window, lines) -> bool:
             if item.data(0, Qt.ItemDataRole.UserRole) == previous:
                 tree.setCurrentItem(item)
                 break
+
+
+def _self_test_shortcuts(window, lines, label: str, groups=()) -> bool:
+    """P7.45: skutečná klávesa F1 otevře přehled zkratek; filtr, Esc, beze změny modelu."""
+    import copy
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.shortcut_overview import conflicts
+
+    session = window.session
+
+    def snapshot():
+        recipe = session.document if hasattr(session, "document") else session.assembly
+        return (copy.deepcopy(recipe.to_dict()), session.dirty, list(session._undo),
+                list(session._redo))
+
+    seen = {}
+
+    def inspect(dialog):
+        rows = dialog.rows
+        seen["commands"] = sum(row.place not in ("Myš ve 3D", "Ve stromu a filtrech")
+                               for row in rows)
+        seen["other"] = len(rows) - seen["commands"]
+        seen["help"] = any(row.command == "Klávesové zkratky" for row in rows)
+        everything = dialog.shown_rows()
+        QTest.keyClicks(dialog.filter.field, "ulozit")
+        seen["found"] = sorted(command for _keys, command in dialog.shown_rows())
+        QTest.keyClick(dialog.filter.field, Qt.Key.Key_Escape)
+        seen["restored"] = dialog.shown_rows() == everything == [
+            (row.keys, row.command) for row in rows]
+        return 0
+
+    try:
+        before = snapshot()
+        clash = conflicts(window.menuBar(), groups)
+        assert not clash, f"zkratky se opakují: {clash}"
+        window._exec_dialog = inspect
+        window.raise_()
+        window.activateWindow()
+        assert QTest.qWaitForWindowActive(window, 2000), "okno není aktivní pro F1"
+        QTest.qWait(100)
+        QTest.keyClick(window, Qt.Key.Key_F1)
+        assert seen, "F1 neotevřela přehled zkratek"
+        assert seen["help"], "v přehledu chybí vlastní zkratka F1"
+        assert seen["commands"] >= 10 and seen["other"] >= 5, f"málo řádků: {seen}"
+        assert seen["found"] == ["Uložit", "Uložit jako"], f"filtr našel {seen['found']}"
+        assert seen["restored"], "Esc neobnovil všechny řádky přehledu"
+        assert snapshot() == before, "přehled zkratek změnil model nebo historii"
+        lines.append(f"✓ Přehled zkratek ({label}): F1, {seen['commands']} zkratek příkazů "
+                     f"+ {seen['other']} ovládání myší a kláves, filtr „ulozit“ = 2, "
+                     "Esc, bez kolizí a beze změny modelu")
+        return True
+    except Exception as exc:
+        lines.append(f"✕ Přehled zkratek ({label}): {exc}")
+        return False
+    finally:
+        window.__dict__.pop("_exec_dialog", None)
 
 
 def _self_test_param_filter(window, lines) -> bool:
@@ -1379,6 +1439,7 @@ def _self_test_assembly(window, lines: list[str]) -> bool:
         ok = _self_test_assembly_layout(assembly, lines) and ok
         ok = _self_test_command_search(assembly, lines, check_favorites=True) and ok
         ok = _self_test_assembly_tree_filter(assembly, lines) and ok
+        ok = _self_test_shortcuts(assembly, lines, "sestava") and ok
         ok = _self_test_assembly_views(assembly, lines) and ok
         ok = _self_test_assembly_isolation(assembly, lines) and ok
         ok = _self_test_assembly_visibility(assembly, lines) and ok

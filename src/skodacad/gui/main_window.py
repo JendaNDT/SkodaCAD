@@ -259,6 +259,7 @@ class MainWindow(QMainWindow):
         self.command_search_action = self._action(
             "Najít příkaz…", lambda: show_command_search(self, self.ribbon.command_groups),
             "Ctrl+Shift+P")
+        self.shortcuts_action = self._action("Klávesové zkratky…", self.show_shortcuts, "F1")
         self.new_action = self._action("Nový", self.new_model, "Ctrl+N")
         self.open_action = self._action("Otevřít…", self.open_dialog, "Ctrl+O")
         self.save_action = self._action("Uložit", self.save, "Ctrl+S")
@@ -1099,6 +1100,7 @@ class MainWindow(QMainWindow):
 
         help_menu = bar.addMenu("&Nápověda")
         help_menu.addAction(self.command_search_action)
+        help_menu.addAction(self.shortcuts_action)
         help_menu.addAction(self._action("Ovládání", self.show_controls))
         help_menu.addAction(self._action("O aplikaci", self.show_about))
 
@@ -3153,6 +3155,18 @@ class MainWindow(QMainWindow):
         menu.exec(position)  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
 
     # --- dialogy a pomocné ---------------------------------------------------------
+
+    def show_shortcuts(self) -> None:
+        from skodacad.gui.shortcut_overview import (
+            KEYS,
+            MOUSE,
+            PART_KEYS,
+            PART_MOUSE,
+            show_shortcuts,
+        )
+
+        show_shortcuts(self, self.ribbon.command_groups, ((MOUSE, PART_MOUSE), (KEYS, PART_KEYS)),
+                       title="Klávesové zkratky – díl")
 
     def show_controls(self) -> None:
         QMessageBox.information(self, "Ovládání", HELP_HINT.replace("  ·  ", "\n"))
