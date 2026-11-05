@@ -1,4 +1,4 @@
-"""Personal command pins, shared by windows without touching CAD documents."""
+"""Personal command pins and session history shared by the application windows."""
 
 import json
 
@@ -21,6 +21,7 @@ from shiboken6 import isValid
 from skodacad.gui.command_search import collect_commands, plain_label
 
 MAX_FAVORITES = 6
+_MAX_RECENT = 6
 _KINDS = ("part", "assembly")
 _MAX_BYTES = 16_384
 
@@ -39,6 +40,7 @@ class FavoriteStore(QObject):
         super().__init__(parent)
         self.path = path
         self._items = dict.fromkeys(_KINDS, ())
+        self._recent = dict.fromkeys(_KINDS, ())
         if path is None:
             return
         try:
@@ -54,6 +56,13 @@ class FavoriteStore(QObject):
 
     def get(self, kind):
         return self._items[kind]
+
+    def recent(self, kind):
+        return self._recent[kind]
+
+    def record_use(self, kind, key):
+        previous = self._recent[kind]
+        self._recent[kind] = (key, *(item for item in previous if item != key))[:_MAX_RECENT]
 
     def replace(self, kind, keys):
         if self.get(kind) == (keys := _clean(keys)):
@@ -214,6 +223,8 @@ class FavoriteBar(QToolBar):
         self.owner, self.store, self.kind = owner, store, kind
         self.commands = _catalogue(owner, groups, namespaces)
         self.command_keys = {command.action: key for key, command in self.commands.items()}
+        for action in self.command_keys:
+            action.triggered.connect(self._record_use)
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(3, 0, 3, 0)
@@ -239,6 +250,12 @@ class FavoriteBar(QToolBar):
     @property
     def keys(self):
         return self.store.get(self.kind)
+
+    @Slot()
+    def _record_use(self):
+        key = self.command_keys.get(self.sender())
+        if key is not None:
+            self.store.record_use(self.kind, key)
 
     def pinned_buttons(self):
         return [self._pins.itemAt(i).widget() for i in range(self._pins.count())]

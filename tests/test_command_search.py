@@ -75,6 +75,41 @@ def test_catalogue_menu_paths_shared_actions_and_ribbon(menu_window):
     assert commands[0].available
 
 
+def test_recent_commands_precede_menu_order_only_for_empty_search(menu_window):
+    from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
+
+    owner, menu, save, submenu, export = menu_window
+    owner.save_action, owner.export_action = save, export
+    for index in range(7):
+        action = menu.addAction(f"Zkušební příkaz {index}")
+        setattr(owner, f"sample_action_{index}", action)
+    owner.favorite_bar = FavoriteBar(owner, FavoriteStore(), "part")
+    for index in range(7):
+        getattr(owner, f"sample_action_{index}").trigger()
+    save.trigger()
+    export.trigger()
+    save.trigger()  # repeats move to the top without duplicating the command
+    export.trigger()
+    submenu.setEnabled(False)
+
+    def check():
+        dialog = QApplication.activeModalWidget()
+        assert labels(dialog)[:6] == [
+            "STEP [nedostupné]", "Uložit jako…", "Zkušební příkaz 6",
+            "Zkušební příkaz 5", "Zkušební příkaz 4", "Zkušební příkaz 3",
+        ]
+        assert labels(dialog).count("Uložit jako…") == 1
+        assert dialog.results.topLevelItem(5).text(1).startswith("Nedávno · ")
+        assert not dialog.results.topLevelItem(6).text(1).startswith("Nedávno · ")
+        assert dialog.current_command().action is save
+        dialog.query.setText("zkusebni prikaz")
+        assert labels(dialog) == [f"Zkušební příkaz {index}" for index in range(7)]
+        assert all(dialog.results.topLevelItem(i).text(1) == "Soubor" for i in range(7))
+
+    with dialog_response(check):
+        show_command_search(owner)
+
+
 def test_search_without_accents_multiple_words_and_empty_result(menu_window):
     owner, *_ = menu_window
     dialog = CommandSearchDialog(collect_commands(owner.menuBar()), owner)
@@ -258,6 +293,7 @@ def test_packaged_search_driver_uses_keyboard_after_activation(app, tmp_path, as
     try:
         assert _self_test_command_search(owner, lines, check_favorites=True), lines
         assert any(line.startswith("✓ Oblíbené příkazy") for line in lines)
+        assert any(line.startswith("✓ Naposledy použité příkazy") for line in lines)
         assert owner.favorite_bar.keys == ()
         assert not (tmp_path / "oblibene-prikazy.json").exists()
     finally:

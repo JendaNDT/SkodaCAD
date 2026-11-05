@@ -97,6 +97,10 @@ nabídne až šest tlačítek. **Upravit…** je seřadí nebo odebere; díl a s
 vlastní seznam, který zůstane uložený i po zavření aplikace.
 [Podrobnosti P7.38](docs/p7-38-oblibene-prikazy.md).
 
+Bez zadaného textu jsou nahoře naposledy použité příkazy z aktuálního spuštění
+aplikace. Hledání si pamatuje až šest příkazů zvlášť pro díl a sestavu.
+Poslední dostupný příkaz můžeš zopakovat rovnou Enterem.
+
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
 [Podrobnosti opravy a ověření](docs/p7-7-otevirani-dokumentu-macos.md).

@@ -65,11 +65,13 @@ def test_pin_search_then_use_real_toggle_and_reopen(app, tmp_path, kind):  # noq
     checked = action.isChecked()
     pin_from_search(window, query, action)
     assert calls == [] and action.isChecked() == checked
+    assert window.favorite_store.recent(kind) == ()
     assert not window.favorite_bar.isHidden()
     button, = buttons(window)
     assert button.command.action is action
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     assert calls == [not checked] and button.isChecked() == action.isChecked()
+    assert window.favorite_store.recent(kind) == (window.favorite_bar.command_keys[action],)
     current = window.session.document if kind == "part" else window.session.assembly
     assert current.to_dict() == before and window.session.result is result
     assert (window.session._undo, window.session._redo, window.session.dirty) == history
@@ -80,6 +82,7 @@ def test_pin_search_then_use_real_toggle_and_reopen(app, tmp_path, kind):  # noq
     again = create()
     again.show()
     assert again.favorite_bar.keys == keys
+    assert again.favorite_store.recent(kind) == ()
     button, = buttons(again)
     pin_from_search(again, query if kind == "assembly" else "pas nastroju",
                     button.command.action, pinned=True)
@@ -119,6 +122,9 @@ def test_reorder_cancel_remove_and_sync_open_assemblies(app, tmp_path):  # noqa:
     pin_from_search(a, "cela sestava", a.fit_action)
     assert [button.command.action for button in buttons(b)] == [b.files_action, b.fit_action]
     assert owner.favorite_bar.keys == ()
+    b.files_action.trigger()
+    assert a.favorite_store.recent("assembly") == (a.favorite_bar.command_keys[a.files_action],)
+    assert owner.favorite_store.recent("part") == ()
 
     dialog = FavoriteEditor(a.favorite_bar)
     dialog.down.click()
