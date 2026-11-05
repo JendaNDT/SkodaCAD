@@ -17,7 +17,7 @@ na hledání příkazů [P7.37](p7-37-hledani-prikazu.md) a filtry
   - **Ve stromu a filtrech** – Enter/↓ a Esc ve filtrech; v dílu Esc v náhledu
     nového prvku a Ctrl/⌘+Enter v panelu AI; v sestavě Ctrl/⌘+A a Esc ve stromu.
 - Nahoře je filtr se stejným ovládáním jako ostatní filtry (bez diakritiky,
-  „Filtr: 2 z 43 zkratek“, Enter skočí na první nalezený, Esc filtr zruší).
+  „Filtr: 2 z 44 zkratek“, Enter skočí na první nalezený, Esc filtr zruší).
 - Přehled je jen pro čtení: nic nespouští a model, výběr ani historii nemění.
   Příkaz se spouští dál přes *Najít příkaz* (Ctrl+Shift+P).
 - Na Macu se zkratky ukazují systémovým zápisem (⌘, ⇧, ⌥).
@@ -29,7 +29,8 @@ Na pokyn autora ve stejné dávce: *Úpravy → Filtrovat uložená měření*
 (M = měření; na Macu ⌘+Shift+M). Otevře panel Měření a dá fokus do filtru.
 Záměrně ne Ctrl+Alt+F: ve Windows je Ctrl+Alt totéž co AltGr a na české
 klávesnici AltGr+F píše „[“, takže by se zkratka spouštěla při psaní.
-Zkratka je volná v dílu i v systému a hlídá ji kontrola kolizí. Test filtru
+V dílu ji nemá žádný jiný příkaz (hlídá kontrola kolizí); kolizi se zkratkou
+systému na skutečném Macu či ve Windows jsem neověřoval. Test filtru
 měření i self-test balíčku teď mačkají skutečnou klávesu („✓ Filtr uložených
 měření: Ctrl+Shift+M …“) a přehled F1 ji ukazuje v *Úpravy*.
 
