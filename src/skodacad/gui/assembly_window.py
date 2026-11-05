@@ -77,6 +77,7 @@ from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.assembly_panel import ComponentScroll, MovementTabs
 from skodacad.gui.assembly_parameter_preview import AssemblyParameterPreviewDialog
 from skodacad.gui.assembly_parameters import AssemblyParametersDialog
+from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.viewer_views import VIEW_LABELS
 from skodacad.gui.workspace import Section
@@ -118,11 +119,15 @@ def show_value(value: Any) -> str:
 class AssemblyWindow(QMainWindow):
     def __init__(self, viewer_factory: Callable[[], QWidget] | None = None,
                  runner: Any = None, user_dir: Path | None = None,
-                 open_part: Callable[[Path], object] | None = None) -> None:
+                 open_part: Callable[[Path], object] | None = None,
+                 favorite_store: FavoriteStore | None = None) -> None:
         super().__init__()
         self.runner = runner
         self.session = AssemblySession(Cache(builder=None if runner is not None else build_part))
         self.user_dir = user_dir or Path.home()
+        favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
+        self.favorite_store = (favorite_store if favorite_store is not None
+                               else FavoriteStore(favorites_path, self))
         self.open_part = open_part  # hlavní okno otevře soubor dílu
         self._selection: tuple[tuple[str, ...], ...] = ()
         self._isolated: tuple[tuple[str, ...], ...] | None = None  # jen pohled
@@ -1093,6 +1098,7 @@ class AssemblyWindow(QMainWindow):
         for dock, shortcut in ((self.tree_dock, "F9"), (self.component_dock, "F4"),
                                (self.checks_dock, "F8")):
             action = dock.toggleViewAction()
+            action.setProperty("favorite_id", f"dock.{dock.objectName()}")
             action.setShortcut(QKeySequence(shortcut))
             view_menu.addAction(action)
         self.files_action = view_menu.addAction("Soubory ve stromu")
@@ -1121,6 +1127,8 @@ class AssemblyWindow(QMainWindow):
         toolbar.addAction(self.restore_visibility_action)
         toolbar.addSeparator()
         toolbar.addAction(self.command_search_action)
+        self.favorite_bar = FavoriteBar(self, self.favorite_store, "assembly")
+        view_menu.addAction(self.favorite_bar.manage_action)
 
     def reset_layout(self) -> None:
         """Kompaktní panely; pouze rozložení, bez změny sestavy, výběru či kamery."""

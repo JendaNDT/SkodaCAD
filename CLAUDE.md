@@ -109,6 +109,10 @@
 - **Pokyn autora z 5. 11. 2026:** po dokončené P8.5 pokračovat oblastí
   **Ovládání a pracovní postupy**. Navazující dávka P7.37 sjednocuje hledání
   existujících příkazů v dílu a sestavě bez změny geometrie či formátu.
+  Po ověřeném vydání P7.37 autor požádal o nastavitelné oblíbené příkazy:
+  [P7.38](docs/p7-38-oblibene-prikazy.md) připíná původní příkazy z hledání do
+  horní lišty, ukládá pořadí odděleně pro díl a sestavu a ověřuje spuštění
+  připnutého příkazu v self-testu obou balíčků.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
