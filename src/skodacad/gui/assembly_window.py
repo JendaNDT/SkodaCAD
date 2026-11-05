@@ -1024,6 +1024,7 @@ class AssemblyWindow(QMainWindow):
 
         self.command_search_action = self._action(
             "Najít příkaz…", lambda: show_command_search(self), "Ctrl+Shift+P")
+        self.shortcuts_action = self._action("Klávesové zkratky…", self.show_shortcuts, "F1")
         self.new_action = self._action("Nová sestava…", self.new_dialog)
         self.open_action = self._action("Otevřít sestavu…", self.open_dialog)
         self.save_action = self._action("Uložit", self.save, "Ctrl+S")
@@ -1113,6 +1114,8 @@ class AssemblyWindow(QMainWindow):
         self.files_action.toggled.connect(lambda checked: self.tree.setColumnHidden(1, not checked))
         self.reset_layout_action = self._action("Obnovit rozložení", self.reset_layout)
         view_menu.addAction(self.reset_layout_action)
+        help_menu = bar.addMenu("&Nápověda")
+        help_menu.addAction(self.shortcuts_action)
         toolbar = self.toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
@@ -1802,6 +1805,18 @@ class AssemblyWindow(QMainWindow):
             self._clear_finding()
         self._sync_tree_selection()
         self._refresh_selection()
+
+    def show_shortcuts(self) -> None:
+        from skodacad.gui.shortcut_overview import (
+            ASSEMBLY_KEYS,
+            ASSEMBLY_MOUSE,
+            KEYS,
+            MOUSE,
+            show_shortcuts,
+        )
+
+        show_shortcuts(self, (), ((MOUSE, ASSEMBLY_MOUSE), (KEYS, ASSEMBLY_KEYS)),
+                       title="Klávesové zkratky – sestava")
 
     def select_all_components(self) -> None:
         """Ctrl/⌘+A: všechny komponenty, s aktivním filtrem jen nalezené (P7.41)."""

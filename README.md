@@ -119,8 +119,13 @@ nalezeného parametru. Pole s chybou zůstává vidět vždy.
 
 Hledání příkazů zavřené bez spuštění (Esc) se příště otevře se stejným, označeným
 textem; po spuštění příkazu je prázdné s naposledy použitými nahoře. Uložená měření
-mají vlastní filtr (*Úpravy → Filtrovat uložená měření*).
+mají vlastní filtr (*Úpravy → Filtrovat uložená měření*, **Ctrl+Shift+M**, na Macu ⌘+Shift+M).
 [Podrobnosti P7.43 a P7.44](docs/p7-43-text-hledani-a-filtr-mereni.md).
+
+**F1** (*Nápověda → Klávesové zkratky…*) ukáže přehled všech zkratek dílu nebo
+sestavy včetně ovládání myší ve 3D, s filtrem. Zkratky se čtou přímo z příkazů,
+takže přehled vždy odpovídá verzi aplikace.
+[Podrobnosti P7.45](docs/p7-45-prehled-klavesovych-zkratek.md).
 
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
