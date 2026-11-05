@@ -113,6 +113,11 @@
   [P7.38](docs/p7-38-oblibene-prikazy.md) připíná původní příkazy z hledání do
   horní lišty, ukládá pořadí odděleně pro díl a sestavu a ověřuje spuštění
   připnutého příkazu v self-testu obou balíčků.
+  [P7.39](docs/p7-39-naposledy-pouzite-prikazy.md) (PR #122, `c537087`, ověřeně
+  vydáno): prázdné hledání ukáže nahoře až šest naposledy použitých příkazů zvlášť
+  pro díl a sestavu, Enter zopakuje poslední dostupný. Historie je jen v paměti
+  `FavoriteStore` do zavření aplikace (žádné ukládání na disk); zapisuje ji
+  `FavoriteBar` při `triggered` katalogizovaných akcí, připnutí ji nemění.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -1715,7 +1720,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.36 sloučeny; [náhled parametrů](docs/p7-36-nahled-parametru-sestavy.md) v PR #112 | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.39 sloučeny; [naposledy použité příkazy](docs/p7-39-naposledy-pouzite-prikazy.md) v PR #122 | formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

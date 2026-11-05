@@ -100,6 +100,7 @@ vlastní seznam, který zůstane uložený i po zavření aplikace.
 Bez zadaného textu jsou nahoře naposledy použité příkazy z aktuálního spuštění
 aplikace. Hledání si pamatuje až šest příkazů zvlášť pro díl a sestavu.
 Poslední dostupný příkaz můžeš zopakovat rovnou Enterem.
+[Podrobnosti P7.39](docs/p7-39-naposledy-pouzite-prikazy.md).
 
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.
