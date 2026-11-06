@@ -424,6 +424,7 @@ class OccViewer(QWidget):
         self._context = None
         self._window = None
         self._dark_background = False
+        self._view_insets = (0, 0)  # šířka zakrytá kartami vlevo a vpravo (P7.49)
         self._ais: AIS_Shape | None = None
         # One erased full-assembly presentation, invalidated by its owning window.
         self._retained_part: tuple[Any, list[tuple[Any, float]]] | None = None
@@ -1754,14 +1755,34 @@ class OccViewer(QWidget):
             self._draw_move_handles()
             self._request_redraw()
 
+    def set_view_insets(self, left: int, right: int) -> None:
+        """Šířka pohledu zakrytá plovoucími kartami vlevo a vpravo (P7.49, body Qt).
+
+        „Celý díl“ pak díl přizpůsobí volnému místu mezi kartami; kreslení,
+        výběr ani poloha kamery se tím samy nemění (projeví se až při dalším fit)."""
+        self._view_insets = (max(int(left), 0), max(int(right), 0))
+
     def _fit_camera(self) -> None:
         # FitAll(false) stále volá Update při zapnutém immediate režimu OCCT.
         # Kamera se přizpůsobí celá; hotový snímek kreslí až volající.
         immediate = self._view.SetImmediateUpdate(False)
         try:
             self._view.FitAll(0.08, False)
+            self._fit_into_free_area()
         finally:
             self._view.SetImmediateUpdate(immediate)
+
+    def _fit_into_free_area(self) -> None:
+        """Po FitAll zmenší a posune díl do místa mezi kartami (OCCT: +dx doprava)."""
+        left, right = self._view_insets
+        width = self._surface.width()
+        free = width - left - right
+        if not (left or right) or free < 80 or width <= 0:
+            return
+        camera = self._view.Camera()
+        camera.SetScale(camera.Scale() * width / free)  # zmenšení kolem středu pohledu
+        ratio = self._pixel_scale()
+        self._view.Pan(round((left - right) / 2 * ratio), 0, 1.0, True)
 
     def set_standard_view(self, name: str) -> None:
         self.cancel_selection_drag()
@@ -1869,7 +1890,8 @@ class OccViewer(QWidget):
         top, bottom = BACKGROUNDS[self._dark_background]
         view.SetBgGradientColors(_srgb(top), _srgb(bottom), Aspect_GFM_VER, False)
         label = Quantity_NOC_WHITE if self._dark_background else Quantity_NOC_BLACK
-        view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(label), 0.08, V3d_ZBUFFER)
+        # Menší osový kříž se vejde pod levou kartu (60 px, P7.49).
+        view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(label), 0.055, V3d_ZBUFFER)
 
     def _style(self) -> None:
         view, context = self._view, self._context

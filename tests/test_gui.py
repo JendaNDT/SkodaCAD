@@ -3236,6 +3236,44 @@ def test_appearance_switch_recolors_duo_icons_and_3d_background(window, slot_err
     assert not slot_errors
 
 
+def test_panels_are_floating_cards_over_3d_view(window, slot_errors):
+    """P7.49: levý strom a pravé panely jsou karty nad 3D, 3D má celou šířku okna."""
+    from skodacad.gui.floating import FloatingCard
+
+    window.resize(1440, 860)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    original = window.session.document.to_dict()
+    viewer = window.viewer
+    assert window.centralWidget() is viewer
+    assert not window.findChildren(QtWidgets.QDockWidget)
+    cards = [window.model_dock, *window.workspace.docks.values()]
+    assert all(isinstance(c, FloatingCard) and c.parentWidget() is viewer for c in cards)
+    width = viewer.width()
+    for key in window.workspace.docks:
+        window.workspace.show_panel(key)
+        QtWidgets.QApplication.processEvents()
+        window.card_layer.relayout()
+        visible = [k for k, c in window.workspace.docks.items() if c.isVisible()]
+        assert visible == [key]
+        card = window.workspace.docks[key]
+        assert card.geometry().right() == viewer.width() - 1 - 14 and card.geometry().top() == 14
+        assert viewer.width() == width  # přepnutí panelu 3D pohled nezmenší
+    left = window.model_dock.geometry()
+    assert (left.left(), left.top(), left.width()) == (14, 14, 268)
+    window.workspace.close_panel()
+    window.card_layer.relayout()
+    free = window.card_layer.free_rect()
+    assert free.left() == 14 + 268 and free.right() == viewer.width() - 1
+    window.workspace.model_action.trigger()  # F9 skryje levou kartu
+    QtWidgets.QApplication.processEvents()
+    assert window.model_dock.isHidden() and window.card_layer.free_rect().left() == 0
+    window.workspace.model_action.trigger()
+    window.workspace.show_panel("editor")
+    assert window.session.document.to_dict() == original and not window.session.can_undo
+    assert not slot_errors
+
+
 def test_workspace_panels_reset_and_collapse_do_not_change_model_or_camera(window):
     window.resize(1024, 720)
     window.show()

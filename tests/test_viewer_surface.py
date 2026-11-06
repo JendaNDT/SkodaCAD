@@ -294,3 +294,22 @@ def test_invalid_transparency_does_not_replace_valid_presentation(viewer, amount
     with pytest.raises(ValueError, match="průhlednosti"):
         viewer.show_part(part, transparent=[(part, amount)])
     assert viewer._ais is ais and viewer._transparent_parts[0][1] == .4
+
+
+def test_fit_all_shrinks_and_shifts_part_into_space_between_cards(viewer, monkeypatch):
+    """P7.49: „Celý díl“ přizpůsobí díl místu mezi plovoucími kartami."""
+    monkeypatch.setattr(module.sys, "platform", "linux")
+    camera = Mock()
+    camera.Scale.return_value = 100.0
+    viewer._view.Camera.return_value = camera
+    viewer._fit_camera()  # bez karet jen FitAll
+    camera.SetScale.assert_not_called()
+    viewer._view.Pan.assert_not_called()
+    viewer.set_view_insets(160, 240)  # volných 640 − 400 = 240 bodů
+    viewer._fit_camera()
+    viewer._view.FitAll.assert_called_with(0.08, False)
+    camera.SetScale.assert_called_once_with(pytest.approx(100.0 * 640 / 240))
+    viewer._view.Pan.assert_called_once_with(-40, 0, 1.0, True)  # střed volného místa
+    viewer.set_view_insets(300, 300)  # na díl nezbývá místo – zůstane prosté FitAll
+    viewer._fit_camera()
+    assert camera.SetScale.call_count == 1 and viewer._view.Pan.call_count == 1

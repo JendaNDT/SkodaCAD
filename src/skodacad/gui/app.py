@@ -285,6 +285,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_cards(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1131,6 +1132,85 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_cards(window, lines: list[str]) -> bool:
+    """P7.49: panely jako plovoucí karty nad nativním 3D (skutečné okno balíčku).
+
+    Ověří rozmístění při 1440/1024/960, to, že karta leží nad 3D a klik vedle ní
+    dál vybírá plochu, a že „Celý díl“ umístí díl do volného místa mezi kartami."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, layer = window.viewer, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        sizes = []
+        for width in (1440, 1024, 960):
+            window.resize(width, 860)
+            window.workspace.reset()
+            window.workspace.show_panel("editor")
+            QApplication.processEvents()
+            layer.relayout()
+            shown = [c for c in layer.cards if c.isVisible()]
+            for card in shown:
+                assert viewer.rect().contains(card.geometry()), card.objectName()
+                assert card.parentWidget() is viewer
+            for a in shown:
+                for b in shown:
+                    assert a is b or not a.geometry().intersects(b.geometry())
+            free = layer.free_rect()
+            assert free.width() >= .4 * viewer.width(), (width, free.width())
+            sizes.append(f"{width}: 3D {free.width()}/{viewer.width()}")
+        window.resize(1440, 860)
+        window.workspace.reset()
+        window.workspace.show_panel("editor")
+        QApplication.processEvents()
+        layer.relayout()
+        card = window.editor_dock
+        inside = card.geometry().center()
+        hit = viewer.childAt(inside)
+        assert hit is card or card.isAncestorOf(hit), "karta není nad 3D"
+        clicked = ""
+        if viewer.ready:
+            viewer.set_standard_view("iso")
+            viewer.fit_all()
+            QApplication.processEvents()
+            free = layer.free_rect()
+            ratio = viewer._pixel_scale()
+            part = window.session.result.part
+            box = part.bounding_box()
+            for x in (box.min.X, box.max.X):
+                for y in (box.min.Y, box.max.Y):
+                    for z in (box.min.Z, box.max.Z):
+                        px, py = viewer._view.Convert(float(x), float(y), float(z))
+                        point = QPoint(round(px / ratio), round(py / ratio))
+                        assert free.contains(point), f"roh dílu {point} pod kartou"
+            top = max(part.faces(), key=lambda f: f.center().Z)
+            px, py = viewer._view.Convert(*map(float, top.center()))
+            point = QPoint(round(px / ratio), round(py / ratio))
+            assert viewer.childAt(point) is viewer._surface, "klik vedle karty nejde do 3D"
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton,
+                             Qt.KeyboardModifier.NoModifier, point)
+            QApplication.processEvents()
+            picked = viewer.selected_shapes()
+            assert picked, "klik do 3D vedle karty nic nevybral"
+            clicked = f", klik vedle karty vybral {window.session.selection_info(picked).text}"
+            viewer.clear_selection()
+            image = user_dir() / "self-test-karty.png"
+            frame = window.frameGeometry()
+            window.screen().grabWindow(0, frame.x(), frame.y(), frame.width(),
+                                       frame.height()).save(str(image))
+            clicked += f", snímek {image}"
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Karty nad 3D: strom a {len(window.workspace.docks)} pravých panelů nad "
+                     f"3D, bez překryvu ({'; '.join(sizes)}), díl mezi kartami{clicked}")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Karty nad 3D: {type(exc).__name__}: {exc}")
         return False
 
 

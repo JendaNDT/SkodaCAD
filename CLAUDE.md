@@ -156,6 +156,7 @@
   palety, zprávy v pilulce, sestava jen barvy/ikony, plné upozornění UT/PT/MT/RT doslovně.
   Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům. [P7.48](docs/p7-48-vzhled-a-ikony.md)
   = paleta z tokenů, ikony Duo, pozadí 3D sRGB (viz Známé pasti – vzhled okna).
+  [P7.49](docs/p7-49-plovouci-karty.md) = panely jako plovoucí karty nad 3D.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -602,6 +603,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/floating.py` | plovoucí karty nad 3D (P7.49): `FloatingCard` s rozhraním docku, `CardLayer` (rozmístění podle návrhu 1a, volné místo pro „Celý díl“) |
 | `gui/ui_theme.py`, `gui/duo_icons.py` | barvy, paleta a písmo podle návrhu okna 1a (P7.48); 41 ikon Duo jako vnitřek SVG pro `cad_icons` |
 | `gui/viewer_views.py` | názvy a klávesové zkratky standardních pohledů 3D (bez OCCT) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch); plán dráhy `show_plan` (čáry po barvách, začátek, zóny) |
@@ -679,6 +681,14 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   jako `Quantity_TOC_sRGB` (`viewer._srgb`). Ostatní barvy 3D zatím zůstávají lineární.
 - `OccViewer.set_dark_background` volá hlavní okno (`refresh_palette`) i okno sestavy
   (`changeEvent`); náhradní prohlížeče v testech ji mít nemusí (`getattr`).
+- P7.49: panely hlavního okna jsou `floating.FloatingCard` (děti 3D prohlížeče, nad
+  `_NativeSurface`), ne `QDockWidget`; jména `*_dock` a rozhraní `Workspace` zůstávají.
+  `CardLayer.relayout` je umisťuje (14 px, 268 / 304 / 320 px, levá končí 60 px nad
+  spodkem) a hlásí prohlížeči zakrytou šířku `set_view_insets`; `_fit_camera` po FitAll
+  zmenší kameru (× šířka / volná šířka) a `Pan` posune díl do volného místa (OCCT: +dx
+  doprava, +dy nahoru). Přepnutí panelu kameru nemění. Karta nesmí být na začátku skrytá
+  (dock byl viditelný, testy `isVisibleTo`). Výška pravé karty = obsah (LayoutRequest
+  z libovolného potomka), nejvýš výška pohledu; maska rohů po každé změně velikosti.
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1774,7 +1784,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48 v rozpracované dávce A | P7.49–P7.58 (vydání A–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.49 v rozpracované dávce A | P7.50–P7.58 (vydání A–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

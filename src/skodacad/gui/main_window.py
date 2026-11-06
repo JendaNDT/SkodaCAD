@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -67,6 +67,7 @@ from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.feature_preview import FeaturePreviewPanel
 from skodacad.gui.file_dialogs import FILE_OPTIONS
+from skodacad.gui.floating import CardLayer, FloatingCard
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
 from skodacad.gui.ndt_panel import NdtPanel
@@ -199,6 +200,8 @@ class MainWindow(QMainWindow):
         self.viewer.selection_changed.connect(self._selection_changed)
         self.viewer.context_menu_requested.connect(self._show_context_menu)
         self.setCentralWidget(self.viewer)
+        # Panely jsou plovoucí karty nad 3D (P7.49, návrh 1a), ne docky po stranách.
+        self.card_layer = CardLayer(self.viewer)
 
         self._create_actions()
         self._build_side_panel()
@@ -934,18 +937,19 @@ class MainWindow(QMainWindow):
         self._reload_all()
 
     def _add_dock(self, title: str, name: str, content: QWidget,
-                  area: Qt.DockWidgetArea, scroll: bool = True) -> QDockWidget:
+                  area: Qt.DockWidgetArea, scroll: bool = True) -> FloatingCard:
+        """Panel jako plovoucí karta nad 3D (P7.49); jméno „dock“ zůstává kvůli rozhraní."""
         if scroll:
             area_widget = QScrollArea()
             area_widget.setWidget(content)
             area_widget.setWidgetResizable(True)
+            area_widget.setFrameShape(QFrame.Shape.NoFrame)
+            area_widget.viewport().setAutoFillBackground(False)
+            content.setAutoFillBackground(False)
             content = area_widget
-        dock = QDockWidget(title, self)
-        dock.setObjectName(name)
+        side = "left" if area == Qt.DockWidgetArea.LeftDockWidgetArea else "right"
+        dock = self.card_layer.card(title, name, side)
         dock.setWidget(content)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        dock.setMinimumWidth(230 if name == "model_dock" else 300)
-        self.addDockWidget(area, dock)
         return dock
 
     def _tool_button(self, action: QAction) -> QToolButton:

@@ -1,4 +1,4 @@
-"""The chosen 'model tree + right editor' workspace, with one visible tool panel."""
+"""Strom modelu a jeden pravý panel – od P7.49 jako plovoucí karty nad 3D (návrh 1a)."""
 
 import logging
 
@@ -6,7 +6,6 @@ from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QPalette
 from PySide6.QtWidgets import (
     QApplication,
-    QDockWidget,
     QHBoxLayout,
     QMenu,
     QToolButton,
@@ -77,9 +76,6 @@ class Workspace:
                                      else self.close_panel())
             self.actions[key] = action
             self.panels_menu.addAction(action)
-            dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-            dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
-            dock.setMinimumWidth(300)
             dock.visibilityChanged.connect(lambda visible, k=key: self._visibility(k, visible))
             header = QWidget()
             row = QHBoxLayout(header)
@@ -104,9 +100,6 @@ class Workspace:
         self.model_action = window._action("Strom modelu", self._toggle_model, "F9")
         self.model_action.setCheckable(True)
         self.model_action.setChecked(True)
-        window.model_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        window.model_dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
-        window.model_dock.setMinimumWidth(230)
         window.model_dock.visibilityChanged.connect(self._model_visibility)
         self.reset_action = window._action("Obnovit rozložení", self.reset)
         self.collapse_action = window._action("Sbalit pás nástrojů", self.toggle_ribbon,
@@ -212,8 +205,6 @@ class Workspace:
         self.model_action.setChecked(not compact)
         for key, section in window.sidebar_sections.items():
             section.set_expanded(key == "parameters")
-        window.resizeDocks([window.model_dock, window.editor_dock], [250, 350],
-                           Qt.Orientation.Horizontal)
         if compact:
             window.statusBar().showMessage("Menší okno: strom otevřeš tlačítkem Model nebo F9.",
                                            10000)
@@ -239,10 +230,6 @@ class Workspace:
         self.show_panel(self.state.get("panel", "editor"))
         for key, section in window.sidebar_sections.items():
             section.set_expanded(self.state.get("sections", {}).get(key, key == "parameters"))
-        dock = self.docks[self.active or self.last_panel]
-        window.resizeDocks([window.model_dock, dock],
-                           [self.state.get("model_width", 250),
-                            self.state.get("editor_width", 350)], Qt.Orientation.Horizontal)
         window.ribbon.select_page(self.state.get("page", "model"))
         window.ribbon.set_collapsed(self.state.get("ribbon_collapsed", False))
         if self.state.get("maximized"):
@@ -254,8 +241,10 @@ class Workspace:
         state = {"geometry": [geometry.x(), geometry.y(), geometry.width(), geometry.height()],
                  "maximized": window.isMaximized(),
                  "model_visible": not window.model_dock.isHidden(),
-                 "model_width": window.model_dock.width(),
-                 "editor_width": self.docks[self.active or self.last_panel].width(),
+                 # Karty mají šířku z návrhu 1a (P7.49); klíče zůstávají kvůli verzi 1.
+                 "model_width": window.card_layer.width_of(window.model_dock),
+                 "editor_width": window.card_layer.width_of(
+                     self.docks[self.active or self.last_panel]),
                  "panel": self.active, "page": window.ribbon.page,
                  "ribbon_collapsed": window.ribbon.collapsed,
                  "appearance": QApplication.instance().property("skodacadAppearance") or "system",
