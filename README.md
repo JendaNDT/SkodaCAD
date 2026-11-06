@@ -125,7 +125,9 @@ mají vlastní filtr (*Úpravy → Filtrovat uložená měření*, **Ctrl+Shift+
 **F1** (*Nápověda → Klávesové zkratky…*) ukáže přehled všech zkratek dílu nebo
 sestavy včetně ovládání myší ve 3D, s filtrem. Zkratky se čtou přímo z příkazů,
 takže přehled vždy odpovídá verzi aplikace.
-[Podrobnosti P7.45](docs/p7-45-prehled-klavesovych-zkratek.md).
+*Nápověda → Ovládání myší…* otevře tentýž přehled rovnou na ovládání myší ve 3D.
+[Podrobnosti P7.45](docs/p7-45-prehled-klavesovych-zkratek.md) a
+[P7.46](docs/p7-46-ovladani-mysi.md).
 
 Na Macu používá **Otevřít / Uložit jako** systémový výběr souborů, který aplikaci
 předává také přístup ke zvolenému souboru ve složce Dokumenty.

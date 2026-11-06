@@ -94,7 +94,7 @@ log = logging.getLogger(__name__)
 
 HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+levé: posun  ·  "
              "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
-             "Pravý klik: co s výběrem  ·  Dvojklik: celý díl")
+             "Pravý klik: co s výběrem  ·  Dvojklik: celý díl  ·  F1: všechny zkratky")
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
@@ -1103,7 +1103,8 @@ class MainWindow(QMainWindow):
         help_menu = bar.addMenu("&Nápověda")
         help_menu.addAction(self.command_search_action)
         help_menu.addAction(self.shortcuts_action)
-        help_menu.addAction(self._action("Ovládání", self.show_controls))
+        self.controls_action = self._action("Ovládání myší…", self.show_controls)
+        help_menu.addAction(self.controls_action)
         help_menu.addAction(self._action("O aplikaci", self.show_about))
 
     def _build_ribbon(self):
@@ -3158,7 +3159,7 @@ class MainWindow(QMainWindow):
 
     # --- dialogy a pomocné ---------------------------------------------------------
 
-    def show_shortcuts(self) -> None:
+    def show_shortcuts(self, start: str | None = None) -> None:
         from skodacad.gui.shortcut_overview import (
             KEYS,
             MOUSE,
@@ -3168,10 +3169,13 @@ class MainWindow(QMainWindow):
         )
 
         show_shortcuts(self, self.ribbon.command_groups, ((MOUSE, PART_MOUSE), (KEYS, PART_KEYS)),
-                       title="Klávesové zkratky – díl")
+                       title="Klávesové zkratky – díl", start=start)
 
     def show_controls(self) -> None:
-        QMessageBox.information(self, "Ovládání", HELP_HINT.replace("  ·  ", "\n"))
+        """Ovládání myší = přehled zkratek otevřený na skupině Myš ve 3D (jeden zdroj textu)."""
+        from skodacad.gui.shortcut_overview import MOUSE
+
+        self.show_shortcuts(start=MOUSE)
 
     def show_about(self) -> None:
         QMessageBox.about(

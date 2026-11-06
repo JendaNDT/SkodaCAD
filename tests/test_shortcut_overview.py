@@ -191,3 +191,31 @@ def test_packaged_shortcuts_driver_assembly(assembly):
     assert _self_test_shortcuts(assembly, lines, "sestava"), lines
     assert lines[-1].startswith("✓ Přehled zkratek (sestava): F1")
     assert "_exec_dialog" not in assembly.__dict__
+
+
+@pytest.mark.parametrize("which", ["part", "assembly"])
+def test_controls_open_overview_at_mouse_group(request, monkeypatch, which):
+    """Nápověda → Ovládání myší… = týž přehled jako F1, rovnou na skupině Myš ve 3D."""
+    w = request.getfixturevalue("window" if which == "part" else "assembly")
+    assert plain_label(w.controls_action.text()) == "Ovládání myší…"
+    assert w.controls_action in help_menu(w).actions()
+    places = []
+
+    def record(dialog):
+        places.append(dialog.current_place())
+        item = dialog.tree.currentItem()
+        places.append(None if item is None or item.isHidden() else item.text(1))
+        return 0
+
+    monkeypatch.setattr(w, "_exec_dialog", record)
+    w.shortcuts_action.trigger()
+    w.controls_action.trigger()
+    assert places[0] is None  # F1 začíná nahoře, nic nevybírá
+    assert places[2] == "Myš ve 3D" and places[3]  # první řádek skupiny myši
+
+
+def test_status_hint_points_to_f1(window):
+    from skodacad.gui.main_window import HELP_HINT
+
+    assert "F1: všechny zkratky" in HELP_HINT
+    assert window.statusBar().currentMessage() == HELP_HINT

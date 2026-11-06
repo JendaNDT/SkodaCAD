@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QDialog,
     QDialogButtonBox,
     QHeaderView,
@@ -127,7 +128,8 @@ class _GroupedFilter(TreeFilter):
 
 
 class ShortcutDialog(QDialog):
-    def __init__(self, rows: list[Shortcut], parent=None, *, title: str = "Klávesové zkratky"):
+    def __init__(self, rows: list[Shortcut], parent=None, *, title: str = "Klávesové zkratky",
+                 start: str | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setObjectName("shortcut_overview")
@@ -170,15 +172,24 @@ class ShortcutDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.filter.focus()
+        if start in groups and groups[start].childCount():
+            # Ovládání myší: přehled otevřený rovnou na skupině (řádky ostatních zůstávají).
+            self.tree.setCurrentItem(groups[start].child(0))
+            self.tree.scrollToItem(groups[start], QAbstractItemView.ScrollHint.PositionAtTop)
+
+    def current_place(self) -> str | None:
+        item = self.tree.currentItem()
+        return item.parent().text(0) if item is not None and item.parent() else None
 
     def shown_rows(self) -> list[tuple[str, str]]:
         return [(item.text(0), item.text(1)) for item in self.filter.visible_matches()
                 if item.parent() is not None]
 
 
-def show_shortcuts(window, groups=(), extra=(), *, title: str = "Klávesové zkratky") -> None:
+def show_shortcuts(window, groups=(), extra=(), *, title: str = "Klávesové zkratky",
+                   start: str | None = None) -> None:
     dialog = ShortcutDialog(collect_shortcuts(window.menuBar(), groups, extra), window,
-                            title=title)
+                            title=title, start=start)
     try:
         getattr(window, "_exec_dialog", lambda d: d.exec())(dialog)
     finally:

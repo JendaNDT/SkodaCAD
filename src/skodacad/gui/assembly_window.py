@@ -169,7 +169,8 @@ class AssemblyWindow(QMainWindow):
         self._build_menus()
         # Lišta musí zabírat místo už před prvním tahem. Její pozdní vytvoření
         # změní velikost 3D plochy a bezpečnostní resize pak zruší rozpracovaný tah.
-        self.statusBar().showMessage("Vyber komponenty ve stromu nebo ve 3D.")
+        self.statusBar().showMessage(
+            "Vyber komponenty ve stromu nebo ve 3D.  ·  F1: zkratky a ovládání myší")
         self.setMinimumSize(960, 600)
         self.resize(1200, 760)
         self.reset_layout()
@@ -1116,6 +1117,8 @@ class AssemblyWindow(QMainWindow):
         view_menu.addAction(self.reset_layout_action)
         help_menu = bar.addMenu("&Nápověda")
         help_menu.addAction(self.shortcuts_action)
+        self.controls_action = self._action("Ovládání myší…", self.show_controls)
+        help_menu.addAction(self.controls_action)
         toolbar = self.toolbar = self.addToolBar("Sestava")
         toolbar.setObjectName("assembly_toolbar")
         toolbar.setMovable(False)
@@ -1806,7 +1809,7 @@ class AssemblyWindow(QMainWindow):
         self._sync_tree_selection()
         self._refresh_selection()
 
-    def show_shortcuts(self) -> None:
+    def show_shortcuts(self, start: str | None = None) -> None:
         from skodacad.gui.shortcut_overview import (
             ASSEMBLY_KEYS,
             ASSEMBLY_MOUSE,
@@ -1816,7 +1819,12 @@ class AssemblyWindow(QMainWindow):
         )
 
         show_shortcuts(self, (), ((MOUSE, ASSEMBLY_MOUSE), (KEYS, ASSEMBLY_KEYS)),
-                       title="Klávesové zkratky – sestava")
+                       title="Klávesové zkratky – sestava", start=start)
+
+    def show_controls(self) -> None:
+        from skodacad.gui.shortcut_overview import MOUSE
+
+        self.show_shortcuts(start=MOUSE)
 
     def select_all_components(self) -> None:
         """Ctrl/⌘+A: všechny komponenty, s aktivním filtrem jen nalezené (P7.41)."""

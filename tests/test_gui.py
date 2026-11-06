@@ -828,7 +828,9 @@ def test_every_action_runs_without_error(window, slot_errors, no_dialogs):
     for item in actions:
         item.trigger()
     assert slot_errors == []
-    assert {"information", "about"} <= set(no_dialogs)  # Ovládání a O aplikaci se ukázaly
+    assert "about" in no_dialogs  # O aplikaci se ukázalo
+    # F1 i Nápověda → Ovládání myší… otevřou přehled zkratek (P7.46), každý jednou.
+    assert no_dialogs.count("ShortcutDialog") == 2
 
 
 # --- tvorba a úpravy dílu v okně ---------------------------------------------------------
