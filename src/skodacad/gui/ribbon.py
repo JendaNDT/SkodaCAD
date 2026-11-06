@@ -1,18 +1,28 @@
-"""A task ribbon using the application's existing QAction instances."""
+"""Plovoucí paleta příkazů nad 3D (P7.50, návrh 1a); stránky = činnosti hlavní lišty.
+
+Dřív pás přes celou šířku okna. Rozhraní zůstává (``add_page``, ``select_page``,
+``page``, ``collapsed``/``set_collapsed``, ``command_groups``, ``buttons``, ``stack``,
+``tabs``), aby hledání příkazů, přehled zkratek, oblíbené i uložené rozložení fungovaly
+beze změny. Záložky (``tabs``) vkládá okno do hlavní lišty, paletu do plovoucí karty.
+Tlačítka používají stávající ``QAction`` okna; model se tu nemění.
+"""
 
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
-    QLabel,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
-    QTabBar,
     QToolButton,
-    QVBoxLayout,
     QWidget,
 )
+
+from skodacad.gui.main_bar import ActivityTabs
+
+BUTTON_WIDTH = 56  # položka palety podle návrhu: ikona 24 px nad popiskem 11 px
+ICON = 24
 
 
 class RibbonButton(QToolButton):
@@ -20,8 +30,11 @@ class RibbonButton(QToolButton):
         super().__init__(parent)
         self._label = text
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self.setIconSize(QSize(26, 26))
+        self.setIconSize(QSize(ICON, ICON))
         self.setAutoRaise(True)
+        font = QFont(self.font())
+        font.setPixelSize(11)
+        self.setFont(font)
         if action is not None:
             self.setDefaultAction(action)
             action.changed.connect(self._update_label)
@@ -31,7 +44,7 @@ class RibbonButton(QToolButton):
         if menu is not None:
             self.setMenu(menu)
             self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.setMinimumWidth(52)
+        self.setMinimumWidth(BUTTON_WIDTH)
 
     def _update_label(self):
         action = self.defaultAction()
@@ -42,100 +55,132 @@ class RibbonButton(QToolButton):
         self.setToolTip(action.toolTip() + (f" ({shortcut})" if shortcut else ""))
 
 
+def _separator() -> QFrame:
+    line = QFrame()
+    line.setObjectName("palette_separator")
+    line.setFrameShape(QFrame.Shape.VLine)
+    line.setStyleSheet("color: palette(mid);")
+    line.setContentsMargins(0, 6, 0, 6)
+    return line
+
+
 class Ribbon(QWidget):
+    """Paleta: jedna stránka tlačítek na činnost; skupiny dělí svislá čára."""
+
     collapsed_changed = Signal(bool)
     page_changed = Signal(str)
 
-    def __init__(self, quick_actions, parent=None, search_action=None):
+    def __init__(self, quick_actions=(), parent=None, search_action=None):
+        # quick_actions a search_action jsou od P7.50 v hlavní liště (MainBar).
         super().__init__(parent)
         self.setObjectName("cad_ribbon")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self._keys = []
         self._pages = []
+        self._rows = []
         self._collapsed = False
         self.buttons = []
         self.command_groups = []
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 0, 2, 0)
-        layout.setSpacing(0)
-        header = QHBoxLayout()
-        header.setSpacing(3)
-        for action in quick_actions:
-            button = QToolButton()
-            button.setDefaultAction(action)
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-            button.setIconSize(QSize(16, 16))
-            button.setAccessibleName(action.text())
-            header.addWidget(button)
-        self.tabs = QTabBar()
-        self.tabs.setObjectName("ribbon_tabs")
-        self.tabs.setExpanding(False)
-        self.tabs.setDrawBase(False)
-        self.tabs.setAccessibleName("Činnosti")
+        self.tabs = ActivityTabs()
         self.tabs.currentChanged.connect(self._page_changed)
         self.tabs.tabBarClicked.connect(lambda _index: self.set_collapsed(False))
         self.tabs.tabBarDoubleClicked.connect(
             lambda _index: self.set_collapsed(not self._collapsed))
-        header.addWidget(self.tabs, 1)
-        if search_action is not None:
-            search_button = QToolButton()
-            search_button.setDefaultAction(search_action)
-            search_button.setAccessibleName(search_action.text())
-            header.addWidget(search_button)
-        self.collapse_button = QToolButton()
-        self.collapse_button.setObjectName("ribbon_collapse")
-        self.collapse_button.clicked.connect(lambda: self.set_collapsed(not self._collapsed))
-        header.addWidget(self.collapse_button)
-        layout.addLayout(header)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
         self.stack = QStackedWidget()
         self.stack.setObjectName("ribbon_pages")
-        layout.addWidget(self.stack)
-        self._update_collapse_button()
+        layout.addWidget(self.stack, 1)
+        self._trailing = QHBoxLayout()
+        self._trailing.setSpacing(6)
+        self._trailing.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self._trailing)
 
     def add_page(self, key, title, groups):
         row = QWidget()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(4, 3, 4, 3)
-        row_layout.setSpacing(10)
-        for label, commands in groups:
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(0)
+        for index, (label, commands) in enumerate(groups):
             self.command_groups.append(((title, label),
                                         [action for action, _text, _menu in commands
                                          if action is not None]))
-            group = QWidget()
-            group_layout = QVBoxLayout(group)
-            group_layout.setContentsMargins(0, 0, 0, 0)
-            group_layout.setSpacing(2)
-            tools = QHBoxLayout()
-            tools.setSpacing(2)
+            if index:
+                row_layout.addSpacing(6)
+                row_layout.addWidget(_separator())
+                row_layout.addSpacing(6)
             for action, text, menu in commands:
-                button = RibbonButton(action, text, menu, group)
-                tools.addWidget(button)
+                button = RibbonButton(action, text, menu, row)
+                button.setAccessibleDescription(label)  # popisek skupiny pro čtečky
+                row_layout.addWidget(button)
                 self.buttons.append(button)
-            group_layout.addLayout(tools)
-            caption = QLabel(label)
-            caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            caption.setStyleSheet("color: palette(text);")
-            group_layout.addWidget(caption)
-            row_layout.addWidget(group)
-            separator = QFrame()
-            separator.setFrameShape(QFrame.Shape.VLine)
-            separator.setStyleSheet("color: palette(mid);")
-            row_layout.addWidget(separator)
-        row_layout.addStretch(1)
         scroll = QScrollArea()
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.viewport().setAutoFillBackground(False)
+        row.setAutoFillBackground(False)
         scroll.setWidget(row)
         row.setMinimumWidth(row.sizeHint().width())
-        scroll.setFixedHeight(row.sizeHint().height() + 16)
+        scroll.setFixedHeight(row.sizeHint().height())
         self._keys.append(key)
         self._pages.append(scroll)
+        self._rows.append(row)
         self.stack.addWidget(scroll)
         self.tabs.addTab(title)
 
+    def add_trailing(self, widget: QWidget) -> None:
+        """Widget za příkazy stránky (oblíbené příkazy, R4), na všech stránkách stejný.
+
+        Oddělovač před ním je vidět jen spolu s ním (bez připnutých příkazů nic)."""
+        separator = _separator()
+        separator.setVisible(not widget.isHidden())
+        if hasattr(widget, "visibilityChanged"):
+            widget.visibilityChanged.connect(separator.setVisible)
+            widget.visibilityChanged.connect(lambda _visible: self.updateGeometry())
+        self._trailing.addWidget(separator)
+        self._trailing.addWidget(widget)
+
+    def preferred_width(self) -> int:
+        """Šířka palety podle aktuální stránky (QStackedWidget by vzal nejširší)."""
+        margins = self.layout().contentsMargins()
+        index = self.stack.currentIndex()
+        width = (self._rows[index].sizeHint().width()
+                 if 0 <= index < len(self._rows) and not self._collapsed else 0)
+        trailing = self._trailing.sizeHint().width() if any(
+            self._trailing.itemAt(i).widget() is not None
+            and not self._trailing.itemAt(i).widget().isHidden()
+            and self._trailing.itemAt(i).widget().objectName() != "palette_separator"
+            for i in range(self._trailing.count())) else 0
+        return width + trailing + margins.left() + margins.right() + (6 if trailing else 0)
+
+    def sizeHint(self):  # noqa: N802
+        hint = super().sizeHint()
+        return QSize(self.preferred_width(), hint.height())
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def _fit_height(self):
+        """Když se stránka nevejde a ukáže se posuvník, nesmí zakrýt popisky tlačítek."""
+        index = self.stack.currentIndex()
+        if not 0 <= index < len(self._rows):
+            return
+        scroll, row = self._pages[index], self._rows[index]
+        needed = row.sizeHint().height()
+        if row.sizeHint().width() > scroll.viewport().width() + 1:
+            needed += scroll.horizontalScrollBar().sizeHint().height()
+        if scroll.height() != needed:
+            scroll.setFixedHeight(needed)
+            self.updateGeometry()
+
     def _page_changed(self, index):
         self.stack.setCurrentIndex(index)
+        self.updateGeometry()
+        self._fit_height()
         if 0 <= index < len(self._keys):
             self.page_changed.emit(self._keys[index])
 
@@ -155,14 +200,6 @@ class Ribbon(QWidget):
         changed = self._collapsed != bool(collapsed)
         self._collapsed = bool(collapsed)
         self.stack.setVisible(not self._collapsed)
-        self._update_collapse_button()
         self.updateGeometry()
         if changed:
             self.collapsed_changed.emit(self._collapsed)
-
-    def _update_collapse_button(self):
-        self.collapse_button.setArrowType(Qt.ArrowType.DownArrow if self._collapsed
-                                          else Qt.ArrowType.UpArrow)
-        text = "Rozbalit pás nástrojů" if self._collapsed else "Sbalit pás nástrojů"
-        self.collapse_button.setToolTip(text)
-        self.collapse_button.setAccessibleName(text)

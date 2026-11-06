@@ -214,7 +214,8 @@ class FavoriteEditor(QDialog):
 
 
 class FavoriteBar(QToolBar):
-    def __init__(self, owner, store, kind, groups=(), namespaces=()):
+    def __init__(self, owner, store, kind, groups=(), namespaces=(), host=None):
+        """``host`` vloží lištu jinam než pod pás (hlavní okno: konec palety, P7.50)."""
         super().__init__("Oblíbené příkazy", owner)
         self.setObjectName("favorite_commands")
         self.setMovable(False)
@@ -229,7 +230,8 @@ class FavoriteBar(QToolBar):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(3, 0, 3, 0)
         layout.setSpacing(3)
-        layout.addWidget(QLabel("Oblíbené:"))
+        self.caption = QLabel("Oblíbené:")
+        layout.addWidget(self.caption)
         self._pins = QHBoxLayout()
         self._pins.setSpacing(3)
         layout.addLayout(self._pins)
@@ -242,8 +244,12 @@ class FavoriteBar(QToolBar):
         edit.setAccessibleName(self.manage_action.text())
         layout.addWidget(edit)
         self.addWidget(row)
-        owner.addToolBarBreak()
-        owner.addToolBar(self)
+        if host is not None:
+            self.caption.hide()  # v paletě jen připnutá tlačítka (návrh 1a)
+            host(self)
+        else:
+            owner.addToolBarBreak()
+            owner.addToolBar(self)
         store.changed.connect(self._refresh)
         self._refresh(kind)
 

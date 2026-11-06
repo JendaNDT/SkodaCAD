@@ -1,8 +1,9 @@
 # P7.48–P7.58 – plán přestavby hlavního okna podle návrhu „1a Plovoucí panely“
 
 *Stav: autor 6. 11. 2026 schválil rozhodnutí R1–R7 slovy „schvaluji R1–R7“.
-P7.48 ([evidence](p7-48-vzhled-a-ikony.md)) a P7.49 ([evidence](p7-49-plovouci-karty.md))
-jsou implementované, další kroky čekají.*
+P7.48 ([evidence](p7-48-vzhled-a-ikony.md)), P7.49 ([evidence](p7-49-plovouci-karty.md))
+a P7.50 ([evidence](p7-50-hlavni-lista-a-paleta.md)) jsou implementované (vydání A),
+další kroky čekají.*
 
 ## Zadání autora
 
@@ -211,4 +212,5 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] Rozhodnutí R1–R7 schválena autorem 6. 11. 2026 („schvaluji R1–R7“), platí doporučení.
 - [x] P7.48 vzhled a ikony Duo ([evidence](p7-48-vzhled-a-ikony.md)).
 - [x] P7.49 plovoucí karty nad 3D ([evidence](p7-49-plovouci-karty.md)).
-- [ ] P7.50–P7.58 dle kroků výše.
+- [x] P7.50 hlavní lišta a plovoucí paleta ([evidence](p7-50-hlavni-lista-a-paleta.md)).
+- [ ] P7.51–P7.58 dle kroků výše.

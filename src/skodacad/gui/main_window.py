@@ -10,6 +10,7 @@ import copy
 import json
 import logging
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -70,6 +71,7 @@ from skodacad.gui.file_dialogs import FILE_OPTIONS
 from skodacad.gui.floating import CardLayer, FloatingCard
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
+from skodacad.gui.main_bar import MainBar
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
@@ -229,11 +231,13 @@ class MainWindow(QMainWindow):
         favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
         self.favorite_store = (favorite_store if favorite_store is not None
                                else FavoriteStore(favorites_path, self))
-        self.favorite_bar = FavoriteBar(
+        self.favorite_bar = FavoriteBar(  # na konci plovoucí palety (R4, P7.50)
             self, self.favorite_store, "part", self.ribbon.command_groups,
             (("workspace", self.workspace), ("ndt", self.ndt_panel),
-             ("assistant", self.assistant_panel)))
+             ("assistant", self.assistant_panel)), host=self.ribbon.add_trailing)
         self.view_menu.addAction(self.favorite_bar.manage_action)
+        self.favorite_store.changed.connect(lambda _kind: self._sync_palette())
+        self._sync_palette()
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -915,7 +919,7 @@ class MainWindow(QMainWindow):
         panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
         self.ai_busy = busy
         for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.audit_dock,
-                       self.design_dock, self.menuBar(), self.toolbar):
+                       self.design_dock, self.menuBar(), self.toolbar, self.palette_card):
             widget.setEnabled(not busy)
         if busy:
             keep = {self.fit_action, self.assistant_action, *self._view_actions}
@@ -1160,12 +1164,24 @@ class MainWindow(QMainWindow):
             (workspace.reset_action, QStyle.StandardPixmap.SP_BrowserReload),
         ]
         self._refresh_ui_icons()
-        self.ribbon = Ribbon((self.new_action, self.open_action, self.save_action,
-                              self.undo_action, self.redo_action),
-                             search_action=self.command_search_action)
+        # P7.50: hlavní lišta 52 px (název, činnosti, Zpět/Znovu, hledání) a plovoucí
+        # paleta příkazů nahoře uprostřed 3D. Nový/Otevřít/Uložit jsou v nabídce Soubor (R4).
+        self.ribbon = Ribbon()
+        self.main_bar = MainBar(self.ribbon.tabs, self.undo_action, self.redo_action,
+                                self.command_search_action)
         self.toolbar.clear()
-        self.toolbar.addWidget(self.ribbon)
+        self.toolbar.addWidget(self.main_bar)
         self.toolbar.setFloatable(False)
+        self.toolbar.setContentsMargins(0, 0, 0, 0)
+        self.toolbar.layout().setContentsMargins(0, 0, 0, 0)
+        self.toolbar.setStyleSheet("QToolBar#main_toolbar { border: none; padding: 0px;"
+                                   " spacing: 0px; }")
+        self.toolbar.toggleViewAction().setVisible(False)
+        if sys.platform == "darwin":  # semafor okna v hlavní liště (R3)
+            self.setUnifiedTitleAndToolBarOnMac(True)
+        self.palette_card = self.card_layer.card("Příkazy", "command_palette", "top")
+        self.palette_card.setWidget(self.ribbon)
+        self.ribbon.collapsed_changed.connect(lambda _collapsed: self._sync_palette())
 
         def command(action, text=None, menu=None):
             return action, text, menu
@@ -1176,12 +1192,6 @@ class MainWindow(QMainWindow):
         transition_menu = QMenu("Přechod", self)
         transition_menu.addAction(self.add_feature_actions["loft"])
         transition_menu.addAction(self.add_feature_actions["guided_loft"])
-        self.ribbon.add_page("file", "Soubor", [
-            ("Model", [command(self.new_action), command(self.open_action),
-                       command(self.import_action, "STEP")]),
-            ("Uložit", [command(self.save_action), command(self.save_as_action, "Uložit jako")]),
-            ("Výstup", [command(self.export_menu.menuAction(), "Export", self.export_menu)]),
-        ])
         self.ribbon.add_page("model", "3D model", [
             ("Vytvořit", [command(self.profile_sketch_action, "Skica"),
                           feature("extrude", "Vysunout"), feature("revolve", "Rotovat"),
@@ -1246,6 +1256,13 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(workspace.collapse_action)
         self.view_menu.addAction(workspace.reset_action)
         self.view_menu.addMenu(workspace.appearance_menu)
+
+    def _sync_palette(self) -> None:
+        """Sbalená paleta skryje příkazy činnosti; připnuté oblíbené zůstanou vidět (R4)."""
+        favorites = getattr(self, "favorite_bar", None)
+        pinned = favorites is not None and bool(favorites.keys)
+        self.palette_card.setVisible(not self.ribbon.collapsed or pinned)
+        self.ribbon.updateGeometry()
 
     def _refresh_ui_icons(self):
         color = QApplication.palette().color(QPalette.ColorRole.Link).name()
@@ -2154,6 +2171,16 @@ class MainWindow(QMainWindow):
 
     def _refresh_title(self) -> None:
         self.setWindowTitle(self.session.title)
+        document = self.session.document
+        if document is None:
+            self.main_bar.set_document("ŠkodaCAD", "")
+            return
+        path = self.session.path
+        parts = [path.name if path else "nový model",
+                 DISPLAY_NAMES.get(material_key(document.material), document.material)]
+        if self.session.dirty:
+            parts.append("upraveno")
+        self.main_bar.set_document(document.name, " · ".join(parts))
 
     def _reload_info(self) -> None:
         document = self.session.document

@@ -286,6 +286,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_cards(window, lines) and ok
+    ok = _self_test_main_bar(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1211,6 +1212,71 @@ def _self_test_cards(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Karty nad 3D: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_main_bar(window, lines: list[str]) -> bool:
+    """P7.50: hlavní lišta 52 px a plovoucí paleta – skutečné kliky myší v balíčku."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.main_bar import HEIGHT
+
+    bar, ribbon, card, layer = window.main_bar, window.ribbon, window.palette_card, \
+        window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        results = []
+        for width in (1440, 1024, 960):
+            window.resize(width, 860)
+            window.workspace.reset()
+            window.workspace.show_panel("editor")
+            QApplication.processEvents()
+            assert bar.height() == HEIGHT, f"lišta {bar.height()} px"
+            tabs = ribbon.tabs
+            assert bar.rect().contains(tabs.geometry()), "činnosti se do lišty nevešly"
+            assert bar.rect().contains(bar.search.geometry().translated(
+                bar.search.parentWidget().pos())), "hledání se do lišty nevešlo"
+            index = tabs.count() - 1  # Zobrazení
+            QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             tabs.tabRect(index).center())
+            QApplication.processEvents()
+            layer.relayout()
+            assert ribbon.page == "view" and card.isVisible(), "činnost se nepřepnula"
+            free = layer.free_rect()
+            geometry = card.geometry()
+            assert free.left() <= geometry.left() and geometry.right() <= free.right(), (
+                f"paleta {geometry} mimo volné místo {free}")
+            for other in layer.cards:
+                assert other is card or other.isHidden() or not other.geometry().intersects(
+                    geometry), f"paleta překrývá {other.objectName()}"
+            results.append(f"{width}: paleta {geometry.width()} px")
+        fired = []
+
+        def count(_checked=False):
+            fired.append(True)
+
+        window.fit_action.triggered.connect(count)
+        button = next(b for b in ribbon.buttons if b.defaultAction() is window.fit_action)
+        try:
+            QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+        finally:
+            window.fit_action.triggered.disconnect(count)
+        assert fired == [True], "tlačítko palety nespustilo příkaz právě jednou"
+        assert bar.title_label.text() == window.session.document.name
+        if sys.platform == "darwin":
+            assert window.unifiedTitleAndToolBarOnMac(), "semafor není v hlavní liště"
+        ribbon.select_page("model")
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Hlavní lišta a paleta: lišta {HEIGHT} px s činnostmi a hledáním, "
+                     f"klik na činnost a na tlačítko palety, paleta mezi kartami "
+                     f"({'; '.join(results)})")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Hlavní lišta a paleta: {type(exc).__name__}: {exc}")
         return False
 
 

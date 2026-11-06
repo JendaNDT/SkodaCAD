@@ -3190,7 +3190,7 @@ def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors
     assert window.session.document.features[-1]['type'] == 'extrude'
     assert window.workspace.active == 'editor'
     assert len(window.session._undo) == 1
-    undo = next(b for b in window.ribbon.findChildren(QtWidgets.QToolButton)
+    undo = next(b for b in window.main_bar.history_buttons  # od P7.50 v hlavní liště
                 if b.defaultAction() is window.undo_action)
     undo.click()
     assert not undo.isEnabled() and window.redo_action.isEnabled()
@@ -3390,6 +3390,50 @@ def test_ribbon_overflow_keeps_commands_available(window):
                   if b.defaultAction() is window.edit_feature_action)
     center = button.mapTo(scroll.viewport(), button.rect().center())
     assert scroll.viewport().rect().contains(center)
+    # Posuvník nesmí zakrýt popisky tlačítek (P7.50).
+    bar = scroll.horizontalScrollBar().sizeHint().height()
+    assert scroll.height() >= scroll.widget().sizeHint().height() + bar
+
+
+def test_main_bar_and_floating_palette_follow_design(window, slot_errors, monkeypatch):
+    """P7.50: lišta 52 px s názvem, činnostmi, Zpět/Znovu a hledáním; paleta nad 3D."""
+    from skodacad.gui import command_search
+    from skodacad.gui.main_bar import HEIGHT
+
+    window.resize(1440, 860)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    bar = window.main_bar
+    assert bar.height() == HEIGHT and window.toolbar.widgetForAction(
+        window.toolbar.actions()[0]) is bar
+    assert bar.title_label.text() == window.session.document.name
+    assert bar.subtitle_label.text().split(" · ")[:2] == ["priruba.json", "ocel"]
+    edit(window, "D", "170")  # neuložená změna → „upraveno“
+    assert bar.subtitle_label.text().endswith(" · upraveno")
+    tabs = window.ribbon.tabs
+    assert tabs.parentWidget() is bar
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "3D model", "Skica", "Výkres", "Sestava", "NDT", "Zobrazení"]  # Soubor je v nabídce
+    assert window.palette_card.parentWidget() is window.viewer
+    assert window.palette_card.widget() is window.ribbon
+    window.card_layer.relayout()
+    free = window.card_layer.free_rect()
+    palette = window.palette_card.geometry()
+    assert palette.top() == 14 and free.left() <= palette.left() <= palette.right() <= free.right()
+    opened = []
+    monkeypatch.setattr(window, "_exec_dialog", lambda dialog: opened.append(
+        type(dialog)) or QtWidgets.QDialog.DialogCode.Rejected)
+    bar.search.click()  # pole „Najít příkaz…“ otevře stávající hledání příkazů
+    assert opened == [command_search.CommandSearchDialog]
+    tabs.setCurrentIndex(4)
+    assert window.ribbon.page == "ndt" and window.ribbon.stack.isVisible()
+    tabs.tabBarDoubleClicked.emit(4)  # dvojklik na činnost sbalí paletu
+    QtWidgets.QApplication.processEvents()
+    assert window.ribbon.collapsed and window.palette_card.isHidden()
+    tabs.tabBarClicked.emit(1)  # klik na činnost ji zase ukáže
+    QtWidgets.QApplication.processEvents()
+    assert not window.ribbon.collapsed and window.palette_card.isVisible()
+    assert not slot_errors
 
 
 def test_new_feature_preview_keeps_source_until_one_confirmation(empty_window, tmp_path):

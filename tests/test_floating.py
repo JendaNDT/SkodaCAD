@@ -17,8 +17,8 @@ class View(QtWidgets.QWidget):
 
     insets = None
 
-    def set_view_insets(self, left, right):
-        self.insets = (left, right)
+    def set_view_insets(self, left, right, top=0):
+        self.insets = (left, right, top)
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_cards_follow_design_positions_and_report_free_space(view):
     # Výška podle obsahu, ne přes celou výšku pohledu.
     assert geometry.height() == right.preferred_height() < 760 - 28
     assert layer.free_rect() == QRect(282, 0, 1440 - 282 - 318, 760)
-    assert view.insets == (282 + floating.GAP, 318 + floating.GAP)
+    assert view.insets == (282 + floating.GAP, 318 + floating.GAP, 0)
     right.hide()
     ndt.show()
     layer.relayout()
@@ -101,3 +101,27 @@ def test_card_offers_dock_interface_and_visibility_signal(view):
     layer.relayout()
     assert not card.mask().contains(card.rect().topLeft())
     assert card.mask().contains(card.rect().center())
+
+
+def test_command_palette_is_centered_between_side_cards_and_reported_as_top_inset(view):
+    """P7.50: paleta příkazů nahoře uprostřed volného místa; „Celý díl“ ji obejde."""
+    layer = floating.CardLayer(view)
+    left = layer.card("Model", "model_dock", "left")
+    left.setWidget(scroll_of(400))
+    right = layer.card("Úprava prvku", "editor_dock", "right")
+    right.setWidget(scroll_of(200))
+    row = QtWidgets.QWidget()
+    row.setFixedSize(400, 50)
+    palette = layer.card("Příkazy", "command_palette", "top")
+    palette.setWidget(row)
+    for card in (left, right, palette):
+        card.show()
+    layer.relayout()
+    free = layer.free_rect()
+    geometry = palette.geometry()
+    assert geometry.top() == 14 and geometry.width() == 402
+    assert abs(geometry.center().x() - free.center().x()) <= 1
+    assert view.insets[2] == geometry.bottom() + 1 + floating.GAP
+    row.setFixedSize(2000, 50)  # širší než volné místo: paleta nepřesáhne mezi karty
+    layer.relayout()
+    assert palette.geometry().left() >= free.left() and palette.geometry().right() <= free.right()

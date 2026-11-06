@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from skodacad.gui import ui_theme
 from skodacad.gui.ui_colors import secondary_color
@@ -121,7 +122,8 @@ class Workspace:
         self.show_panel(self.state.get("panel", "editor"))
 
     def _visibility(self, key, visible):
-        if self._changing or not self.window.isVisible():
+        # Karta se schová i při rušení okna (P7.49) – to už nesmí sahat na okno.
+        if self._changing or not isValid(self.window) or not self.window.isVisible():
             return
         if visible:
             self.show_panel(key)
@@ -161,7 +163,7 @@ class Workspace:
         self.window.model_dock.setVisible(self.model_action.isChecked())
 
     def _model_visibility(self, visible):
-        if self.window.isVisible():
+        if isValid(self.window) and self.window.isVisible():
             self.model_action.setChecked(not self.window.model_dock.isHidden())
 
     def toggle_ribbon(self):
@@ -192,6 +194,7 @@ class Workspace:
         appearance = QApplication.instance().property("skodacadAppearance") or "system"
         self.appearance_actions[appearance].setChecked(True)
         self.window._refresh_ui_icons()
+        self.window.main_bar.refresh_style()
         self.window._refresh_tree()
         self.window.viewer.set_dark_background(ui_theme.is_dark())
 
