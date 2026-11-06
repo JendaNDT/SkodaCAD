@@ -293,7 +293,12 @@ class FieldsForm(QWidget):
         self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         self._layout = layout = QFormLayout(self)
-        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        # P7.52: mřížka popisek (vpravo zarovnaný) / pole jako v návrhu 1a; dlouhé řádky
+        # (vodítka, seznamy, obrysy) se zalomí pod popisek, aby měly celou šířku karty.
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
         layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for field in fields:
             widget, read = self._build(field, self._data.get(field.key))

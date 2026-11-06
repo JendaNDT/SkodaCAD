@@ -10,7 +10,7 @@ Karta umí tu část rozhraní ``QDockWidget``, kterou okno a ``Workspace`` pou�
 ``setFeatures``/``setAllowedAreas`` jako prázdné volby). Nic z toho nemění model.
 """
 
-from PySide6.QtCore import QEvent, QObject, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen, QRegion
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
 
@@ -25,6 +25,41 @@ LEFT_BOTTOM = 60  # pod levou kartou zůstává místo pro stavovou pilulku (P7.
 MIN_HEIGHT = 120
 BOTTOM_PAD = 10  # spodní okraj obsahu karty
 GAP = 8  # mezera mezi kartou a místem, kam „Celý díl“ přizpůsobí díl
+
+
+class ContentScroll(QScrollArea):
+    """Posuvná oblast, která ohlásí celou výšku obsahu (P7.52: karta neposouvá).
+
+    Běžná QScrollArea ohlásí nejvýš asi 24 řádků textu, takže karta zůstala malá
+    a obsah se posouval. Tahle ohlásí obsah celý; posuvník se ukáže jen tehdy,
+    když se karta nevejde ani do celé výšky pohledu (nouzová pojistka)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+    def sizeHint(self):  # noqa: N802
+        content = self.widget()
+        if content is None:
+            return super().sizeHint()
+        hint = content.sizeHint()
+        height = _wanted(content)
+        width = self.viewport().width()
+        if content.hasHeightForWidth() and width > 0:
+            # Zalamované řádky (formulář, popisky) jsou v úzké kartě vyšší.
+            height = max(height, content.heightForWidth(width))
+        return QSize(hint.width(), height + 2 * self.frameWidth())
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self.updateGeometry()  # jiná šířka = jiná výška zalomeného obsahu
+
+    def overflowing(self) -> bool:
+        """True, když se obsah nevejde a ukazuje se posuvník."""
+        return self.verticalScrollBar().maximum() > 0
 
 
 def _wanted(widget: QWidget) -> int:
@@ -93,10 +128,15 @@ class FloatingCard(QFrame):
         """Výška podle obsahu (bez posuvníku), ze které rozmístění vybere menší z možných."""
         height = 1 + self.bottom_pad + (self._title.sizeHint().height() if self._title else 0)
         widget = self._widget
+        width = self.width() - 2  # okraje rozvržení karty 1 + 1 px
         if isinstance(widget, QScrollArea) and widget.widget() is not None:
             height += _wanted(widget.widget()) + 2 * widget.frameWidth()
         elif widget is not None:
-            height += _wanted(widget)
+            wanted = _wanted(widget)
+            if widget.hasHeightForWidth() and width > 0:
+                # zalomené popisky jsou v úzké kartě vyšší než podle sizeHint
+                wanted = max(wanted, widget.heightForWidth(width))
+            height += wanted
         return height
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802

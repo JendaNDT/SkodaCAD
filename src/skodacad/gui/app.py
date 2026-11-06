@@ -288,6 +288,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_cards(window, lines) and ok
     ok = _self_test_main_bar(window, lines) and ok
     ok = _self_test_model_card(window, lines) and ok
+    ok = _self_test_inspector(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1325,6 +1326,59 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_inspector(window, lines: list[str]) -> bool:
+    """P7.52: pravá karta – hlavička, patička, Esc a formulář bez posouvání (1440 × 900)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        history = len(window.session._undo)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        hole = window.session.document.features[2]
+        window._selected_id = hole["id"]
+        window._reload_all()
+        QApplication.processEvents()
+        assert window.workspace.heading("editor") == hole["name"], "titulek karty"
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        assert panel is not None, "úprava prvku se neotevřela"
+        for _ in range(6):
+            QApplication.processEvents()
+            window.card_layer.relayout()
+        menu = window.workspace.menu_buttons["editor"].text()
+        assert menu == "Úprava prvku · náhled", menu
+        footer = [panel.esc_hint, panel.refresh_button, panel.cancel_button, panel.accept_button]
+        assert all(x.isVisible() for x in footer), "patička není vidět"
+        xs = [x.mapTo(panel, x.rect().topLeft()).x() for x in footer]
+        assert xs == sorted(xs), "pořadí patičky"
+        card = window.editor_dock
+        assert window.viewer.rect().contains(card.geometry()), "karta mimo 3D"
+        fits = not panel.scroll.overflowing()
+        height = card.geometry().height()
+        panel.setFocus()
+        QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
+        QApplication.processEvents()
+        assert window.feature_preview is None, "Esc nezavřel náhled"
+        assert window.session.document.to_dict() == original
+        assert len(window.session._undo) == history
+        lines.append(f"✓ Pravá karta: titulek „{hole['name']}“, náhled „{menu}“, patička Esc "
+                     f"zahodí · Náhled · Zrušit · Potvrdit, Esc bez změny modelu "
+                     f"(karta {height} px)")
+        if not fits:
+            lines.append(f"! Pravá karta: formulář díry se při 1440 × 900 nevešel, "
+                         f"posuvník jako pojistka ({card.preferred_height()} px)")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Pravá karta: {type(exc).__name__}: {exc}")
+        if window.feature_preview is not None:
+            window.cancel_feature_preview()
         return False
 
 

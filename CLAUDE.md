@@ -158,7 +158,8 @@
   = paleta z tokenů, ikony Duo, pozadí 3D sRGB (viz Známé pasti – vzhled okna).
   [P7.49](docs/p7-49-plovouci-karty.md) = panely jako plovoucí karty nad 3D,
   [P7.50](docs/p7-50-hlavni-lista-a-paleta.md) = hlavní lišta 52 px a plovoucí paleta,
-  [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl.
+  [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl,
+  [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -707,6 +708,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Parametry); info a properties jsou dál `Section` na záložce Díl. Řádky stromu nemění
   data: text „✓  …“, `SEARCH_ROLE`, sloupec těles; `FeatureRowDelegate` jen kreslí
   (ikona typu, stav vpravo ze `STATUS_ROLE`, 26 px). Ctrl+F volí záložku Prvky.
+- P7.52: posuvné oblasti karet jsou `floating.ContentScroll` (ohlásí celý obsah včetně
+  `heightForWidth` pro šířku karty; běžná QScrollArea ohlásí jen ~24 řádků).
+  `FloatingCard.preferred_height` také počítá `heightForWidth`. Hlavička karty:
+  `Workspace.set_heading(key, text, kind)`, `headings`, `menu_buttons`; editor nastavuje
+  `_editor_heading`. Styl polí a tlačítek je v QSS okna (`FloatingCard QLineEdit`,
+  `QPushButton[role=primary|secondary]`, `QLabel[cardInfo]`). Zda se formulář vejde
+  bez posuvníku, rozhoduje skutečné písmo → jen nativní self-test („!“ = pojistka).
 
 ## Známé pasti (výběr kliknutím)
 

@@ -41,7 +41,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
-    QScrollArea,
     QSlider,
     QStackedWidget,
     QStyle,
@@ -68,7 +67,7 @@ from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.feature_preview import FeaturePreviewPanel
 from skodacad.gui.file_dialogs import FILE_OPTIONS
-from skodacad.gui.floating import CardLayer, FloatingCard
+from skodacad.gui.floating import CardLayer, ContentScroll, FloatingCard
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
 from skodacad.gui.main_bar import MainBar
@@ -979,10 +978,8 @@ class MainWindow(QMainWindow):
                   area: Qt.DockWidgetArea, scroll: bool = True) -> FloatingCard:
         """Panel jako plovoucí karta nad 3D (P7.49); jméno „dock“ zůstává kvůli rozhraní."""
         if scroll:
-            area_widget = QScrollArea()
+            area_widget = ContentScroll()  # ohlásí celý obsah: karta naroste, neposouvá
             area_widget.setWidget(content)
-            area_widget.setWidgetResizable(True)
-            area_widget.setFrameShape(QFrame.Shape.NoFrame)
             area_widget.viewport().setAutoFillBackground(False)
             content.setAutoFillBackground(False)
             content = area_widget
@@ -1748,6 +1745,7 @@ class MainWindow(QMainWindow):
         self.editor_stack.addWidget(panel)
         self.editor_stack.setCurrentWidget(panel)
         self.workspace.show_panel("editor")
+        self._editor_heading(preview.session.feature(preview.feature_id), panel.kind_title)
         self.editor_dock.addAction(self.cancel_feature_preview_action)
         self.viewer.addAction(self.cancel_feature_preview_action)
         panel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -2363,8 +2361,15 @@ class MainWindow(QMainWindow):
         self._update_highlight()
         self._refresh_measure_list()
 
+    def _editor_heading(self, feature, kind=None) -> None:
+        """Velký titulek karty Úprava prvku = název prvku (návrh 1a, P7.52)."""
+        if hasattr(self, "workspace"):
+            name = (feature.get("name") or short_label(feature)) if feature else None
+            self.workspace.set_heading("editor", name, kind)
+
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
+            self._editor_heading(None)
             self.feature_editor.show_feature(None)
             self._refresh_guides()
             self._refresh_loft_wall()
@@ -2374,6 +2379,7 @@ class MainWindow(QMainWindow):
         sketches = [(f["id"], describe(f)) for f in features[:index] if f["type"] == "sketch"]
         repeatable = [(f["id"], short_label(f)) for f in features[:index]
                       if f["type"] in REPEATABLE_FEATURES]
+        self._editor_heading(self.session.feature(self._selected_id))
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)
         self.feature_editor.set_readonly()

@@ -6,7 +6,9 @@ from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QHBoxLayout,
+    QLabel,
     QMenu,
     QToolButton,
     QVBoxLayout,
@@ -22,6 +24,8 @@ log = logging.getLogger(__name__)
 
 
 class Section(QWidget):
+    """Sbalitelná sekce podle návrhu 1a (P7.52): linka nahoře, ▶/▼, titulek 600, počet."""
+
     toggled = Signal(bool)
 
     def __init__(self, title, content, expanded=False):
@@ -29,14 +33,27 @@ class Section(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("color: palette(mid);")
+        layout.addWidget(line)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         self.button = QToolButton()
         self.button.setText(title)
         self.button.setCheckable(True)
         self.button.setChecked(expanded)
         self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.button.setAutoRaise(True)
+        self.button.setStyleSheet("QToolButton { border: none; background: transparent;"
+                                  " font-weight: 600; padding: 3px 0px; }")
+        self.count_label = QLabel()
+        self.count_label.setProperty("secondaryText", True)
+        self.count_label.hide()
+        row.addWidget(self.button, 1)
+        row.addWidget(self.count_label)
         self.content = content
-        layout.addWidget(self.button)
+        layout.addLayout(row)
         layout.addWidget(content)
         self.button.toggled.connect(self.set_expanded)
         self.set_expanded(expanded)
@@ -52,6 +69,11 @@ class Section(QWidget):
     @property
     def expanded(self):
         return self.button.isChecked()
+
+    def set_count(self, text):
+        """Počet nebo souhrn vpravo v řádku sekce (prázdné = nic)."""
+        self.count_label.setText(str(text) if text not in (None, "") else "")
+        self.count_label.setVisible(bool(self.count_label.text()))
 
 
 class Workspace:
@@ -69,6 +91,8 @@ class Workspace:
         self._palette_key = None
         self.panels_menu = QMenu("Panely", window)
         self.actions = {}
+        self.headings = {}  # velké titulky karet (P7.52)
+        self.menu_buttons = {}  # malé titulky karet s nabídkou panelů
         for key, dock in self.docks.items():
             action = QAction(dock.windowTitle(), window)
             action.setObjectName(f"panel_{key}")
@@ -78,10 +102,16 @@ class Workspace:
             self.actions[key] = action
             self.panels_menu.addAction(action)
             dock.visibilityChanged.connect(lambda visible, k=key: self._visibility(k, visible))
+            # P7.52: hlavička karty podle návrhu 1a – malý titulek panelu s ▾ (výběr
+            # panelu), velký titulek 15/700 s kontextem (např. název prvku) a ×.
             header = QWidget()
-            row = QHBoxLayout(header)
-            row.setContentsMargins(6, 3, 6, 3)
+            column = QVBoxLayout(header)
+            column.setContentsMargins(10, 6, 8, 2)
+            column.setSpacing(0)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
             title = QToolButton()
+            title.setObjectName("card_panel_menu")
             title.setText(dock.windowTitle())
             title.setAutoRaise(True)
             title.setMenu(self.panels_menu)
@@ -90,12 +120,22 @@ class Workspace:
             row.addWidget(title)
             row.addStretch(1)
             close = QToolButton()
+            close.setObjectName("card_close")
             close.setText("×")
             close.setAutoRaise(True)
             close.setAccessibleName("Zavřít pravý panel")
             close.setToolTip("Zavřít panel; znovu jej otevřeš přes Zobrazení → Panely")
             close.clicked.connect(self.close_panel)
             row.addWidget(close)
+            self.menu_buttons[key] = title
+            column.addLayout(row)
+            heading = QLabel(dock.windowTitle())
+            heading.setObjectName("card_heading")
+            heading.setTextFormat(Qt.TextFormat.PlainText)
+            heading.setWordWrap(True)
+            heading.setContentsMargins(4, 0, 0, 0)
+            column.addWidget(heading)
+            self.headings[key] = heading
             dock.setTitleBarWidget(header)
         self.actions["editor"].setShortcut("F4")
         self.model_action = window._action("Strom modelu", self._toggle_model, "F9")
@@ -120,6 +160,18 @@ class Workspace:
         else:
             ui_theme.apply()
         self.show_panel(self.state.get("panel", "editor"))
+
+    def set_heading(self, key, text=None, kind=None):
+        """Velký titulek pravé karty (kontext, např. název prvku) a malý titulek nad ním.
+
+        Bez textu velký titulek = název panelu; ``kind`` mění malý titulek (např.
+        „Nový prvek · náhled“), bez něj je to opět název panelu s ▾."""
+        label = self.headings[key]
+        label.setText(text or self.docks[key].windowTitle())
+        self.menu_buttons[key].setText(kind or self.docks[key].windowTitle())
+
+    def heading(self, key):
+        return self.headings[key].text()
 
     def _visibility(self, key, visible):
         # Karta se schová i při rušení okna (P7.49) – to už nesmí sahat na okno.
@@ -194,11 +246,37 @@ class Workspace:
         card = ui_theme.card_color()
         field = ui_theme.opaque(t["sep"], card).name()
         # P7.51: strom leží přímo na kartě, filtry jsou zaoblená pole --sep (návrh 1a).
+        line = ui_theme.opaque(t["sep2"], ui_theme.color(t["ctl"])).name()
+        muted = ui_theme.opaque(t["sep2"], card).name()
+        info = ui_theme.opaque(t["accentbg"], card).name()
+        # P7.51/P7.52: strom na kartě, filtry --sep, pole 22 px --ctl s linkou --sep2
+        # a fokusem --accent, tlačítka 24 px (primární --btn), hlavička karty 11 + 15/700.
         self.window.setStyleSheet(
             f"QLabel[secondaryText=\"true\"] {{ color: {color}; }}"
             f"QTreeWidget#feature_tree {{ background: transparent; border: none; }}"
+            f"FloatingCard QLineEdit {{ background: {t['ctl']}; color: {t['fg']};"
+            f" border: 1px solid {line}; border-radius: 5px; min-height: 22px;"
+            f" padding: 0px 6px; }}"
+            f"FloatingCard QLineEdit:focus {{ border: 1px solid {t['accent']}; }}"
             f"QLineEdit[cardFilter=\"true\"] {{ background: {field}; border: none;"
-            f" border-radius: 6px; min-height: 24px; padding: 0px 6px; }}")
+            f" border-radius: 6px; min-height: 24px; padding: 0px 6px; }}"
+            f"QLabel#card_heading {{ font-size: 15px; font-weight: 700; color: {t['fg']}; }}"
+            f"QToolButton#card_panel_menu {{ font-size: 11px; color: {t['fg3']};"
+            f" border: none; padding: 0px 12px 0px 0px; }}"
+            f"QToolButton#card_panel_menu::menu-indicator {{ subcontrol-position: right center;"
+            f" subcontrol-origin: padding; width: 9px; }}"
+            f"QToolButton#card_close {{ font-size: 15px; color: {t['fg3']}; border: none; }}"
+            f"QPushButton[role=\"primary\"] {{ background: {t['btn']}; color: #ffffff;"
+            f" border: none; border-radius: 6px; min-height: 24px; padding: 0px 14px;"
+            f" font-weight: 500; }}"
+            f"QPushButton[role=\"primary\"]:disabled {{ background: {muted};"
+            f" color: {t['fg3']}; }}"
+            f"QPushButton[role=\"secondary\"] {{ background: {t['ctl']}; color: {t['fg']};"
+            f" border: 1px solid {line}; border-radius: 6px; min-height: 24px;"
+            f" padding: 0px 12px; }}"
+            f"QLabel[cardHint=\"true\"] {{ font-size: 12px; color: {t['fg3']}; }}"
+            f"QLabel[cardInfo=\"true\"] {{ background: {info}; color: {t['fg']};"
+            f" border-radius: 6px; padding: 3px 8px; }}")
         self.window.model_tabs.tabs.refresh_style()
         appearance = QApplication.instance().property("skodacadAppearance") or "system"
         self.appearance_actions[appearance].setChecked(True)
