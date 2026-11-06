@@ -146,6 +146,8 @@ def test_cli_preserves_existing_report(tmp_path):
 
 def test_child_starts_real_qt_timer_and_writes_telemetry(tmp_path):
     # Jen smoke test zapojení sondy; náhrada CAD zkoušky není přejímkový důkaz.
+    # Smyčka Qt skončí až po prvním skutečném doručení časovače sondy (ne po pevném
+    # čase – na zatíženém Windows runneru 180 ms nemuselo stačit); 5 s je jen pojistka.
     script = """
 import sys
 from pathlib import Path
@@ -153,16 +155,31 @@ sys.path.insert(0, 'tests')
 import budget_p8
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
-def short_event_loop(*args):
-    QTimer.singleShot(180, QApplication.instance().quit)
-    QApplication.instance().exec()
-budget_p8.soak.child = short_event_loop
+state = {"running": False, "delivered": 0}
+real_tick = budget_p8.LoopProbe.tick
+def tick_then_quit(self):
+    real_tick(self)
+    if state["running"]:
+        state["delivered"] += 1
+        QApplication.instance().quit()
+budget_p8.LoopProbe.tick = tick_then_quit
+def event_loop_until_first_tick(*args):
+    QTimer.singleShot(5000, QApplication.instance().quit)
+    state["running"] = True
+    try:
+        QApplication.instance().exec()
+    finally:
+        state["running"] = False
+    print("delivered", state["delivered"])
+budget_p8.soak.child = event_loop_until_first_tick
 budget_p8.child(Path(sys.argv[1]))
 """
     r = subprocess.run([sys.executable, "-c", script, str(tmp_path)], cwd=POLICY.parents[1],
                        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
-                       capture_output=True, timeout=15)
+                       capture_output=True, timeout=30)
     assert r.returncode == 0, r.stderr.decode("utf-8", errors="replace")
+    out = r.stdout.decode("utf-8", errors="replace")
+    assert "delivered 0" not in out and "delivered " in out, out
     data = json.loads((tmp_path/"qt-probe.json").read_text(encoding="utf-8"))
     # Alespoň jedno skutečné doručení + závěrečný bod; přesnou frekvenci OS neslibuje.
     assert data["count"] >= 2 and data["max_gap_s"] > 0 and data["errors"] == []
