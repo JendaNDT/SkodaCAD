@@ -1,9 +1,36 @@
-"""Small original CAD glyphs painted at several device pixel ratios (no assets/dependency)."""
+"""CAD ikony vykreslené pro několik poměrů pixelů.
+
+Od P7.48 má většina příkazů ikonu Duo z návrhu hlavního okna (``duo_icons``): obrys
+v barvě odkazu palety a vybrané plochy toutéž barvou s průhledností 0,24 (světlý
+vzhled) nebo 0,30 (tmavý). Klíče bez ikony Duo kreslí původní vlastní glyf.
+"""
 
 from functools import lru_cache
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QByteArray, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+from PySide6.QtSvg import QSvgRenderer
+
+from skodacad.gui.duo_icons import DUO
+from skodacad.gui.ui_theme import ICON_FILL
+
+SVG_ROOT = ('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
+            'fill="none" stroke="{c}" stroke-width="1.5" stroke-linecap="round" '
+            'stroke-linejoin="round">')
+# Dřívější druhy ikon, které mají v sadě Duo vlastní kresbu pod jiným jménem.
+ALIASES = {"ndt": "study"}
+
+
+def duo_svg(kind: str, color_name: str) -> str | None:
+    """Úplné SVG ikony Duo v dané barvě, nebo None, když ji sada nemá."""
+    body = DUO.get(ALIASES.get(kind, kind))
+    if body is None:
+        return None
+    color = QColor(color_name)
+    dark = color.lightnessF() > .55  # odkaz tmavého vzhledu je světlý (#4a9eff)
+    fill = f"{ICON_FILL[dark]:.2f}"
+    name = color.name()
+    return (SVG_ROOT + body + "</svg>").replace("{c}", name).replace("{a}", fill)
 
 
 def _draw(p, kind):
@@ -84,8 +111,10 @@ def _draw(p, kind):
         box()
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=256)
 def icon(kind: str, color_name: str) -> QIcon:
+    svg = duo_svg(kind, color_name)
+    renderer = QSvgRenderer(QByteArray(svg.encode())) if svg else None
     result = QIcon()
     for size in (16, 24, 32):
         for ratio in (1., 1.25, 1.5, 2., 3.):
@@ -94,6 +123,11 @@ def icon(kind: str, color_name: str) -> QIcon:
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if renderer is not None:
+                renderer.render(painter, QRectF(0, 0, size, size))
+                painter.end()
+                result.addPixmap(pixmap)
+                continue
             painter.scale(size/24, size/24)
             pen = QPen(QColor(color_name), 1.5)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)

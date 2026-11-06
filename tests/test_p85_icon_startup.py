@@ -64,7 +64,11 @@ def test_constructor_and_show_return_before_native_icons_and_keep_the_actions(ic
     assert [a for a, _ in window._standard_icons] == actions
     assert len(state.calls) == len(actions)
     assert all(not a.icon().isNull() for a in actions)
-    assert window.new_action in actions and window.undo_action in actions
+    assert window.delete_feature_action in actions and window.move_up_action in actions
+    # P7.48: Nový/Otevřít/Uložit/Zpět/Znovu mají ikony Duo z vlastního kreslení – jsou
+    # hned a na systémový styl nečekají, proto nepatří do odloženého načítání.
+    for action in (window.new_action, window.open_action, window.undo_action):
+        assert action not in actions and not action.icon().isNull()
     assert window.open_action.shortcut().toString()
     app.processEvents()
     assert len(state.calls) == len(actions)
@@ -98,7 +102,7 @@ def test_failed_3d_view_still_gets_all_system_icons(icons):
 
 def test_palette_refresh_during_native_load_does_not_apply_an_old_icon(icons):
     _app, window, state = icons
-    action = window.new_action
+    action = window._standard_icons[0][0]  # první systémová ikona ve frontě (P7.48)
     window.show()
     window._icon_timer.stop()
     window._refresh_next_standard_icon()  # finished-view boundary

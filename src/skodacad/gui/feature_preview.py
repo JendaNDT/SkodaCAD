@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.features import REPEATABLE_FEATURES, describe, short_label
 from skodacad.gui.feature_editor import FeatureEditor
+from skodacad.gui.floating import ContentScroll
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.inspection import number
 
@@ -34,16 +34,15 @@ class FeaturePreviewPanel(QWidget):
         self._last_result = None
         self._listened = set()
         layout = QVBoxLayout(self)
-        heading = QLabel("<b>Úprava prvku · náhled</b>" if preview.editing
-                         else "<b>Nový prvek · náhled</b>")
-        layout.addWidget(heading)
-        hint = QLabel("Uprav hodnoty a prohlédni si celý výsledek. Potvrdit přijme úpravu "
-                      "včetně navazujících prvků; Zrušit ponechá původní díl."
-                      if preview.editing else
-                      "Uprav hodnoty a prohlédni si náhled. Potvrdit přidá prvek do stromu; "
-                      "Zrušit ponechá původní díl.")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        layout.setContentsMargins(4, 0, 4, 0)
+        # P7.52: nadpis je v hlavičce karty (malý titulek „… · náhled“, velký název prvku),
+        # vysvětlení v bublině tlačítka Potvrdit – karta se vejde bez posouvání.
+        self.kind_title = "Úprava prvku · náhled" if preview.editing else "Nový prvek · náhled"
+        self.hint_text = ("Uprav hodnoty a prohlédni si celý výsledek. Potvrdit přijme úpravu "
+                          "včetně navazujících prvků; Zrušit ponechá původní díl."
+                          if preview.editing else
+                          "Uprav hodnoty a prohlédni si náhled. Potvrdit přidá prvek do stromu; "
+                          "Zrušit ponechá původní díl.")
         self.editor = FeatureEditor(profile_editor=self.edit_profile)
         session = preview.session
         index = session.feature_index(preview.feature_id)
@@ -53,6 +52,9 @@ class FeaturePreviewPanel(QWidget):
                                  [(f["id"], short_label(f)) for f in before
                                   if f["type"] in REPEATABLE_FEATURES])
         self.editor.wall_panel.hide()
+        if self.editor.help.text():  # popis druhu prvku v bublině nadpisu (místo v kartě)
+            self.editor.title.setToolTip(self.editor.help.text())
+            self.editor.help.hide()
         if session.feature(preview.feature_id)["type"] == "guided_loft":
             guides = self.editor.form.widget("guides")
             guides.set_selection(window._guide_edit_corner, window._guide_edit_handle)
@@ -65,8 +67,7 @@ class FeaturePreviewPanel(QWidget):
             lambda handle: setattr(window, "_guide_edit_handle", handle))
         self.editor.guide_step_changed.connect(window._guide_step_changed)
         self.editor.guide_direction_changed.connect(window._guide_direction_changed)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        self.scroll = scroll = ContentScroll()  # celý formulář; karta naroste (P7.52)
         scroll.setWidget(self.editor)
         layout.addWidget(scroll, 1)
         self.message = QLabel()
@@ -75,21 +76,33 @@ class FeaturePreviewPanel(QWidget):
         self.message.setMaximumHeight(110)
         self.message.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.message.setObjectName("preview_message")
+        self.message.setProperty("cardInfo", True)  # rámeček --accentbg (návrh 3a)
         layout.addWidget(self.message)
-        self.refresh_button = QPushButton("Zobrazit náhled")
+        self.refresh_button = QPushButton("Náhled")  # v patičce, ať karta neposouvá
         self.refresh_button.setObjectName("refresh_feature_preview")
+        self.refresh_button.setProperty("role", "secondary")
+        self.refresh_button.setToolTip("Zobrazit náhled s aktuálními hodnotami")
+        self.refresh_button.setAccessibleName("Zobrazit náhled")
         self.refresh_button.clicked.connect(self.refresh)
-        layout.addWidget(self.refresh_button)
+        # P7.52: patička jako v návrhu 1a – „Esc zahodí“, Zrušit (vedlejší), Potvrdit.
         buttons = QHBoxLayout()
+        self.esc_hint = QLabel("Esc zahodí")
+        self.esc_hint.setProperty("cardHint", True)
         self.accept_button = QPushButton("Potvrdit")
         self.accept_button.setObjectName("confirm_feature_preview")
+        self.accept_button.setProperty("role", "primary")
+        self.accept_button.setToolTip(self.hint_text)
         self.accept_button.setDefault(False)
         self.cancel_button = QPushButton("Zrušit")
         self.cancel_button.setObjectName("cancel_feature_preview")
+        self.cancel_button.setProperty("role", "secondary")
         self.accept_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(lambda: self.finished.emit(False))
-        buttons.addWidget(self.accept_button)
+        buttons.addWidget(self.esc_hint)
+        buttons.addStretch(1)
+        buttons.addWidget(self.refresh_button)
         buttons.addWidget(self.cancel_button)
+        buttons.addWidget(self.accept_button)
         layout.addLayout(buttons)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)

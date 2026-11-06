@@ -67,7 +67,13 @@ from OCP.Prs3d import (
     Prs3d_TypeOfHighlight_LocalDynamic,
     Prs3d_TypeOfHighlight_LocalSelected,
 )
-from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
+from OCP.Quantity import (
+    Quantity_Color,
+    Quantity_NOC_BLACK,
+    Quantity_NOC_WHITE,
+    Quantity_TOC_RGB,
+    Quantity_TOC_sRGB,
+)
 from OCP.TCollection import TCollection_ExtendedString
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_FORWARD, TopAbs_REVERSED, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS, TopoDS_Compound
@@ -282,6 +288,23 @@ def pixel_ratio(platform: str, occ_width: int, qt_width: int, device_ratio: floa
     return device_ratio
 
 
+# Přechod 3D pozadí shora dolů podle návrhu hlavního okna 1a (P7.48): světlý
+# #f2f5fa → #b8c4d6, tmavý #3b4049 → #16181c. Barvy jsou sRGB (jako na obrazovce);
+# dřívější zápis přes Quantity_TOC_RGB OCCT bral jako lineární a zesvětlil je.
+BACKGROUNDS = {False: ("#f2f5fa", "#b8c4d6"), True: ("#3b4049", "#16181c")}
+
+
+def _middle(top: str, bottom: str) -> str:
+    """Střední barva přechodu (jednobarevné pozadí, kde OpenGL přechod nenakreslí)."""
+    a, b = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (top, bottom))
+    return "#" + "".join(f"{(x + y + 1) // 2:02x}" for x, y in zip(a, b, strict=True))
+
+
+def _srgb(hex_color: str) -> Quantity_Color:
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return Quantity_Color(r, g, b, Quantity_TOC_sRGB)
+
+
 class _NativeSurface(QWidget):
     """Holá nativní plocha, do které kreslí OpenGL z OCCT. Události předává prohlížeči."""
 
@@ -406,6 +429,8 @@ class OccViewer(QWidget):
         self._view = None
         self._context = None
         self._window = None
+        self._dark_background = False
+        self._view_insets = (0, 0, 0, 0)  # zakryto kartami vlevo, vpravo, nahoře a dole
         self._ais: AIS_Shape | None = None
         # One erased full-assembly presentation, invalidated by its owning window.
         self._retained_part: tuple[Any, list[tuple[Any, float]]] | None = None
@@ -1736,14 +1761,38 @@ class OccViewer(QWidget):
             self._draw_move_handles()
             self._request_redraw()
 
+    def set_view_insets(self, left: int, right: int, top: int = 0, bottom: int = 0) -> None:
+        """Část pohledu zakrytá kartami vlevo, vpravo a paletou nahoře (P7.49/50, body Qt).
+
+        „Celý díl“ pak díl přizpůsobí volnému místu mezi kartami; kreslení,
+        výběr ani poloha kamery se tím samy nemění (projeví se až při dalším fit)."""
+        self._view_insets = (max(int(left), 0), max(int(right), 0), max(int(top), 0),
+                             max(int(bottom), 0))
+
     def _fit_camera(self) -> None:
         # FitAll(false) stále volá Update při zapnutém immediate režimu OCCT.
         # Kamera se přizpůsobí celá; hotový snímek kreslí až volající.
         immediate = self._view.SetImmediateUpdate(False)
         try:
             self._view.FitAll(0.08, False)
+            self._fit_into_free_area()
         finally:
             self._view.SetImmediateUpdate(immediate)
+
+    def _fit_into_free_area(self) -> None:
+        """Po FitAll zmenší a posune díl do místa mezi kartami (OCCT: +dx doprava)."""
+        left, right, top, bottom = self._view_insets
+        width, height = self._surface.width(), self._surface.height()
+        free, tall = width - left - right, height - top - bottom
+        if not (left or right or top or bottom) or free < 80 or tall < 80 or width <= 0:
+            return
+        camera = self._view.Camera()
+        # Zmenšení kolem středu pohledu tak, aby se díl vešel do volné šířky i výšky.
+        camera.SetScale(camera.Scale() * max(width / free, height / tall))
+        ratio = self._pixel_scale()
+        # Střed volného místa: +dx doprava, +dy nahoru (OCCT).
+        self._view.Pan(round((left - right) / 2 * ratio), round((bottom - top) / 2 * ratio),
+                       1.0, True)
 
     def set_standard_view(self, name: str) -> None:
         self.cancel_selection_drag()
@@ -1831,16 +1880,51 @@ class OccViewer(QWidget):
         self._failed.pop()
         return viewer, view
 
+    def set_dark_background(self, dark: bool) -> None:
+        """Pozadí 3D podle vzhledu okna (P7.48): světlý přechod jako dřív, tmavý z návrhu.
+
+        Mění se jen barva pozadí a popisky os, ne kreslení dílu ani výběr."""
+        dark = bool(dark)
+        if dark == self._dark_background:
+            return
+        self._dark_background = dark
+        if self._view is not None:
+            self._apply_background(self._view)
+            self._view.Redraw()
+
+    @property
+    def dark_background(self) -> bool:
+        return self._dark_background
+
+    def background_colors(self) -> tuple[str, str, str] | None:
+        """Barvy pozadí, jak je drží OCCT (horní a dolní barva přechodu, podklad), sRGB hex.
+
+        Self-test je porovná s návrhem i tam, kde ovladač neumí obraz přečíst zpět."""
+        if self._view is None:
+            return None
+        top, bottom = Quantity_Color(), Quantity_Color()
+        self._view.GradientBackground().Colors(top, bottom)
+        flat = self._view.BackgroundColor()
+        return tuple("#" + Quantity_Color.ColorToHex_s(c, False).ToCString().lower()
+                     for c in (top, bottom, flat))
+
+    def _apply_background(self, view) -> None:
+        top, bottom = BACKGROUNDS[self._dark_background]
+        # Pojistka pro ovladač, který přechod nenakreslí (nechal by barvu mazání, výchozí
+        # černou): pod přechodem leží jednobarevné pozadí ve střední barvě návrhu.
+        view.SetBackgroundColor(_srgb(_middle(top, bottom)))
+        view.SetBgGradientColors(_srgb(top), _srgb(bottom), Aspect_GFM_VER, False)
+        label = Quantity_NOC_WHITE if self._dark_background else Quantity_NOC_BLACK
+        # Menší osový kříž se vejde pod levou kartu (60 px, P7.49).
+        view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(label), 0.055, V3d_ZBUFFER)
+
     def _style(self) -> None:
         view, context = self._view, self._context
         # Stejný immediate režim se vztahuje i na pozadí a projekci. Nekreslit
         # rozpracovaný vzhled opakovaně; _initialize vykreslí hotový pohled.
         immediate = view.SetImmediateUpdate(False)
         try:
-            view.SetBgGradientColors(_rgb(0.95, 0.96, 0.98), _rgb(0.72, 0.77, 0.84),
-                                     Aspect_GFM_VER, False)
-            view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(Quantity_NOC_BLACK), 0.08,
-                                 V3d_ZBUFFER)
+            self._apply_background(view)
             params = view.ChangeRenderingParams()
             params.NbMsaaSamples = 4
             params.IsAntialiasingEnabled = True

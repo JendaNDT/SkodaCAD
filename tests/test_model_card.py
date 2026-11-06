@@ -1,0 +1,95 @@
+"""P7.51: levá karta Prvky | Parametry | Díl (návrh hlavního okna 1a)."""
+
+import os
+import shutil
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
+
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+
+from skodacad.gui import model_card  # noqa: E402
+from skodacad.gui.main_window import MainWindow  # noqa: E402
+from skodacad.gui.window_state import load_state  # noqa: E402
+from test_gui import FakeViewer, tree_texts  # noqa: E402
+
+
+@pytest.fixture
+def plate(examples_dir, tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    model = tmp_path / "deska.json"
+    shutil.copy(examples_dir / "deska.json", model)
+    window = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir, user_dir=tmp_path)
+    assert window.open_model(model)
+    window.resize(1440, 860)
+    window.show()
+    app.processEvents()
+    yield window
+    window.session.dirty = False
+    window.close()
+
+
+@pytest.mark.parametrize("count, text", [(0, "0 prvků"), (1, "1 prvek"), (2, "2 prvky"),
+                                         (4, "4 prvky"), (5, "5 prvků"), (12, "12 prvků")])
+def test_feature_count_uses_czech_plural(count, text):
+    assert model_card.count_text(count) == text
+
+
+def test_left_card_has_three_tabs_and_tree_rows_keep_their_data(plate):
+    w = plate
+    tabs = w.model_tabs.tabs
+    assert [tabs.tabText(i) for i in range(tabs.count())] == ["Prvky", "Parametry", "Díl"]
+    assert w.model_dock.widget() is w.model_tabs
+    assert w.model_tabs.current == "features" and w.tree.isVisible()
+    # Text řádku se stavem zůstává (testy, filtr, čtečky); kreslí se jen jinak.
+    assert tree_texts(w)[0] == "✓  Skica „Obrys desky“"
+    assert w.feature_count_label.text() == "6 prvků"
+    item = w.tree.topLevelItem(2)
+    assert item.data(0, model_card.STATUS_ROLE) == "ok" and not item.icon(0).isNull()
+    assert w.tree.isHeaderHidden() and item.text(1) == "1 → 1"
+    option = QtWidgets.QStyleOptionViewItem()
+    delegate = w.tree.itemDelegate()
+    delegate.initStyleOption(option, w.tree.indexFromItem(item, 0))
+    assert option.text.startswith("Díra „Upínání“")  # stav ✓ se kreslí vpravo
+    option = QtWidgets.QStyleOptionViewItem()
+    delegate.initStyleOption(option, w.tree.indexFromItem(item, 1))
+    assert option.text == "1 → 1  ✓"
+    assert delegate.sizeHint(option, w.tree.indexFromItem(item, 0)).height() >= 26
+
+
+def test_shortcuts_open_the_right_tab_and_parameters_section_follows_tab(plate):
+    w = plate
+    w.model_tabs.select("part")
+    QTest.keyClick(w, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+    assert w.model_tabs.current == "features" and w.tree_filter.field.hasFocus()
+    section = w.sidebar_sections["parameters"]
+    seen = []
+    section.toggled.connect(seen.append)
+    QTest.keyClick(w, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier
+                   | Qt.KeyboardModifier.ShiftModifier)
+    assert w.model_tabs.current == "parameters" and section.expanded
+    assert w.param_filter.field.hasFocus()
+    section.set_expanded(False)  # „sbalení“ Parametrů = návrat na strom prvků
+    assert w.model_tabs.current == "features" and seen == [True, False]
+    w.model_tabs.select("part")
+    assert w.name_edit.isVisible() and w.props_label.isVisible()
+
+
+def test_tab_is_saved_and_reset_starts_with_features(plate):
+    w = plate
+    w.model_tabs.select("part")
+    w.workspace.save()
+    assert load_state(w.workspace.path)["sidebar_tab"] == "part"
+    w.workspace.reset()
+    assert w.model_tabs.current == "features"
+    assert w.sidebar_sections["info"].expanded and w.sidebar_sections["properties"].expanded
+    w.model_tabs.select("parameters")
+    w.workspace.save()
+    w.model_tabs.select("features")
+    w.workspace._restored = False
+    w.workspace.state = load_state(w.workspace.path)
+    w.workspace.restore()
+    assert w.model_tabs.current == "parameters"

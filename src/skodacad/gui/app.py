@@ -285,6 +285,12 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_cards(window, lines) and ok
+    ok = _self_test_main_bar(window, lines) and ok
+    ok = _self_test_model_card(window, lines) and ok
+    ok = _self_test_inspector(window, lines) and ok
+    ok = _self_test_status_pill(window, lines) and ok
+    ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
     ok = _self_test_plate_workflow(window, lines) and ok
@@ -1131,6 +1137,368 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
         return False
+
+
+def _self_test_cards(window, lines: list[str]) -> bool:
+    """P7.49: panely jako plovoucí karty nad nativním 3D (skutečné okno balíčku).
+
+    Ověří rozmístění při 1440/1024/960, to, že karta leží nad 3D a klik vedle ní
+    dál vybírá plochu, a že „Celý díl“ umístí díl do volného místa mezi kartami."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, layer = window.viewer, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        sizes = []
+        for width in (1440, 1024, 960):
+            window.resize(width, 860)
+            window.workspace.reset()
+            window.workspace.show_panel("editor")
+            QApplication.processEvents()
+            layer.relayout()
+            shown = [c for c in layer.cards if c.isVisible()]
+            for card in shown:
+                assert viewer.rect().contains(card.geometry()), card.objectName()
+                assert card.parentWidget() is viewer
+            for a in shown:
+                for b in shown:
+                    assert a is b or not a.geometry().intersects(b.geometry())
+            free = layer.free_rect()
+            assert free.width() >= .4 * viewer.width(), (width, free.width())
+            sizes.append(f"{width}: 3D {free.width()}/{viewer.width()}")
+        window.resize(1440, 860)
+        window.workspace.reset()
+        window.workspace.show_panel("editor")
+        QApplication.processEvents()
+        layer.relayout()
+        card = window.editor_dock
+        inside = card.geometry().center()
+        hit = viewer.childAt(inside)
+        assert hit is card or card.isAncestorOf(hit), "karta není nad 3D"
+        clicked = ""
+        if viewer.ready:
+            viewer.set_standard_view("iso")
+            viewer.fit_all()
+            QApplication.processEvents()
+            free = layer.free_rect()
+            ratio = viewer._pixel_scale()
+            part = window.session.result.part
+            box = part.bounding_box()
+            for x in (box.min.X, box.max.X):
+                for y in (box.min.Y, box.max.Y):
+                    for z in (box.min.Z, box.max.Z):
+                        px, py = viewer._view.Convert(float(x), float(y), float(z))
+                        point = QPoint(round(px / ratio), round(py / ratio))
+                        assert free.contains(point), f"roh dílu {point} pod kartou"
+            top = max(part.faces(), key=lambda f: f.center().Z)
+            px, py = viewer._view.Convert(*map(float, top.center()))
+            point = QPoint(round(px / ratio), round(py / ratio))
+            assert viewer.childAt(point) is viewer._surface, "klik vedle karty nejde do 3D"
+            QTest.mouseClick(viewer._surface, Qt.MouseButton.LeftButton,
+                             Qt.KeyboardModifier.NoModifier, point)
+            QApplication.processEvents()
+            picked = viewer.selected_shapes()
+            assert picked, "klik do 3D vedle karty nic nevybral"
+            clicked = f", klik vedle karty vybral {window.session.selection_info(picked).text}"
+            viewer.clear_selection()
+            image = user_dir() / "self-test-karty.png"
+            frame = window.frameGeometry()
+            window.screen().grabWindow(0, frame.x(), frame.y(), frame.width(),
+                                       frame.height()).save(str(image))
+            clicked += f", snímek {image}"
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Karty nad 3D: strom a {len(window.workspace.docks)} pravých panelů nad "
+                     f"3D, bez překryvu ({'; '.join(sizes)}), díl mezi kartami{clicked}")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Karty nad 3D: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_main_bar(window, lines: list[str]) -> bool:
+    """P7.50: hlavní lišta 52 px a plovoucí paleta – skutečné kliky myší v balíčku."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.main_bar import HEIGHT
+
+    bar, ribbon, card, layer = window.main_bar, window.ribbon, window.palette_card, \
+        window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        results = []
+        for width in (1440, 1024, 960):
+            window.resize(width, 860)
+            window.workspace.reset()
+            window.workspace.show_panel("editor")
+            QApplication.processEvents()
+            assert bar.height() == HEIGHT, f"lišta {bar.height()} px"
+            tabs = ribbon.tabs
+            assert bar.rect().contains(tabs.geometry()), "činnosti se do lišty nevešly"
+            assert bar.rect().contains(bar.search.geometry().translated(
+                bar.search.parentWidget().pos())), "hledání se do lišty nevešlo"
+            index = tabs.count() - 1  # Zobrazení
+            QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             tabs.tabRect(index).center())
+            QApplication.processEvents()
+            layer.relayout()
+            assert ribbon.page == "view" and card.isVisible(), "činnost se nepřepnula"
+            free = layer.free_rect()
+            geometry = card.geometry()
+            assert free.left() <= geometry.left() and geometry.right() <= free.right(), (
+                f"paleta {geometry} mimo volné místo {free}")
+            for other in layer.cards:
+                assert other is card or other.isHidden() or not other.geometry().intersects(
+                    geometry), f"paleta překrývá {other.objectName()}"
+            results.append(f"{width}: paleta {geometry.width()} px")
+        fired = []
+
+        def count(_checked=False):
+            fired.append(True)
+
+        window.fit_action.triggered.connect(count)
+        button = next(b for b in ribbon.buttons if b.defaultAction() is window.fit_action)
+        try:
+            QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+        finally:
+            window.fit_action.triggered.disconnect(count)
+        assert fired == [True], "tlačítko palety nespustilo příkaz právě jednou"
+        assert bar.title_label.text() == window.session.document.name
+        if sys.platform == "darwin":
+            assert window.unifiedTitleAndToolBarOnMac(), "semafor není v hlavní liště"
+        ribbon.select_page("model")
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Hlavní lišta a paleta: lišta {HEIGHT} px s činnostmi a hledáním, "
+                     f"klik na činnost a na tlačítko palety, paleta mezi kartami "
+                     f"({'; '.join(results)})")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Hlavní lišta a paleta: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_model_card(window, lines: list[str]) -> bool:
+    """P7.51: levá karta Prvky | Parametry | Díl – skutečné kliky a zkratky v balíčku."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.model_card import ROW_HEIGHT
+
+    tabs, pages = window.model_tabs.tabs, window.model_tabs
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        window.resize(1440, 860)
+        window.workspace.reset()
+        QApplication.processEvents()
+        assert pages.current == "features" and window.tree.isVisible()
+        rows = window.tree.topLevelItemCount()
+        heights = {window.tree.visualItemRect(window.tree.topLevelItem(i)).height()
+                   for i in range(rows)}
+        assert min(heights) >= ROW_HEIGHT, f"řádky {heights} px"
+        assert window.feature_count_label.text().startswith(str(rows))
+        for index, widget in ((2, window.name_edit), (1, window.param_filter),
+                              (0, window.tree)):
+            QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             tabs.tabRect(index).center())
+            QApplication.processEvents()
+            assert widget.isVisible(), f"záložka {tabs.tabText(index)} neukázala obsah"
+        window.activateWindow()
+        QTest.qWaitForWindowActive(window, 2000)
+        pages.select("part")
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier
+                       | Qt.KeyboardModifier.ShiftModifier)
+        QApplication.processEvents()
+        assert pages.current == "parameters", "Ctrl+Shift+F neotevřelo Parametry"
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+        QApplication.processEvents()
+        assert pages.current == "features", "Ctrl+F neotevřelo Prvky"
+        QTest.keyClick(window.tree_filter.field, Qt.Key.Key_Escape)
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
+                     f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_inspector(window, lines: list[str]) -> bool:
+    """P7.52: pravá karta – hlavička, patička, Esc a formulář bez posouvání (1440 × 900)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        history = len(window.session._undo)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        hole = window.session.document.features[2]
+        window._selected_id = hole["id"]
+        window._reload_all()
+        QApplication.processEvents()
+        assert window.workspace.heading("editor") == hole["name"], "titulek karty"
+        window.edit_feature_action.trigger()
+        panel = window.feature_preview
+        assert panel is not None, "úprava prvku se neotevřela"
+        for _ in range(6):
+            QApplication.processEvents()
+            window.card_layer.relayout()
+        menu = window.workspace.menu_buttons["editor"].text()
+        assert menu == "Úprava prvku · náhled", menu
+        footer = [panel.esc_hint, panel.refresh_button, panel.cancel_button, panel.accept_button]
+        assert all(x.isVisible() for x in footer), "patička není vidět"
+        xs = [x.mapTo(panel, x.rect().topLeft()).x() for x in footer]
+        assert xs == sorted(xs), "pořadí patičky"
+        card = window.editor_dock
+        assert window.viewer.rect().contains(card.geometry()), "karta mimo 3D"
+        fits = not panel.scroll.overflowing()
+        height = card.geometry().height()
+        panel.setFocus()
+        QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
+        QApplication.processEvents()
+        assert window.feature_preview is None, "Esc nezavřel náhled"
+        assert window.session.document.to_dict() == original
+        assert len(window.session._undo) == history
+        lines.append(f"✓ Pravá karta: titulek „{hole['name']}“, náhled „{menu}“, patička Esc "
+                     f"zahodí · Náhled · Zrušit · Potvrdit, Esc bez změny modelu "
+                     f"(karta {height} px)")
+        if not fits:
+            lines.append(f"! Pravá karta: formulář díry se při 1440 × 900 nevešel, "
+                         f"posuvník jako pojistka ({card.preferred_height()} px)")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Pravá karta: {type(exc).__name__}: {exc}")
+        if window.feature_preview is not None:
+            window.cancel_feature_preview()
+        return False
+
+
+def _self_test_status_pill(window, lines: list[str]) -> bool:
+    """P7.53: stavová pilulka a přepínač pohledů – skutečné kliky a kamera OCCT."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, layer, pill = window.viewer, window.card_layer, window.status_pill
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        window.workspace.show_panel("editor")
+        QApplication.processEvents()
+        layer.relayout()
+        assert window.statusBar().isHidden(), "stavový řádek je vidět (R5)"
+        assert pill.state.text() == "✓ Spočítáno", pill.state.text()
+        view = viewer.rect()
+        cards = (window.pill_card, window.view_card)
+        for card in cards:
+            assert card.isVisible() and view.contains(card.geometry()), card.objectName()
+            assert card.geometry().bottom() == view.bottom() - 14, card.objectName()
+        assert not window.pill_card.geometry().intersects(window.view_card.geometry())
+        details = ""
+        if viewer.ready:
+            buttons = window.view_switcher.buttons
+            QTest.mouseClick(buttons["top"], Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            direction = viewer._view.Proj()
+            assert abs(direction[2] - 1) < 1e-6, f"Shora: směr kamery {direction}"
+            assert window.view_switcher.active == "top"
+            QTest.mouseClick(buttons["iso"], Qt.MouseButton.LeftButton)
+            QTest.mouseClick(buttons["fit"], Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            ratio = viewer._pixel_scale()
+            limit = min(window.pill_card.geometry().top(), window.view_card.geometry().top())
+            box = window.session.result.part.bounding_box()
+            lowest = max(viewer._view.Convert(float(x), float(y), float(z))[1] / ratio
+                         for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
+                         for z in (box.min.Z, box.max.Z))
+            assert lowest < limit, f"díl sahá pod pilulku ({lowest:.0f} ≥ {limit})"
+            assert viewer.childAt(QPoint(view.center().x(), limit - 20)) is viewer._surface
+            details = f", Shora = kamera +Z, díl nad pilulkou ({lowest:.0f} < {limit} px)"
+        lines.append(f"✓ Pilulka a pohledy: „{pill.state.text()} | {pill.message}“, stavový "
+                     f"řádek skrytý, přepínač Izo/Zepředu/Shora/Celý díl{details}")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Pilulka a pohledy: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_theme(window, lines: list[str]) -> bool:
+    """P7.48: ikony Duo (QtSvg v balíčku), paleta z návrhu a tmavé pozadí 3D."""
+    from PySide6.QtGui import QColor, QImage, QPalette
+
+    from skodacad.gui import ui_theme
+    from skodacad.gui.cad_icons import icon
+    from skodacad.gui.duo_icons import DUO
+
+    app = QApplication.instance()
+    before = app.property("skodacadAppearance") or "system"
+    try:
+        for color in ("#0a64d8", "#4a9eff"):
+            for name in DUO:
+                image = icon(name, color).pixmap(24, 24).toImage()
+                assert any(image.pixelColor(x, y).alpha() > 200 for x in range(24)
+                           for y in range(24)), f"ikona {name} je prázdná"
+        from skodacad.gui.viewer import BACKGROUNDS, _middle
+
+        # Základní ovladač Windows bez grafické karty (GDI Generic, OpenGL 1.1 – sestavovací
+        # počítač GitHubu) vrací ve snímku černé pozadí, i když OCCT drží barvy návrhu;
+        # tam se pixely pozadí jen vypíšou („!“), jinde je self-test kontroluje přísně.
+        basic = "GDI Generic" in window.viewer.graphics_info()
+        backgrounds, seen = [], []
+        for key, dark in (("dark", True), ("light", False)):
+            window.workspace.appearance_actions[key].trigger()
+            QApplication.processEvents()
+            palette = app.palette()
+            assert palette.color(QPalette.ColorRole.Window) == ui_theme.card_color(dark)
+            assert palette.color(QPalette.ColorRole.Link).name() == ui_theme.tokens(dark)["accent"]
+            assert window.viewer.dark_background is dark
+            if window.viewer.ready:
+                # Barvy, jak je drží OCCT, platí na každém ovladači.
+                wanted = (*BACKGROUNDS[dark], _middle(*BACKGROUNDS[dark]))
+                held = window.viewer.background_colors()
+                assert held == wanted, f"pozadí 3D v OCCT {held}, návrh {wanted}"
+                path = user_dir() / f"self-test-vzhled-{key}.png"
+                assert window.viewer.dump(str(path))
+                shot = QImage(str(path))
+                w, h = shot.width(), shot.height()
+                grid = [shot.pixelColor(x * (w - 1) // 15, y * (h - 1) // 15)
+                        for x in range(16) for y in range(16)]
+                corner = shot.pixelColor(w - 3, 3)  # pozadí vpravo nahoře
+                points = [corner, shot.pixelColor(w - 3, h - 3), shot.pixelColor(w // 2, 3),
+                          shot.pixelColor(w // 2, h // 2)]
+                black = sum(c.rgb() & 0xFFFFFF == 0 for c in grid)
+                seen.append(f"{key} {'/'.join(c.name(QColor.NameFormat.HexArgb) for c in points)}"
+                            f" černých {black}/256 formát {shot.format().name} {w}×{h}")
+                backgrounds.append(corner.lightness())
+        info = f"{'; '.join(seen)}; OpenGL: {window.viewer.graphics_info()}"
+        checked = len(backgrounds) == 2 and not basic
+        if checked:
+            assert backgrounds[0] < 110 < backgrounds[1], f"pozadí 3D {backgrounds} ({info})"
+        font = app.font().family()
+        shown = backgrounds if checked else ("bez 3D" if not seen else "barvy OCCT")
+        lines.append(f"✓ Vzhled a ikony: 41 ikon Duo ve světlém i tmavém vzhledu, paleta "
+                     f"z návrhu, pozadí 3D tmavé/světlé {shown}, písmo {font}")
+        if seen and not checked:
+            lines.append(f"! Vzhled a ikony: pozadí 3D na snímku neověřeno – základní ovladač "
+                         f"bez grafické karty, ověřeny barvy nastavené v OCCT ({info})")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Vzhled a ikony: {type(exc).__name__}: {exc}")
+        return False
+    finally:
+        window.workspace.set_appearance(before)
+        QApplication.processEvents()
 
 
 def _self_test_variable_fillet(window, lines: list[str]) -> bool:

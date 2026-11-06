@@ -71,6 +71,9 @@ class FakeViewer(QtWidgets.QWidget):
         self.plan = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
+    def set_dark_background(self, dark):
+        self.dark_background = bool(dark)
+
     def set_transparent_parts(self, parts):
         self.cancel_rotation_center_pick()
         self.transparencies = list(parts)
@@ -3187,7 +3190,7 @@ def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors
     assert window.session.document.features[-1]['type'] == 'extrude'
     assert window.workspace.active == 'editor'
     assert len(window.session._undo) == 1
-    undo = next(b for b in window.ribbon.findChildren(QtWidgets.QToolButton)
+    undo = next(b for b in window.main_bar.history_buttons  # od P7.50 v hlavní liště
                 if b.defaultAction() is window.undo_action)
     undo.click()
     assert not undo.isEnabled() and window.redo_action.isEnabled()
@@ -3195,6 +3198,79 @@ def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors
     assert panel.isChecked()
     panel.click()
     assert not panel.isChecked() and window.workspace.active is None
+    assert not slot_errors
+
+
+def test_appearance_switch_recolors_duo_icons_and_3d_background(window, slot_errors):
+    """P7.48: Zobrazení → Vzhled přepne paletu z návrhu, ikony Duo i pozadí 3D."""
+    from PySide6.QtGui import QPalette
+
+    from skodacad.gui import ui_theme
+    from skodacad.gui.cad_icons import icon as cad_icon
+
+    app = QtWidgets.QApplication.instance()
+    before = app.property("skodacadAppearance") or "system"
+    original = window.session.document.to_dict()
+    history = len(window.session._undo)
+    extrude = window.add_feature_actions["extrude"]
+    try:
+        window.workspace.appearance_actions["dark"].trigger()
+        QtWidgets.QApplication.processEvents()
+        palette = app.palette()
+        assert palette.color(QPalette.ColorRole.Window) == ui_theme.card_color(True)
+        assert palette.color(QPalette.ColorRole.Link).name() == "#4a9eff"
+        assert window.viewer.dark_background is True
+        assert extrude.icon().cacheKey() == cad_icon("extrude", "#4a9eff").cacheKey()
+        assert window.undo_action.icon().cacheKey() == cad_icon("undo", "#4a9eff").cacheKey()
+        window.workspace.appearance_actions["light"].trigger()
+        QtWidgets.QApplication.processEvents()
+        assert app.palette().color(QPalette.ColorRole.Link).name() == "#0a64d8"
+        assert window.viewer.dark_background is False
+        assert extrude.icon().cacheKey() == cad_icon("extrude", "#0a64d8").cacheKey()
+    finally:
+        window.workspace.set_appearance(before)
+        QtWidgets.QApplication.processEvents()
+    # Vzhled je jen preference okna: model ani historie se nemění.
+    assert window.session.document.to_dict() == original
+    assert len(window.session._undo) == history
+    assert not slot_errors
+
+
+def test_panels_are_floating_cards_over_3d_view(window, slot_errors):
+    """P7.49: levý strom a pravé panely jsou karty nad 3D, 3D má celou šířku okna."""
+    from skodacad.gui.floating import FloatingCard
+
+    window.resize(1440, 860)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    original = window.session.document.to_dict()
+    viewer = window.viewer
+    assert window.centralWidget() is viewer
+    assert not window.findChildren(QtWidgets.QDockWidget)
+    cards = [window.model_dock, *window.workspace.docks.values()]
+    assert all(isinstance(c, FloatingCard) and c.parentWidget() is viewer for c in cards)
+    width = viewer.width()
+    for key in window.workspace.docks:
+        window.workspace.show_panel(key)
+        QtWidgets.QApplication.processEvents()
+        window.card_layer.relayout()
+        visible = [k for k, c in window.workspace.docks.items() if c.isVisible()]
+        assert visible == [key]
+        card = window.workspace.docks[key]
+        assert card.geometry().right() == viewer.width() - 1 - 14 and card.geometry().top() == 14
+        assert viewer.width() == width  # přepnutí panelu 3D pohled nezmenší
+    left = window.model_dock.geometry()
+    assert (left.left(), left.top(), left.width()) == (14, 14, 268)
+    window.workspace.close_panel()
+    window.card_layer.relayout()
+    free = window.card_layer.free_rect()
+    assert free.left() == 14 + 268 and free.right() == viewer.width() - 1
+    window.workspace.model_action.trigger()  # F9 skryje levou kartu
+    QtWidgets.QApplication.processEvents()
+    assert window.model_dock.isHidden() and window.card_layer.free_rect().left() == 0
+    window.workspace.model_action.trigger()
+    window.workspace.show_panel("editor")
+    assert window.session.document.to_dict() == original and not window.session.can_undo
     assert not slot_errors
 
 
@@ -3314,6 +3390,50 @@ def test_ribbon_overflow_keeps_commands_available(window):
                   if b.defaultAction() is window.edit_feature_action)
     center = button.mapTo(scroll.viewport(), button.rect().center())
     assert scroll.viewport().rect().contains(center)
+    # Posuvník nesmí zakrýt popisky tlačítek (P7.50).
+    bar = scroll.horizontalScrollBar().sizeHint().height()
+    assert scroll.height() >= scroll.widget().sizeHint().height() + bar
+
+
+def test_main_bar_and_floating_palette_follow_design(window, slot_errors, monkeypatch):
+    """P7.50: lišta 52 px s názvem, činnostmi, Zpět/Znovu a hledáním; paleta nad 3D."""
+    from skodacad.gui import command_search
+    from skodacad.gui.main_bar import HEIGHT
+
+    window.resize(1440, 860)
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    bar = window.main_bar
+    assert bar.height() == HEIGHT and window.toolbar.widgetForAction(
+        window.toolbar.actions()[0]) is bar
+    assert bar.title_label.text() == window.session.document.name
+    assert bar.subtitle_label.text().split(" · ")[:2] == ["priruba.json", "ocel"]
+    edit(window, "D", "170")  # neuložená změna → „upraveno“
+    assert bar.subtitle_label.text().endswith(" · upraveno")
+    tabs = window.ribbon.tabs
+    assert tabs.parentWidget() is bar
+    assert [tabs.tabText(i) for i in range(tabs.count())] == [
+        "3D model", "Skica", "Výkres", "Sestava", "NDT", "Zobrazení"]  # Soubor je v nabídce
+    assert window.palette_card.parentWidget() is window.viewer
+    assert window.palette_card.widget() is window.ribbon
+    window.card_layer.relayout()
+    free = window.card_layer.free_rect()
+    palette = window.palette_card.geometry()
+    assert palette.top() == 14 and free.left() <= palette.left() <= palette.right() <= free.right()
+    opened = []
+    monkeypatch.setattr(window, "_exec_dialog", lambda dialog: opened.append(
+        type(dialog)) or QtWidgets.QDialog.DialogCode.Rejected)
+    bar.search.click()  # pole „Najít příkaz…“ otevře stávající hledání příkazů
+    assert opened == [command_search.CommandSearchDialog]
+    tabs.setCurrentIndex(4)
+    assert window.ribbon.page == "ndt" and window.ribbon.stack.isVisible()
+    tabs.tabBarDoubleClicked.emit(4)  # dvojklik na činnost sbalí paletu
+    QtWidgets.QApplication.processEvents()
+    assert window.ribbon.collapsed and window.palette_card.isHidden()
+    tabs.tabBarClicked.emit(1)  # klik na činnost ji zase ukáže
+    QtWidgets.QApplication.processEvents()
+    assert not window.ribbon.collapsed and window.palette_card.isVisible()
+    assert not slot_errors
 
 
 def test_new_feature_preview_keeps_source_until_one_confirmation(empty_window, tmp_path):

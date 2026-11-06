@@ -147,6 +147,20 @@
   týž `ShortcutDialog` se `start=MOUSE`; žádný samostatný text ovládání (QMessageBox zrušen).
   PR #126, `40e43a8`. [P7.47](docs/p7-47-hlaska-ukazat-jho.md): *Ukázat jho* v MT u místa bez
   zvoleného směru vysvětlí proč a co přepnout (viz Známé pasti NDT – MT jho).
+- **Pokyn autora z 6. 11. 2026:** okno má vypadat „přesně takto“ podle návrhu
+  *1a Plovoucí panely* (reference, obrazovky a ikony Duo v `docs/p7-48-navrh-okna/`).
+  [Plán P7.48–P7.58](docs/p7-48-plan-noveho-okna.md): 4 vydání A–D, jen okno, formát
+  beze změny. Zkouška: neprůhledná karta nad nativním 3D funguje, průhledná ne (OCCT
+  kreslí do `_NativeSurface`). Autor 6. 11. schválil R1–R7 („schvaluji R1–R7“):
+  neprůhledné karty, systémový titulek Windows, semafor Macu v liště, oblíbené na konci
+  palety, zprávy v pilulce, sestava jen barvy/ikony, plné upozornění UT/PT/MT/RT doslovně.
+  Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům. [P7.48](docs/p7-48-vzhled-a-ikony.md)
+  = paleta z tokenů, ikony Duo, pozadí 3D sRGB (viz Známé pasti – vzhled okna).
+  [P7.49](docs/p7-49-plovouci-karty.md) = panely jako plovoucí karty nad 3D,
+  [P7.50](docs/p7-50-hlavni-lista-a-paleta.md) = hlavní lišta 52 px a plovoucí paleta,
+  [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl,
+  [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání,
+  [P7.53](docs/p7-53-pilulka-a-pohledy.md) = stavová pilulka a přepínač pohledů.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -593,6 +607,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/status_pill.py` | stavová pilulka a přepínač pohledů dole nad 3D (P7.53) |
+| `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
+| `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
+| `gui/floating.py` | plovoucí karty nad 3D (P7.49): `FloatingCard` s rozhraním docku, `CardLayer` (rozmístění podle návrhu 1a, volné místo pro „Celý díl“) |
+| `gui/ui_theme.py`, `gui/duo_icons.py` | barvy, paleta a písmo podle návrhu okna 1a (P7.48); 41 ikon Duo jako vnitřek SVG pro `cad_icons` |
 | `gui/viewer_views.py` | názvy a klávesové zkratky standardních pohledů 3D (bez OCCT) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch); plán dráhy `show_plan` (čáry po barvách, začátek, zóny) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
@@ -655,6 +674,62 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - `QAction.triggered` posílá navíc `checked` (False) – do `lambda k=key: …` by se dostalo
   místo `k`. Akce zakládej jen přes `MainWindow._action` (volá slot bez argumentů) a každou
   novou akci pokryj testem, který ji opravdu stiskne (`tests/test_gui.py`).
+
+## Známé pasti (vzhled okna, P7.48)
+
+- Barvy a písmo jen přes `gui/ui_theme.py` (tokeny = tabulka v `docs/p7-48-navrh-okna/
+  README.md`, test ji čte přímo). Paletu nastavuje `ui_theme.apply` ze
+  `Workspace.set_appearance` a při `colorSchemeChanged`; volba „system“ čte schéma systému.
+- Ikony: `cad_icons.icon(kind, barva)` kreslí Duo z `duo_icons.py` (vnitřek SVG,
+  `{c}` barva, `{a}` průhlednost 0,24/0,30 podle světlosti barvy). Klíč bez Duo = původní
+  glyf. Nové ikony generovat ze souborů návrhu a zkontrolovat testem shody.
+- OCCT `Quantity_Color(r, g, b, Quantity_TOC_RGB)` bere hodnoty jako **lineární** RGB
+  a na obrazovce je zesvětlí (tmavé #3b4049 vyšlo #838891). Barvy z návrhu předávat
+  jako `Quantity_TOC_sRGB` (`viewer._srgb`). Ostatní barvy 3D zatím zůstávají lineární.
+- Pod přechodem pozadí 3D leží jednobarevné `SetBackgroundColor` ve střední barvě
+  (`viewer._middle`) jako pojistka. Windows GDI Generic (OpenGL 1.1, sestavovací počítač
+  GitHubu) vrací v `Dump` hlavního okna **černé pozadí** (díl se nakreslí), ač OCCT drží
+  barvy návrhu – self-test proto vždy porovná barvy v OCCT (`viewer.background_colors`),
+  pixely pozadí přísně jen u ostatních ovladačů; u GDI Generic je vypíše jako „!“
+  (ARGB rohů, středu, podíl černé, formát). Snímky jsou v artefaktu `p0-self-test-windows`
+  (stažení z cloudu blokuje síť prostředí – host úložiště artefaktů není povolený).
+- `OccViewer.set_dark_background` volá hlavní okno (`refresh_palette`) i okno sestavy
+  (`changeEvent`); náhradní prohlížeče v testech ji mít nemusí (`getattr`).
+- P7.49: panely hlavního okna jsou `floating.FloatingCard` (děti 3D prohlížeče, nad
+  `_NativeSurface`), ne `QDockWidget`; jména `*_dock` a rozhraní `Workspace` zůstávají.
+  `CardLayer.relayout` je umisťuje (14 px, 268 / 304 / 320 px, levá končí 60 px nad
+  spodkem) a hlásí prohlížeči zakrytou šířku `set_view_insets`; `_fit_camera` po FitAll
+  zmenší kameru (× šířka / volná šířka) a `Pan` posune díl do volného místa (OCCT: +dx
+  doprava, +dy nahoru). Přepnutí panelu kameru nemění. Karta nesmí být na začátku skrytá
+  (dock byl viditelný, testy `isVisibleTo`). Výška pravé karty = obsah (LayoutRequest
+  z libovolného potomka), nejvýš výška pohledu; maska rohů po každé změně velikosti.
+- P7.50: `Ribbon` je paleta (karta `palette_card`, strana „top“, uprostřed `free_rect`),
+  `Ribbon.tabs` (`ActivityTabs`) leží v `MainBar` v `self.toolbar`; Zpět/Znovu jsou
+  `main_bar.history_buttons`, ne v pásu. Stránka „Soubor“ není (příkazy v nabídce).
+  Šířka palety = `Ribbon.preferred_width` aktuální stránky (QStackedWidget by vzal
+  nejširší); posuvník přidá výšku (`_fit_height`). `FavoriteBar(host=…)` = konec palety;
+  sbalení skryje jen stránku, se připnutými oblíbenými zůstává karta vidět
+  (`MainWindow._sync_palette`). Self-test hledání zkouší právě *Sbalit pás nástrojů*.
+  Karta se schová i při rušení okna → `Workspace` ověřuje `isValid(window)`.
+  Mac: `setUnifiedTitleAndToolBarOnMac(True)`, levý okraj lišty 84 px pro semafor.
+- P7.51: levá karta = `model_card.ModelTabs` (features / parameters / part, `sidebar_tab`
+  v `okno.json`). `sidebar_sections["parameters"]` je `TabSection` (rozbalená = záložka
+  Parametry); info a properties jsou dál `Section` na záložce Díl. Řádky stromu nemění
+  data: text „✓  …“, `SEARCH_ROLE`, sloupec těles; `FeatureRowDelegate` jen kreslí
+  (ikona typu, stav vpravo ze `STATUS_ROLE`, 26 px). Ctrl+F volí záložku Prvky.
+- P7.52: posuvné oblasti karet jsou `floating.ContentScroll` (ohlásí celý obsah včetně
+  `heightForWidth` pro šířku karty; běžná QScrollArea ohlásí jen ~24 řádků).
+  `FloatingCard.preferred_height` také počítá `heightForWidth`. Hlavička karty:
+  `Workspace.set_heading(key, text, kind)`, `headings`, `menu_buttons`; editor nastavuje
+  `_editor_heading`. Styl polí a tlačítek je v QSS okna (`FloatingCard QLineEdit`,
+  `QPushButton[role=primary|secondary]`, `QLabel[cardInfo]`). Zda se formulář vejde
+  bez posuvníku, rozhoduje skutečné písmo → jen nativní self-test („!“ = pojistka).
+- P7.53: `statusBar()` hlavního okna je skrytý, ale dál nese zprávy (testy čtou
+  `currentMessage`); `StatusPill` je čte přes `messageChanged`, HELP_HINT nahradí
+  `SHORT_HINT`. Ukazatel přepočtu (`progress_label/bar`, Zastavit) je v pilulce.
+  Karty „bottom“ (pilulka uprostřed) a „corner“ (přepínač; vedle pravé karty, sahá-li
+  dolů) se rozmisťují až po bočních; `set_view_insets(l, r, top, bottom)`.
+  `ViewSwitcher` nepoužívá `setDefaultAction` (tlačítko by převzalo dlouhý název akce).
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1750,7 +1825,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47; [hláška Ukázat jho v MT](docs/p7-47-hlaska-ukazat-jho.md) v rozpracované dávce | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.50 (vydání A) v rozpracované dávce | P7.51–P7.58 (vydání A–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

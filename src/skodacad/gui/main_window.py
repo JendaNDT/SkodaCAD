@@ -10,11 +10,12 @@ import copy
 import json
 import logging
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QEventLoop, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,10 +23,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -40,7 +41,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
-    QScrollArea,
     QSlider,
     QStackedWidget,
     QStyle,
@@ -67,11 +67,22 @@ from skodacad.gui.favorite_commands import FavoriteBar, FavoriteStore
 from skodacad.gui.feature_editor import FeatureEditor
 from skodacad.gui.feature_preview import FeaturePreviewPanel
 from skodacad.gui.file_dialogs import FILE_OPTIONS
+from skodacad.gui.floating import CardLayer, ContentScroll, FloatingCard
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
+from skodacad.gui.main_bar import MainBar
+from skodacad.gui.model_card import (
+    FEATURE_ICONS,
+    STATUS_ROLE,
+    FeatureRowDelegate,
+    ModelTabs,
+    TabSection,
+    count_text,
+)
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
+from skodacad.gui.status_pill import StatusPill, ViewSwitcher
 from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, ListFilter, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -95,6 +106,7 @@ log = logging.getLogger(__name__)
 HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+levé: posun  ·  "
              "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
              "Pravý klik: co s výběrem  ·  Dvojklik: celý díl  ·  F1: všechny zkratky")
+SHORT_HINT = "F1: zkratky a ovládání myší"  # v pilulce místo dlouhé nápovědy (R5, P7.53)
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
@@ -199,6 +211,8 @@ class MainWindow(QMainWindow):
         self.viewer.selection_changed.connect(self._selection_changed)
         self.viewer.context_menu_requested.connect(self._show_context_menu)
         self.setCentralWidget(self.viewer)
+        # Panely jsou plovoucí karty nad 3D (P7.49, návrh 1a), ne docky po stranách.
+        self.card_layer = CardLayer(self.viewer)
 
         self._create_actions()
         self._build_side_panel()
@@ -226,11 +240,13 @@ class MainWindow(QMainWindow):
         favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
         self.favorite_store = (favorite_store if favorite_store is not None
                                else FavoriteStore(favorites_path, self))
-        self.favorite_bar = FavoriteBar(
+        self.favorite_bar = FavoriteBar(  # na konci plovoucí palety (R4, P7.50)
             self, self.favorite_store, "part", self.ribbon.command_groups,
             (("workspace", self.workspace), ("ndt", self.ndt_panel),
-             ("assistant", self.assistant_panel)))
+             ("assistant", self.assistant_panel)), host=self.ribbon.add_trailing)
         self.view_menu.addAction(self.favorite_bar.manage_action)
+        self.favorite_store.changed.connect(lambda _kind: self._sync_palette())
+        self._sync_palette()
         self._had_part = False
         self._build_progress()
         self._reload_all()
@@ -353,8 +369,11 @@ class MainWindow(QMainWindow):
     # --- stavba okna ---------------------------------------------------------------
 
     def _build_side_panel(self) -> None:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
+        # P7.51: levá karta = segment Prvky | Parametry | Díl (návrh 1a); data beze změny.
+        self.model_tabs = panel = ModelTabs()
+        part_page = QWidget()
+        layout = QVBoxLayout(part_page)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.sidebar_sections = {}
         self.part_caption = QLabel()
@@ -380,11 +399,12 @@ class MainWindow(QMainWindow):
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("secondaryText", True)
         info_form.addRow(self.description_label)
-        self.sidebar_sections["info"] = Section("Díl a materiál", info_box)
+        self.sidebar_sections["info"] = Section("Díl a materiál", info_box, True)
         layout.addWidget(self.sidebar_sections["info"])
 
         params_box = QWidget()
         params_layout = QVBoxLayout(params_box)
+        params_layout.setContentsMargins(0, 0, 0, 0)
         self.params_form = QFormLayout()
         self.param_filter = FormFilter(self.params_form,
                                        placeholder="Filtr parametrů (Ctrl+Shift+F)…",
@@ -399,28 +419,38 @@ class MainWindow(QMainWindow):
             params_buttons.addWidget(button)
         params_buttons.addStretch()
         params_layout.addLayout(params_buttons)
-        self.sidebar_sections["parameters"] = Section("Parametry dílu", params_box, True)
-        layout.addWidget(self.sidebar_sections["parameters"])
+        params_layout.addStretch(1)
 
-        tree_box = QGroupBox("Strom prvků")
+        tree_box = QWidget()
         tree_layout = QVBoxLayout(tree_box)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setSpacing(6)
         self.tree = QTreeWidget()
+        self.tree.setObjectName("feature_tree")
         self.tree.setMinimumHeight(150)
         self.tree.setHeaderLabels(["Prvek", "Tělesa"])
+        self.tree.setHeaderHidden(True)  # stav a počet těles vpravo v řádku (návrh 1a)
         self.tree.setColumnWidth(1, 65)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.header().setStretchLastSection(False)
         self.tree.setRootIsDecorated(False)
+        self.tree.setFrameShape(QFrame.Shape.NoFrame)
+        self.tree.setIconSize(QSize(16, 16))
+        self.tree.setItemDelegate(FeatureRowDelegate(self.tree))
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
         self.tree.itemDoubleClicked.connect(lambda _item, _column: self.start_feature_edit())
         self.tree_filter = TreeFilter(self.tree, placeholder="Filtr prvků (Ctrl+F)…",
                                       nouns=("prvku", "prvků", "prvků"))
         tree_layout.addWidget(self.tree_filter)
+        for box in (self.tree_filter, self.param_filter):
+            box.field.setProperty("cardFilter", True)
         tree_layout.addWidget(self.tree)
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
-        self.add_feature_button.setText("Přidat")
+        self.add_feature_button.setText("+")
+        self.add_feature_button.setToolTip("Přidat prvek")
+        self.add_feature_button.setAutoRaise(True)
         self.add_feature_button.setAccessibleName("Přidat prvek")
         self.add_feature_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         add_menu = QMenu(self.add_feature_button)
@@ -433,17 +463,25 @@ class MainWindow(QMainWindow):
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
             button = self._tool_button(action)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setAutoRaise(True)
             button.setAccessibleName(action.text())
             tree_buttons.addWidget(button)
         tree_buttons.addStretch()
-        tree_layout.addLayout(tree_buttons)
+        self.feature_count_label = QLabel()  # „6 prvků“ v patičce (návrh 1a)
+        self.feature_count_label.setProperty("secondaryText", True)
+        tree_buttons.addWidget(self.feature_count_label)
         self.error_label = QLabel()
         self.error_label.setTextFormat(Qt.TextFormat.PlainText)
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #c0392b; font-weight: bold;")
         self.error_label.hide()
         tree_layout.addWidget(self.error_label)
-        layout.addWidget(tree_box, stretch=1)
+        footer = QFrame()
+        footer.setObjectName("tree_footer")
+        footer.setFrameShape(QFrame.Shape.HLine)
+        footer.setStyleSheet("color: palette(mid);")
+        tree_layout.addWidget(footer)
+        tree_layout.addLayout(tree_buttons)
 
         props_box = QWidget()
         props_layout = QVBoxLayout(props_box)
@@ -451,11 +489,16 @@ class MainWindow(QMainWindow):
         self.props_label.setWordWrap(True)
         self.props_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         props_layout.addWidget(self.props_label)
-        self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box)
+        self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box, True)
         layout.addWidget(self.sidebar_sections["properties"])
+        layout.addStretch(1)
 
+        panel.add("features", "Prvky", tree_box)
+        panel.add("parameters", "Parametry", params_box)
+        panel.add("part", "Díl", part_page)
+        self.sidebar_sections["parameters"] = TabSection(panel, "parameters")
         self.model_dock = self._add_dock("Model", "model_dock", panel,
-                                         Qt.DockWidgetArea.LeftDockWidgetArea)
+                                         Qt.DockWidgetArea.LeftDockWidgetArea, scroll=False)
 
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
@@ -912,7 +955,7 @@ class MainWindow(QMainWindow):
         panely, nabídky i klávesové zkratky; pohledy na díl zůstanou."""
         self.ai_busy = busy
         for widget in (self.model_dock, self.editor_dock, self.ndt_dock, self.audit_dock,
-                       self.design_dock, self.menuBar(), self.toolbar):
+                       self.design_dock, self.menuBar(), self.toolbar, self.palette_card):
             widget.setEnabled(not busy)
         if busy:
             keep = {self.fit_action, self.assistant_action, *self._view_actions}
@@ -934,18 +977,17 @@ class MainWindow(QMainWindow):
         self._reload_all()
 
     def _add_dock(self, title: str, name: str, content: QWidget,
-                  area: Qt.DockWidgetArea, scroll: bool = True) -> QDockWidget:
+                  area: Qt.DockWidgetArea, scroll: bool = True) -> FloatingCard:
+        """Panel jako plovoucí karta nad 3D (P7.49); jméno „dock“ zůstává kvůli rozhraní."""
         if scroll:
-            area_widget = QScrollArea()
+            area_widget = ContentScroll()  # ohlásí celý obsah: karta naroste, neposouvá
             area_widget.setWidget(content)
-            area_widget.setWidgetResizable(True)
+            area_widget.viewport().setAutoFillBackground(False)
+            content.setAutoFillBackground(False)
             content = area_widget
-        dock = QDockWidget(title, self)
-        dock.setObjectName(name)
+        side = "left" if area == Qt.DockWidgetArea.LeftDockWidgetArea else "right"
+        dock = self.card_layer.card(title, name, side)
         dock.setWidget(content)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        dock.setMinimumWidth(230 if name == "model_dock" else 300)
-        self.addDockWidget(area, dock)
         return dock
 
     def _tool_button(self, action: QAction) -> QToolButton:
@@ -1118,36 +1160,37 @@ class MainWindow(QMainWindow):
                  "shell": "shell", "pattern": "pattern", "mirror": "mirror"}
         self._icon_actions = [(action, kinds.get(key, "box"))
                               for key, action in self.add_feature_actions.items()]
+        # Ikony Duo z návrhu hlavního okna (P7.48); klíče bez Duo kreslí původní glyf.
         self._icon_actions += [(self.profile_sketch_action, "sketch"),
-                               (self.edit_feature_action, "params"),
+                               (self.edit_feature_action, "edit"),
                                (self.rebuild_action, "box"),
                                (self.new_assembly_action, "pattern"),
-                               (self.import_action, "document"),
+                               (self.import_action, "open"),
                                (self.add_parameter_action, "params"),
-                               (self.drawing_preview_action, "document"),
-                               (self.drawing_export_action, "document"),
-                               (self.thickness_map_action, "measure"),
+                               (self.drawing_preview_action, "dimension"),
+                               (self.drawing_export_action, "save"),
+                               (self.thickness_map_action, "thickness"),
                                (self.section_action, "section"),
-                               (self.ndt_action, "ndt"), (self.audit_action, "document"),
+                               (self.ndt_action, "study"), (self.audit_action, "audit"),
                                (self.assistant_action, "document"),
-                               (self.export_menu.menuAction(), "document"),
-                               (self.add_feature_button.menu().menuAction(), "box")]
+                               (self.export_menu.menuAction(), "save"),
+                               (self.add_feature_button.menu().menuAction(), "box"),
+                               (self.command_search_action, "search"),
+                               (self.new_action, "new"), (self.open_action, "open"),
+                               (self.save_action, "save"), (self.save_as_action, "save"),
+                               (self.undo_action, "undo"), (self.redo_action, "redo")]
         for key, action in workspace.actions.items():
-            kind = {"measure": "measure", "section": "section", "ndt": "ndt",
-                    "map": "measure", "editor": "params"}.get(key, "document")
+            kind = {"measure": "measure", "section": "section", "ndt": "study",
+                    "map": "thickness", "editor": "edit", "audit": "audit",
+                    "design": "design"}.get(key, "document")
             self._icon_actions.append((action, kind))
         self._icon_actions.append((workspace.model_action, "pattern"))
-        self._icon_actions += [(self.ndt_panel.new_action, "ndt"), (self.fit_action, "box"),
+        self._icon_actions += [(self.ndt_panel.new_action, "study"), (self.fit_action, "fit"),
                                (workspace.panels_menu.menuAction(), "pattern"),
                                (workspace.appearance_menu.menuAction(), "params")]
-        self._icon_actions += [(action, "box") for action in self.view_actions.values()]
+        self._icon_actions += [(action, key if key in ("iso", "front", "top") else "box")
+                               for key, action in self.view_actions.items()]
         self._standard_icons = [
-            (self.new_action, QStyle.StandardPixmap.SP_FileIcon),
-            (self.open_action, QStyle.StandardPixmap.SP_DirOpenIcon),
-            (self.save_action, QStyle.StandardPixmap.SP_DialogSaveButton),
-            (self.save_as_action, QStyle.StandardPixmap.SP_DialogSaveButton),
-            (self.undo_action, QStyle.StandardPixmap.SP_ArrowBack),
-            (self.redo_action, QStyle.StandardPixmap.SP_ArrowForward),
             (self.delete_feature_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
             (self.delete_parameter_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
             (self.move_up_action, QStyle.StandardPixmap.SP_ArrowUp),
@@ -1155,12 +1198,24 @@ class MainWindow(QMainWindow):
             (workspace.reset_action, QStyle.StandardPixmap.SP_BrowserReload),
         ]
         self._refresh_ui_icons()
-        self.ribbon = Ribbon((self.new_action, self.open_action, self.save_action,
-                              self.undo_action, self.redo_action),
-                             search_action=self.command_search_action)
+        # P7.50: hlavní lišta 52 px (název, činnosti, Zpět/Znovu, hledání) a plovoucí
+        # paleta příkazů nahoře uprostřed 3D. Nový/Otevřít/Uložit jsou v nabídce Soubor (R4).
+        self.ribbon = Ribbon()
+        self.main_bar = MainBar(self.ribbon.tabs, self.undo_action, self.redo_action,
+                                self.command_search_action)
         self.toolbar.clear()
-        self.toolbar.addWidget(self.ribbon)
+        self.toolbar.addWidget(self.main_bar)
         self.toolbar.setFloatable(False)
+        self.toolbar.setContentsMargins(0, 0, 0, 0)
+        self.toolbar.layout().setContentsMargins(0, 0, 0, 0)
+        self.toolbar.setStyleSheet("QToolBar#main_toolbar { border: none; padding: 0px;"
+                                   " spacing: 0px; }")
+        self.toolbar.toggleViewAction().setVisible(False)
+        if sys.platform == "darwin":  # semafor okna v hlavní liště (R3)
+            self.setUnifiedTitleAndToolBarOnMac(True)
+        self.palette_card = self.card_layer.card("Příkazy", "command_palette", "top")
+        self.palette_card.setWidget(self.ribbon)
+        self.ribbon.collapsed_changed.connect(lambda _collapsed: self._sync_palette())
 
         def command(action, text=None, menu=None):
             return action, text, menu
@@ -1171,12 +1226,6 @@ class MainWindow(QMainWindow):
         transition_menu = QMenu("Přechod", self)
         transition_menu.addAction(self.add_feature_actions["loft"])
         transition_menu.addAction(self.add_feature_actions["guided_loft"])
-        self.ribbon.add_page("file", "Soubor", [
-            ("Model", [command(self.new_action), command(self.open_action),
-                       command(self.import_action, "STEP")]),
-            ("Uložit", [command(self.save_action), command(self.save_as_action, "Uložit jako")]),
-            ("Výstup", [command(self.export_menu.menuAction(), "Export", self.export_menu)]),
-        ])
         self.ribbon.add_page("model", "3D model", [
             ("Vytvořit", [command(self.profile_sketch_action, "Skica"),
                           feature("extrude", "Vysunout"), feature("revolve", "Rotovat"),
@@ -1209,9 +1258,9 @@ class MainWindow(QMainWindow):
         for key in ("ut", "pt", "mt", "rt"):
             action = self._action(f"Metoda nové studie: {key.upper()}",
                                   lambda k=key: self._choose_ndt_method(k))
-            action.setIcon(cad_icon("ndt", QApplication.palette().color(
+            action.setIcon(cad_icon(key, QApplication.palette().color(
                 QPalette.ColorRole.Link).name()))
-            self._icon_actions.append((action, "ndt"))
+            self._icon_actions.append((action, key))
             self.ndt_method_actions[key] = action
         self.ribbon.add_page("ndt", "NDT", [
             ("Metoda nové studie", [command(action, key.upper())
@@ -1241,6 +1290,13 @@ class MainWindow(QMainWindow):
         self.view_menu.addAction(workspace.collapse_action)
         self.view_menu.addAction(workspace.reset_action)
         self.view_menu.addMenu(workspace.appearance_menu)
+
+    def _sync_palette(self) -> None:
+        """Sbalená paleta skryje příkazy činnosti; připnuté oblíbené zůstanou vidět (R4)."""
+        favorites = getattr(self, "favorite_bar", None)
+        pinned = favorites is not None and bool(favorites.keys)
+        self.palette_card.setVisible(not self.ribbon.collapsed or pinned)
+        self.ribbon.updateGeometry()
 
     def _refresh_ui_icons(self):
         color = QApplication.palette().color(QPalette.ColorRole.Link).name()
@@ -1317,6 +1373,7 @@ class MainWindow(QMainWindow):
         """Ctrl+F: otevře strom modelu (je-li skrytý) a dá fokus do filtru prvků."""
         if not self.workspace.model_action.isChecked():
             self.workspace.model_action.trigger()
+        self.model_tabs.select("features")
         self.tree_filter.focus()
 
     def focus_param_filter(self) -> None:
@@ -1690,6 +1747,7 @@ class MainWindow(QMainWindow):
         self.editor_stack.addWidget(panel)
         self.editor_stack.setCurrentWidget(panel)
         self.workspace.show_panel("editor")
+        self._editor_heading(preview.session.feature(preview.feature_id), panel.kind_title)
         self.editor_dock.addAction(self.cancel_feature_preview_action)
         self.viewer.addAction(self.cancel_feature_preview_action)
         panel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -2023,16 +2081,31 @@ class MainWindow(QMainWindow):
     # --- přepočet na pozadí ----------------------------------------------------------
 
     def _build_progress(self) -> None:
-        """Ve stavovém řádku: „Přepočítávám… 3 s“, běžící pruh a tlačítko Zastavit."""
+        """Stavová pilulka dole uprostřed a přepínač pohledů vpravo dole (P7.53).
+
+        V pilulce je stav („✓ Spočítáno“), při přepočtu „Přepočítávám… 3 s“, běžící pruh
+        a Zastavit, a vedle poslední zpráva okna. Zprávy dál zapisuje statusBar(), který
+        je skrytý (R5); nápověda k myši je pod F1."""
+        self.status_pill = StatusPill()
         self.progress_label = QLabel()
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)  # neurčitý průběh (běžící pruh)
         self.progress_bar.setMaximumWidth(120)
         self.progress_bar.setMaximumHeight(14)
         self.stop_button = self._tool_button(self.stop_action)
+        self.stop_button.setAutoRaise(True)
+        self.status_pill.add_progress(self.progress_label, self.progress_bar, self.stop_button)
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
-            self.statusBar().addPermanentWidget(widget)
             widget.hide()
+        self.pill_card = self.card_layer.card("Stav", "status_pill_card", "bottom")
+        self.pill_card.setWidget(self.status_pill)
+        self.view_switcher = ViewSwitcher(self.view_actions, self.fit_action)
+        self.view_card = self.card_layer.card("Pohledy", "view_switcher_card", "corner")
+        self.view_card.setWidget(self.view_switcher)
+        bar = self.statusBar()
+        bar.messageChanged.connect(self._status_message)
+        bar.hide()
+        self._status_message(bar.currentMessage())
 
     def _poll(self) -> None:
         """Časovač: převezme hotový přepočet z pozadí, nebo obnoví ukazatel průběhu."""
@@ -2076,6 +2149,7 @@ class MainWindow(QMainWindow):
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
             widget.setVisible(shown)
         self.stop_action.setEnabled(computing)
+        self.status_pill.set_computing(shown)
         if self.session.coverage_pending:
             self.ndt_panel._show_coverage()  # uplynulý čas výpočtu pokrytí v panelu
         if self.session.access_pending:
@@ -2149,6 +2223,16 @@ class MainWindow(QMainWindow):
 
     def _refresh_title(self) -> None:
         self.setWindowTitle(self.session.title)
+        document = self.session.document
+        if document is None:
+            self.main_bar.set_document("ŠkodaCAD", "")
+            return
+        path = self.session.path
+        parts = [path.name if path else "nový model",
+                 DISPLAY_NAMES.get(material_key(document.material), document.material)]
+        if self.session.dirty:
+            parts.append("upraveno")
+        self.main_bar.set_document(document.name, " · ".join(parts))
 
     def _reload_info(self) -> None:
         document = self.session.document
@@ -2188,6 +2272,8 @@ class MainWindow(QMainWindow):
         else:
             rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
         chosen = None
+        kinds = {f["id"]: f.get("type") for f in document.features} if document else {}
+        color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         for index, (key, label, status, message) in enumerate(rows):
             text = f"{_STATUS_ICONS[status]}  {label}"
             count = re.search(r"Počet těles: (\d+) → (\d+)\.", message) if status == "ok" else None
@@ -2208,6 +2294,8 @@ class MainWindow(QMainWindow):
             item.setToolTip(0, f"{label}\n{message or key}")
             item.setToolTip(1, message)
             item.setData(0, SEARCH_ROLE, f"{label} {key} {_STATUS_WORDS[status]}")
+            item.setData(0, STATUS_ROLE, status)
+            item.setIcon(0, cad_icon(FEATURE_ICONS.get(kinds.get(key), "box"), color))
             if key == self._selected_id:
                 chosen = item
         for item in previous.values():
@@ -2218,11 +2306,30 @@ class MainWindow(QMainWindow):
             self._selected_id = None
         self.tree_filter.apply()  # nové řádky také podle filtru, vybraný zůstane vidět
         self.tree.blockSignals(False)
+        self.feature_count_label.setText(count_text(len(rows)) if document else "")
         problem = self.session.model_problem if document is not None else ""
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))
 
+    def _status_message(self, text: str) -> None:
+        """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
+        if not text or text == HELP_HINT:
+            self.status_pill.set_message(SHORT_HINT)
+            self.status_pill.context.setToolTip(HELP_HINT)
+        else:
+            self.status_pill.set_message(text)
+        self.card_layer.schedule()
+
+    def _refresh_status_state(self) -> None:
+        if not hasattr(self, "status_pill"):  # během stavby okna ještě není
+            return
+        document = self.session.document
+        self.status_pill.set_state(
+            "empty" if document is None else
+            "error" if self.session.model_problem else "ok")
+
     def _refresh_actions(self) -> None:
+        self._refresh_status_state()
         if self.feature_preview is not None:
             self._lock_preview_actions()
             return
@@ -2290,8 +2397,15 @@ class MainWindow(QMainWindow):
         self._update_highlight()
         self._refresh_measure_list()
 
+    def _editor_heading(self, feature, kind=None) -> None:
+        """Velký titulek karty Úprava prvku = název prvku (návrh 1a, P7.52)."""
+        if hasattr(self, "workspace"):
+            name = (feature.get("name") or short_label(feature)) if feature else None
+            self.workspace.set_heading("editor", name, kind)
+
     def _load_editor(self) -> None:
         if self._selected_id is None or self.session.document is None:
+            self._editor_heading(None)
             self.feature_editor.show_feature(None)
             self._refresh_guides()
             self._refresh_loft_wall()
@@ -2301,6 +2415,7 @@ class MainWindow(QMainWindow):
         sketches = [(f["id"], describe(f)) for f in features[:index] if f["type"] == "sketch"]
         repeatable = [(f["id"], short_label(f)) for f in features[:index]
                       if f["type"] in REPEATABLE_FEATURES]
+        self._editor_heading(self.session.feature(self._selected_id))
         self.feature_editor.show_feature(self.session.feature(self._selected_id), sketches,
                                          repeatable)
         self.feature_editor.set_readonly()

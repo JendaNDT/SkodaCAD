@@ -10,6 +10,7 @@ from PySide6.QtCore import QRect
 PANELS = ("editor", "measure", "map", "section", "ndt", "audit", "design", "assistant")
 PAGES = ("file", "model", "sketch", "drawing", "assembly", "ndt", "view")
 MAX_BYTES = 16_384
+SIDEBAR_TABS = ("features", "parameters", "part")
 
 
 def clean_state(value):
@@ -30,6 +31,8 @@ def clean_state(value):
         result["page"] = value["page"]
     if value.get("appearance") in ("system", "light", "dark"):
         result["appearance"] = value["appearance"]
+    if value.get("sidebar_tab") in SIDEBAR_TABS:  # záložka levé karty (P7.51)
+        result["sidebar_tab"] = value["sidebar_tab"]
     sections = value.get("sections")
     if isinstance(sections, dict):
         result["sections"] = {k: sections[k] for k in ("info", "parameters", "properties")
