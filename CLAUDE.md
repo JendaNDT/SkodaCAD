@@ -688,9 +688,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   jako `Quantity_TOC_sRGB` (`viewer._srgb`). Ostatní barvy 3D zatím zůstávají lineární.
 - Pod přechodem pozadí 3D leží jednobarevné `SetBackgroundColor` ve střední barvě
   (`viewer._middle`) jako pojistka. Windows GDI Generic (OpenGL 1.1, sestavovací počítač
-  GitHubu) vrací `Dump` hlavního okna **celý černý** (i bez dílu) – self-test proto vždy
-  porovná barvy v OCCT (`viewer.background_colors`) a pixely jen u čitelného snímku;
-  celý černý snímek = „!“, ne úspěch. Snímky jsou v artefaktu `p0-self-test-windows`.
+  GitHubu) vrací v `Dump` hlavního okna **černé pozadí** (díl se nakreslí), ač OCCT drží
+  barvy návrhu – self-test proto vždy porovná barvy v OCCT (`viewer.background_colors`),
+  pixely pozadí přísně jen u ostatních ovladačů; u GDI Generic je vypíše jako „!“
+  (ARGB rohů, středu, podíl černé, formát). Snímky jsou v artefaktu `p0-self-test-windows`
+  (stažení z cloudu blokuje síť prostředí – host úložiště artefaktů není povolený).
 - `OccViewer.set_dark_background` volá hlavní okno (`refresh_palette`) i okno sestavy
   (`changeEvent`); náhradní prohlížeče v testech ji mít nemusí (`getattr`).
 - P7.49: panely hlavního okna jsou `floating.FloatingCard` (děti 3D prohlížeče, nad
