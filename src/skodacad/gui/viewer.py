@@ -1896,11 +1896,22 @@ class OccViewer(QWidget):
     def dark_background(self) -> bool:
         return self._dark_background
 
+    def background_colors(self) -> tuple[str, str, str] | None:
+        """Barvy pozadí, jak je drží OCCT (horní a dolní barva přechodu, podklad), sRGB hex.
+
+        Self-test je porovná s návrhem i tam, kde ovladač neumí obraz přečíst zpět."""
+        if self._view is None:
+            return None
+        top, bottom = Quantity_Color(), Quantity_Color()
+        self._view.GradientBackground().Colors(top, bottom)
+        flat = self._view.BackgroundColor()
+        return tuple("#" + Quantity_Color.ColorToHex_s(c, False).ToCString().lower()
+                     for c in (top, bottom, flat))
+
     def _apply_background(self, view) -> None:
         top, bottom = BACKGROUNDS[self._dark_background]
-        # Základní ovladač Windows bez grafické karty (GDI Generic, OpenGL 1.1 – sestavovací
-        # počítač GitHubu, vzdálená plocha) přechod nenakreslí a nechá barvu mazání: bez ní
-        # černou. Pod přechodem proto leží jednobarevné pozadí ve střední barvě návrhu.
+        # Pojistka pro ovladač, který přechod nenakreslí (nechal by barvu mazání, výchozí
+        # černou): pod přechodem leží jednobarevné pozadí ve střední barvě návrhu.
         view.SetBackgroundColor(_srgb(_middle(top, bottom)))
         view.SetBgGradientColors(_srgb(top), _srgb(bottom), Aspect_GFM_VER, False)
         label = Quantity_NOC_WHITE if self._dark_background else Quantity_NOC_BLACK

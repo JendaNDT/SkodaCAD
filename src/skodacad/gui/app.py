@@ -1449,7 +1449,9 @@ def _self_test_theme(window, lines: list[str]) -> bool:
                 image = icon(name, color).pixmap(24, 24).toImage()
                 assert any(image.pixelColor(x, y).alpha() > 200 for x in range(24)
                            for y in range(24)), f"ikona {name} je prázdná"
-        backgrounds, seen = [], []
+        from skodacad.gui.viewer import BACKGROUNDS, _middle
+
+        backgrounds, seen, unreadable = [], [], []
         for key, dark in (("dark", True), ("light", False)):
             window.workspace.appearance_actions[key].trigger()
             QApplication.processEvents()
@@ -1458,20 +1460,36 @@ def _self_test_theme(window, lines: list[str]) -> bool:
             assert palette.color(QPalette.ColorRole.Link).name() == ui_theme.tokens(dark)["accent"]
             assert window.viewer.dark_background is dark
             if window.viewer.ready:
+                # Barvy, jak je drží OCCT, platí na každém ovladači.
+                wanted = (*BACKGROUNDS[dark], _middle(*BACKGROUNDS[dark]))
+                held = window.viewer.background_colors()
+                assert held == wanted, f"pozadí 3D v OCCT {held}, návrh {wanted}"
                 path = user_dir() / f"self-test-vzhled-{key}.png"
                 assert window.viewer.dump(str(path))
                 shot = QImage(str(path))
+                grid = [shot.pixelColor(x * (shot.width() - 1) // 15, y * (shot.height() - 1) // 15)
+                        for x in range(16) for y in range(16)]
                 corner = shot.pixelColor(shot.width() - 3, 3)  # pozadí vpravo nahoře
-                backgrounds.append(corner.lightness())
                 low = shot.pixelColor(shot.width() - 3, shot.height() - 3)
                 seen.append(f"{key} {corner.name()}/{low.name()} {shot.width()}×{shot.height()}")
-        if backgrounds:
-            assert backgrounds[0] < 110 < backgrounds[1], (
-                f"pozadí 3D {backgrounds} ({'; '.join(seen)}; OpenGL: "
-                f"{window.viewer.graphics_info()})")
+                if all(c.rgb() & 0xFFFFFF == 0 for c in grid):
+                    # Celý snímek černý (ani díl) = ovladač neumí obraz přečíst zpět;
+                    # pozadí na obrazovce pak snímkem ověřit nejde.
+                    unreadable.append(key)
+                else:
+                    backgrounds.append(corner.lightness())
+        info = f"{'; '.join(seen)}; OpenGL: {window.viewer.graphics_info()}"
+        if len(backgrounds) == 2:
+            assert backgrounds[0] < 110 < backgrounds[1], f"pozadí 3D {backgrounds} ({info})"
+        elif backgrounds:
+            raise AssertionError(f"snímek pozadí čitelný jen v jednom vzhledu ({info})")
         font = app.font().family()
+        shown = backgrounds or ("bez 3D" if not seen else "barvy OCCT")
         lines.append(f"✓ Vzhled a ikony: 41 ikon Duo ve světlém i tmavém vzhledu, paleta "
-                     f"z návrhu, pozadí 3D tmavé/světlé {backgrounds or 'bez 3D'}, písmo {font}")
+                     f"z návrhu, pozadí 3D tmavé/světlé {shown}, písmo {font}")
+        if unreadable:
+            lines.append(f"! Vzhled a ikony: snímek 3D je celý černý ({info}) – ovladač "
+                         "obraz nevrací, ověřeny jen barvy pozadí nastavené v OCCT")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Vzhled a ikony: {type(exc).__name__}: {exc}")

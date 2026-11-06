@@ -687,8 +687,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   a na obrazovce je zesvětlí (tmavé #3b4049 vyšlo #838891). Barvy z návrhu předávat
   jako `Quantity_TOC_sRGB` (`viewer._srgb`). Ostatní barvy 3D zatím zůstávají lineární.
 - Pod přechodem pozadí 3D leží jednobarevné `SetBackgroundColor` ve střední barvě
-  (`viewer._middle`): Windows GDI Generic (OpenGL 1.1, sestavovací počítač GitHubu)
-  přechod nenakreslil a self-test balíčku viděl černou (pozadí 3D [0, 0]).
+  (`viewer._middle`) jako pojistka. Windows GDI Generic (OpenGL 1.1, sestavovací počítač
+  GitHubu) vrací `Dump` hlavního okna **celý černý** (i bez dílu) – self-test proto vždy
+  porovná barvy v OCCT (`viewer.background_colors`) a pixely jen u čitelného snímku;
+  celý černý snímek = „!“, ne úspěch. Snímky jsou v artefaktu `p0-self-test-windows`.
 - `OccViewer.set_dark_background` volá hlavní okno (`refresh_palette`) i okno sestavy
   (`changeEvent`); náhradní prohlížeče v testech ji mít nemusí (`getattr`).
 - P7.49: panely hlavního okna jsou `floating.FloatingCard` (děti 3D prohlížeče, nad
