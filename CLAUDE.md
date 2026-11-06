@@ -157,7 +157,8 @@
   Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům. [P7.48](docs/p7-48-vzhled-a-ikony.md)
   = paleta z tokenů, ikony Duo, pozadí 3D sRGB (viz Známé pasti – vzhled okna).
   [P7.49](docs/p7-49-plovouci-karty.md) = panely jako plovoucí karty nad 3D,
-  [P7.50](docs/p7-50-hlavni-lista-a-paleta.md) = hlavní lišta 52 px a plovoucí paleta.
+  [P7.50](docs/p7-50-hlavni-lista-a-paleta.md) = hlavní lišta 52 px a plovoucí paleta,
+  [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -604,6 +605,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
 | `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
 | `gui/floating.py` | plovoucí karty nad 3D (P7.49): `FloatingCard` s rozhraním docku, `CardLayer` (rozmístění podle návrhu 1a, volné místo pro „Celý díl“) |
 | `gui/ui_theme.py`, `gui/duo_icons.py` | barvy, paleta a písmo podle návrhu okna 1a (P7.48); 41 ikon Duo jako vnitřek SVG pro `cad_icons` |
@@ -700,6 +702,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`MainWindow._sync_palette`). Self-test hledání zkouší právě *Sbalit pás nástrojů*.
   Karta se schová i při rušení okna → `Workspace` ověřuje `isValid(window)`.
   Mac: `setUnifiedTitleAndToolBarOnMac(True)`, levý okraj lišty 84 px pro semafor.
+- P7.51: levá karta = `model_card.ModelTabs` (features / parameters / part, `sidebar_tab`
+  v `okno.json`). `sidebar_sections["parameters"]` je `TabSection` (rozbalená = záložka
+  Parametry); info a properties jsou dál `Section` na záložce Díl. Řádky stromu nemění
+  data: text „✓  …“, `SEARCH_ROLE`, sloupec těles; `FeatureRowDelegate` jen kreslí
+  (ikona typu, stav vpravo ze `STATUS_ROLE`, 26 px). Ctrl+F volí záložku Prvky.
 
 ## Známé pasti (výběr kliknutím)
 

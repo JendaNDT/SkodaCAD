@@ -1,0 +1,141 @@
+"""Levá karta Prvky | Parametry | Díl (P7.51, návrh hlavního okna 1a).
+
+Sloučí dřívější sekce postranního panelu („Díl a materiál“, „Parametry dílu“, „Strom
+prvků“, „Vlastnosti dílu“) do segmentového přepínače se třemi stránkami. Data řádků
+stromu (text se stavem, id, sloupec počtu těles) zůstávají stejná – čtou je testy,
+hledání ve stromu i čtečky obrazovky. Mění se jen kreslení: ikona typu prvku vlevo,
+stav (a počet těles) vpravo, řádek 26 px, vybraný řádek ``--accentbg`` a tučně.
+"""
+
+from PySide6.QtCore import QObject, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QPalette
+from PySide6.QtWidgets import (
+    QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
+)
+
+from skodacad.gui import ui_theme
+from skodacad.gui.main_bar import SegmentTabs
+
+TABS = (("features", "Prvky"), ("parameters", "Parametry"), ("part", "Díl"))
+ROW_HEIGHT = 26
+STATUS_ROLE = Qt.ItemDataRole.UserRole + 41  # "ok" / "error" / "skipped" / "pending"
+GLYPHS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
+# Ikona Duo podle typu prvku (stejné druhy jako v paletě příkazů).
+FEATURE_ICONS = {"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",
+                 "sweep": "sweep", "loft": "loft", "guided_loft": "loft", "hole": "hole",
+                 "fillet": "fillet", "variable_fillet": "fillet", "chamfer": "chamfer",
+                 "shell": "shell", "pattern": "pattern", "mirror": "mirror",
+                 "move_face": "edit", "face_diameter": "edit", "step_import": "open"}
+
+
+def count_text(count: int) -> str:
+    """„1 prvek“, „3 prvky“, „6 prvků“ (patička stromu)."""
+    if count == 1:
+        return "1 prvek"
+    return f"{count} prvky" if 2 <= count <= 4 else f"{count} prvků"
+
+
+class ModelTabs(QWidget):
+    """Segment Prvky | Parametry | Díl nad stránkami levé karty."""
+
+    changed = Signal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 0)
+        layout.setSpacing(8)
+        self.tabs = SegmentTabs("model_tabs", "Levá karta", background="card", expanding=True)
+        layout.addWidget(self.tabs)
+        self.stack = QStackedWidget()
+        layout.addWidget(self.stack, 1)
+        self._keys: list[str] = []
+        self.tabs.currentChanged.connect(self._changed)
+
+    def add(self, key: str, title: str, page: QWidget) -> None:
+        self._keys.append(key)
+        self.stack.addWidget(page)
+        self.tabs.addTab(title)
+
+    def select(self, key: str) -> None:
+        if key in self._keys:
+            self.tabs.setCurrentIndex(self._keys.index(key))
+
+    @property
+    def current(self) -> str:
+        index = self.tabs.currentIndex()
+        return self._keys[index] if 0 <= index < len(self._keys) else self._keys[0]
+
+    def _changed(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        if 0 <= index < len(self._keys):
+            self.changed.emit(self._keys[index])
+
+
+class TabSection(QObject):
+    """Náhrada sekce „Parametry dílu“: rozbalená = otevřená záložka Parametry.
+
+    Rozhraní jako ``workspace.Section`` (``expanded``, ``set_expanded``, ``toggled``),
+    takže Ctrl+Shift+F, uložené rozložení a testy fungují beze změny."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, tabs: ModelTabs, key: str, fallback: str = "features") -> None:
+        super().__init__(tabs)
+        self._tabs, self._key, self._fallback = tabs, key, fallback
+        self._last = self.expanded
+        tabs.changed.connect(self._changed)
+
+    @property
+    def expanded(self) -> bool:
+        return self._tabs.current == self._key
+
+    def set_expanded(self, expanded: bool) -> None:
+        if expanded:
+            self._tabs.select(self._key)
+        elif self.expanded:
+            self._tabs.select(self._fallback)
+
+    def _changed(self, _key: str) -> None:
+        if self.expanded != self._last:
+            self._last = self.expanded
+            self.toggled.emit(self._last)
+
+
+class FeatureRowDelegate(QStyledItemDelegate):
+    """Kresba řádku stromu podle návrhu; data položky se nemění."""
+
+    def sizeHint(self, option, index):  # noqa: N802
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), ROW_HEIGHT))
+
+    def initStyleOption(self, option, index):  # noqa: N802
+        super().initStyleOption(option, index)
+        status = index.siblingAtColumn(0).data(STATUS_ROLE) or "pending"
+        t = ui_theme.tokens()
+        if index.column() == 0:
+            glyph = GLYPHS.get(status, "")
+            text = option.text
+            if glyph and text.startswith(glyph):
+                option.text = text[len(glyph):].lstrip()  # stav se kreslí vpravo
+            if status != "error":  # název běžnou barvou, chyba zůstane červená
+                option.palette.setColor(QPalette.ColorRole.Text, ui_theme.color(t["fg"]))
+        else:
+            glyph = GLYPHS.get(status, "")
+            option.text = f"{option.text}  {glyph}".strip() if option.text else glyph
+            option.displayAlignment = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            font = QFont(option.font)
+            font.setPixelSize(11)
+            option.font = font
+        if option.state & QStyle.StateFlag.State_Selected:
+            font = QFont(option.font)
+            font.setWeight(QFont.Weight.DemiBold)
+            option.font = font
+            option.palette.setColor(QPalette.ColorRole.Highlight,
+                                    ui_theme.opaque(t["accentbg"], ui_theme.card_color()))
+            text = option.palette.color(QPalette.ColorRole.Text)
+            option.palette.setColor(QPalette.ColorRole.HighlightedText, text)

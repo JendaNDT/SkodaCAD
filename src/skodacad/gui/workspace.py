@@ -190,7 +190,16 @@ class Workspace:
             return
         self._palette_key = key
         color = secondary_color(palette).name()
-        self.window.setStyleSheet(f"QLabel[secondaryText=\"true\"] {{ color: {color}; }}")
+        t = ui_theme.tokens()
+        card = ui_theme.card_color()
+        field = ui_theme.opaque(t["sep"], card).name()
+        # P7.51: strom leží přímo na kartě, filtry jsou zaoblená pole --sep (návrh 1a).
+        self.window.setStyleSheet(
+            f"QLabel[secondaryText=\"true\"] {{ color: {color}; }}"
+            f"QTreeWidget#feature_tree {{ background: transparent; border: none; }}"
+            f"QLineEdit[cardFilter=\"true\"] {{ background: {field}; border: none;"
+            f" border-radius: 6px; min-height: 24px; padding: 0px 6px; }}")
+        self.window.model_tabs.tabs.refresh_style()
         appearance = QApplication.instance().property("skodacadAppearance") or "system"
         self.appearance_actions[appearance].setChecked(True)
         self.window._refresh_ui_icons()
@@ -207,7 +216,8 @@ class Workspace:
         window.model_dock.setVisible(not compact)
         self.model_action.setChecked(not compact)
         for key, section in window.sidebar_sections.items():
-            section.set_expanded(key == "parameters")
+            section.set_expanded(key != "parameters")  # Díl: obě sekce otevřené
+        window.model_tabs.select("features")  # levá karta začíná stromem prvků (P7.51)
         if compact:
             window.statusBar().showMessage("Menší okno: strom otevřeš tlačítkem Model nebo F9.",
                                            10000)
@@ -232,7 +242,8 @@ class Workspace:
         self.model_action.setChecked(self.state.get("model_visible", True))
         self.show_panel(self.state.get("panel", "editor"))
         for key, section in window.sidebar_sections.items():
-            section.set_expanded(self.state.get("sections", {}).get(key, key == "parameters"))
+            section.set_expanded(self.state.get("sections", {}).get(key, key != "parameters"))
+        window.model_tabs.select(self.state.get("sidebar_tab", window.model_tabs.current))
         window.ribbon.select_page(self.state.get("page", "model"))
         window.ribbon.set_collapsed(self.state.get("ribbon_collapsed", False))
         if self.state.get("maximized"):
@@ -252,7 +263,8 @@ class Workspace:
                  "ribbon_collapsed": window.ribbon.collapsed,
                  "appearance": QApplication.instance().property("skodacadAppearance") or "system",
                  "sections": {key: section.expanded
-                              for key, section in window.sidebar_sections.items()}}
+                              for key, section in window.sidebar_sections.items()},
+                 "sidebar_tab": window.model_tabs.current}
         try:
             save_state(self.path, state)
         except (OSError, ValueError):

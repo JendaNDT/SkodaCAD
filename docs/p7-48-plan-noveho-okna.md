@@ -213,4 +213,5 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] P7.48 vzhled a ikony Duo ([evidence](p7-48-vzhled-a-ikony.md)).
 - [x] P7.49 plovoucí karty nad 3D ([evidence](p7-49-plovouci-karty.md)).
 - [x] P7.50 hlavní lišta a plovoucí paleta ([evidence](p7-50-hlavni-lista-a-paleta.md)).
-- [ ] P7.51–P7.58 dle kroků výše.
+- [x] P7.51 levá karta Prvky | Parametry | Díl ([evidence](p7-51-leva-karta.md)).
+- [ ] P7.52–P7.58 dle kroků výše.

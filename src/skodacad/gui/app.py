@@ -287,6 +287,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_cards(window, lines) and ok
     ok = _self_test_main_bar(window, lines) and ok
+    ok = _self_test_model_card(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1277,6 +1278,53 @@ def _self_test_main_bar(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Hlavní lišta a paleta: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_model_card(window, lines: list[str]) -> bool:
+    """P7.51: levá karta Prvky | Parametry | Díl – skutečné kliky a zkratky v balíčku."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.model_card import ROW_HEIGHT
+
+    tabs, pages = window.model_tabs.tabs, window.model_tabs
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        original = window.session.document.to_dict()
+        window.resize(1440, 860)
+        window.workspace.reset()
+        QApplication.processEvents()
+        assert pages.current == "features" and window.tree.isVisible()
+        rows = window.tree.topLevelItemCount()
+        heights = {window.tree.visualItemRect(window.tree.topLevelItem(i)).height()
+                   for i in range(rows)}
+        assert min(heights) >= ROW_HEIGHT, f"řádky {heights} px"
+        assert window.feature_count_label.text().startswith(str(rows))
+        for index, widget in ((2, window.name_edit), (1, window.param_filter),
+                              (0, window.tree)):
+            QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             tabs.tabRect(index).center())
+            QApplication.processEvents()
+            assert widget.isVisible(), f"záložka {tabs.tabText(index)} neukázala obsah"
+        window.activateWindow()
+        QTest.qWaitForWindowActive(window, 2000)
+        pages.select("part")
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier
+                       | Qt.KeyboardModifier.ShiftModifier)
+        QApplication.processEvents()
+        assert pages.current == "parameters", "Ctrl+Shift+F neotevřelo Parametry"
+        QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+        QApplication.processEvents()
+        assert pages.current == "features", "Ctrl+F neotevřelo Prvky"
+        QTest.keyClick(window.tree_filter.field, Qt.Key.Key_Escape)
+        assert window.session.document.to_dict() == original
+        lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
+                     f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")
         return False
 
 

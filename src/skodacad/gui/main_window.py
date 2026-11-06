@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QEventLoop, QPoint, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QColor, QCursor, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -72,6 +72,14 @@ from skodacad.gui.floating import CardLayer, FloatingCard
 from skodacad.gui.guide_drag import DEFAULT_DIRECTION, DEFAULT_STEP
 from skodacad.gui.macos_accessibility import install as install_macos_accessibility
 from skodacad.gui.main_bar import MainBar
+from skodacad.gui.model_card import (
+    FEATURE_ICONS,
+    STATUS_ROLE,
+    FeatureRowDelegate,
+    ModelTabs,
+    TabSection,
+    count_text,
+)
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
@@ -360,8 +368,11 @@ class MainWindow(QMainWindow):
     # --- stavba okna ---------------------------------------------------------------
 
     def _build_side_panel(self) -> None:
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
+        # P7.51: levá karta = segment Prvky | Parametry | Díl (návrh 1a); data beze změny.
+        self.model_tabs = panel = ModelTabs()
+        part_page = QWidget()
+        layout = QVBoxLayout(part_page)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.sidebar_sections = {}
         self.part_caption = QLabel()
@@ -387,11 +398,12 @@ class MainWindow(QMainWindow):
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("secondaryText", True)
         info_form.addRow(self.description_label)
-        self.sidebar_sections["info"] = Section("Díl a materiál", info_box)
+        self.sidebar_sections["info"] = Section("Díl a materiál", info_box, True)
         layout.addWidget(self.sidebar_sections["info"])
 
         params_box = QWidget()
         params_layout = QVBoxLayout(params_box)
+        params_layout.setContentsMargins(0, 0, 0, 0)
         self.params_form = QFormLayout()
         self.param_filter = FormFilter(self.params_form,
                                        placeholder="Filtr parametrů (Ctrl+Shift+F)…",
@@ -406,28 +418,38 @@ class MainWindow(QMainWindow):
             params_buttons.addWidget(button)
         params_buttons.addStretch()
         params_layout.addLayout(params_buttons)
-        self.sidebar_sections["parameters"] = Section("Parametry dílu", params_box, True)
-        layout.addWidget(self.sidebar_sections["parameters"])
+        params_layout.addStretch(1)
 
-        tree_box = QGroupBox("Strom prvků")
+        tree_box = QWidget()
         tree_layout = QVBoxLayout(tree_box)
+        tree_layout.setContentsMargins(0, 0, 0, 0)
+        tree_layout.setSpacing(6)
         self.tree = QTreeWidget()
+        self.tree.setObjectName("feature_tree")
         self.tree.setMinimumHeight(150)
         self.tree.setHeaderLabels(["Prvek", "Tělesa"])
+        self.tree.setHeaderHidden(True)  # stav a počet těles vpravo v řádku (návrh 1a)
         self.tree.setColumnWidth(1, 65)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.header().setStretchLastSection(False)
         self.tree.setRootIsDecorated(False)
+        self.tree.setFrameShape(QFrame.Shape.NoFrame)
+        self.tree.setIconSize(QSize(16, 16))
+        self.tree.setItemDelegate(FeatureRowDelegate(self.tree))
         self.tree.currentItemChanged.connect(self._tree_selection_changed)
         self.tree.itemDoubleClicked.connect(lambda _item, _column: self.start_feature_edit())
         self.tree_filter = TreeFilter(self.tree, placeholder="Filtr prvků (Ctrl+F)…",
                                       nouns=("prvku", "prvků", "prvků"))
         tree_layout.addWidget(self.tree_filter)
+        for box in (self.tree_filter, self.param_filter):
+            box.field.setProperty("cardFilter", True)
         tree_layout.addWidget(self.tree)
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
-        self.add_feature_button.setText("Přidat")
+        self.add_feature_button.setText("+")
+        self.add_feature_button.setToolTip("Přidat prvek")
+        self.add_feature_button.setAutoRaise(True)
         self.add_feature_button.setAccessibleName("Přidat prvek")
         self.add_feature_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         add_menu = QMenu(self.add_feature_button)
@@ -440,17 +462,25 @@ class MainWindow(QMainWindow):
         for action in (self.delete_feature_action, self.move_up_action, self.move_down_action):
             button = self._tool_button(action)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setAutoRaise(True)
             button.setAccessibleName(action.text())
             tree_buttons.addWidget(button)
         tree_buttons.addStretch()
-        tree_layout.addLayout(tree_buttons)
+        self.feature_count_label = QLabel()  # „6 prvků“ v patičce (návrh 1a)
+        self.feature_count_label.setProperty("secondaryText", True)
+        tree_buttons.addWidget(self.feature_count_label)
         self.error_label = QLabel()
         self.error_label.setTextFormat(Qt.TextFormat.PlainText)
         self.error_label.setWordWrap(True)
         self.error_label.setStyleSheet("color: #c0392b; font-weight: bold;")
         self.error_label.hide()
         tree_layout.addWidget(self.error_label)
-        layout.addWidget(tree_box, stretch=1)
+        footer = QFrame()
+        footer.setObjectName("tree_footer")
+        footer.setFrameShape(QFrame.Shape.HLine)
+        footer.setStyleSheet("color: palette(mid);")
+        tree_layout.addWidget(footer)
+        tree_layout.addLayout(tree_buttons)
 
         props_box = QWidget()
         props_layout = QVBoxLayout(props_box)
@@ -458,11 +488,16 @@ class MainWindow(QMainWindow):
         self.props_label.setWordWrap(True)
         self.props_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         props_layout.addWidget(self.props_label)
-        self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box)
+        self.sidebar_sections["properties"] = Section("Vlastnosti dílu", props_box, True)
         layout.addWidget(self.sidebar_sections["properties"])
+        layout.addStretch(1)
 
+        panel.add("features", "Prvky", tree_box)
+        panel.add("parameters", "Parametry", params_box)
+        panel.add("part", "Díl", part_page)
+        self.sidebar_sections["parameters"] = TabSection(panel, "parameters")
         self.model_dock = self._add_dock("Model", "model_dock", panel,
-                                         Qt.DockWidgetArea.LeftDockWidgetArea)
+                                         Qt.DockWidgetArea.LeftDockWidgetArea, scroll=False)
 
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
@@ -1339,6 +1374,7 @@ class MainWindow(QMainWindow):
         """Ctrl+F: otevře strom modelu (je-li skrytý) a dá fokus do filtru prvků."""
         if not self.workspace.model_action.isChecked():
             self.workspace.model_action.trigger()
+        self.model_tabs.select("features")
         self.tree_filter.focus()
 
     def focus_param_filter(self) -> None:
@@ -2220,6 +2256,8 @@ class MainWindow(QMainWindow):
         else:
             rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
         chosen = None
+        kinds = {f["id"]: f.get("type") for f in document.features} if document else {}
+        color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         for index, (key, label, status, message) in enumerate(rows):
             text = f"{_STATUS_ICONS[status]}  {label}"
             count = re.search(r"Počet těles: (\d+) → (\d+)\.", message) if status == "ok" else None
@@ -2240,6 +2278,8 @@ class MainWindow(QMainWindow):
             item.setToolTip(0, f"{label}\n{message or key}")
             item.setToolTip(1, message)
             item.setData(0, SEARCH_ROLE, f"{label} {key} {_STATUS_WORDS[status]}")
+            item.setData(0, STATUS_ROLE, status)
+            item.setIcon(0, cad_icon(FEATURE_ICONS.get(kinds.get(key), "box"), color))
             if key == self._selected_id:
                 chosen = item
         for item in previous.values():
@@ -2250,6 +2290,7 @@ class MainWindow(QMainWindow):
             self._selected_id = None
         self.tree_filter.apply()  # nové řádky také podle filtru, vybraný zůstane vidět
         self.tree.blockSignals(False)
+        self.feature_count_label.setText(count_text(len(rows)) if document else "")
         problem = self.session.model_problem if document is not None else ""
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))

@@ -79,31 +79,43 @@ class SearchField(QPushButton):
         self.glyph.setPixmap(cad_icon("search", t["fg3"]).pixmap(14, 14))
 
 
-class ActivityTabs(QTabBar):
-    """Segmentový přepínač činností (nahrazuje záložky pásu, P7.50)."""
+class SegmentTabs(QTabBar):
+    """Segmentový přepínač podle návrhu 1a: podklad ``--sep``, aktivní položka ``--ctl``."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, name: str, accessible: str, background: str = "tb",
+                 expanding: bool = False, parent=None) -> None:
         super().__init__(parent)
-        self.setObjectName("ribbon_tabs")
-        self.setExpanding(False)
+        self.setObjectName(name)
+        self._background = background  # token, na kterém přepínač leží
+        self.setExpanding(expanding)
         self.setDrawBase(False)
         self.setDocumentMode(True)
-        self.setAccessibleName("Činnosti")
+        self.setAccessibleName(accessible)
         self.setFont(_pixel_font(self, 13))
         self.refresh_style()
 
     def refresh_style(self) -> None:
         t = ui_theme.tokens()
-        track = ui_theme.opaque(t["sep"], ui_theme.color(t["tb"])).name()
+        under = (ui_theme.card_color() if self._background == "card"
+                 else ui_theme.color(t[self._background]))
+        track = ui_theme.opaque(t["sep"], under).name()
+        name = self.objectName()
         self.setStyleSheet(
-            f"QTabBar#ribbon_tabs {{ background: {track}; border-radius: 7px; }}"
-            f"QTabBar#ribbon_tabs::tab {{ background: transparent; color: {t['fg']};"
+            f"QTabBar#{name} {{ background: {track}; border-radius: 7px; }}"
+            f"QTabBar#{name}::tab {{ background: transparent; color: {t['fg']};"
             f" border: none; padding: 3px 12px; margin: 2px 0px; border-radius: 5px; }}"
-            f"QTabBar#ribbon_tabs::tab:first {{ margin-left: 2px; }}"
-            f"QTabBar#ribbon_tabs::tab:last {{ margin-right: 2px; }}"
-            f"QTabBar#ribbon_tabs::tab:selected {{ background: {t['ctl']}; font-weight: 500;"
+            f"QTabBar#{name}::tab:first {{ margin-left: 2px; }}"
+            f"QTabBar#{name}::tab:last {{ margin-right: 2px; }}"
+            f"QTabBar#{name}::tab:selected {{ background: {t['ctl']}; font-weight: 500;"
             f" border: 1px solid {ui_theme.opaque(t['sep'], ui_theme.color(t['ctl'])).name()};"
             f" }}")
+
+
+class ActivityTabs(SegmentTabs):
+    """Segmentový přepínač činností (nahrazuje záložky pásu, P7.50)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__("ribbon_tabs", "Činnosti", parent=parent)
 
 
 class MainBar(QWidget):
