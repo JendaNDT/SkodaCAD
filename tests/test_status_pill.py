@@ -74,7 +74,10 @@ def test_pill_and_view_switcher_sit_at_the_bottom_of_the_3d_view(plate):
     assert pill.bottom() == view.bottom() - 14 and corner.bottom() == view.bottom() - 14
     assert corner.right() == view.right() - 14
     assert not pill.intersects(corner) and not pill.intersects(w.model_dock.geometry())
-    assert abs(pill.center().x() - view.center().x()) <= 2  # pilulka uprostřed okna
+    # Pilulka je uprostřed okna; nevejde-li se tam (širší písmo Windows offscreen), ustoupí
+    # těsně vedle přepínače pohledů, nikdy přes něj.
+    centered = abs(pill.center().x() - view.center().x()) <= 2
+    assert centered or pill.right() == corner.left() - floating.GAP - 1
     buttons = w.view_switcher.buttons
     assert [b.text() for b in buttons.values()] == ["Izo", "Zepředu", "Shora", "Celý díl"]
     views = []
