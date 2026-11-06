@@ -151,9 +151,11 @@
   *1a Plovoucí panely* (reference, obrazovky a ikony Duo v `docs/p7-48-navrh-okna/`).
   [Plán P7.48–P7.58](docs/p7-48-plan-noveho-okna.md): 4 vydání A–D, jen okno, formát
   beze změny. Zkouška: neprůhledná karta nad nativním 3D funguje, průhledná ne (OCCT
-  kreslí do `_NativeSurface`). Rozhodnutí R1–R7 (průsvitnost, titulek Windows, semafor
-  Macu, oblíbené, stavový řádek, sestava, plné upozornění UT) čekají na autora.
-  Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům; povinná upozornění NDT doslovně.
+  kreslí do `_NativeSurface`). Autor 6. 11. schválil R1–R7 („schvaluji R1–R7“):
+  neprůhledné karty, systémový titulek Windows, semafor Macu v liště, oblíbené na konci
+  palety, zprávy v pilulce, sestava jen barvy/ikony, plné upozornění UT/PT/MT/RT doslovně.
+  Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům. [P7.48](docs/p7-48-vzhled-a-ikony.md)
+  = paleta z tokenů, ikony Duo, pozadí 3D sRGB (viz Známé pasti – vzhled okna).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -600,6 +602,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/ui_theme.py`, `gui/duo_icons.py` | barvy, paleta a písmo podle návrhu okna 1a (P7.48); 41 ikon Duo jako vnitřek SVG pro `cad_icons` |
 | `gui/viewer_views.py` | názvy a klávesové zkratky standardních pohledů 3D (bez OCCT) |
 | `gui/viewer.py` | 3D prohlížeč OCCT (jediné místo GUI, které sahá na OCCT – jen kvůli kreslení a výběru); hlásí vybrané tvary, Ctrl+klik, pravý klik, zvýraznění; barevné body `show_points` (mapa kontaktních ploch); plán dráhy `show_plan` (čáry po barvách, začátek, zóny) |
 | `packaging/` | PyInstaller (`skodacad.spec`) pro sestavení `SkodaCAD.exe` a na Macu `SkodaCAD.app` |
@@ -662,6 +665,20 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - `QAction.triggered` posílá navíc `checked` (False) – do `lambda k=key: …` by se dostalo
   místo `k`. Akce zakládej jen přes `MainWindow._action` (volá slot bez argumentů) a každou
   novou akci pokryj testem, který ji opravdu stiskne (`tests/test_gui.py`).
+
+## Známé pasti (vzhled okna, P7.48)
+
+- Barvy a písmo jen přes `gui/ui_theme.py` (tokeny = tabulka v `docs/p7-48-navrh-okna/
+  README.md`, test ji čte přímo). Paletu nastavuje `ui_theme.apply` ze
+  `Workspace.set_appearance` a při `colorSchemeChanged`; volba „system“ čte schéma systému.
+- Ikony: `cad_icons.icon(kind, barva)` kreslí Duo z `duo_icons.py` (vnitřek SVG,
+  `{c}` barva, `{a}` průhlednost 0,24/0,30 podle světlosti barvy). Klíč bez Duo = původní
+  glyf. Nové ikony generovat ze souborů návrhu a zkontrolovat testem shody.
+- OCCT `Quantity_Color(r, g, b, Quantity_TOC_RGB)` bere hodnoty jako **lineární** RGB
+  a na obrazovce je zesvětlí (tmavé #3b4049 vyšlo #838891). Barvy z návrhu předávat
+  jako `Quantity_TOC_sRGB` (`viewer._srgb`). Ostatní barvy 3D zatím zůstávají lineární.
+- `OccViewer.set_dark_background` volá hlavní okno (`refresh_palette`) i okno sestavy
+  (`changeEvent`); náhradní prohlížeče v testech ji mít nemusí (`getattr`).
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1757,7 +1774,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md) | rozhodnutí R1–R7 autorem, pak vydání A–D; formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48 v rozpracované dávce A | P7.49–P7.58 (vydání A–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

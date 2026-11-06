@@ -1,6 +1,7 @@
 # P7.48–P7.58 – plán přestavby hlavního okna podle návrhu „1a Plovoucí panely“
 
-*Stav: plán, 6. 11. 2026. Nic z toho zatím není implementované.*
+*Stav: autor 6. 11. 2026 schválil rozhodnutí R1–R7 slovy „schvaluji R1–R7“.
+P7.48 je implementováno ([evidence](p7-48-vzhled-a-ikony.md)), další kroky čekají.*
 
 ## Zadání autora
 
@@ -32,8 +33,7 @@ Jde jen o okno: **geometrie, výpočty, NDT ani formát souborů se nemění.**
   vydání bude okno použitelné a ověřené na Windows i Macu. Nic se nerozbije napůl.
 - Každý krok se porovná snímkem s referenční obrazovkou ve stejné velikosti
   1440 × 900 px.
-- Před prvním krokem je potřeba potvrdit **rozhodnutí R1–R7**. U každého je
-  doporučení, které se použije, pokud autor nerozhodne jinak.
+- Rozhodnutí R1–R7 autor 6. 11. 2026 schválil; platí doporučení z tabulky.
 
 ## Zkouška: karty nad 3D pohledem (6. 11. 2026)
 
@@ -207,5 +207,6 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 ## Stav ověření
 
 - [x] Zkouška karet nad 3D v Linuxu (Xvfb), viz výše.
-- [ ] Rozhodnutí R1–R7 autorem.
-- [ ] P7.48–P7.58 dle kroků výše.
+- [x] Rozhodnutí R1–R7 schválena autorem 6. 11. 2026 („schvaluji R1–R7“), platí doporučení.
+- [x] P7.48 vzhled a ikony Duo ([evidence](p7-48-vzhled-a-ikony.md)).
+- [ ] P7.49–P7.58 dle kroků výše.

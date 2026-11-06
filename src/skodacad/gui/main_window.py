@@ -1118,36 +1118,37 @@ class MainWindow(QMainWindow):
                  "shell": "shell", "pattern": "pattern", "mirror": "mirror"}
         self._icon_actions = [(action, kinds.get(key, "box"))
                               for key, action in self.add_feature_actions.items()]
+        # Ikony Duo z návrhu hlavního okna (P7.48); klíče bez Duo kreslí původní glyf.
         self._icon_actions += [(self.profile_sketch_action, "sketch"),
-                               (self.edit_feature_action, "params"),
+                               (self.edit_feature_action, "edit"),
                                (self.rebuild_action, "box"),
                                (self.new_assembly_action, "pattern"),
-                               (self.import_action, "document"),
+                               (self.import_action, "open"),
                                (self.add_parameter_action, "params"),
-                               (self.drawing_preview_action, "document"),
-                               (self.drawing_export_action, "document"),
-                               (self.thickness_map_action, "measure"),
+                               (self.drawing_preview_action, "dimension"),
+                               (self.drawing_export_action, "save"),
+                               (self.thickness_map_action, "thickness"),
                                (self.section_action, "section"),
-                               (self.ndt_action, "ndt"), (self.audit_action, "document"),
+                               (self.ndt_action, "study"), (self.audit_action, "audit"),
                                (self.assistant_action, "document"),
-                               (self.export_menu.menuAction(), "document"),
-                               (self.add_feature_button.menu().menuAction(), "box")]
+                               (self.export_menu.menuAction(), "save"),
+                               (self.add_feature_button.menu().menuAction(), "box"),
+                               (self.command_search_action, "search"),
+                               (self.new_action, "new"), (self.open_action, "open"),
+                               (self.save_action, "save"), (self.save_as_action, "save"),
+                               (self.undo_action, "undo"), (self.redo_action, "redo")]
         for key, action in workspace.actions.items():
-            kind = {"measure": "measure", "section": "section", "ndt": "ndt",
-                    "map": "measure", "editor": "params"}.get(key, "document")
+            kind = {"measure": "measure", "section": "section", "ndt": "study",
+                    "map": "thickness", "editor": "edit", "audit": "audit",
+                    "design": "design"}.get(key, "document")
             self._icon_actions.append((action, kind))
         self._icon_actions.append((workspace.model_action, "pattern"))
-        self._icon_actions += [(self.ndt_panel.new_action, "ndt"), (self.fit_action, "box"),
+        self._icon_actions += [(self.ndt_panel.new_action, "study"), (self.fit_action, "fit"),
                                (workspace.panels_menu.menuAction(), "pattern"),
                                (workspace.appearance_menu.menuAction(), "params")]
-        self._icon_actions += [(action, "box") for action in self.view_actions.values()]
+        self._icon_actions += [(action, key if key in ("iso", "front", "top") else "box")
+                               for key, action in self.view_actions.items()]
         self._standard_icons = [
-            (self.new_action, QStyle.StandardPixmap.SP_FileIcon),
-            (self.open_action, QStyle.StandardPixmap.SP_DirOpenIcon),
-            (self.save_action, QStyle.StandardPixmap.SP_DialogSaveButton),
-            (self.save_as_action, QStyle.StandardPixmap.SP_DialogSaveButton),
-            (self.undo_action, QStyle.StandardPixmap.SP_ArrowBack),
-            (self.redo_action, QStyle.StandardPixmap.SP_ArrowForward),
             (self.delete_feature_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
             (self.delete_parameter_action, QStyle.StandardPixmap.SP_DialogDiscardButton),
             (self.move_up_action, QStyle.StandardPixmap.SP_ArrowUp),
@@ -1209,9 +1210,9 @@ class MainWindow(QMainWindow):
         for key in ("ut", "pt", "mt", "rt"):
             action = self._action(f"Metoda nové studie: {key.upper()}",
                                   lambda k=key: self._choose_ndt_method(k))
-            action.setIcon(cad_icon("ndt", QApplication.palette().color(
+            action.setIcon(cad_icon(key, QApplication.palette().color(
                 QPalette.ColorRole.Link).name()))
-            self._icon_actions.append((action, "ndt"))
+            self._icon_actions.append((action, key))
             self.ndt_method_actions[key] = action
         self.ribbon.add_page("ndt", "NDT", [
             ("Metoda nové studie", [command(action, key.upper())

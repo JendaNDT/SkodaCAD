@@ -71,6 +71,9 @@ class FakeViewer(QtWidgets.QWidget):
         self.plan = None
         self.selection_changed.emit([])  # jako skutečný prohlížeč: nový díl = nic vybráno
 
+    def set_dark_background(self, dark):
+        self.dark_background = bool(dark)
+
     def set_transparent_parts(self, parts):
         self.cancel_rotation_center_pick()
         self.transparencies = list(parts)
@@ -3195,6 +3198,41 @@ def test_ribbon_uses_shared_actions_and_native_command_state(window, slot_errors
     assert panel.isChecked()
     panel.click()
     assert not panel.isChecked() and window.workspace.active is None
+    assert not slot_errors
+
+
+def test_appearance_switch_recolors_duo_icons_and_3d_background(window, slot_errors):
+    """P7.48: Zobrazení → Vzhled přepne paletu z návrhu, ikony Duo i pozadí 3D."""
+    from PySide6.QtGui import QPalette
+
+    from skodacad.gui import ui_theme
+    from skodacad.gui.cad_icons import icon as cad_icon
+
+    app = QtWidgets.QApplication.instance()
+    before = app.property("skodacadAppearance") or "system"
+    original = window.session.document.to_dict()
+    history = len(window.session._undo)
+    extrude = window.add_feature_actions["extrude"]
+    try:
+        window.workspace.appearance_actions["dark"].trigger()
+        QtWidgets.QApplication.processEvents()
+        palette = app.palette()
+        assert palette.color(QPalette.ColorRole.Window) == ui_theme.card_color(True)
+        assert palette.color(QPalette.ColorRole.Link).name() == "#4a9eff"
+        assert window.viewer.dark_background is True
+        assert extrude.icon().cacheKey() == cad_icon("extrude", "#4a9eff").cacheKey()
+        assert window.undo_action.icon().cacheKey() == cad_icon("undo", "#4a9eff").cacheKey()
+        window.workspace.appearance_actions["light"].trigger()
+        QtWidgets.QApplication.processEvents()
+        assert app.palette().color(QPalette.ColorRole.Link).name() == "#0a64d8"
+        assert window.viewer.dark_background is False
+        assert extrude.icon().cacheKey() == cad_icon("extrude", "#0a64d8").cacheKey()
+    finally:
+        window.workspace.set_appearance(before)
+        QtWidgets.QApplication.processEvents()
+    # Vzhled je jen preference okna: model ani historie se nemění.
+    assert window.session.document.to_dict() == original
+    assert len(window.session._undo) == history
     assert not slot_errors
 
 

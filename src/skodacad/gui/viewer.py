@@ -67,7 +67,13 @@ from OCP.Prs3d import (
     Prs3d_TypeOfHighlight_LocalDynamic,
     Prs3d_TypeOfHighlight_LocalSelected,
 )
-from OCP.Quantity import Quantity_Color, Quantity_NOC_BLACK, Quantity_TOC_RGB
+from OCP.Quantity import (
+    Quantity_Color,
+    Quantity_NOC_BLACK,
+    Quantity_NOC_WHITE,
+    Quantity_TOC_RGB,
+    Quantity_TOC_sRGB,
+)
 from OCP.TCollection import TCollection_ExtendedString
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_FORWARD, TopAbs_REVERSED, TopAbs_VERTEX
 from OCP.TopoDS import TopoDS, TopoDS_Compound
@@ -282,6 +288,17 @@ def pixel_ratio(platform: str, occ_width: int, qt_width: int, device_ratio: floa
     return device_ratio
 
 
+# Přechod 3D pozadí shora dolů podle návrhu hlavního okna 1a (P7.48): světlý
+# #f2f5fa → #b8c4d6, tmavý #3b4049 → #16181c. Barvy jsou sRGB (jako na obrazovce);
+# dřívější zápis přes Quantity_TOC_RGB OCCT bral jako lineární a zesvětlil je.
+BACKGROUNDS = {False: ("#f2f5fa", "#b8c4d6"), True: ("#3b4049", "#16181c")}
+
+
+def _srgb(hex_color: str) -> Quantity_Color:
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return Quantity_Color(r, g, b, Quantity_TOC_sRGB)
+
+
 class _NativeSurface(QWidget):
     """Holá nativní plocha, do které kreslí OpenGL z OCCT. Události předává prohlížeči."""
 
@@ -406,6 +423,7 @@ class OccViewer(QWidget):
         self._view = None
         self._context = None
         self._window = None
+        self._dark_background = False
         self._ais: AIS_Shape | None = None
         # One erased full-assembly presentation, invalidated by its owning window.
         self._retained_part: tuple[Any, list[tuple[Any, float]]] | None = None
@@ -1831,16 +1849,35 @@ class OccViewer(QWidget):
         self._failed.pop()
         return viewer, view
 
+    def set_dark_background(self, dark: bool) -> None:
+        """Pozadí 3D podle vzhledu okna (P7.48): světlý přechod jako dřív, tmavý z návrhu.
+
+        Mění se jen barva pozadí a popisky os, ne kreslení dílu ani výběr."""
+        dark = bool(dark)
+        if dark == self._dark_background:
+            return
+        self._dark_background = dark
+        if self._view is not None:
+            self._apply_background(self._view)
+            self._view.Redraw()
+
+    @property
+    def dark_background(self) -> bool:
+        return self._dark_background
+
+    def _apply_background(self, view) -> None:
+        top, bottom = BACKGROUNDS[self._dark_background]
+        view.SetBgGradientColors(_srgb(top), _srgb(bottom), Aspect_GFM_VER, False)
+        label = Quantity_NOC_WHITE if self._dark_background else Quantity_NOC_BLACK
+        view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(label), 0.08, V3d_ZBUFFER)
+
     def _style(self) -> None:
         view, context = self._view, self._context
         # Stejný immediate režim se vztahuje i na pozadí a projekci. Nekreslit
         # rozpracovaný vzhled opakovaně; _initialize vykreslí hotový pohled.
         immediate = view.SetImmediateUpdate(False)
         try:
-            view.SetBgGradientColors(_rgb(0.95, 0.96, 0.98), _rgb(0.72, 0.77, 0.84),
-                                     Aspect_GFM_VER, False)
-            view.TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_Color(Quantity_NOC_BLACK), 0.08,
-                                 V3d_ZBUFFER)
+            self._apply_background(view)
             params = view.ChangeRenderingParams()
             params.NbMsaaSamples = 4
             params.IsAntialiasingEnabled = True

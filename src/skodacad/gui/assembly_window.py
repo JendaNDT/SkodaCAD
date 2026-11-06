@@ -154,6 +154,7 @@ class AssemblyWindow(QMainWindow):
             viewer_factory = OccViewer
         self._viewer_factory = viewer_factory
         self.viewer = viewer_factory()
+        self._sync_dark_background()
         self.viewer.selection_changed.connect(self._picked)
         self.viewer.selection_cleared.connect(lambda: self.select(None))
         self.viewer.selection_moved.connect(self._selection_dragged)
@@ -2628,11 +2629,21 @@ class AssemblyWindow(QMainWindow):
         else:
             event.ignore()
 
+    def _sync_dark_background(self) -> None:
+        """Pozadí 3D podle vzhledu okna (P7.48), stejně jako v hlavním okně."""
+        from skodacad.gui import ui_theme
+
+        setter = getattr(self.viewer, "set_dark_background", None)
+        if setter is not None:  # zjednodušené prohlížeče v testech ho nemají
+            setter(ui_theme.is_dark())
+
     def changeEvent(self, event) -> None:  # noqa: N802
         """Po návratu do okna (díl upravený v hlavním okně) načte díly znovu."""
         super().changeEvent(event)
         from PySide6.QtCore import QEvent
 
+        if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.ApplicationPaletteChange):
+            self._sync_dark_background()
         if event.type() == QEvent.Type.ActivationChange and not self.isActiveWindow():
             self.viewer.cancel_rotation_center_pick()
         if (event.type() == QEvent.Type.ActivationChange and self.isActiveWindow()

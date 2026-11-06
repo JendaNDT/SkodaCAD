@@ -285,6 +285,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
+    ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
     ok = _self_test_plate_workflow(window, lines) and ok
@@ -1131,6 +1132,50 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
         return False
+
+
+def _self_test_theme(window, lines: list[str]) -> bool:
+    """P7.48: ikony Duo (QtSvg v balíčku), paleta z návrhu a tmavé pozadí 3D."""
+    from PySide6.QtGui import QImage, QPalette
+
+    from skodacad.gui import ui_theme
+    from skodacad.gui.cad_icons import icon
+    from skodacad.gui.duo_icons import DUO
+
+    app = QApplication.instance()
+    before = app.property("skodacadAppearance") or "system"
+    try:
+        for color in ("#0a64d8", "#4a9eff"):
+            for name in DUO:
+                image = icon(name, color).pixmap(24, 24).toImage()
+                assert any(image.pixelColor(x, y).alpha() > 200 for x in range(24)
+                           for y in range(24)), f"ikona {name} je prázdná"
+        backgrounds = []
+        for key, dark in (("dark", True), ("light", False)):
+            window.workspace.appearance_actions[key].trigger()
+            QApplication.processEvents()
+            palette = app.palette()
+            assert palette.color(QPalette.ColorRole.Window) == ui_theme.card_color(dark)
+            assert palette.color(QPalette.ColorRole.Link).name() == ui_theme.tokens(dark)["accent"]
+            assert window.viewer.dark_background is dark
+            if window.viewer.ready:
+                path = user_dir() / f"self-test-vzhled-{key}.png"
+                assert window.viewer.dump(str(path))
+                shot = QImage(str(path))
+                corner = shot.pixelColor(shot.width() - 3, 3)  # pozadí vpravo nahoře
+                backgrounds.append(corner.lightness())
+        if backgrounds:
+            assert backgrounds[0] < 110 < backgrounds[1], f"pozadí 3D {backgrounds}"
+        font = app.font().family()
+        lines.append(f"✓ Vzhled a ikony: 41 ikon Duo ve světlém i tmavém vzhledu, paleta "
+                     f"z návrhu, pozadí 3D tmavé/světlé {backgrounds or 'bez 3D'}, písmo {font}")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Vzhled a ikony: {type(exc).__name__}: {exc}")
+        return False
+    finally:
+        window.workspace.set_appearance(before)
+        QApplication.processEvents()
 
 
 def _self_test_variable_fillet(window, lines: list[str]) -> bool:

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from skodacad.gui import ui_theme
 from skodacad.gui.ui_colors import secondary_color
 from skodacad.gui.window_state import PANELS, fit_geometry, load_state, save_state
 
@@ -122,6 +123,8 @@ class Workspace:
             self.appearance_actions[key] = action
         if QApplication.instance().property("skodacadAppearance") is None:
             self.set_appearance(self.state.get("appearance", "system"))
+        else:
+            ui_theme.apply()
         self.show_panel(self.state.get("panel", "editor"))
 
     def _visibility(self, key, visible):
@@ -182,6 +185,7 @@ class Workspace:
             app.styleHints().setColorScheme(Qt.ColorScheme.Light if key == "light"
                                             else Qt.ColorScheme.Dark)
         self.appearance_actions[key].setChecked(True)
+        ui_theme.apply(app)
 
     def refresh_palette(self):
         palette = QApplication.palette()
@@ -196,6 +200,7 @@ class Workspace:
         self.appearance_actions[appearance].setChecked(True)
         self.window._refresh_ui_icons()
         self.window._refresh_tree()
+        self.window.viewer.set_dark_background(ui_theme.is_dark())
 
     def reset(self):
         window = self.window
