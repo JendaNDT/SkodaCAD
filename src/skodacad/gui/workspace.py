@@ -282,6 +282,9 @@ class Workspace:
         self.appearance_actions[appearance].setChecked(True)
         self.window._refresh_ui_icons()
         self.window.main_bar.refresh_style()
+        for name in ("status_pill", "view_switcher"):  # během stavby okna ještě nejsou
+            if hasattr(self.window, name):
+                getattr(self.window, name).refresh_style()
         self.window._refresh_tree()
         self.window.viewer.set_dark_background(ui_theme.is_dark())
 

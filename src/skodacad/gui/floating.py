@@ -76,8 +76,11 @@ class FloatingCard(QFrame):
     def __init__(self, title: str, parent: QWidget, side: str) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.side = side  # "left", "right" nebo "top" (paleta příkazů uprostřed)
-        self.bottom_pad = 1 if side == "top" else BOTTOM_PAD
+        # "left", "right", "top" (paleta příkazů), "bottom" (stavová pilulka uprostřed)
+        # nebo "corner" (přepínač pohledů vpravo dole)
+        self.side = side
+        self.bottom_pad = BOTTOM_PAD if side in ("left", "right") else 1
+        self.radius = {"bottom": 16, "corner": 9}.get(side, RADIUS)
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
         self._layout = QVBoxLayout(self)
@@ -159,7 +162,7 @@ class FloatingCard(QFrame):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()), RADIUS, RADIUS)
+        path.addRoundedRect(QRectF(self.rect()), self.radius, self.radius)
         self.setMask(QRegion(path.toFillPolygon().toPolygon()))
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -170,7 +173,7 @@ class FloatingCard(QFrame):
         painter.setPen(QPen(line, 1))
         painter.setBrush(window)
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5),
-                                RADIUS - .5, RADIUS - .5)
+                                self.radius - .5, self.radius - .5)
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
@@ -216,9 +219,37 @@ class CardLayer(QObject):
             return LEFT_WIDTH
         return WIDE_RIGHT.get(card.objectName(), RIGHT_WIDTH)
 
+    def _side_card(self, side: str) -> FloatingCard | None:
+        return next((c for c in self.cards if c.side == side and not c.isHidden()), None)
+
     def geometry_of(self, card: FloatingCard) -> QRect:
         """Místo karty v souřadnicích 3D pohledu (rozměry podle návrhu 1a)."""
         area = self.view.rect()
+        if card.side in ("bottom", "corner"):
+            content = card.widget()
+            hint = content.sizeHint() if content is not None else QSize(100, 30)
+            height = max(hint.height(), content.minimumHeight() if content else 0) + 2
+            width = max(hint.width(), content.minimumWidth() if content else 0) + 2
+            top = area.height() - MARGIN - height
+            right = self._side_card("right")
+            low = right is not None and right.geometry().bottom() >= top - GAP
+            if card.side == "corner":
+                # Vpravo dole; sahá-li pravá karta až dolů, přepínač se posune vedle ní.
+                limit = right.geometry().left() - GAP if low else area.width() - MARGIN
+                return QRect(limit - width, top, width, height)
+            corner = self._side_card("corner")
+            left_edge = MARGIN
+            left = self._side_card("left")
+            if left is not None and left.geometry().bottom() >= top - GAP:
+                left_edge = left.geometry().right() + 1 + GAP
+            right_edge = area.width() - MARGIN
+            if corner is not None:
+                right_edge = min(right_edge, corner.geometry().left() - GAP)
+            if low:
+                right_edge = min(right_edge, right.geometry().left() - GAP)
+            width = min(width, max(right_edge - left_edge, 0))
+            x = min(max((area.width() - width) // 2, left_edge), right_edge - width)
+            return QRect(x, top, width, height)
         if card.side == "top":  # paleta: nahoře uprostřed volného místa mezi kartami
             free = self.free_rect()
             room = max(free.width() - 4, 0)  # paleta smí využít celé volné místo
@@ -237,8 +268,10 @@ class CardLayer(QObject):
         return QRect(area.width() - MARGIN - width, MARGIN, width, height)
 
     def relayout(self) -> None:
-        # Napřed boční karty; paleta nahoře se řídí volným místem mezi nimi.
-        for card in sorted(self.cards, key=lambda c: c.side == "top"):
+        # Napřed boční karty; paleta nahoře se řídí volným místem mezi nimi, přepínač
+        # pohledů pravou kartou a pilulka všemi ostatními.
+        order = {"left": 0, "right": 0, "top": 1, "corner": 2, "bottom": 3}
+        for card in sorted(self.cards, key=lambda c: order[c.side]):
             if not card.isHidden():
                 rect = self.geometry_of(card)
                 if card.geometry() != rect:
@@ -251,7 +284,9 @@ class CardLayer(QObject):
             right = self.view.width() - free.right() - 1
             top = max((c.geometry().bottom() + 1 + GAP for c in self.cards
                        if c.side == "top" and not c.isHidden()), default=0)
-            setter(left, right + GAP if right > 0 else 0, top)
+            bottom = max((self.view.height() - c.geometry().top() + GAP for c in self.cards
+                          if c.side in ("bottom", "corner") and not c.isHidden()), default=0)
+            setter(left, right + GAP if right > 0 else 0, top, bottom)
 
     def free_rect(self) -> QRect:
         """Část 3D pohledu mezi viditelnými kartami (pro kontroly a snímky)."""

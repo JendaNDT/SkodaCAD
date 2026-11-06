@@ -424,7 +424,7 @@ class OccViewer(QWidget):
         self._context = None
         self._window = None
         self._dark_background = False
-        self._view_insets = (0, 0, 0)  # zakryto kartami vlevo, vpravo a paletou nahoře
+        self._view_insets = (0, 0, 0, 0)  # zakryto kartami vlevo, vpravo, nahoře a dole
         self._ais: AIS_Shape | None = None
         # One erased full-assembly presentation, invalidated by its owning window.
         self._retained_part: tuple[Any, list[tuple[Any, float]]] | None = None
@@ -1755,12 +1755,13 @@ class OccViewer(QWidget):
             self._draw_move_handles()
             self._request_redraw()
 
-    def set_view_insets(self, left: int, right: int, top: int = 0) -> None:
+    def set_view_insets(self, left: int, right: int, top: int = 0, bottom: int = 0) -> None:
         """Část pohledu zakrytá kartami vlevo, vpravo a paletou nahoře (P7.49/50, body Qt).
 
         „Celý díl“ pak díl přizpůsobí volnému místu mezi kartami; kreslení,
         výběr ani poloha kamery se tím samy nemění (projeví se až při dalším fit)."""
-        self._view_insets = (max(int(left), 0), max(int(right), 0), max(int(top), 0))
+        self._view_insets = (max(int(left), 0), max(int(right), 0), max(int(top), 0),
+                             max(int(bottom), 0))
 
     def _fit_camera(self) -> None:
         # FitAll(false) stále volá Update při zapnutém immediate režimu OCCT.
@@ -1774,16 +1775,18 @@ class OccViewer(QWidget):
 
     def _fit_into_free_area(self) -> None:
         """Po FitAll zmenší a posune díl do místa mezi kartami (OCCT: +dx doprava)."""
-        left, right, top = self._view_insets
+        left, right, top, bottom = self._view_insets
         width, height = self._surface.width(), self._surface.height()
-        free, tall = width - left - right, height - top
-        if not (left or right or top) or free < 80 or tall < 80 or width <= 0:
+        free, tall = width - left - right, height - top - bottom
+        if not (left or right or top or bottom) or free < 80 or tall < 80 or width <= 0:
             return
         camera = self._view.Camera()
         # Zmenšení kolem středu pohledu tak, aby se díl vešel do volné šířky i výšky.
         camera.SetScale(camera.Scale() * max(width / free, height / tall))
         ratio = self._pixel_scale()
-        self._view.Pan(round((left - right) / 2 * ratio), round(-top / 2 * ratio), 1.0, True)
+        # Střed volného místa: +dx doprava, +dy nahoru (OCCT).
+        self._view.Pan(round((left - right) / 2 * ratio), round((bottom - top) / 2 * ratio),
+                       1.0, True)
 
     def set_standard_view(self, name: str) -> None:
         self.cancel_selection_drag()

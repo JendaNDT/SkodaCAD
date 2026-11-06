@@ -159,7 +159,8 @@
   [P7.49](docs/p7-49-plovouci-karty.md) = panely jako plovoucí karty nad 3D,
   [P7.50](docs/p7-50-hlavni-lista-a-paleta.md) = hlavní lišta 52 px a plovoucí paleta,
   [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl,
-  [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání.
+  [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání,
+  [P7.53](docs/p7-53-pilulka-a-pohledy.md) = stavová pilulka a přepínač pohledů.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -606,6 +607,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/direct_edit_dialog.py` | náhled přímé úpravy plochy (P2.4); model se změní až po potvrzení |
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
+| `gui/status_pill.py` | stavová pilulka a přepínač pohledů dole nad 3D (P7.53) |
 | `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
 | `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
 | `gui/floating.py` | plovoucí karty nad 3D (P7.49): `FloatingCard` s rozhraním docku, `CardLayer` (rozmístění podle návrhu 1a, volné místo pro „Celý díl“) |
@@ -715,6 +717,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `_editor_heading`. Styl polí a tlačítek je v QSS okna (`FloatingCard QLineEdit`,
   `QPushButton[role=primary|secondary]`, `QLabel[cardInfo]`). Zda se formulář vejde
   bez posuvníku, rozhoduje skutečné písmo → jen nativní self-test („!“ = pojistka).
+- P7.53: `statusBar()` hlavního okna je skrytý, ale dál nese zprávy (testy čtou
+  `currentMessage`); `StatusPill` je čte přes `messageChanged`, HELP_HINT nahradí
+  `SHORT_HINT`. Ukazatel přepočtu (`progress_label/bar`, Zastavit) je v pilulce.
+  Karty „bottom“ (pilulka uprostřed) a „corner“ (přepínač; vedle pravé karty, sahá-li
+  dolů) se rozmisťují až po bočních; `set_view_insets(l, r, top, bottom)`.
+  `ViewSwitcher` nepoužívá `setDefaultAction` (tlačítko by převzalo dlouhý název akce).
 
 ## Známé pasti (výběr kliknutím)
 

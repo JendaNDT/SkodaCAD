@@ -289,6 +289,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_main_bar(window, lines) and ok
     ok = _self_test_model_card(window, lines) and ok
     ok = _self_test_inspector(window, lines) and ok
+    ok = _self_test_status_pill(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1379,6 +1380,56 @@ def _self_test_inspector(window, lines: list[str]) -> bool:
         lines.append(f"✕ Pravá karta: {type(exc).__name__}: {exc}")
         if window.feature_preview is not None:
             window.cancel_feature_preview()
+        return False
+
+
+def _self_test_status_pill(window, lines: list[str]) -> bool:
+    """P7.53: stavová pilulka a přepínač pohledů – skutečné kliky a kamera OCCT."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    viewer, layer, pill = window.viewer, window.card_layer, window.status_pill
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        window.workspace.show_panel("editor")
+        QApplication.processEvents()
+        layer.relayout()
+        assert window.statusBar().isHidden(), "stavový řádek je vidět (R5)"
+        assert pill.state.text() == "✓ Spočítáno", pill.state.text()
+        view = viewer.rect()
+        cards = (window.pill_card, window.view_card)
+        for card in cards:
+            assert card.isVisible() and view.contains(card.geometry()), card.objectName()
+            assert card.geometry().bottom() == view.bottom() - 14, card.objectName()
+        assert not window.pill_card.geometry().intersects(window.view_card.geometry())
+        details = ""
+        if viewer.ready:
+            buttons = window.view_switcher.buttons
+            QTest.mouseClick(buttons["top"], Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            direction = viewer._view.Proj()
+            assert abs(direction[2] - 1) < 1e-6, f"Shora: směr kamery {direction}"
+            assert window.view_switcher.active == "top"
+            QTest.mouseClick(buttons["iso"], Qt.MouseButton.LeftButton)
+            QTest.mouseClick(buttons["fit"], Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            ratio = viewer._pixel_scale()
+            limit = min(window.pill_card.geometry().top(), window.view_card.geometry().top())
+            box = window.session.result.part.bounding_box()
+            lowest = max(viewer._view.Convert(float(x), float(y), float(z))[1] / ratio
+                         for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
+                         for z in (box.min.Z, box.max.Z))
+            assert lowest < limit, f"díl sahá pod pilulku ({lowest:.0f} ≥ {limit})"
+            assert viewer.childAt(QPoint(view.center().x(), limit - 20)) is viewer._surface
+            details = f", Shora = kamera +Z, díl nad pilulkou ({lowest:.0f} < {limit} px)"
+        lines.append(f"✓ Pilulka a pohledy: „{pill.state.text()} | {pill.message}“, stavový "
+                     f"řádek skrytý, přepínač Izo/Zepředu/Shora/Celý díl{details}")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Pilulka a pohledy: {type(exc).__name__}: {exc}")
         return False
 
 

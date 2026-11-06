@@ -17,8 +17,8 @@ class View(QtWidgets.QWidget):
 
     insets = None
 
-    def set_view_insets(self, left, right, top=0):
-        self.insets = (left, right, top)
+    def set_view_insets(self, left, right, top=0, bottom=0):
+        self.insets = (left, right, top, bottom)
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_cards_follow_design_positions_and_report_free_space(view):
     # Výška podle obsahu, ne přes celou výšku pohledu.
     assert geometry.height() == right.preferred_height() < 760 - 28
     assert layer.free_rect() == QRect(282, 0, 1440 - 282 - 318, 760)
-    assert view.insets == (282 + floating.GAP, 318 + floating.GAP, 0)
+    assert view.insets == (282 + floating.GAP, 318 + floating.GAP, 0, 0)
     right.hide()
     ndt.show()
     layer.relayout()

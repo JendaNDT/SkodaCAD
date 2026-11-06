@@ -82,6 +82,7 @@ from skodacad.gui.model_card import (
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
+from skodacad.gui.status_pill import StatusPill, ViewSwitcher
 from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, ListFilter, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -105,6 +106,7 @@ log = logging.getLogger(__name__)
 HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+levé: posun  ·  "
              "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
              "Pravý klik: co s výběrem  ·  Dvojklik: celý díl  ·  F1: všechny zkratky")
+SHORT_HINT = "F1: zkratky a ovládání myší"  # v pilulce místo dlouhé nápovědy (R5, P7.53)
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
@@ -2079,16 +2081,31 @@ class MainWindow(QMainWindow):
     # --- přepočet na pozadí ----------------------------------------------------------
 
     def _build_progress(self) -> None:
-        """Ve stavovém řádku: „Přepočítávám… 3 s“, běžící pruh a tlačítko Zastavit."""
+        """Stavová pilulka dole uprostřed a přepínač pohledů vpravo dole (P7.53).
+
+        V pilulce je stav („✓ Spočítáno“), při přepočtu „Přepočítávám… 3 s“, běžící pruh
+        a Zastavit, a vedle poslední zpráva okna. Zprávy dál zapisuje statusBar(), který
+        je skrytý (R5); nápověda k myši je pod F1."""
+        self.status_pill = StatusPill()
         self.progress_label = QLabel()
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 0)  # neurčitý průběh (běžící pruh)
         self.progress_bar.setMaximumWidth(120)
         self.progress_bar.setMaximumHeight(14)
         self.stop_button = self._tool_button(self.stop_action)
+        self.stop_button.setAutoRaise(True)
+        self.status_pill.add_progress(self.progress_label, self.progress_bar, self.stop_button)
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
-            self.statusBar().addPermanentWidget(widget)
             widget.hide()
+        self.pill_card = self.card_layer.card("Stav", "status_pill_card", "bottom")
+        self.pill_card.setWidget(self.status_pill)
+        self.view_switcher = ViewSwitcher(self.view_actions, self.fit_action)
+        self.view_card = self.card_layer.card("Pohledy", "view_switcher_card", "corner")
+        self.view_card.setWidget(self.view_switcher)
+        bar = self.statusBar()
+        bar.messageChanged.connect(self._status_message)
+        bar.hide()
+        self._status_message(bar.currentMessage())
 
     def _poll(self) -> None:
         """Časovač: převezme hotový přepočet z pozadí, nebo obnoví ukazatel průběhu."""
@@ -2132,6 +2149,7 @@ class MainWindow(QMainWindow):
         for widget in (self.progress_label, self.progress_bar, self.stop_button):
             widget.setVisible(shown)
         self.stop_action.setEnabled(computing)
+        self.status_pill.set_computing(shown)
         if self.session.coverage_pending:
             self.ndt_panel._show_coverage()  # uplynulý čas výpočtu pokrytí v panelu
         if self.session.access_pending:
@@ -2293,7 +2311,25 @@ class MainWindow(QMainWindow):
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))
 
+    def _status_message(self, text: str) -> None:
+        """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
+        if not text or text == HELP_HINT:
+            self.status_pill.set_message(SHORT_HINT)
+            self.status_pill.context.setToolTip(HELP_HINT)
+        else:
+            self.status_pill.set_message(text)
+        self.card_layer.schedule()
+
+    def _refresh_status_state(self) -> None:
+        if not hasattr(self, "status_pill"):  # během stavby okna ještě není
+            return
+        document = self.session.document
+        self.status_pill.set_state(
+            "empty" if document is None else
+            "error" if self.session.model_problem else "ok")
+
     def _refresh_actions(self) -> None:
+        self._refresh_status_state()
         if self.feature_preview is not None:
             self._lock_preview_actions()
             return

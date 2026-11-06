@@ -215,4 +215,5 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] P7.50 hlavní lišta a plovoucí paleta ([evidence](p7-50-hlavni-lista-a-paleta.md)).
 - [x] P7.51 levá karta Prvky | Parametry | Díl ([evidence](p7-51-leva-karta.md)).
 - [x] P7.52 pravá karta bez posouvání ([evidence](p7-52-prava-karta.md)).
-- [ ] P7.53–P7.58 dle kroků výše.
+- [x] P7.53 stavová pilulka a přepínač pohledů ([evidence](p7-53-pilulka-a-pohledy.md)).
+- [ ] P7.54–P7.58 dle kroků výše.
