@@ -23,6 +23,9 @@ from skodacad.gui.main_bar import SegmentTabs
 TABS = (("features", "Prvky"), ("parameters", "Parametry"), ("part", "Díl"))
 ROW_HEIGHT = 26
 STATUS_ROLE = Qt.ItemDataRole.UserRole + 41  # "ok" / "error" / "skipped" / "pending"
+# Klíč nastavené ikony řádku („druh|barva“): QIcon nejde porovnat, takže by každé nové
+# nastavení hlásilo změnu a sloupec s ResizeToContents by přeměřil všechny řádky (P8.5).
+ICON_ROLE = Qt.ItemDataRole.UserRole + 42
 GLYPHS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 # Ikona Duo podle typu prvku (stejné druhy jako v paletě příkazů).
 FEATURE_ICONS = {"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",
