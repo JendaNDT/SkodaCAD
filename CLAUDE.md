@@ -147,6 +147,13 @@
   týž `ShortcutDialog` se `start=MOUSE`; žádný samostatný text ovládání (QMessageBox zrušen).
   PR #126, `40e43a8`. [P7.47](docs/p7-47-hlaska-ukazat-jho.md): *Ukázat jho* v MT u místa bez
   zvoleného směru vysvětlí proč a co přepnout (viz Známé pasti NDT – MT jho).
+- **Pokyn autora z 6. 11. 2026:** okno má vypadat „přesně takto“ podle návrhu
+  *1a Plovoucí panely* (reference, obrazovky a ikony Duo v `docs/p7-48-navrh-okna/`).
+  [Plán P7.48–P7.58](docs/p7-48-plan-noveho-okna.md): 4 vydání A–D, jen okno, formát
+  beze změny. Zkouška: neprůhledná karta nad nativním 3D funguje, průhledná ne (OCCT
+  kreslí do `_NativeSurface`). Rozhodnutí R1–R7 (průsvitnost, titulek Windows, semafor
+  Macu, oblíbené, stavový řádek, sestava, plné upozornění UT) čekají na autora.
+  Zachovat rozhraní `Workspace`/`Ribbon` kvůli testům; povinná upozornění NDT doslovně.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -1750,7 +1757,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47; [hláška Ukázat jho v MT](docs/p7-47-hlaska-ukazat-jho.md) v rozpracované dávce | formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md) | rozhodnutí R1–R7 autorem, pak vydání A–D; formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
