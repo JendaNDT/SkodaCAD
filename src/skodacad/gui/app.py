@@ -1449,7 +1449,7 @@ def _self_test_theme(window, lines: list[str]) -> bool:
                 image = icon(name, color).pixmap(24, 24).toImage()
                 assert any(image.pixelColor(x, y).alpha() > 200 for x in range(24)
                            for y in range(24)), f"ikona {name} je prázdná"
-        backgrounds = []
+        backgrounds, seen = [], []
         for key, dark in (("dark", True), ("light", False)):
             window.workspace.appearance_actions[key].trigger()
             QApplication.processEvents()
@@ -1463,8 +1463,12 @@ def _self_test_theme(window, lines: list[str]) -> bool:
                 shot = QImage(str(path))
                 corner = shot.pixelColor(shot.width() - 3, 3)  # pozadí vpravo nahoře
                 backgrounds.append(corner.lightness())
+                low = shot.pixelColor(shot.width() - 3, shot.height() - 3)
+                seen.append(f"{key} {corner.name()}/{low.name()} {shot.width()}×{shot.height()}")
         if backgrounds:
-            assert backgrounds[0] < 110 < backgrounds[1], f"pozadí 3D {backgrounds}"
+            assert backgrounds[0] < 110 < backgrounds[1], (
+                f"pozadí 3D {backgrounds} ({'; '.join(seen)}; OpenGL: "
+                f"{window.viewer.graphics_info()})")
         font = app.font().family()
         lines.append(f"✓ Vzhled a ikony: 41 ikon Duo ve světlém i tmavém vzhledu, paleta "
                      f"z návrhu, pozadí 3D tmavé/světlé {backgrounds or 'bez 3D'}, písmo {font}")

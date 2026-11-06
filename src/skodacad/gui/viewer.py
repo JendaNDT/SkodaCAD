@@ -294,6 +294,12 @@ def pixel_ratio(platform: str, occ_width: int, qt_width: int, device_ratio: floa
 BACKGROUNDS = {False: ("#f2f5fa", "#b8c4d6"), True: ("#3b4049", "#16181c")}
 
 
+def _middle(top: str, bottom: str) -> str:
+    """Střední barva přechodu (jednobarevné pozadí, kde OpenGL přechod nenakreslí)."""
+    a, b = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (top, bottom))
+    return "#" + "".join(f"{(x + y + 1) // 2:02x}" for x, y in zip(a, b, strict=True))
+
+
 def _srgb(hex_color: str) -> Quantity_Color:
     r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
     return Quantity_Color(r, g, b, Quantity_TOC_sRGB)
@@ -1892,6 +1898,10 @@ class OccViewer(QWidget):
 
     def _apply_background(self, view) -> None:
         top, bottom = BACKGROUNDS[self._dark_background]
+        # Základní ovladač Windows bez grafické karty (GDI Generic, OpenGL 1.1 – sestavovací
+        # počítač GitHubu, vzdálená plocha) přechod nenakreslí a nechá barvu mazání: bez ní
+        # černou. Pod přechodem proto leží jednobarevné pozadí ve střední barvě návrhu.
+        view.SetBackgroundColor(_srgb(_middle(top, bottom)))
         view.SetBgGradientColors(_srgb(top), _srgb(bottom), Aspect_GFM_VER, False)
         label = Quantity_NOC_WHITE if self._dark_background else Quantity_NOC_BLACK
         # Menší osový kříž se vejde pod levou kartu (60 px, P7.49).

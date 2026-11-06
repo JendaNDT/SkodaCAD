@@ -152,3 +152,13 @@ def test_every_duo_icon_renders_in_palette_color(app, color):
 def test_icons_without_duo_still_draw_original_glyph(app):
     assert len(_painted(icon("document", "#0a64d8"))) >= 12
     assert len(_painted(icon("box", "#4a9eff"))) >= 12
+
+
+def test_flat_3d_background_is_the_middle_of_the_design_gradient():
+    """Bez přechodu (GDI Generic, OpenGL 1.1) zůstane pod ním střední barva, ne černá."""
+    from skodacad.gui.viewer import BACKGROUNDS, _middle
+
+    assert _middle(*BACKGROUNDS[False]) == "#d5dde8"
+    assert _middle(*BACKGROUNDS[True]) == "#292c33"
+    assert QColor(_middle(*BACKGROUNDS[False])).lightness() > 110
+    assert QColor(_middle(*BACKGROUNDS[True])).lightness() < 110
