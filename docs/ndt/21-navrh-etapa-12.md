@@ -595,7 +595,7 @@ Schválením se **neschvaluje**:
   vydání vyzkoušel 19. 10. 2026. Při zkoušce *Ukázat jho* v pohledu pole 90° u kraje desky
   nic nenakreslilo: místo směr 90° nemá a jho se hledá jen pro směr z přepínače, v pohledu
   *celkem* se jho s roztečí 75 mm nakreslí. Srozumitelnější hláška pro tento případ je
-  navržená, neprovedená.
+  od 6. 11. 2026 provedená ([P7.47](../p7-47-hlaska-ukazat-jho.md)).
 - **Automatické mapy referenčních dílů** (19. 10. 2026, cloud, výchozí nastavení včetně
   nanesení a prohlídky, automatický krok sítě i středů):
   - deska (1 056 míst, středy 10 mm): celkem 52,7 % pokryto, pole 0° 65,6 % (ručně 65 %),

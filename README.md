@@ -857,8 +857,9 @@ materiálu (útlum, struktura, akustická vazba) ani detekovatelnost vad. V okn�
   [--bez-naneseni] [--bez-prohlidky] [--ulozit] [--csv mt.csv]`. V okně: u MT studie
   skupina *Přiložení jha a směry magnetizace* v panelu NDT – *Nastavení MT…*, *Spočítat mapu
   MT* (na pozadí, jde zastavit), přepínač mapy, klik do mapy (směry a důvody místa),
-  *Ukázat jho* (jho, které místo pokryje ve zvoleném směru) a *Přiložit jho sem* (střed
-  v kliknutém bodě, zvolené natočení). Návrh: [Etapa 12](docs/ndt/21-navrh-etapa-12.md).
+  *Ukázat jho* (jho, které místo pokryje ve zvoleném směru; když místo ten směr nemá,
+  řekne proč a které směry má – [P7.47](docs/p7-47-hlaska-ukazat-jho.md)) a *Přiložit jho
+  sem* (střed v kliknutém bodě, zvolené natočení). Návrh: [Etapa 12](docs/ndt/21-navrh-etapa-12.md).
 * **RT – geometrie projekce (etapa 13):** jen geometrie podle
   [závazného vymezení RT](docs/ndt/24-vymezeni-rt.md). Program nepočítá dávku ani radiační
   ochranu, expozici, kvalitu obrazu, citlivost ani detekovatelnost vad.
