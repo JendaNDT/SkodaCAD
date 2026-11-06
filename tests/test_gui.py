@@ -2520,6 +2520,20 @@ def test_mt_panel_settings_map_views_pick_yoke_and_export(mt_window, no_dialogs,
     panel.mt_show_yoke_action.trigger()  # jho, které místo pokryje polem 0°
     assert session.ndt_yoke is not None and session.ndt_yoke.ok
     assert w.viewer.probe is not None and w.viewer.probe[0] == "ok"
+    # Místo bez pole 90° (P7.47): žádné matoucí jho, ale věta, co místo má a co přepnout.
+    lacking = next(s for s in session.ndt_mt_map.samples if s.normal[2] > 0.99 and s.angles
+                   and s.directions[4] not in ("ok", "uncertain"))
+    panel.mt_view.setCurrentIndex(panel.mt_view.findData("d4"))
+    w.viewer.click([top], lacking.point)
+    panel.mt_show_yoke_action.trigger()
+    assert session.ndt_yoke is None and w.viewer.probe is None and not slot_errors
+    assert panel.mt_yoke.text().startswith("Pole 90°: toto místo ho nemá")
+    assert "„celkem“" in panel.mt_yoke.text()
+    panel.mt_view.setCurrentIndex(panel.mt_view.findData(""))  # celkem
+    panel.mt_show_yoke_action.trigger()
+    assert session.ndt_yoke is not None and w.viewer.probe is not None
+    assert "toto místo ho nemá" not in panel.mt_yoke.text()
+    panel.mt_view.setCurrentIndex(panel.mt_view.findData("d0"))
     panel.mt_angle.setValue(90)
     w.viewer.click([top], (0, 0, 20))
     panel.mt_place_yoke_action.trigger()  # deska je široká jen 100 mm → rozteč 75

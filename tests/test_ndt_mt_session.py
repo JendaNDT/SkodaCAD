@@ -80,8 +80,27 @@ def test_map_and_yoke_are_views_invalidated_by_part_change(tmp_path):
     found = session.ndt_mt_yoke_at((0, 30, 20), "d0")  # jho, které místo pokryje polem 0°
     assert found is not None and found.ok and session.ndt_yoke is found
     assert session.document.to_dict() == before
+    # Místo na horní ploše, které pole 90° nemá, ale jiný směr ano (P7.47): Ukázat jho
+    # nehledá nevyhovující jho, jen vysvětlí, co místo má a co přepnout.
+    lacking = next(s for s in result.samples if s.normal[2] > 0.99 and s.angles
+                   and s.directions[4] not in ("ok", "uncertain"))
+    assert session.ndt_mt_yoke_at(lacking.point, "d4") is None
+    assert session.ndt_yoke is None
+    note = session.ndt_yoke_note
+    assert note.startswith("Pole 90°: toto místo ho nemá") and "„celkem“" in note
+    assert "platné směry pole " + ", ".join(f"{a:g}°".replace(".", ",")
+                                            for a in lacking.angles) in note
+    shown = session.ndt_mt_yoke_at(lacking.point, None)  # celkem = první platný směr
+    assert shown is not None and session.ndt_yoke is shown and session.ndt_yoke_note is None
+    session.ndt_mt_yoke_at(lacking.point, "d4")
+    session.clear_ndt_yoke()
+    assert session.ndt_yoke_note is None
+    session.ndt_mt_yoke_at(lacking.point, "d4")
+    assert session.ndt_yoke_note is not None
+    assert session.document.to_dict() == before
     session.set_parameter("t", "30")
     assert session.ndt_mt_map is None and session.ndt_yoke is None  # jen pohled
+    assert session.ndt_yoke_note is None  # vysvětlení patří ke staré mapě
     with pytest.raises(DocumentError, match="nejdřív ji potvrď"):
         session.compute_ndt_mt("s2")
     with pytest.raises(DocumentError, match="jen pro MT"):

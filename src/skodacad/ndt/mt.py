@@ -664,6 +664,31 @@ class MtMap:
         lines.append("Místo " + "; ".join(_dec(v) for v in s.point) + " mm. " + ANGLE_NOTE)
         return lines
 
+    def yoke_direction(self, index: int, view: str | None) -> tuple[float | None, str]:
+        """Ukázat jho: směr pole [°] pro hledání jha v místě a pro přepínač mapy ``view``,
+        nebo (None, česká věta), když místo ten směr nemá. Věta říká, který směr chybí
+        a proč (stejně jako mapa), které směry místo má a co přepnout – dřív se v takovém
+        směru hledalo nevyhovující jho a ukázal se jen jeho důvod, bez souvislosti s mapou."""
+        s = self.samples[index]
+        have = s.angles or s.uncertain_angles
+        listed = ", ".join(f"{_n(a)}°" for a in have)
+        if view is not None and view.startswith("d"):
+            k = int(view[1:])
+            if s.directions[k] in ("ok", "uncertain"):
+                return k * DIRECTION_STEP, ""
+            why = s.failures[k] or "jho se v tomto směru nevejde"
+            why = why[:1].lower() + why[1:]  # pokračuje větu „toto místo ho nemá – …“
+            text = f"Pole {_n(k * DIRECTION_STEP)}°: toto místo ho nemá – {why.rstrip('.')}."
+            if have:
+                return None, (f"{text} Místo má platné směry pole {listed}. Přepni zobrazení "
+                              "na „celkem“ (nebo na jeden z platných směrů) a stiskni "
+                              "Ukázat jho znovu.")
+            return None, f"{text} Místo nemá žádný platný směr pole, jho tu ukázat nejde."
+        if have:
+            return have[0], ""
+        return None, ("Toto místo nemá žádný platný směr pole – jho se sem nevejde v žádném "
+                      "směru, proto ho nejde ukázat. Důvody jsou výše u místa.")
+
     def reason_areas(self) -> list[tuple[str, float]]:
         areas: dict[str, float] = {}
         for s in self.samples:
@@ -1443,6 +1468,24 @@ def self_check(folder: Any) -> tuple[bool, str]:
     pocket = Yoker(PartGeometry(kapsa), MtSettings()).best((0.0, 0.0, 15.0), (0, 0, 1),
                                                            (1.0, 0.0, 0.0))
     got = [(along.ok, along.spacing), (across.ok, across.spacing), pocket.ok]
-    if got == [(True, 100.0), (True, 75.0), False]:
-        return True, "MT jho: OK (deska – podél X rozteč 100, podél Y 75; kapsa – nevejde se)"
-    return False, f"MT jho: {got} (čekáno podél X 100, podél Y 75, kapsa nevejde)"
+    hint = _hint_check()
+    if got == [(True, 100.0), (True, 75.0), False] and not hint:
+        return True, ("MT jho: OK (deska – podél X rozteč 100, podél Y 75; kapsa – nevejde se; "
+                      "Ukázat jho vysvětlí chybějící směr)")
+    return False, (f"MT jho: {got} (čekáno podél X 100, podél Y 75, kapsa nevejde)"
+                   + (f"; Ukázat jho: {hint}" if hint else ""))
+
+
+def _hint_check() -> str:
+    """Hláška Ukázat jho pro místo bez zvoleného směru (P7.47) – bez výpočtu mapy;
+    prázdný text = v pořádku."""
+    directions = ("ok",) + ("overhang",) * (DIRECTIONS - 1)
+    failures = ("",) + ("Pól nemá kam dosednout.",) * (DIRECTIONS - 1)
+    sample = MtSample((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 1.0, "partial", "limited", "ok", "ok",
+                      (0.0,), (), (), directions, failures, ())
+    found = MtMap([], [], [sample], MtSettings(), 1.0, 1.0, 1, 1, 1, 1, "", 0.0)
+    angle, text = found.yoke_direction(0, "d4")
+    if angle is None and text.startswith("Pole 90°: toto místo ho nemá – pól nemá") \
+            and "platné směry pole 0°" in text and found.yoke_direction(0, None) == (0.0, ""):
+        return ""
+    return f"{angle!r} / {text!r}"

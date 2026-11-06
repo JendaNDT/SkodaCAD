@@ -311,3 +311,51 @@ def test_study_faces_and_estimate(deska):
 def test_self_check():
     ok, text = self_check(NDT)
     assert ok, text
+
+
+# --- Ukázat jho: srozumitelná hláška, když místo zvolený směr nemá (P7.47) ----------------
+
+
+def _hint_map(angles, uncertain=(), directions=None, failures=None):
+    from skodacad.ndt.mt import DIRECTIONS, MtMap, MtSample
+
+    directions = directions or tuple("ok" if k * 22.5 in angles else "overhang"
+                                     for k in range(DIRECTIONS))
+    failures = failures or tuple("" if d == "ok" else "Pól přesahuje okraj dílu."
+                                 for d in directions)
+    sample = MtSample((0.0, 0.0, 20.0), (0.0, 0.0, 1.0), 1.0, "partial", "limited", "ok",
+                      "ok", tuple(angles), tuple(uncertain), (), directions, failures, ())
+    return MtMap([], [], [sample], MtSettings(), 25.0, 50.0, 1, 1, 1, 1, "", 0.0)
+
+
+def test_yoke_direction_for_a_direction_the_place_has():
+    found = _hint_map((0.0, 22.5))
+    assert found.yoke_direction(0, "d0") == (0.0, "")
+    assert found.yoke_direction(0, None) == (0.0, "")  # celkem = první platný směr
+    assert found.yoke_direction(0, "apply") == (0.0, "")
+
+
+def test_yoke_direction_explains_a_missing_direction_and_what_to_switch():
+    found = _hint_map((0.0, 22.5))
+    angle, text = found.yoke_direction(0, "d4")
+    assert angle is None
+    assert text.startswith("Pole 90°: toto místo ho nemá – pól přesahuje okraj dílu.")
+    assert "platné směry pole 0°, 22,5°" in text
+    assert "„celkem“" in text and "Ukázat jho znovu" in text
+
+
+def test_yoke_direction_without_any_direction_says_so():
+    found = _hint_map(())
+    angle, text = found.yoke_direction(0, "d2")
+    assert angle is None and "Pole 45°" in text and "žádný platný směr" in text
+    angle, text = found.yoke_direction(0, None)
+    assert angle is None and "žádný platný směr pole" in text and "Důvody" in text
+
+
+def test_yoke_direction_uses_uncertain_directions_when_nothing_is_sure():
+    directions = ("uncertain",) + ("overhang",) * 7
+    found = _hint_map((), uncertain=(0.0,), directions=directions)
+    assert found.yoke_direction(0, None) == (0.0, "")  # nejistý směr jho ještě ukáže
+    assert found.yoke_direction(0, "d0") == (0.0, "")
+    angle, text = found.yoke_direction(0, "d4")
+    assert angle is None and "platné směry pole 0°" in text and "jho se v tomto směru" not in text

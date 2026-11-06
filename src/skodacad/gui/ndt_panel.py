@@ -1570,8 +1570,11 @@ class NdtPanel(QWidget):
     def _show_yoke_text(self) -> None:
         placed = self.window.session.ndt_yoke
         session = self.window.session
+        if placed is None:
+            self.mt_yoke.setText(session.ndt_yoke_note or MT_YOKE_HINT)
+            return
         note = session.ndt_preview_note(session.ndt_yoke_study())
-        self.mt_yoke.setText(MT_YOKE_HINT if placed is None else (note + " " + placed.text).strip())
+        self.mt_yoke.setText((note + " " + placed.text).strip())
 
     def edit_mt_settings(self) -> None:
         study_id = self._mt_study()

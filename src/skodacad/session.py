@@ -327,6 +327,8 @@ class ModelSession:
         self._mt_cache: tuple[tuple[Any, ...], MtMap] | None = None
         self._mt_pending: dict[str, Any] | None = None
         self._yoke_view: tuple[tuple[Any, ...], YokePlacement] | None = None
+        # Ukázat jho v místě bez zvoleného směru: vysvětlení místo jha (jen pohled).
+        self._yoke_note: tuple[tuple[Any, ...], str] | None = None
         # mapa RT (etapa 13, jen pohled): (klíč platnosti, mapa) a běžící výpočet
         self._rt_cache: tuple[tuple[Any, ...], RtMap] | None = None
         self._rt_pending: dict[str, Any] | None = None
@@ -353,7 +355,7 @@ class ModelSession:
         self._plan_cache = None
         self._pt_cache = None
         self._mt_cache = None
-        self._yoke_view = None
+        self._yoke_view = self._yoke_note = None
         self._rt_cache = None
         self._audit_cache = None
         self._design_cache = None
@@ -373,7 +375,7 @@ class ModelSession:
         self._plan_cache = None
         self._pt_cache = None
         self._mt_cache = None
-        self._yoke_view = None
+        self._yoke_view = self._yoke_note = None
         self._rt_cache = None
         self._audit_cache = None
         self._design_cache = None
@@ -2729,7 +2731,16 @@ class ModelSession:
         return self.ndt_mt_settings(self._yoke_view[0][1])
 
     def clear_ndt_yoke(self) -> None:
-        self._yoke_view = None
+        self._yoke_view = self._yoke_note = None
+
+    @property
+    def ndt_yoke_note(self) -> str | None:
+        """Proč Ukázat jho nic nenakreslilo (místo nemá zvolený směr pole); platí jako jho
+        jen pro díl a studii, pro které vzniklo."""
+        if self.model_problem or not self._mt_valid(self._yoke_note):
+            self._yoke_note = None
+            return None
+        return self._yoke_note[1]
 
     def place_ndt_yoke(self, study_id: str, point: Any, angle: float) -> YokePlacement:
         """Přiložit jho sem: jho se středem v bodě povrchu, natočené o ``angle`` [°] (0° =
@@ -2743,13 +2754,14 @@ class ModelSession:
                                 settings, geo=geo)
         except (GeometryError, MtError) as exc:
             raise DocumentError(str(exc)) from None
-        self._yoke_view = (self._mt_key(record["id"]), placed)
+        self._yoke_view, self._yoke_note = (self._mt_key(record["id"]), placed), None
         return placed
 
     def ndt_mt_yoke_at(self, point: Any, view: str | None) -> YokePlacement | None:
         """Ukázat jho: pro místo mapy nejblíž bodu najde jho, jehož účinná oblast místo
         pokryje ve směru ``view`` (u „celkem“ v prvním platném směru); když žádné, ukáže
-        nevyhovující jho se středem v místě. Jen pohled."""
+        nevyhovující jho se středem v místě. Když místo zvolený směr nemá (nebo žádný),
+        jho nehledá a vrátí None s vysvětlením v ``ndt_yoke_note``. Jen pohled."""
         result, study_id = self.ndt_mt_map, self.ndt_mt_study()
         if result is None or point is None:
             return None
@@ -2757,16 +2769,16 @@ class ModelSession:
         if index is None:
             return None
         sample = result.samples[index]
-        if view is not None and view.startswith("d"):
-            angle = int(view[1:]) * 22.5
-        else:
-            angle = sample.angles[0] if sample.angles else 0.0
+        angle, note = result.yoke_direction(index, view)
+        if angle is None:
+            self._yoke_view, self._yoke_note = None, (self._mt_key(study_id), note)
+            return None
         try:
             placed = find_yoke(self.result.part, sample.point, sample.normal, angle,
                                result.settings, geo=self._ndt_geometry())
         except MtError as exc:
             raise DocumentError(str(exc)) from None
-        self._yoke_view = (self._mt_key(study_id), placed)
+        self._yoke_view, self._yoke_note = (self._mt_key(study_id), placed), None
         return placed
 
     def ndt_yoke_drawing(self) -> tuple[Any, str, Any, Any, str, list] | None:
