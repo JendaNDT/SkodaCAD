@@ -41,7 +41,7 @@ Vzorem je rám 2d v [`p7-48-navrh-okna/obrazovky/`](p7-48-navrh-okna/obrazovky/)
 |---|---|
 | `tests/test_sketch_mode.py` (6) | plátno je dítě 3D pohledu, paleta Skica místo palety příkazů, segment „Skica“, zamčené akce okna a zkratky skicáře v okně, „Prázdná skica“ / „Zbývá určit: …“ v pilulce, vazby v levé kartě, nadpis „Bez výběru · Výběr“; Hotovo → náhled nové skici se 4 čarami a návrat okna (akce, paleta, pohledy); Zrušit beze změny modelu a historie; Esc ukončí čáru a pak zruší výběr; výběr úsečky a kružnice nabídne Tečně jako primární a skutečné kliknutí ho přidá; úprava skici z náhledu se vrátí do náhledu; zavření okna skicu zruší; názvy výběru |
 | `tests/test_sketcher_gui.py` (24) | beze změny, prochází (skicář jako samostatná logika) |
-| testy okna, náhledů, skicáře, hledání, oblíbených, filtrů | viz PR |
+| testy okna, náhledů, skicáře, hledání, oblíbených, filtrů, NDT průvodce (19 souborů, Linux) | 355 úspěšných, 0 chyb; `ruff check src tests` bez nálezů |
 | self-test „Skicář v okně“ (Linux Xvfb, 1440 × 900, skutečné 3D) | plátno místo 3D (`childAt` uprostřed), skutečný klik na Úsečka a pět kliků myší na plátno = obdélník 4 čar, skutečné Esc ukončí čáru, pilulka „Zbývá určit: 2 rozměry“, karta Výběr 302 px se vejde, skutečný klik Hotovo → náhled skici, zrušení bez změny modelu |
 
 Snímek: [skicář v okně](p7-48-snimky/skicar-v-okne.png).
