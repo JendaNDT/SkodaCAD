@@ -712,6 +712,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`MainWindow._sync_palette`). Self-test hledání zkouší právě *Sbalit pás nástrojů*.
   Karta se schová i při rušení okna → `Workspace` ověřuje `isValid(window)`.
   Mac: `setUnifiedTitleAndToolBarOnMac(True)`, levý okraj lišty 84 px pro semafor.
+- Strom prvků (P8.5 rozbor, `docs/p8-5-rozbor-pauz-noveho-okna.md`): `setIcon` jen při
+  změně klíče `model_card.ICON_ROLE` (QIcon nejde porovnat → jinak změna každého řádku)
+  a sloupec těles během `_refresh_tree` `Interactive`, `ResizeToContents` až na konci
+  (jinak řádky × řádky volání `FeatureRowDelegate.sizeHint`, 200–270 ms u 122 řádků).
 - P7.51: levá karta = `model_card.ModelTabs` (features / parameters / part, `sidebar_tab`
   v `okno.json`). `sidebar_sections["parameters"]` je `TabSection` (rozbalená = záložka
   Parametry); info a properties jsou dál `Section` na záložce Díl. Řádky stromu nemění
