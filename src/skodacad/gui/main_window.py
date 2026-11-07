@@ -86,6 +86,7 @@ from skodacad.gui.model_card import (
 )
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
+from skodacad.gui.sketch_mode import SketchMode
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.status_pill import StatusPill, ViewSwitcher
 from skodacad.gui.tool_cards import (
@@ -190,6 +191,8 @@ class MainWindow(QMainWindow):
         # S ``runner`` se model přepočítává na pozadí v pomocném procesu (okno je živé).
         self._runner = runner
         self.feature_preview = None
+        self._sketch_mode = None  # skicář jako režim okna (P7.57)
+        self._sketch_focus = None  # stav obrysu pro pilulku během skicáře
         self._feature_preview_runner = None
         self._preview_action_states = []
         self.session = ModelSession(runner)
@@ -504,6 +507,20 @@ class MainWindow(QMainWindow):
         self.ndt_group.hide()
         self.ndt_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         tree_layout.addWidget(self.ndt_group)
+        # P7.57 (rám 2d): ve skicáři jsou pod stromem vazby upravované skici.
+        self.sketch_group = QWidget()
+        self.sketch_group.setObjectName("sketch_group")
+        sketch = QVBoxLayout(self.sketch_group)
+        sketch.setContentsMargins(0, 4, 0, 0)
+        sketch.setSpacing(2)
+        self.sketch_group_title = QLabel("Vazby skici")
+        self.sketch_group_title.setStyleSheet("font-size: 11px; font-weight: 600;")
+        self.sketch_group_title.setProperty("secondaryText", True)
+        sketch.addWidget(self.sketch_group_title)
+        self.sketch_group_list = QVBoxLayout()
+        sketch.addLayout(self.sketch_group_list, 1)
+        self.sketch_group.hide()
+        tree_layout.addWidget(self.sketch_group, 1)
         # V činnosti NDT má strom výšku podle řádků a volné místo zůstane pod studiemi.
         self._ndt_spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum,
                                        QSizePolicy.Policy.Minimum)
@@ -2040,7 +2057,10 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()  # jinak by po každém otevření zůstalo skryté okno v paměti
 
     def _exec_dialog(self, dialog: QDialog) -> int:
-        return dialog.exec()  # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
+        # samostatně, aby ho test mohl nahradit (jinak čeká na klik)
+        if isinstance(dialog, SketcherDialog) and self._sketch_mode is None:
+            return SketchMode(self, dialog).run()  # P7.57: skicář jako režim okna
+        return dialog.exec()
 
     def add_profile_sketch(self) -> None:
         """Nová skica s obrysem nakresleným ve skicáři (jeden krok pro Zpět)."""
@@ -2545,24 +2565,11 @@ class MainWindow(QMainWindow):
         Řádky se znovu používají podle id (Cocoa AX drží odkazy na buňky – žádné clear())."""
         if not hasattr(self, "ndt_study_list"):
             return
-        shown = self._ndt_group_visible()
+        shown = self._ndt_group_visible() and self._sketch_mode is None
         if self.ndt_group.isHidden() == shown:
             self.ndt_group.setVisible(shown)
-            self._ndt_spacer.changeSize(0, 0, QSizePolicy.Policy.Minimum,
-                                        QSizePolicy.Policy.Expanding if shown
-                                        else QSizePolicy.Policy.Minimum)
-            self._tree_layout.invalidate()
-        if shown:
-            rows = sum(not self.tree.topLevelItem(i).isHidden()
-                       for i in range(self.tree.topLevelItemCount()))
-            height = max(60, rows * 26 + 6)
-            self.tree.setMinimumHeight(min(TREE_MIN_HEIGHT, height))
-            self.tree.setMaximumHeight(height)
-            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        else:
-            self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
-            self.tree.setMaximumHeight(16777215)
-            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._compact_tree()
+        if not shown:
             return
         widget = self.ndt_study_list
         session = self.session
@@ -2612,6 +2619,29 @@ class MainWindow(QMainWindow):
         self.workspace.show_panel("ndt")
         if self.ndt_panel.new_action.isEnabled():
             self.ndt_panel.new_action.trigger()
+
+    def _compact_tree(self) -> None:
+        """Pod stromem je skupina (NDT studie, vazby skici): strom má výšku podle řádků,
+        volné místo zůstane pod skupinou (NDT) nebo patří vazbám skici."""
+        if not hasattr(self, "_ndt_spacer"):
+            return
+        ndt = not self.ndt_group.isHidden()
+        compact = ndt or not self.sketch_group.isHidden()
+        self._ndt_spacer.changeSize(0, 0, QSizePolicy.Policy.Minimum,
+                                    QSizePolicy.Policy.Expanding if ndt
+                                    else QSizePolicy.Policy.Minimum)
+        self._tree_layout.invalidate()
+        if compact:
+            rows = sum(not self.tree.topLevelItem(i).isHidden()
+                       for i in range(self.tree.topLevelItemCount()))
+            height = max(60, rows * 26 + 6)
+            self.tree.setMinimumHeight(min(TREE_MIN_HEIGHT, height))
+            self.tree.setMaximumHeight(height)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        else:
+            self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
+            self.tree.setMaximumHeight(16777215)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def _ndt_study_chosen(self, item) -> None:
         if item is None:
@@ -2697,7 +2727,9 @@ class MainWindow(QMainWindow):
             return
         workspace = getattr(self, "workspace", None)
         settings = self.session.section_settings
-        if self.feature_preview is not None:
+        if self._sketch_focus is not None:  # skicář: zbývá určit / plně určeno
+            focus = self._sketch_focus
+        elif self.feature_preview is not None:
             preview = self.feature_preview.preview
             feature = preview.session.feature(preview.feature_id)
             schema = FEATURE_SCHEMAS.get(feature["type"])
@@ -2721,6 +2753,9 @@ class MainWindow(QMainWindow):
 
     def _refresh_actions(self) -> None:
         self._refresh_status_state()
+        if self._sketch_mode is not None:  # skicář: okno zamčené, platí jen jeho akce
+            self._sketch_mode.lock()
+            return
         if self.feature_preview is not None:
             self._lock_preview_actions()
             return
@@ -3746,6 +3781,10 @@ class MainWindow(QMainWindow):
         return answer == QMessageBox.StandardButton.Discard
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        if self._sketch_mode is not None:  # nejdřív skicář: Hotovo nebo Zrušit
+            self._sketch_mode.dialog.reject()
+            event.ignore()
+            return
         # Otevřené sestavy se zavřou s dílem (každá se zeptá na své neuložené změny).
         if any(isValid(window) and window.isVisible() and not window.close()
                for window in self.assembly_windows):
