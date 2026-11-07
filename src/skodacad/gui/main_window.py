@@ -2255,6 +2255,17 @@ class MainWindow(QMainWindow):
         self.description_label.setVisible(bool(self.description_label.text()))
 
     def _refresh_tree(self) -> None:
+        # Sloupec těles se přizpůsobuje obsahu: každá změna jeho textu by přeměřila všechny
+        # řádky (vlastní kresba řádku = Python), při přepočtu 122 × 122 měření (P8.5,
+        # 200–270 ms). Během obnovy proto šířka stojí a spočítá se jednou na konci.
+        header = self.tree.header()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        try:
+            self._refresh_tree_rows()
+        finally:
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+
+    def _refresh_tree_rows(self) -> None:
         self.tree.blockSignals(True)
         # Cocoa AX retains references to cells. Resetting the model on an ordinary
         # edit can crash libqcocoa (macOS 27.2, also with Qt 6.11.3). Reuse rows by id.
