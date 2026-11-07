@@ -14,6 +14,7 @@ import statistics
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,9 @@ import soak_p8 as soak
 
 POLICY = baseline.ROOT / "tests/p85-budgets.json"
 MIB = 1024**2
+# Jediná kontrola měřiče vyjmutá z intervalů Qt (rozhodnutí autora 7. 11. 2026):
+# ověření is_valid 800 kopií sestavy v soak_p8_gui.preview_and_close, jednou v každém cyklu.
+EXCLUDED_CHECKS = ("assembly-800-copies",)
 GAP_BOUNDS = (.05, .075, .1, .15, .25, .5, 1., 2., 3., 5., 10.)
 
 
@@ -43,6 +47,7 @@ class LoopProbe:
         self.count = 0
         self.maximum = self.total = 0.
         self.buckets = [0]*(len(GAP_BOUNDS)+1)
+        self.excluded = {}
 
     def start(self):
         self.last = self.clock()
@@ -60,10 +65,42 @@ class LoopProbe:
                       len(GAP_BOUNDS))
         self.buckets[bucket] += 1
 
+    @contextmanager
+    def exclude(self, name):
+        """Čas kontroly měřiče se odečte z běžícího intervalu; kontrola sama proběhne celá."""
+        if name not in EXCLUDED_CHECKS:
+            raise ValueError(f"Kontrola {name!r} není schválená k vyjmutí z měření Qt")
+        begin = self.clock()
+        try:
+            yield
+        finally:
+            spent = self.clock()-begin
+            if not positive(spent):
+                raise ValueError("Čas vyjmuté kontroly není monotónní")
+            if self.last is not None:
+                self.last += spent
+            entry = self.excluded.setdefault(name, {"count": 0, "total_s": 0., "max_s": 0.})
+            entry["count"] += 1
+            entry["total_s"] += spent
+            entry["max_s"] = max(entry["max_s"], spent)
+
     def report(self):
         return {"interval_s": .05, "count": self.count, "max_gap_s": self.maximum,
                 "total_gap_s": self.total, "bounds_s": list(GAP_BOUNDS),
-                "buckets": self.buckets}
+                "buckets": self.buckets, "excluded": self.excluded}
+
+
+def check_excluded(probe, runs):
+    """Starší důkazy vyjmutí nemají; nový smí vyjmout jen schválenou kontrolu, jednou za cyklus."""
+    excluded = probe.get("excluded")
+    if excluded is None:
+        return
+    if (type(excluded) is not dict or set(excluded) != set(EXCLUDED_CHECKS)
+            or any(type(e) is not dict or set(e) != {"count", "total_s", "max_s"}
+                   or e["count"] != runs or not positive(e["max_s"])
+                   or not e["max_s"] <= e["total_s"] <= runs*e["max_s"]
+                   for e in excluded.values())):
+        raise ValueError("Vyjmutí z měření Qt neodpovídá schválené kontrole měřiče")
 
 
 def gap_p95(probe):
@@ -112,6 +149,7 @@ def evaluate(report, policy, profile):
     if not positive(report["wall_s"]) or rows[-1]["at_s"] > report["wall_s"]:
         raise ValueError("Rozporný celkový čas")
     soak.validate_runtime(rows, footer, 20, 2)
+    check_excluded(report["qt_probe"], 22)
     summary = soak.summarize(rows, 20, 2)
     durations = {phase: [] for phase in soak.PHASES}
     previous = 0.
@@ -175,8 +213,11 @@ def child(folder):
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtWidgets import QApplication
 
+    import soak_p8_gui
+
     app = QApplication([])
     probe, timer, errors = LoopProbe(), QTimer(), []
+    soak_p8_gui.MEASURER_CHECK = probe.exclude
     timer.setTimerType(Qt.TimerType.PreciseTimer)
 
     def tick():

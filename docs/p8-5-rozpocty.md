@@ -35,6 +35,21 @@ Pevný histogram dává konzervativní horní hranici p95; zaznamená se i přes
 Výsledek není latence od kliknutí po zobrazený pixel ani FPS/GPU benchmark.
 Sonda drží pevný počet čítačů, nikoli rostoucí seznam vzorků.
 
+**Rozhodnutí autora ze 7. 11. 2026 – vyjmutí kontroly měřiče.** Po
+[rozboru pauz](p8-5-rozbor-pauz-noveho-okna.md) autor zvolil „Vyjmout kontrolu
+z měření“. Nejdelší pauzu dělala kontrola samotného měřicího programu: ověření
+`is_valid` všech 800 kopií sestavy (`inspect_assembly(..., 800)` v
+`soak_p8_gui.preview_and_close`) v hlavní smyčce okna, 2–3,5 s podle rychlosti
+počítače. Kontrola dál proběhne celá a její selhání zkoušku dál zastaví. Jen její
+čas se odečte od právě běžícího intervalu Qt (`LoopProbe.exclude`). Vyjmout jde
+pouze tuto jednu pojmenovanou kontrolu (`budget_p8.EXCLUDED_CHECKS`), jiný název
+je chyba. Důkaz nese `qt_probe.excluded` (počet, součet a maximum vyjmutého času)
+a vyhodnocení vyžaduje přesně jedno vyjmutí v každém z 2 + 20 cyklů. Ostatní
+kontroly měřiče (`inspect_history`) se počítají dál jako dřív. Samostatně
+spuštěná P8.4 (`soak_p8.py`) měří beze změny. Limity v `p85-budgets.json`
+(mez 3 s) se nemění. Starší výsledky bez `excluded` zůstávají historií se svým
+původním významem, včetně neúspěchů `c5a6b13` a `ad7fb19`; nepřepočítávají se.
+
 ## Limity zmrazené před prvním novým během
 
 Strojově čitelný zdroj je [p85-budgets.json](../tests/p85-budgets.json). Nový kandidát

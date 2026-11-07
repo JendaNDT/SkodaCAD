@@ -73,6 +73,7 @@ from skodacad.gui.macos_accessibility import install as install_macos_accessibil
 from skodacad.gui.main_bar import MainBar
 from skodacad.gui.model_card import (
     FEATURE_ICONS,
+    ICON_ROLE,
     STATUS_ROLE,
     FeatureRowDelegate,
     ModelTabs,
@@ -2254,6 +2255,17 @@ class MainWindow(QMainWindow):
         self.description_label.setVisible(bool(self.description_label.text()))
 
     def _refresh_tree(self) -> None:
+        # Sloupec těles se přizpůsobuje obsahu: každá změna jeho textu by přeměřila všechny
+        # řádky (vlastní kresba řádku = Python), při přepočtu 122 × 122 měření (P8.5,
+        # 200–270 ms). Během obnovy proto šířka stojí a spočítá se jednou na konci.
+        header = self.tree.header()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        try:
+            self._refresh_tree_rows()
+        finally:
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+
+    def _refresh_tree_rows(self) -> None:
         self.tree.blockSignals(True)
         # Cocoa AX retains references to cells. Resetting the model on an ordinary
         # edit can crash libqcocoa (macOS 27.2, also with Qt 6.11.3). Reuse rows by id.
@@ -2295,7 +2307,10 @@ class MainWindow(QMainWindow):
             item.setToolTip(1, message)
             item.setData(0, SEARCH_ROLE, f"{label} {key} {_STATUS_WORDS[status]}")
             item.setData(0, STATUS_ROLE, status)
-            item.setIcon(0, cad_icon(FEATURE_ICONS.get(kinds.get(key), "box"), color))
+            kind = FEATURE_ICONS.get(kinds.get(key), "box")
+            if item.data(0, ICON_ROLE) != f"{kind}|{color}":  # jen skutečná změna ikony
+                item.setIcon(0, cad_icon(kind, color))
+                item.setData(0, ICON_ROLE, f"{kind}|{color}")
             if key == self._selected_id:
                 chosen = item
         for item in previous.values():

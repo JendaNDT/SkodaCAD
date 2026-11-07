@@ -102,6 +102,13 @@
 - **Uzavření P8.5:** PR #119 je sloučený a vydání `e7f5e6d` ověřené včetně
   skutečných veřejných ZIPů obou OS; [protokol vydání](docs/p8-5-overeni-vydani.md)
   má přednost před průběžnými předslučovacími stavy výše.
+- **Rozhodnutí autora ze 7. 11. 2026 „Vyjmout kontrolu z měření“:** po
+  [rozboru pauz nového okna](docs/p8-5-rozbor-pauz-noveho-okna.md) se z intervalů
+  Qt sondy P8.5 odečítá jen čas kontroly měřiče `inspect_assembly(..., 800)`
+  (`LoopProbe.exclude`, jediný povolený název v `budget_p8.EXCLUDED_CHECKS`,
+  vyhodnocení žádá právě 22 vyjmutí). Kontrola dál běží a může zkoušku zastavit;
+  limity a `p85-budgets.json` beze změny, P8.4 samostatně beze změny. Starší
+  neúspěchy `c5a6b13`/`ad7fb19` zůstávají historií. Další vyjmutí = nové rozhodnutí.
 - **Navazující pokyn autora „tu přejímku přeskočíme“:** doporučenou automatickou
   přejímku na reprezentativní NDT úloze přeskočit. Zůstává neprovedená a neblokuje
   další vývoj. Nejde o odborné ověření NDT-17 ani rozšíření platnosti výkonových
@@ -712,6 +719,10 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`MainWindow._sync_palette`). Self-test hledání zkouší právě *Sbalit pás nástrojů*.
   Karta se schová i při rušení okna → `Workspace` ověřuje `isValid(window)`.
   Mac: `setUnifiedTitleAndToolBarOnMac(True)`, levý okraj lišty 84 px pro semafor.
+- Strom prvků (P8.5 rozbor, `docs/p8-5-rozbor-pauz-noveho-okna.md`): `setIcon` jen při
+  změně klíče `model_card.ICON_ROLE` (QIcon nejde porovnat → jinak změna každého řádku)
+  a sloupec těles během `_refresh_tree` `Interactive`, `ResizeToContents` až na konci
+  (jinak řádky × řádky volání `FeatureRowDelegate.sizeHint`, 200–270 ms u 122 řádků).
 - P7.51: levá karta = `model_card.ModelTabs` (features / parameters / part, `sidebar_tab`
   v `okno.json`). `sidebar_sections["parameters"]` je `TabSection` (rozbalená = záložka
   Parametry); info a properties jsou dál `Section` na záložce Díl. Řádky stromu nemění

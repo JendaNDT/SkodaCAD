@@ -93,3 +93,48 @@ def test_tab_is_saved_and_reset_starts_with_features(plate):
     w.workspace.state = load_state(w.workspace.path)
     w.workspace.restore()
     assert w.model_tabs.current == "parameters"
+
+
+def test_tree_refresh_without_change_reports_no_row_change(plate):
+    """P8.5: nová QIcon při každé obnově hlásila změnu všech řádků a sloupec
+    s ResizeToContents pak přeměřil celý strom (obnova 3 → 27 ms u 122 řádků)."""
+    w = plate
+    changes = []
+    w.tree.model().dataChanged.connect(lambda *args: changes.append(args))
+    w._refresh_tree()
+    assert changes == []
+    first = w.tree.topLevelItem(0)
+    assert first.data(0, model_card.ICON_ROLE) and not first.icon(0).isNull()
+    w.workspace.set_appearance("dark")  # jiná barva ikon = skutečná změna
+    QtWidgets.QApplication.processEvents()
+    changes.clear()
+    w._refresh_tree()
+    assert first.data(0, model_card.ICON_ROLE).endswith(
+        QtWidgets.QApplication.palette().color(QtWidgets.QApplication.palette().ColorRole.Link).name())
+    w.workspace.set_appearance("light")
+
+
+def test_tree_refresh_measures_rows_once_not_once_per_changed_row(plate, examples_dir):
+    """P8.5: změna textu sloupce těles (ResizeToContents) u každého řádku přeměřila
+    celý strom → řádky × řádky volání vlastní kresby (200–270 ms u 122 řádků)."""
+    w = plate
+    assert w.open_model(examples_dir / "priruba.json", template=True)
+    calls = []
+
+    class Counting(model_card.FeatureRowDelegate):
+        def sizeHint(self, option, index):  # noqa: N802
+            calls.append(index.row())
+            return super().sizeHint(option, index)
+
+    w.tree.setItemDelegate(Counting(w.tree))
+    rows = w.tree.topLevelItemCount()
+    assert rows >= 4
+    for i in range(rows):  # jako přechod „přepočítává se“ → hotovo
+        w.tree.topLevelItem(i).setText(1, "")
+    QtWidgets.QApplication.processEvents()
+    calls.clear()
+    w._refresh_tree()
+    QtWidgets.QApplication.processEvents()
+    assert len(calls) <= 4 * rows, (len(calls), rows)
+    header = w.tree.header()
+    assert header.sectionResizeMode(1) == header.ResizeMode.ResizeToContents

@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from contextlib import nullcontext
 
 from benchmark_p8 import (
     digest,
@@ -22,6 +23,10 @@ from benchmark_p8 import (
     worker_pids,
     write,
 )
+
+# Kontrola měřiče (ne práce aplikace). P8.5 sem dosadí sondu, která její čas
+# vyjme z intervalů Qt (rozhodnutí autora 7. 11. 2026); P8.4 ji měří beze změny.
+MEASURER_CHECK = lambda name: nullcontext()  # noqa: E731
 
 
 def require(condition, message):
@@ -129,7 +134,8 @@ def preview_and_close(driver, main, path, folder, capture):
     window = main.open_assembly(path)
     require(window is not None, "Sestava se neotevřela")
     driver.pump(lambda: window.viewer.ready and not window.computing)
-    inspect_assembly(window.session.result, 800)
+    with MEASURER_CHECK("assembly-800-copies"):
+        inspect_assembly(window.session.result, 800)
     window.select(("c799",))
     window.set_component_transparency(("c799",), 35)
     window.isolate_selected()

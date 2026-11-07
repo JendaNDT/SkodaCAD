@@ -97,6 +97,46 @@ def test_nearest_rank_percentile_and_real_pause_are_not_averaged_away():
     assert percentile([.05]*18+[2.]*2) == 2.
 
 
+def test_measurer_check_is_removed_from_qt_interval_but_still_runs():
+    # Rozhodnutí autora 7. 11. 2026: kontrola 800 kopií je práce měřiče, ne obsluha okna.
+    times = iter([0., .05, .1, 3.1, 3.15])
+    probe = LoopProbe(clock=lambda: next(times))
+    probe.start()
+    probe.tick()
+    ran = []
+    with probe.exclude("assembly-800-copies"):
+        ran.append(True)
+    probe.tick()
+    result = probe.report()
+    assert ran and result["count"] == 2 and result["max_gap_s"] == pytest.approx(.1)
+    assert result["excluded"] == {"assembly-800-copies": {
+        "count": 1, "total_s": pytest.approx(3.), "max_s": pytest.approx(3.)}}
+
+
+def test_only_the_approved_check_can_be_removed_from_qt_measurement():
+    probe = LoopProbe(clock=lambda: 0.)
+    with pytest.raises(ValueError), probe.exclude("open"):
+        pass
+    assert probe.excluded == {}
+
+
+@pytest.mark.parametrize("damage", ["unknown", "count", "missing", "total"])
+def test_qt_exclusion_must_match_one_check_per_cycle(report, damage):
+    entry = {"count": 22, "total_s": 44., "max_s": 3.}
+    report["qt_probe"]["excluded"] = {"assembly-800-copies": entry}
+    assert evaluate(report, policy(), "author-m4")["status"] == "pass"
+    if damage == "unknown":
+        report["qt_probe"]["excluded"]["open"] = dict(entry)
+    elif damage == "count":
+        entry["count"] = 21
+    elif damage == "missing":
+        report["qt_probe"]["excluded"] = {}
+    else:
+        entry["total_s"] = 1.
+    with pytest.raises(ValueError):
+        evaluate(report, policy(), "author-m4")
+
+
 def test_exact_budget_boundary_is_accepted_but_missing_limit_is_not(report):
     rules = policy()
     result = evaluate(report, rules, "author-m4")
@@ -154,6 +194,9 @@ import budget_p8
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 def short_event_loop(*args):
+    import soak_p8_gui
+    with soak_p8_gui.MEASURER_CHECK("assembly-800-copies"):  # zapojení skutečné zkoušky
+        pass
     QTimer.singleShot(180, QApplication.instance().quit)
     QApplication.instance().exec()
 budget_p8.soak.child = short_event_loop
@@ -166,6 +209,8 @@ budget_p8.child(Path(sys.argv[1]))
     data = json.loads((tmp_path/"qt-probe.json").read_text(encoding="utf-8"))
     # Alespoň jedno skutečné doručení + závěrečný bod; přesnou frekvenci OS neslibuje.
     assert data["count"] >= 2 and data["max_gap_s"] > 0 and data["errors"] == []
+    # P8.5 dosadí sondu do zkoušky P8.4; vyjmutí se zapíše do důkazu.
+    assert data["excluded"]["assembly-800-copies"]["count"] == 1
 
 
 def test_saved_p85_native_measurement_matches_fixed_policy_and_original_sources():
