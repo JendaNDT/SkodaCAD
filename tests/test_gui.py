@@ -1688,12 +1688,19 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert len(w.viewer.accent) == 2  # dvě plochy řezu vedle otvoru
     area = 2 * (165 - 62) / 2 * 18 - 4 * 2  # bez sražení obvodu 2 a otvoru 1 mm (2 × 2 rohy)
     assert w.session.section.area == pytest.approx(area, rel=0.02)
-    assert "Plocha řezu" in w.section_info.text()
+    # P7.54 (rám 3c): plocha se vzorkem barvy ve vlastním řádku, poloha řezu v pilulce
+    assert w.section_area_row.isVisibleTo(w.section_dock)
+    assert w.section_area.text() == f"{number(w.session.section.area)} mm²"
+    assert w.section_swatch.property("swatch") == "#d16154"  # plochy řezu „cihlově“
+    assert "jen pohled" in w.section_info.text() and w.section_toggle.isChecked()
+    assert w.status_pill.focus == ("section", "Řez · Y = 0 mm")
+    assert w.status_pill.state.text() == "Řez · Y = 0 mm"
     assert w.session.document.to_dict() == w.session.document.to_dict() and not \
         w.session.dirty  # řez model nemění
 
     set_text(w.section_field, "40")  # poloha číslem
     assert w.session.section_settings.position == 40
+    assert w.status_pill.focus == ("section", "Řez · Y = 40 mm")
     w.section_slider.setValue(1000)  # posuvník na konec dílu → řez díl míjí
     assert w.session.section is None and "✕" in w.section_info.text()
     w.section_slider.setValue(500)
@@ -1726,8 +1733,15 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert w.viewer.map_fill == w.session.section.faces  # plochy řezu vyplněné
     action(w, "Mapa tloušťky stěny").trigger()
 
-    action(w, "Řez modelem").trigger()  # vypnout → zase celý díl
+    w.section_toggle.click()  # vypnout zaškrtávátkem v kartě → zase celý díl
     assert w.viewer.parts[-1][0] is w.session.result.part and w.session.section is None
+    assert not w.section_action.isChecked() and not w.section_area_row.isVisibleTo(
+        w.section_dock)
+    assert w.status_pill.focus is None and w.status_pill.state.text() == "✓ Spočítáno"
+    w.section_toggle.click()  # a znovu zapnout
+    assert w.session.section is not None and w.section_action.isChecked()
+    action(w, "Řez modelem").trigger()
+    assert w.session.section is None and not w.section_toggle.isChecked()
     assert slot_errors == []
 
 

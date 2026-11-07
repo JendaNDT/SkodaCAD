@@ -168,6 +168,7 @@
   [P7.51](docs/p7-51-leva-karta.md) = levá karta Prvky | Parametry | Díl,
   [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání,
   [P7.53](docs/p7-53-pilulka-a-pohledy.md) = stavová pilulka a přepínač pohledů.
+  [P7.54](docs/p7-54-karty-nastroju.md) = karty Měření, Řez, Mapa tloušťky a náhled prvku (rámy 3a–3c).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -615,6 +616,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
 | `gui/status_pill.py` | stavová pilulka a přepínač pohledů dole nad 3D (P7.53) |
+| `gui/tool_cards.py` | kresba karet Měření, Řez, Mapa tloušťky (P7.54): řádky výsledků „popisek … hodnota“, výška seznamu podle řádků, vzorek barvy plochy řezu |
 | `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
 | `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
 | `gui/floating.py` | plovoucí karty nad 3D (P7.49): `FloatingCard` s rozhraním docku, `CardLayer` (rozmístění podle návrhu 1a, volné místo pro „Celý díl“) |
@@ -741,6 +743,18 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Karty „bottom“ (pilulka uprostřed) a „corner“ (přepínač; vedle pravé karty, sahá-li
   dolů) se rozmisťují až po bočních; `set_view_insets(l, r, top, bottom)`.
   `ViewSwitcher` nepoužívá `setDefaultAction` (tlačítko by převzalo dlouhý název akce).
+- P7.54: řádky `measure_list` / `saved_list` drží dál celý text „Rozteč os: 40.00 mm“
+  (testy, filtr, AX); `tool_cards.ValueRowDelegate` ho jen kreslí rozdělený na první
+  „: “ a aktuální řádek zvýrazní `--okbg`. Výšku seznamu nastavuje `fit_rows` (i po filtru
+  přes `FilterBox.applied`). Tlačítka karet = `MainWindow._action_button` (stálý krátký
+  text, dostupnost a bublina z akce). Pilulka: `StatusPill.set_focus` (náhled > měření
+  jen s panelem Měření > řez), počítá `_refresh_pill_focus`, volá ho i `Workspace`
+  při změně panelu. Řádek náhledu ve stromu (`model_card.PREVIEW_ROLE`) nemá id prvku,
+  `_refresh_tree_rows` ho smaže a `_sync_preview_row` vrátí; úprava označí svůj řádek.
+  Paleta (`ribbon`) je během náhledu `setEnabled(False)` (AI zamyká `palette_card`).
+  Karta 304 px: dlouhé nabídky a číselná pole s velkým rozsahem chtějí
+  `AdjustToMinimumContentsLength…` / `QSizePolicy.Ignored`, jinak obsah přeteče vpravo
+  (hlídá nativní self-test „Karty nástrojů“).
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1836,7 +1850,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.50 (vydání A) v rozpracované dávce | P7.51–P7.58 (vydání A–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54 v rozpracované dávce | P7.55–P7.58 (vydání C–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

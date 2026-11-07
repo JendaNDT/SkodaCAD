@@ -216,4 +216,5 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] P7.51 levá karta Prvky | Parametry | Díl ([evidence](p7-51-leva-karta.md)).
 - [x] P7.52 pravá karta bez posouvání ([evidence](p7-52-prava-karta.md)).
 - [x] P7.53 stavová pilulka a přepínač pohledů ([evidence](p7-53-pilulka-a-pohledy.md)).
-- [ ] P7.54–P7.58 dle kroků výše.
+- [x] P7.54 karty Měření, Řez, Mapa tloušťky a náhled prvku ([evidence](p7-54-karty-nastroju.md)).
+- [ ] P7.55–P7.58 dle kroků výše.

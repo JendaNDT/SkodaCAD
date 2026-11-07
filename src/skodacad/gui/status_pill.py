@@ -25,6 +25,7 @@ from skodacad.gui import ui_theme
 HEIGHT = 32
 TEXT_WIDTH = 520  # nejdelší zpráva v pilulce, delší se zkrátí „…“ (celá v bublině)
 STATUS = {"ok": "✓ Spočítáno", "error": "✕ Chyba v modelu", "empty": "Bez dílu"}
+FOCUS_COLORS = {"preview": "accent", "measure": "ok", "section": "fg"}  # tokeny
 LABELS = {"iso": "Izo", "front": "Zepředu", "top": "Shora", "fit": "Celý díl"}
 
 
@@ -65,6 +66,7 @@ class StatusPill(QWidget):
         layout.addWidget(self.context)
         self._kind = "empty"
         self._message = ""
+        self._focus: tuple[str, str] | None = None
 
     def add_progress(self, *widgets: QWidget) -> None:
         for widget in widgets:
@@ -74,6 +76,21 @@ class StatusPill(QWidget):
         """``ok`` / ``error`` / ``empty``; během přepočtu se stav schová (ukazatel)."""
         self._kind = kind
         self._refresh()
+
+    def set_focus(self, kind: str | None, text: str = "") -> None:
+        """Co právě okno ukazuje místo „✓ Spočítáno“ (P7.54, rámy 3a–3c).
+
+        ``preview`` = náhled prvku (modře, „● Náhled · Sražení“), ``measure`` = hlavní
+        hodnota měření (zeleně), ``section`` = poloha řezu. ``None`` vrátí stav přepočtu.
+        Chyba modelu a prázdné okno mají přednost, během přepočtu je vidět ukazatel."""
+        focus = (kind, text) if kind and text else None
+        if focus != self._focus:
+            self._focus = focus
+            self._refresh()
+
+    @property
+    def focus(self) -> tuple[str, str] | None:
+        return self._focus
 
     def set_message(self, text: str) -> None:
         self._message = text or ""
@@ -90,8 +107,13 @@ class StatusPill(QWidget):
     def _refresh(self) -> None:
         t = ui_theme.tokens()
         colors = {"ok": t["ok"], "error": t["err"], "empty": t["fg3"]}
-        self.state.setText(STATUS[self._kind])
-        self.state.setStyleSheet(f"color: {colors[self._kind]};")
+        if self._kind == "ok" and self._focus is not None:
+            kind, text = self._focus
+            self.state.setText(text)
+            self.state.setStyleSheet(f"color: {t[FOCUS_COLORS.get(kind, 'fg')]};")
+        else:
+            self.state.setText(STATUS[self._kind])
+            self.state.setStyleSheet(f"color: {colors[self._kind]};")
         metrics = self.context.fontMetrics()
         self.context.setText(metrics.elidedText(self._message, Qt.TextElideMode.ElideRight,
                                                 TEXT_WIDTH))

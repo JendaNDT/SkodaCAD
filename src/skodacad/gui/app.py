@@ -290,6 +290,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_model_card(window, lines) and ok
     ok = _self_test_inspector(window, lines) and ok
     ok = _self_test_status_pill(window, lines) and ok
+    ok = _self_test_tool_cards(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1430,6 +1431,111 @@ def _self_test_status_pill(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Pilulka a pohledy: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _card_fits(card) -> int:
+    """Šířka obsahu karty; obsah širší než karta by byl vpravo oříznutý (P7.54)."""
+    scroll = card.widget()
+    content = scroll.widget() if hasattr(scroll, "widget") and callable(scroll.widget) \
+        else scroll
+    assert content.width() <= scroll.viewport().width(), (
+        f"{card.objectName()}: obsah {content.width()} px je širší než karta "
+        f"{scroll.viewport().width()} px")
+    return content.width()
+
+
+def _self_test_tool_cards(window, lines: list[str]) -> bool:
+    """P7.54: karty Měření, Řez a Mapa tloušťky a náhled prvku (rámy 3a–3c) – skutečná
+    tlačítka a klávesa Esc, šířka obsahu se skutečným písmem systému."""
+    from build123d import Vector
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.model_card import PREVIEW_ROLE
+
+    pill, layer = window.status_pill, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        part = window.session.result.part
+        holes = [min(part.faces(), key=lambda f, x=x: f.distance_to(Vector(x, 0, 10)))
+                 for x in (-16.6, 23.4)]  # stěny závitů M8 v ose X ±20 mm
+        window.workspace.show_panel("measure")
+        window._selection_changed([h.wrapped for h in holes])
+        QApplication.processEvents()
+        layer.relayout()
+        first = window.measure_list.item(0).text()
+        assert first == "Rozteč os: 40.00 mm", first
+        assert pill.focus == ("measure", "Rozteč os 40.00 mm"), pill.focus
+        window.measure_sections["drawing"].set_expanded(True)  # nejširší obsah karty
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths = [_card_fits(window.measure_dock)]
+        window.measure_sections["drawing"].set_expanded(False)
+        QTest.mouseClick(window.measure_buttons["save"], Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.saved_list.count() == 1, "Uložit nepřidalo měření"
+        QTest.mouseClick(window.measure_buttons["delete"], Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.saved_list.count() == 0, "Smazat neodebralo měření"
+        window._selection_changed([])
+
+        window.workspace.show_panel("section")
+        QTest.mouseClick(window.section_toggle, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.session.section is not None, "zaškrtávátko řez nezapnulo"
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths.append(_card_fits(window.section_dock))
+        area = window.section_area.text()
+        assert pill.focus == ("section", "Řez · Y = 0 mm"), pill.focus
+        QTest.mouseClick(window.section_toggle, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.session.section is None and pill.focus is None
+
+        window.workspace.show_panel("map")
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths.append(_card_fits(window.map_dock))
+
+        part = window.session.result.part  # uložení měření díl přepočítalo
+        before = (window.session.document.to_dict(), len(window.session._undo))
+        top = min(part.faces(), key=lambda f: f.distance_to(Vector(0, 30, 15)))
+        window.start_feature_preview("chamfer", shapes=[e.wrapped for e in top.edges()])
+        rows = [window.tree.topLevelItem(i) for i in range(window.tree.topLevelItemCount())]
+        assert rows and rows[-1].data(0, PREVIEW_ROLE), "strom nemá řádek náhledu"
+        assert pill.focus and pill.focus[0] == "preview", pill.focus
+        assert not window.ribbon.isEnabled(), "paleta je během náhledu aktivní"
+        focus = pill.state.text()
+        panel = window.feature_preview
+        for _ in range(4):  # karta náhledu se ukáže a rozmístí jako u uživatele
+            QApplication.processEvents()
+            layer.relayout()
+        panel.setFocus()
+        QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
+        QApplication.processEvents()
+        assert window.feature_preview is None, "Esc nezrušil náhled"
+        assert not any(window.tree.topLevelItem(i).data(0, PREVIEW_ROLE)
+                       for i in range(window.tree.topLevelItemCount()))
+        assert window.ribbon.isEnabled() and pill.focus is None
+        after = (window.session.document.to_dict(), len(window.session._undo))
+        assert after == before, "zrušený náhled změnil model nebo historii"
+        window.workspace.show_panel("editor")
+        lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
+                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s řádkem ve stromu "
+                     f"a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Karty nástrojů: {type(exc).__name__}: {exc}")
+        if window.feature_preview is not None:
+            window.cancel_feature_preview()
         return False
 
 
