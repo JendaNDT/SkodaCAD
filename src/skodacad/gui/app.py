@@ -291,6 +291,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_inspector(window, lines) and ok
     ok = _self_test_status_pill(window, lines) and ok
     ok = _self_test_tool_cards(window, lines) and ok
+    ok = _self_test_ndt_wizard(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1536,6 +1537,73 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         lines.append(f"✕ Karty nástrojů: {type(exc).__name__}: {exc}")
         if window.feature_preview is not None:
             window.cancel_feature_preview()
+        return False
+
+
+def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
+    """P7.55: NDT průvodce UT a skupina „NDT studie“ – skutečné kliky, přibalené vymezení
+    UT, šířka obsahu karty se skutečným písmem."""
+    from build123d import Vector
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.ndt_wizard import scope_text
+    from skodacad.ndt import UT_DISCLAIMER
+
+    panel, layer = window.ndt_panel, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "ndt" / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        QApplication.processEvents()
+        assert UT_DISCLAIMER in scope_text("UT"), "chybí přibalené vymezení UT (docs/ndt)"
+        window.ribbon.select_page("ndt")
+        studies = window.ndt_study_list
+        QApplication.processEvents()
+        layer.relayout()
+        assert studies.isVisible() and studies.count() == 2, "skupina NDT studie v levé kartě"
+        rect = studies.visualItemRect(studies.item(0))
+        QTest.mouseClick(studies.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+        QApplication.processEvents()
+        assert panel.current_id() == "s1" and window.workspace.active == "ndt"
+        wizard = panel.ut_wizard
+        assert [step.kind for step in wizard.steps] == ["done", "done", "active", "future"]
+        assert panel.warning.text() == UT_DISCLAIMER and panel.warning.isVisible()
+        badge = window.workspace.badges["ndt"].text()
+        part = window.session.result.part
+        top = min(part.faces(), key=lambda f: f.distance_to(Vector(40, 0, 20)))
+        window._selection_changed([top.wrapped])
+        window.viewer.picked_point = (40.0, 0.0, 20.0)
+        QApplication.processEvents()
+        panel.place_action.trigger()
+        QApplication.processEvents()
+        assert window.session.ndt_placement.state == "ok", "sonda nedosedla"
+        assert wizard.active == 2 and wizard.next.isEnabled()
+        QTest.mouseClick(wizard.next, Qt.MouseButton.LeftButton)  # Další: pokrytí
+        QApplication.processEvents()
+        assert wizard.active == 3, "Další neotevřelo krok pokrytí"
+        panel.coverage_step.setValue(25)
+        panel.coverage_convergence.setChecked(False)
+        panel.coverage_action.trigger()
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        covered = window.session.ndt_coverage.percent("covered")
+        assert window.status_pill.focus == ("measure", f"● Pokryto {covered:.2f} %")
+        assert panel.coverage_bar.bar.isVisible(), "pruh pokrytí není vidět"
+        width = _card_fits(window.ndt_dock)
+        window.session.clear_ndt_coverage()
+        panel.remove_probe()
+        window.ribbon.select_page("model")
+        window.workspace.show_panel("editor")
+        lines.append(f"✓ NDT průvodce: skupina studií v levé kartě (klik), {badge}, kroky "
+                     f"hotovo/hotovo/aktivní/budoucí, přiložení, skutečné „Další: pokrytí“, "
+                     f"pokryto {covered:.2f} % v pilulce i pruhu, vymezení UT přibalené, "
+                     f"obsah karty {width} px se vejde")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ NDT průvodce: {type(exc).__name__}: {exc}")
         return False
 
 

@@ -94,6 +94,7 @@ class Workspace:
         self.actions = {}
         self.headings = {}  # velké titulky karet (P7.52)
         self.menu_buttons = {}  # malé titulky karet s nabídkou panelů
+        self.badges = {}  # štítky stavu v hlavičce karty (P7.55)
         for key, dock in self.docks.items():
             action = QAction(dock.windowTitle(), window)
             action.setObjectName(f"panel_{key}")
@@ -120,6 +121,11 @@ class Workspace:
             title.setAccessibleName("Zvolit pravý panel")
             row.addWidget(title)
             row.addStretch(1)
+            badge = QLabel()  # štítek stavu (P7.55: „⚠ neúplná“ / „✓ platná“ studie NDT)
+            badge.setObjectName("card_badge")
+            badge.hide()
+            row.addWidget(badge)
+            self.badges[key] = badge
             close = QToolButton()
             close.setObjectName("card_close")
             close.setText("×")
@@ -170,6 +176,17 @@ class Workspace:
         label = self.headings[key]
         label.setText(text or self.docks[key].windowTitle())
         self.menu_buttons[key].setText(kind or self.docks[key].windowTitle())
+
+    def set_badge(self, key, text, kind):
+        """Štítek stavu v hlavičce karty (``ok`` / ``warn`` / ``err`` / ``info``); prázdný
+        text ho skryje."""
+        badge = self.badges[key]
+        badge.setText(text)
+        badge.setVisible(bool(text))
+        if badge.property("cardBadge") != kind:
+            badge.setProperty("cardBadge", kind)
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
 
     def heading(self, key):
         return self.headings[key].text()
@@ -259,6 +276,11 @@ class Workspace:
         muted = ui_theme.opaque(t["sep2"], card).name()
         info = ui_theme.opaque(t["accentbg"], card).name()
         note = ui_theme.opaque(t["sep"], card).name()  # šedý rámeček „řez je jen pohled“
+        tinted = {kind: ui_theme.opaque(t[f"{kind}bg"], card).name() for kind in ("ok", "warn")}
+        err = ui_theme.color(t["err"])
+        err.setAlphaF(0.12)
+        tinted["err"] = ui_theme.opaque(err, card).name()
+        step = ui_theme.opaque(t["ctl"], card).name()
         # P7.51/P7.52: strom na kartě, filtry --sep, pole 22 px --ctl s linkou --sep2
         # a fokusem --accent, tlačítka 24 px (primární --btn), hlavička karty 11 + 15/700.
         self.window.setStyleSheet(
@@ -290,7 +312,22 @@ class Workspace:
             f"QLabel[cardInfo=\"true\"] {{ background: {info}; color: {t['fg']};"
             f" border-radius: 6px; padding: 3px 8px; }}"
             f"QLabel[cardNote=\"true\"] {{ background: {note}; color: {t['fg2']};"
-            f" border-radius: 6px; padding: 6px 10px; }}")
+            f" border-radius: 6px; padding: 6px 10px; }}"
+            # P7.55: stav studie v hlavičce, rámečky stavu, NDT kroky a upozornění (R7)
+            + "".join(f"QLabel[cardBadge=\"{kind}\"] {{ background: {tinted[kind]};"
+                      f" color: {t[kind]}; border-radius: 5px; padding: 1px 6px;"
+                      f" font-size: 11px; font-weight: 600; }}"
+                      f"QLabel[cardState=\"{kind}\"] {{ background: {tinted[kind]};"
+                      f" color: {t['fg']}; border-radius: 6px; padding: 6px 10px; }}"
+                      for kind in ("ok", "warn", "err"))
+            + f"QLabel[cardBadge=\"info\"] {{ color: {t['fg3']}; font-size: 11px; }}"
+            f"QLabel[cardState=\"info\"] {{ background: {note}; color: {t['fg2']};"
+            f" border-radius: 6px; padding: 6px 10px; }}"
+            f"QLabel[ndtWarning=\"true\"] {{ font-size: 12px; color: {t['fg2']}; }}"
+            f"QFrame#ndt_step[stepState=\"active\"] {{ background: {step};"
+            f" border: 1px solid {line}; border-radius: 10px; }}"
+            f"QPushButton#ndt_step_change {{ color: {t['accent']}; border: none;"
+            f" background: transparent; padding: 0px; }}")
         self.window.model_tabs.tabs.refresh_style()
         appearance = QApplication.instance().property("skodacadAppearance") or "system"
         self.appearance_actions[appearance].setChecked(True)

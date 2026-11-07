@@ -169,6 +169,7 @@
   [P7.52](docs/p7-52-prava-karta.md) = pravá karta s hlavičkou a bez posouvání,
   [P7.53](docs/p7-53-pilulka-a-pohledy.md) = stavová pilulka a přepínač pohledů.
   [P7.54](docs/p7-54-karty-nastroju.md) = karty Měření, Řez, Mapa tloušťky a náhled prvku (rámy 3a–3c).
+  [P7.55](docs/p7-55-ndt-pruvodce-ut.md) = NDT průvodce UT a skupina NDT studie v levé kartě (rámy 2c, 3d).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -616,6 +617,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/drawing_preview.py` | náhled listu pracovního výkresu (jen pohled, nenahrazuje export) |
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
 | `gui/status_pill.py` | stavová pilulka a přepínač pohledů dole nad 3D (P7.53) |
+| `gui/ndt_wizard.py` | NDT průvodce (P7.55): `Wizard` / `WizardStep` (kroky odvozené ze stavu studie, Změnit, Zpět / Další / Hotovo, přeskočitelný krok), `StepState`, `CoverageBar` (pruh pokrytí), `TitledBox`, `ScopeDialog` + `scope_text` (závazné vymezení metody z `docs/ndt`, přibalené ve spec) |
 | `gui/tool_cards.py` | kresba karet Měření, Řez, Mapa tloušťky (P7.54): řádky výsledků „popisek … hodnota“, výška seznamu podle řádků, vzorek barvy plochy řezu |
 | `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
 | `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
@@ -755,6 +757,20 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Karta 304 px: dlouhé nabídky a číselná pole s velkým rozsahem chtějí
   `AdjustToMinimumContentsLength…` / `QSizePolicy.Ignored`, jinak obsah přeteče vpravo
   (hlídá nativní self-test „Karty nástrojů“).
+- P7.55: UT studie v kartě NDT = `ndt_panel.ut_wizard` (`probe_box` je alias, název
+  `UT_ACCESS` jako `title()` a nadpis nad kroky – doporučený název ze závazného vymezení
+  musí zůstat vidět). Krok se odvodí jen při výběru studie (`Wizard.update(key=…)`),
+  pak zůstává, dokud je dostupný – přiložení **nesmí** samo přeskočit na krok 4 (rám 2c).
+  Přiložení je `skippable` (návrh poloh v kroku 4 polohu najde sám). Ovládání kroků jsou
+  dosavadní widgety a akce panelu; `access_box` / `plan_box` jsou `TitledBox` ve
+  sbalených `Section` (`ut_sections`) – viditelnost nastavovat jen sekci, ne obsahu
+  (jinak se sbalená sekce rozbalí). Testy, které sahají na krok 4, ho otevřou
+  `ut_wizard.open_step(3)`. Pravidlo QSS uvnitř aktivního kroku nesmí přebít
+  `QLabel[cardState]` (rámeček přiložení). `_fit_card_width` + `reflow_button_rows`
+  drží kartu 320 px. Hlavička: `Workspace.set_badge`. Levá skupina „NDT studie“
+  (`ndt_study_list`, `StudyRowDelegate`) jen v činnosti NDT, řádky podle id; strom
+  pak má výšku podle řádků (`TREE_MIN_HEIGHT` jen mimo NDT). Celé `*_DISCLAIMER`
+  zůstává v kartě doslova (R7), „Celé upozornění“ = `ScopeDialog`.
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1850,7 +1866,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54 v rozpracované dávce | P7.55–P7.58 (vydání C–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.55 v rozpracované dávce | P7.56–P7.58 (vydání C–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSlider,
+    QSpacerItem,
     QStackedWidget,
     QStyle,
     QToolButton,
@@ -79,6 +80,7 @@ from skodacad.gui.model_card import (
     STATUS_ROLE,
     FeatureRowDelegate,
     ModelTabs,
+    StudyRowDelegate,
     TabSection,
     count_text,
 )
@@ -141,6 +143,7 @@ MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost
 _MEASURE_COLOR = QColor("#1b7f3b")
 
 _SLIDER_STEPS = 1000  # jemnost posuvníku řezu
+TREE_MIN_HEIGHT = 150  # strom prvků; v činnosti NDT jen podle řádků (pod ním studie)
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 _STATUS_WORDS = {"ok": "", "error": "chyba", "skipped": "přeskočeno", "pending": ""}
@@ -253,6 +256,8 @@ class MainWindow(QMainWindow):
         self._icons_after_view = False
         self._icon_loader_closed = False
         self._build_ribbon()
+        self.ribbon.page_changed.connect(lambda _page: self._refresh_ndt_studies())
+        self.ndt_group_add.clicked.connect(self._new_ndt_study_from_card)
         favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
         self.favorite_store = (favorite_store if favorite_store is not None
                                else FavoriteStore(favorites_path, self))
@@ -443,7 +448,7 @@ class MainWindow(QMainWindow):
         tree_layout.setSpacing(6)
         self.tree = QTreeWidget()
         self.tree.setObjectName("feature_tree")
-        self.tree.setMinimumHeight(150)
+        self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
         self.tree.setHeaderLabels(["Prvek", "Tělesa"])
         self.tree.setHeaderHidden(True)  # stav a počet těles vpravo v řádku (návrh 1a)
         self.tree.setColumnWidth(1, 65)
@@ -462,6 +467,46 @@ class MainWindow(QMainWindow):
         for box in (self.tree_filter, self.param_filter):
             box.field.setProperty("cardFilter", True)
         tree_layout.addWidget(self.tree)
+        # P7.55 (rám 2c): v činnosti NDT jsou pod prvky studie se stavem; klik = panel NDT.
+        self.ndt_group = QWidget()
+        self.ndt_group.setObjectName("ndt_study_group")
+        group = QVBoxLayout(self.ndt_group)
+        group.setContentsMargins(0, 4, 0, 0)
+        group.setSpacing(2)
+        head = QHBoxLayout()
+        title = QLabel("NDT studie")
+        title.setStyleSheet("font-size: 11px; font-weight: 600;")
+        title.setProperty("secondaryText", True)
+        head.addWidget(title, 1)
+        self.ndt_group_add = QToolButton()
+        self.ndt_group_add.setText("+")
+        self.ndt_group_add.setAutoRaise(True)
+        self.ndt_group_add.setAccessibleName("Nová NDT studie z výběru")
+        self.ndt_group_add.setToolTip("Nová NDT studie; vybrané plochy budou kontrolovaná oblast")
+        head.addWidget(self.ndt_group_add)
+        group.addLayout(head)
+        self.ndt_study_list = QListWidget()
+        self.ndt_study_list.setObjectName("ndt_study_list")
+        self.ndt_study_list.setFrameShape(QFrame.Shape.NoFrame)
+        self.ndt_study_list.setStyleSheet("QListWidget { background: transparent; }")
+        self.ndt_study_list.setIconSize(QSize(16, 16))
+        self.ndt_study_list.setItemDelegate(StudyRowDelegate(self.ndt_study_list))
+        self.ndt_study_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ndt_study_list.currentItemChanged.connect(
+            lambda item, _previous: self._ndt_study_chosen(item))
+        group.addWidget(self.ndt_study_list)
+        self.ndt_group_hint = QLabel("Zatím žádná – vyber plochy a dej +.")
+        self.ndt_group_hint.setProperty("cardHint", True)
+        self.ndt_group_hint.setWordWrap(True)
+        group.addWidget(self.ndt_group_hint)
+        self.ndt_group.hide()
+        self.ndt_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        tree_layout.addWidget(self.ndt_group)
+        # V činnosti NDT má strom výšku podle řádků a volné místo zůstane pod studiemi.
+        self._ndt_spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum,
+                                       QSizePolicy.Policy.Minimum)
+        tree_layout.addItem(self._ndt_spacer)
+        self._tree_layout = tree_layout
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
         self.add_feature_button.setText("+")
@@ -2484,6 +2529,90 @@ class MainWindow(QMainWindow):
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))
 
+    def _ndt_group_visible(self) -> bool:
+        ribbon = getattr(self, "ribbon", None)
+        return ribbon is not None and ribbon.page == "ndt" and self.session.document is not None
+
+    def _refresh_ndt_studies(self) -> None:
+        """Skupina „NDT studie“ levé karty: tytéž studie a stav jako panel NDT (P7.55).
+
+        Řádky se znovu používají podle id (Cocoa AX drží odkazy na buňky – žádné clear())."""
+        if not hasattr(self, "ndt_study_list"):
+            return
+        shown = self._ndt_group_visible()
+        if self.ndt_group.isHidden() == shown:
+            self.ndt_group.setVisible(shown)
+            self._ndt_spacer.changeSize(0, 0, QSizePolicy.Policy.Minimum,
+                                        QSizePolicy.Policy.Expanding if shown
+                                        else QSizePolicy.Policy.Minimum)
+            self._tree_layout.invalidate()
+        if shown:
+            rows = sum(not self.tree.topLevelItem(i).isHidden()
+                       for i in range(self.tree.topLevelItemCount()))
+            height = max(60, rows * 26 + 6)
+            self.tree.setMinimumHeight(min(TREE_MIN_HEIGHT, height))
+            self.tree.setMaximumHeight(height)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        else:
+            self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
+            self.tree.setMaximumHeight(16777215)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            return
+        widget = self.ndt_study_list
+        session = self.session
+        document = session.document
+        records = (document.ndt or {}).get("studies", []) if document is not None else []
+        results = {r.id: r for r in session.ndt_studies}
+        previous = {widget.item(i).data(_FEATURE_ID): widget.item(i)
+                    for i in range(widget.count())}
+        color = QApplication.palette().color(QPalette.ColorRole.Link).name()
+        current = self.ndt_panel.current_id()
+        widget.blockSignals(True)
+        chosen = None
+        for index, record in enumerate(records):
+            key = record["id"]
+            item = previous.pop(key, None)
+            if item is None:
+                item = QListWidgetItem()
+                item.setData(_FEATURE_ID, key)
+            if widget.row(item) != index:
+                if widget.row(item) >= 0:
+                    widget.takeItem(widget.row(item))
+                widget.insertItem(index, item)
+            result = results.get(key)
+            name = record.get("name") or key
+            if item.text() != name:
+                item.setText(name)
+            state = "pending" if session.computing or result is None else result.state
+            item.setData(STATUS_ROLE, state)
+            item.setToolTip("\n".join([name, *(result.messages if result else [])]))
+            kind = str(record.get("method", "UT")).lower()
+            if item.data(ICON_ROLE) != f"{kind}|{color}":
+                item.setIcon(cad_icon(kind, color))
+                item.setData(ICON_ROLE, f"{kind}|{color}")
+            if key == current:
+                chosen = item
+        for item in previous.values():
+            widget.takeItem(widget.row(item))
+        if widget.currentItem() is not chosen:
+            widget.setCurrentItem(chosen)
+        widget.blockSignals(False)
+        widget.setFixedHeight(min(widget.count(), 6) * 26 + 2)
+        widget.setVisible(widget.count() > 0)
+        self.ndt_group_hint.setVisible(widget.count() == 0)
+        widget.viewport().update()
+
+    def _new_ndt_study_from_card(self) -> None:
+        self.workspace.show_panel("ndt")
+        if self.ndt_panel.new_action.isEnabled():
+            self.ndt_panel.new_action.trigger()
+
+    def _ndt_study_chosen(self, item) -> None:
+        if item is None:
+            return
+        self.ndt_panel.select(item.data(_FEATURE_ID))
+        self.workspace.show_panel("ndt")
+
     def _sync_preview_row(self) -> None:
         """Rám 3a: během náhledu má strom řádek „Sražení · náhled“ (rámeček, kurzíva).
 
@@ -2544,6 +2673,17 @@ class MainWindow(QMainWindow):
             "empty" if document is None else
             "error" if self.session.model_problem else "ok")
 
+    def _ndt_focus(self) -> tuple[str, str] | None:
+        """Rámy 2c a 3d: v panelu NDT pilulka ukazuje pokrytí, nebo stav přiložení sondy."""
+        coverage = self.session.ndt_coverage
+        if coverage is not None:
+            return ("measure", f"● Pokryto {coverage.percent('covered'):.2f} %")
+        placement = self.session.ndt_placement
+        if placement is not None:
+            return (("measure", "● Přiloženo") if placement.state == "ok"
+                    else ("warn", "● Sonda nedosedá"))
+        return None
+
     def _refresh_pill_focus(self) -> None:
         """Pilulka ukazuje, co je právě ve 3D (P7.54): náhled prvku, hlavní hodnotu měření
         (jen s otevřeným panelem Měření) nebo polohu řezu – jinak stav přepočtu."""
@@ -2560,6 +2700,8 @@ class MainWindow(QMainWindow):
         elif (workspace is not None and workspace.active == "measure"
               and getattr(self, "_pill_measure", None)):
             focus = ("measure", focus_text(self._pill_measure))
+        elif workspace is not None and workspace.active == "ndt" and self._ndt_focus():
+            focus = self._ndt_focus()
         elif settings is not None and self.session.section is not None:
             position = format_parameter_value(round(settings.position, 2))
             focus = ("section", "Řez · průřez svarem" if settings.target is not None

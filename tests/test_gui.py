@@ -463,6 +463,7 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     nodes, triangles, _colors = w.viewer.coverage_map  # 07C.3: povrch cíle navrch
     assert triangles and w.viewer.coverage_topmost and w.viewer.coverage_fill == []
     assert w.viewer.target is None  # mapa nahradí průhledný náhled cíle
+    panel.ut_wizard.open_step(3)  # P7.55: legenda je v kroku 4 průvodce (Geometrické pokrytí)
     assert panel.volume_legend.isVisibleTo(panel)
     percent = result.percent("covered")
     assert panel.cross_section_action.isEnabled()
@@ -1973,13 +1974,13 @@ def rib_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
 
 
 def test_place_turn_and_remove_probe(rib_window, slot_errors):
-    from PySide6.QtWidgets import QGroupBox
+    from PySide6.QtWidgets import QWidget
 
     from skodacad.ndt import UT_DISCLAIMER
 
     w = rib_window
     panel = w.ndt_panel
-    assert panel.findChild(QGroupBox, "ndt_ut").title() == "Přístupnost UT sondy"
+    assert panel.findChild(QWidget, "ndt_ut").title() == "Přístupnost UT sondy"
     assert panel.warning.text() == UT_DISCLAIMER  # povinné upozornění (04-zavazne-…)
     assert panel.warning.isVisibleTo(panel)
     assert "Úhlová sonda 40 × 20 × 25 mm" in panel.probe_label.text()
@@ -1998,8 +1999,8 @@ def test_place_turn_and_remove_probe(rib_window, slot_errors):
     assert w.viewer.beam[1] == pytest.approx((2, 0, 0), abs=1e-4)
     assert "Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm." in \
         panel.placement_label.text()
-    assert "Dráha paprsku (úhel lomu 45.0°" in panel.placement_label.text()
-    assert "půlkrok 20.00 mm, celý krok 40.00 mm" in panel.placement_label.text()
+    assert "Dráha paprsku (úhel lomu 45.0°" in panel.beam_label.text()  # P7.55: sekce
+    assert "půlkrok 20.00 mm, celý krok 40.00 mm" in panel.beam_label.text()
     panel.angle.setValue(0)  # otočit: zadní konec sondy zajede do žebra
     assert w.viewer.probe[0] == "collision"
     assert "Koliduje" in panel.placement_label.text()
@@ -2240,6 +2241,8 @@ def test_access_panel_runs_shows_applies_and_draws_maps(rib_window, slot_errors,
     w = rib_window
     panel = w.ndt_panel
     session = w.session
+    panel.ut_wizard.open_step(3)  # P7.55: krok 4 průvodce, sbalená sekce Návrh poloh
+    panel.ut_sections["access"].set_expanded(True)
     assert panel.access_box.isVisibleTo(panel) and panel.access_box.title() == \
         "Návrh poloh sondy"
     top = face_at(session.result.part, 50, 0, 20)
@@ -2309,6 +2312,8 @@ def test_plan_panel_builds_plays_edits_zones_and_exports(rib_window, no_dialogs,
     w = rib_window
     panel = w.ndt_panel
     session = w.session
+    panel.ut_wizard.open_step(3)  # P7.55: krok 4 průvodce, sbalená sekce Plán dráhy
+    panel.ut_sections["plan"].set_expanded(True)
     assert panel.plan_box.isVisibleTo(panel) and panel.plan_box.title() == "Plán dráhy sondy"
     top = face_at(session.result.part, 50, 0, 20)
     w.viewer.click([top], (50, 0, 20))

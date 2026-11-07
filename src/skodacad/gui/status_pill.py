@@ -25,7 +25,8 @@ from skodacad.gui import ui_theme
 HEIGHT = 32
 TEXT_WIDTH = 520  # nejdelší zpráva v pilulce, delší se zkrátí „…“ (celá v bublině)
 STATUS = {"ok": "✓ Spočítáno", "error": "✕ Chyba v modelu", "empty": "Bez dílu"}
-FOCUS_COLORS = {"preview": "accent", "measure": "ok", "section": "fg"}  # tokeny
+FOCUS_COLORS = {"preview": "accent", "measure": "ok", "section": "fg",  # tokeny
+                "warn": "warn"}
 LABELS = {"iso": "Izo", "front": "Zepředu", "top": "Shora", "fit": "Celý díl"}
 
 

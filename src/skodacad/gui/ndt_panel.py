@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QTableWidget,
@@ -45,10 +46,20 @@ from PySide6.QtWidgets import (
 
 from skodacad.document import DocumentError
 from skodacad.gui.mt_dialog import MtDialog
+from skodacad.gui.ndt_wizard import (
+    BADGES,
+    CoverageBar,
+    ScopeDialog,
+    StepState,
+    TitledBox,
+    Wizard,
+)
 from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.pt_dialog import PtDialog
 from skodacad.gui.rt_box import RtBox
 from skodacad.gui.target_dialog import TargetDialog
+from skodacad.gui.tool_cards import reflow_button_rows
+from skodacad.gui.workspace import Section
 from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
 from skodacad.ndt import (
@@ -73,6 +84,7 @@ from skodacad.ndt.access import (
     ORDER_NOTE,
     AccessEstimate,
 )
+from skodacad.ndt.coverage import COLORS as COVERAGE_COLORS
 from skodacad.ndt.coverage import PERCENT_NOTE, STATES, CoverageMap
 from skodacad.ndt.library import (
     MATERIALS,
@@ -116,6 +128,7 @@ _PLACEMENT_COLORS = {"ok": "#1b7f3b", "collision": "#c0392b"}  # ostatní stavy 
 ANGLE_HINT = ("Směr paprsku ve stupních: 0° = osa +X sklopená do plochy (u plochy kolmé na X "
               "osa +Y), kladně proti směru hodin při pohledu na plochu zvenku.")
 METHOD_LABELS = {key: f"{key} – {name}" for key, name in METHODS.items()}
+BAR_LABELS = {"covered": "Pokryto", "uncovered": "Nepokryto", "uncertain": "Nelze vyhodnotit"}
 HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Nová studie. "
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
 PT_PICK_HINT = "Klikni ve 3D do mapy – napíšu, proč je místo omezené nebo nepřístupné."
@@ -273,53 +286,108 @@ class NdtPanel(QWidget):
         self.mt_hide_yoke_action = action("Skrýt jho", self.hide_yoke)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 2, 10, 10)
+        layout.setSpacing(6)
+        # R7: povinné upozornění metody je v kartě vždy celé (12 px, --fg2); odkaz ukáže
+        # celé závazné vymezení metody (docs/ndt, přibalené v aplikaci).
         self.warning = QLabel(UT_DISCLAIMER)  # povinné upozornění UT, jinak obecné (_show_warning)
         self.warning.setObjectName("ndt_warning")
         self.warning.setWordWrap(True)
-        self.warning.setStyleSheet("color: #8a5a00; font-style: italic;")
+        self.warning.setProperty("ndtWarning", True)
         layout.addWidget(self.warning)
-        top = QHBoxLayout()  # metoda a tlačítko pod sebou – vedle sebe se do panelu nevejdou
+        self.scope_link = QLabel('<a href="scope">Celé upozornění</a>')
+        self.scope_link.setObjectName("ndt_scope_link")
+        self.scope_link.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse
+                                                | Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
+        self.scope_link.linkActivated.connect(lambda _link: self.show_scope())
+        layout.addWidget(self.scope_link)
+        # Zastaralá studie: potvrzení je hlavní krok, proto nahoře v rámečku --warnbg.
+        self.stale_box = QWidget()
+        stale = QHBoxLayout(self.stale_box)
+        stale.setContentsMargins(0, 0, 0, 0)
+        self.stale_label = QLabel()
+        self.stale_label.setObjectName("ndt_stale")
+        self.stale_label.setWordWrap(True)
+        self.stale_label.setProperty("cardState", "warn")
+        stale.addWidget(self.stale_label, 1)
+        self.stale_box.hide()
+        layout.addWidget(self.stale_box)
+        self.stale_button = window._action_button(self.confirm_action, "Potvrdit", "primary")
+        stale.addWidget(self.stale_button, 0, Qt.AlignmentFlag.AlignTop)
+        # Nová studie (bez vybrané studie): metoda, tlačítko a návod.
+        self.new_box = QWidget()
+        new_layout = QVBoxLayout(self.new_box)
+        new_layout.setContentsMargins(0, 0, 0, 0)
+        top = QHBoxLayout()
         top.addWidget(QLabel("Metoda nové studie:"))
         self.method_combo = QComboBox()
         self.method_combo.setObjectName("ndt_method")
         for key, label in METHOD_LABELS.items():
             self.method_combo.addItem(label, key)
         self.method_combo.currentIndexChanged.connect(lambda _index: self._show_warning())
-        top.addWidget(self.method_combo)
-        top.addStretch()
-        layout.addLayout(top)
+        top.addWidget(self.method_combo, 1)
+        new_layout.addLayout(top)
         new_row = QHBoxLayout()
-        new_row.addWidget(window._tool_button(self.new_action))
+        new_row.addWidget(window._action_button(self.new_action, "Nová studie z výběru",
+                                                "primary"))
         new_row.addStretch()
-        layout.addLayout(new_row)
+        new_layout.addLayout(new_row)
         self.hint = QLabel(HINT)
         self.hint.setWordWrap(True)
-        self.hint.setStyleSheet("color: palette(text);")
-        layout.addWidget(self.hint)
+        self.hint.setProperty("cardHint", True)
+        new_layout.addWidget(self.hint)
+        layout.addWidget(self.new_box)
+        # Seznam studií a jejich správa – sbalená sekce, když je studie vybraná (studie se
+        # vybírají hlavně ve skupině „NDT studie“ levé karty).
+        studies_box = QWidget()
+        studies_layout = QVBoxLayout(studies_box)
+        studies_layout.setContentsMargins(0, 0, 0, 0)
         self.studies = QListWidget()
         self.studies.setObjectName("ndt_studies")
         self.studies.setMinimumHeight(70)
         self.studies.setMaximumHeight(140)  # pod seznamem musí být vidět podrobnosti
         self.studies.currentRowChanged.connect(lambda _row: self._row_changed())
         self.studies.itemDoubleClicked.connect(lambda _item: self.rename())
-        layout.addWidget(self.studies)
-        for row in ((self.target_action, self.volume_action, self.cross_section_action),
-                    (self.rename_action, self.method_action, self.note_action),
-                    (self.confirm_action, self.verify_action, self.unverify_action),
+        studies_layout.addWidget(self.studies)
+        for row in ((self.rename_action, self.method_action, self.note_action),
+                    (self.verify_action, self.unverify_action, self.confirm_action),
                     (self.duplicate_action, self.delete_action)):
             buttons = QHBoxLayout()
             for item in row:
                 buttons.addWidget(window._tool_button(item))
             buttons.addStretch()
-            layout.addLayout(buttons)
+            studies_layout.addLayout(buttons)
+        self.details = QLabel()
+        self.details.setObjectName("ndt_details")
+        self.details.setWordWrap(True)
+        self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        studies_layout.addWidget(self.details)
+        self.studies_section = Section("Studie a jejich správa", studies_box, True)
+        layout.addWidget(self.studies_section)
         self._build_pt(layout)
         self._build_mt(layout)
         self.rt_box = RtBox(self)  # RT – geometrie projekce (etapa 13)
         layout.addWidget(self.rt_box)
-        probe_box = QGroupBox(UT_ACCESS)
-        probe_box.setObjectName("ndt_ut")
-        self.probe_box = probe_box
-        probe_layout = QVBoxLayout(probe_box)
+        # P7.55: UT průvodce (rámy 2c a 3d) – 1 oblast, 2 sonda, 3 přiložení, 4 pokrytí.
+        self.ut_wizard = Wizard(UT_ACCESS, "ndt_ut")
+        self.probe_box = self.ut_wizard  # dřívější skupina sondy UT (testy, viditelnost)
+        target_body = QWidget()
+        target_layout = QVBoxLayout(target_body)
+        self.target_hint = QLabel(
+            "Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Oblast "
+            "z výběru, nebo zadej svar či jiný objem uvnitř dílu.")
+        self.target_hint.setWordWrap(True)
+        self.target_hint.setProperty("cardHint", True)
+        target_layout.addWidget(self.target_hint)
+        buttons = QHBoxLayout()
+        for item in (self.target_action, self.volume_action, self.cross_section_action):
+            buttons.addWidget(window._tool_button(item))
+        buttons.addStretch()
+        target_layout.addLayout(buttons)
+        self.ut_wizard.add_step("Kontrolovaná oblast", target_body)
+
+        probe_body = QWidget()
+        probe_layout = QVBoxLayout(probe_body)
         self.probe_label = QLabel()
         self.probe_label.setObjectName("ndt_probe")
         self.probe_label.setWordWrap(True)
@@ -331,13 +399,16 @@ class NdtPanel(QWidget):
         self.ut_material.setToolTip(
             "Rychlosti zvuku pro přepočet úhlu sondy. Vestavěné hodnoty jsou orientační "
             "(dva zdroje); vlastní materiál si ulož do Mých sond.")
+        self.ut_material.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.ut_material.setMinimumContentsLength(10)
         self.ut_material.currentIndexChanged.connect(lambda _index: self._ut_material_chosen())
         material_row.addWidget(self.ut_material, stretch=1)
         probe_layout.addLayout(material_row)
         self.material_label = QLabel()
         self.material_label.setObjectName("ndt_ut_material_info")
         self.material_label.setWordWrap(True)
-        self.material_label.setStyleSheet("color: palette(text);")
+        self.material_label.setProperty("cardHint", True)
         probe_layout.addWidget(self.material_label)
         self.angle_check_label = QLabel()
         self.angle_check_label.setObjectName("ndt_angle_check")
@@ -345,20 +416,23 @@ class NdtPanel(QWidget):
         self.angle_check_label.setStyleSheet("color: #b9770e;")
         probe_layout.addWidget(self.angle_check_label)
         buttons = QHBoxLayout()
-        for item in (self.transfer_action, self.part_material_action):
+        for item in (self.probe_action, self.transfer_action, self.part_material_action):
             buttons.addWidget(window._tool_button(item))
         buttons.addStretch()
         probe_layout.addLayout(buttons)
         self._library_cache: tuple[tuple, UserLibrary] | None = None
-        for pair in ((self.probe_action, self.place_action),  # po dvou – vejde se do doku
-                     (self.drag_probe_action, self.remove_probe_action)):
-            buttons = QHBoxLayout()
-            for item in pair:
-                buttons.addWidget(window._tool_button(item))
-            buttons.addStretch()
-            probe_layout.addLayout(buttons)
+        self.ut_wizard.add_step("Sonda", probe_body)
+
+        place_body = QWidget()
+        place_layout = QVBoxLayout(place_body)
+        buttons = QHBoxLayout()
+        for item in (self.place_action, self.drag_probe_action):
+            buttons.addWidget(window._tool_button(item))
+        buttons.addStretch()
+        place_layout.addLayout(buttons)
+        place_form = QFormLayout()
+        place_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         angle_row = QHBoxLayout()
-        angle_row.addWidget(QLabel("Směr paprsku [°]:"))
         self.angle = QSpinBox()
         self.angle.setObjectName("ndt_angle")
         self.angle.setRange(-180, 180)
@@ -366,59 +440,71 @@ class NdtPanel(QWidget):
         self.angle.setWrapping(True)
         self.angle.setToolTip(ANGLE_HINT)
         self.angle.valueChanged.connect(lambda _value: self._angle_changed())
-        angle_row.addWidget(self.angle)
-        angle_row.addStretch()
-        probe_layout.addLayout(angle_row)
-        angle_row = QHBoxLayout()  # krokování na vlastním řádku – vejde se do doku
-        angle_row.addWidget(QLabel("Krok [mm]:"))
+        angle_row.addWidget(self.angle, 1)
+        place_form.addRow("Směr paprsku [°]", angle_row)
+        step_row = QHBoxLayout()
         self.step_mm = QDoubleSpinBox()
         self.step_mm.setObjectName("ndt_step")
         self.step_mm.setDecimals(1)
         self.step_mm.setRange(0.5, 100.0)
         self.step_mm.setSingleStep(1.0)
         self.step_mm.setValue(2.0)
-        angle_row.addWidget(self.step_mm)
+        step_row.addWidget(self.step_mm, 1)
         for item in (self.step_back_action, self.step_forward_action):
-            angle_row.addWidget(window._tool_button(item))
-        angle_row.addStretch()
-        probe_layout.addLayout(angle_row)
-        scan_row = QHBoxLayout()
-        scan_row.addWidget(QLabel("Délka čáry [mm]:"))
+            step_row.addWidget(window._tool_button(item))
+        place_form.addRow("Krok [mm]", step_row)
         self.scan_length = QDoubleSpinBox()
         self.scan_length.setObjectName("ndt_scan_length")
         self.scan_length.setDecimals(0)
         self.scan_length.setRange(1.0, 500.0)
         self.scan_length.setSingleStep(10.0)
         self.scan_length.setValue(50.0)
-        scan_row.addWidget(self.scan_length)
-        scan_row.addWidget(window._tool_button(self.scan_action))
+        place_form.addRow("Délka čáry [mm]", self.scan_length)
+        place_layout.addLayout(place_form)
+        self.placement_label = QLabel()
+        self.placement_label.setObjectName("ndt_placement")
+        self.placement_label.setWordWrap(True)
+        self.placement_label.setProperty("cardState", "info")
+        self.placement_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        place_layout.addWidget(self.placement_label)
+        self.beam_label = QLabel()  # geometrická dráha paprsku (dlouhá – sbalená sekce)
+        self.beam_label.setObjectName("ndt_beam")
+        self.beam_label.setWordWrap(True)
+        self.beam_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.beam_section = Section("Dráha paprsku", self.beam_label)
+        place_layout.addWidget(self.beam_section)
+        scan_row = QHBoxLayout()
+        scan_row.addWidget(window._action_button(self.scan_action, "Projet čáru", "secondary"))
+        scan_row.addWidget(window._action_button(self.remove_probe_action, "Odebrat sondu",
+                                                 "secondary"))
+        scan_row.addStretch()
+        place_layout.addLayout(scan_row)
         self.scan_slider = QSlider(Qt.Orientation.Horizontal)
         self.scan_slider.setObjectName("ndt_scan_slider")
         self.scan_slider.setRange(0, 0)
         self.scan_slider.valueChanged.connect(self._scan_slider_changed)
-        scan_row.addWidget(self.scan_slider, stretch=1)
-        probe_layout.addLayout(scan_row)
+        place_layout.addWidget(self.scan_slider)
         self.scan_label = QLabel()
         self.scan_label.setObjectName("ndt_scan_summary")
         self.scan_label.setWordWrap(True)
         self.scan_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.scan_label.hide()
-        probe_layout.addWidget(self.scan_label)
-        self.placement_label = QLabel()
-        self.placement_label.setObjectName("ndt_placement")
-        self.placement_label.setWordWrap(True)
-        self.placement_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
-        probe_layout.addWidget(self.placement_label)
-        layout.addWidget(probe_box)
-        self.coverage_box = QGroupBox(UT_COVERAGE)
+        place_layout.addWidget(self.scan_label)
+        self.ut_wizard.add_step("Přiložení sondy", place_body)
+
+        coverage_body = QWidget()
+        coverage_body_layout = QVBoxLayout(coverage_body)
+        self.coverage_box = TitledBox(UT_COVERAGE)
         self.coverage_box.setObjectName("ndt_coverage")
         coverage_layout = QVBoxLayout(self.coverage_box)
+        coverage_layout.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.coverage_mode = QComboBox()
         self.coverage_mode.addItem("Po ploše přiložení", "face")
         self.coverage_mode.addItem("Z přímé dráhy", "line")
-        form.addRow("Zdroj poloh sondy:", self.coverage_mode)
+        form.addRow("Zdroj poloh:", self.coverage_mode)
         self.coverage_step = QDoubleSpinBox()
         self.coverage_step.setObjectName("ndt_coverage_step")
         self.coverage_step.setRange(0.5, 100)
@@ -482,37 +568,61 @@ class NdtPanel(QWidget):
             signal.connect(lambda *_args: self.refresh_actions())
         self.coverage_tolerance_auto.toggled.connect(
             lambda checked: self.coverage_tolerance.setEnabled(not checked))
-        row = QHBoxLayout()
-        for item in (self.coverage_action, self.clear_coverage_action, self.export_coverage_action):
-            row.addWidget(window._tool_button(item))
-        coverage_layout.addLayout(row)
-        legend = QLabel('<span style="color:#26b340">■ Pokryto</span> · '
-                        '<span style="color:#d93326">■ Nepokryto</span> · '
-                        '<span style="color:#e6bf26">■ Nelze spolehlivě vyhodnotit</span>')
-        legend.setWordWrap(True)
-        coverage_layout.addWidget(legend)
+        self.coverage_bar = CoverageBar()
+        coverage_layout.addWidget(self.coverage_bar)
         self.volume_legend = QLabel(  # jen u objemového cíle (07C)
             f'<span style="color:#9e9e9e">■ {UNRESOLVED_LABEL}</span> (jen kresba – buňka s více '
             "kusy, které nejde rozlišit; čísla to nemění)")
         self.volume_legend.setObjectName("ndt_volume_legend")
         self.volume_legend.setWordWrap(True)
         coverage_layout.addWidget(self.volume_legend)
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.coverage_action, "Spočítat pokrytí",
+                                            "primary"))
+        row.addWidget(window._action_button(self.export_coverage_action, "Export CSV…",
+                                            "secondary"))
+        row.addWidget(window._action_button(self.clear_coverage_action, "Skrýt mapu",
+                                            "secondary"))
+        row.addStretch()
+        coverage_layout.addLayout(row)
         self.coverage_label = QLabel(PERCENT_NOTE)
         self.coverage_label.setObjectName("ndt_coverage_summary")
         self.coverage_label.setWordWrap(True)
         self.coverage_label.setTextFormat(Qt.TextFormat.RichText)
         self.coverage_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        coverage_layout.addWidget(self.coverage_label)
-        layout.addWidget(self.coverage_box)
-        self._build_access(layout)
-        self._build_plan(layout)
-        self.details = QLabel()
-        self.details.setObjectName("ndt_details")
-        self.details.setWordWrap(True)
-        self.details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.details)
+        self.coverage_details = Section("Podrobnosti výpočtu", self.coverage_label)
+        coverage_layout.addWidget(self.coverage_details)
+        coverage_body_layout.addWidget(self.coverage_box)
+        self.ut_sections: dict[str, Section] = {}
+        self._build_access(coverage_body_layout)
+        self._build_plan(coverage_body_layout)
+        self.ut_wizard.add_step("Geometrické pokrytí", coverage_body, short="pokrytí")
+        for body in (target_body, probe_body, place_body, coverage_body):
+            body.layout().setContentsMargins(0, 0, 0, 0)  # odsazení dává krok (30 px)
+        layout.addWidget(self.ut_wizard)
         layout.addStretch()
+        self._fit_card_width()
         self.refresh()
+
+    def _fit_card_width(self) -> None:
+        """Karta má 320 px (návrh 1a): nabídky a pole se nesmí roztáhnout podle nejdelší
+        položky a dlouhé zaškrtávací popisky dají závorku do bubliny (jinak by obsah
+        přetékal vpravo – P7.55)."""
+        for combo in self.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(min(combo.minimumContentsLength() or 8, 8))
+        for box in self.findChildren(QCheckBox):
+            text = box.text()
+            if " (" in text and text.endswith(")"):
+                short, detail = text[:-1].split(" (", 1)
+                box.setText(short)
+                box.setToolTip("\n".join(filter(None, (box.toolTip(), detail[0].upper()
+                                                       + detail[1:] + "."))))
+        reflow_button_rows(self)
+        for table in self.findChildren(QTableWidget):
+            table.setSizePolicy(QSizePolicy.Policy.Ignored, table.sizePolicy().verticalPolicy())
+            table.setMinimumWidth(120)
 
     def _build_pt(self, layout: QVBoxLayout) -> None:
         """Skupina Přístupnost povrchu pro PT (etapa 11): nastavení, výpočet, mapa, důvody."""
@@ -641,9 +751,10 @@ class NdtPanel(QWidget):
     def _build_access(self, layout: QVBoxLayout) -> None:
         """Skupina Návrh poloh sondy (etapa 09): volby, odhad, průběh, tabulka, kombinace."""
         window = self.window
-        self.access_box = QGroupBox("Návrh poloh sondy")
+        self.access_box = TitledBox("Návrh poloh sondy")
         self.access_box.setObjectName("ndt_access")
         box = QVBoxLayout(self.access_box)
+        box.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.access_faces = QComboBox()
@@ -743,14 +854,16 @@ class NdtPanel(QWidget):
                        self.access_directions.currentIndexChanged, self.access_angles.toggled,
                        self.access_bounces.currentIndexChanged, self.access_step.valueChanged):
             signal.connect(lambda *_args: self.refresh_actions())
-        layout.addWidget(self.access_box)
+        self.ut_sections["access"] = Section("Návrh poloh sondy", self.access_box)
+        layout.addWidget(self.ut_sections["access"])
 
     def _build_plan(self, layout: QVBoxLayout) -> None:
         """Skupina Plán dráhy sondy (etapa 10): volby, sestavení, stav, úseky, přehrávání."""
         window = self.window
-        self.plan_box = QGroupBox("Plán dráhy sondy")
+        self.plan_box = TitledBox("Plán dráhy sondy")
         self.plan_box.setObjectName("ndt_plan")
         box = QVBoxLayout(self.plan_box)
+        box.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.plan_source = QComboBox()
@@ -880,7 +993,8 @@ class NdtPanel(QWidget):
                        self.plan_approach.valueChanged, self.plan_compare.toggled,
                        self.plan_robust.toggled):
             signal.connect(lambda *_args: self.refresh_actions())
-        layout.addWidget(self.plan_box)
+        self.ut_sections["plan"] = Section("Plán dráhy sondy", self.plan_box)
+        layout.addWidget(self.ut_sections["plan"])
 
     # --- zobrazení ---------------------------------------------------------------------
 
@@ -939,6 +1053,10 @@ class NdtPanel(QWidget):
         self._show_mt()
         self.rt_box.refresh()
         self.refresh_actions()
+        self.studies_section.set_expanded(self.current_id() is None)
+        refresh = getattr(self.window, "_refresh_ndt_studies", None)
+        if refresh is not None:  # skupina „NDT studie“ v levé kartě (P7.55)
+            refresh()
         self._start_recheck()
 
     def _row_changed(self) -> None:
@@ -956,6 +1074,10 @@ class NdtPanel(QWidget):
         self._show_mt()
         self.rt_box.refresh()
         self.refresh_actions()
+        self.studies_section.set_expanded(study_id is None)
+        refresh = getattr(self.window, "_refresh_ndt_studies", None)
+        if refresh is not None:
+            refresh()
         self.window._update_highlight()  # kontrolovaná oblast vybrané studie ve 3D
         self.window._refresh_probe()  # zdroj a detektor RT projekce (nebo nic)
 
@@ -980,6 +1102,95 @@ class NdtPanel(QWidget):
         else:
             text = RT_DISCLAIMER if session.ndt_rt_map is not None else DISCLAIMER
         self.warning.setText(text)
+
+    def show_scope(self) -> None:
+        """„Celé upozornění“: závazné vymezení metody vybrané studie (R7)."""
+        record = self._record(self.current_id())
+        method = (record or {}).get("method") or self.method_combo.currentData() or "UT"
+        self.window._exec_dialog(ScopeDialog(method, self.warning.text(), self))
+
+    def _target_summary(self, result: StudyResult, record: dict) -> str:
+        if result.state == "broken":
+            return "nelze vyhodnotit"
+        if result.state == "incomplete":
+            return "není zadaná"
+        if result.target_kind == "faces":
+            return _count(result.faces, "plocha", "plochy", "ploch")
+        return _volume_text(record, result)
+
+    def _probe_summary(self, study_id: str) -> str:
+        probe = self.window.session.ndt_probe(study_id)
+        kind = "Úhlová" if probe.kind == "angle" else "Přímá"
+        parts = [kind]
+        if probe.kind == "angle":
+            parts.append(f"β {probe.beam_angle:g}°")
+        parts.append(_count(probe.bounces, "odraz", "odrazy", "odrazů") if probe.bounces
+                     else "bez odrazů")
+        record = self._record(study_id) or {}
+        return " · ".join(parts) + ("" if "device" in record else " (výchozí)")
+
+    def _show_wizard(self) -> None:
+        """P7.55: kroky UT podle stavu studie, štítek stavu a nadpis karty (rám 2c, 3d)."""
+        session = self.window.session
+        refresh = getattr(self.window, "_refresh_pill_focus", None)
+        if refresh is not None:  # pilulka: přiloženo / pokryto (rámy 2c a 3d)
+            refresh()
+        study_id = self.current_id()
+        record = self._record(study_id)
+        result = self.current()
+        method = (record or {}).get("method")
+        self.new_box.setVisible(record is None)
+        self.ut_wizard.setVisible(method == "UT")
+        stale = result is not None and result.state == "stale"
+        self.stale_box.setVisible(stale)
+        if stale:
+            self.stale_label.setText("Díl se od založení studie změnil. Zkontroluj kontrolovanou "
+                                     "oblast a potvrď studii pro aktuální díl.")
+        workspace = getattr(self.window, "workspace", None)
+        if workspace is not None and "ndt" in workspace.headings:
+            if record is None:
+                workspace.set_heading("ndt")
+                workspace.set_badge("ndt", "", "")
+            else:
+                workspace.set_heading("ndt", record.get("name") or record["id"], "NDT studie")
+                badge = (BADGES[result.state] if result is not None and not session.computing
+                         else ("⏳", "info"))
+                workspace.set_badge("ndt", *badge)
+        if method != "UT" or study_id is None:
+            return
+        placed_here = (session.ndt_placement_request is not None
+                       and session.ndt_placement_request[0] == study_id)
+        placement = session.ndt_placement if placed_here else None
+        target_done = result is not None and result.state in ("ok", "stale")
+        if result is None:
+            states = [StepState(False, "⏳ přepočítává se")] + [StepState(False)] * 3
+            self.ut_wizard.update(states, key=study_id)
+            return
+        placed = placement is not None and placement.state == "ok"
+        if placed:
+            place_text = f"Přiloženo · směr {session.ndt_placement_request[2]:g}°"
+        elif placement is not None:
+            place_text = "Sonda nedosedá – zkus jiné místo nebo směr"
+        else:
+            place_text = ("Nepřiloženo – návrh poloh v kroku 4 hledá polohu sám"
+                          if target_done else "Po zvolení oblasti")
+        coverage = session.ndt_coverage if placed_here else None
+        covered = (f"Pokryto {coverage.percent('covered'):.2f} %" if coverage is not None
+                   else "Po přiložení sondy")
+        states = [
+            StepState(target_done, self._target_summary(result, record or {})),
+            StepState(target_done, self._probe_summary(study_id) if target_done
+                      else "Po zvolení oblasti"),
+            StepState(placed, place_text, skippable=target_done),
+            StepState(coverage is not None or (record or {}).get("plan") is not None, covered),
+        ]
+        self.ut_wizard.update(states, key=study_id)
+        state = ("info" if placement is None else "ok" if placement.state == "ok"
+                 else "err" if placement.state == "collision" else "warn")
+        if self.placement_label.property("cardState") != state:
+            self.placement_label.setProperty("cardState", state)
+            self.placement_label.style().unpolish(self.placement_label)
+            self.placement_label.style().polish(self.placement_label)
 
     def _show_details(self) -> None:
         result = self.current()
@@ -1050,6 +1261,7 @@ class NdtPanel(QWidget):
         self.clear_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.export_coverage_action.setEnabled(has_coverage and not self.window.ai_busy)
         self.coverage_box.setVisible(bool(ut or has_coverage or session.coverage_pending))
+        self.scan_slider.setVisible(session.ndt_line_scan is not None)
         self._refresh_access_actions(ut and has_part and result is not None
                                      and result.state == "ok")
         self._refresh_plan_actions(bool(ut and has_part and result is not None
@@ -1076,9 +1288,8 @@ class NdtPanel(QWidget):
         self.mt_place_yoke_action.setEnabled(bool(mt and has_part and picked is not None))
         self.mt_hide_yoke_action.setEnabled(ready and session.ndt_yoke is not None)
         self.mt_box.setVisible(bool(mt or has_mt or session.mt_pending))
-        rt = selected and (record or {}).get("method") == "RT"
         self.rt_box.refresh_actions(ready, has_part, result is not None and result.state == "ok")
-        self.probe_box.setVisible(not pt and not mt and not rt)
+        self._show_wizard()
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for action in (self.new_action, self.target_action, self.volume_action,
                            self.cross_section_action, self.rename_action,
@@ -1234,7 +1445,12 @@ class NdtPanel(QWidget):
                 lines.insert(2, "Barevný je jen povrch cíle. Dovnitř se podívej tlačítkem "
                                 "<b>Průřez svarem</b>.")
             self.coverage_label.setText("<br>".join(lines))
-        elif session.coverage_pending:
+            self.coverage_bar.show_result(
+                BAR_LABELS, COVERAGE_COLORS, {state: result.percent(state) for state in STATES},
+                _sensitivity_html(result))
+            return
+        self.coverage_bar.show_result(BAR_LABELS, COVERAGE_COLORS, None)
+        if session.coverage_pending:
             self.coverage_label.setText(
                 f"Počítám mapu… {session.computing_seconds:.0f} s. Výpočet můžeš zastavit "
                 "tlačítkem Zastavit dole v okně.")
@@ -1694,7 +1910,7 @@ class NdtPanel(QWidget):
                        self.access_bounces, self.access_step):
             widget.setEnabled(not pending and not ai)
         ut = (self._record(self.current_id()) or {}).get("method") == "UT"
-        self.access_box.setVisible(bool(ut or access is not None or pending))
+        self.ut_sections["access"].setVisible(bool(ut or access is not None or pending))
         if estimate is not None:
             self.access_estimate.setStyleSheet("color: palette(text);" if estimate.ok
                                                else "color: #b9770e;")
@@ -1905,7 +2121,7 @@ class NdtPanel(QWidget):
         for widget in (self.plan_source, self.plan_pattern, self.plan_step,
                        self.plan_approach, self.plan_compare, self.plan_robust):
             widget.setEnabled(not pending and not ai)
-        self.plan_box.setVisible(bool(ut or has_plan or pending))
+        self.ut_sections["plan"].setVisible(bool(ut or has_plan or pending))
         if estimate is not None:
             self.plan_estimate.setStyleSheet("color: palette(text);" if estimate.ok
                                              else "color: #b9770e;")
@@ -2250,23 +2466,25 @@ class NdtPanel(QWidget):
             self.scan_label.hide()
         self.scan_slider.blockSignals(False)
         placement = session.ndt_placement
+        self.beam_section.hide()
         if placement is not None:
             color = _PLACEMENT_COLORS.get(placement.state, "#b9770e")
             beam = session.ndt_beam
-            beam_html = f"<br>{beam.text.replace(chr(10), '<br>')}" if beam is not None else ""
+            self.beam_label.setText(beam.text if beam is not None else "")
+            self.beam_section.setVisible(beam is not None)
             zone = session.ndt_placement_zone
             zone_html = (f'<br><span style="color: #b9770e;"><b>{escape(zone)}</b></span>'
                          if zone else "")
             note = session.ndt_preview_note(session.ndt_placement_request[0])
             note_html = escape(note) + "<br>" if note else ""
             self.placement_label.setText(note_html + f'<span style="color: {color};"><b>'
-                                         f"{placement.text}</b></span>{zone_html}{beam_html}")
+                                         f"{placement.text}</b></span>{zone_html}")
         elif session.ndt_placement_request is not None and session.ndt_placement_error:
             self.placement_label.setText(f'<span style="color: #c0392b;">'
                                          f"{session.ndt_placement_error}</span>")
         else:
-            self.placement_label.setText("Klikni ve 3D na plochu a dej Přiložit sondu sem "
-                                         "(nebo zapni Jezdit sondou myší / drž Alt).")
+            self.placement_label.setText("Klikni na pojezdovou plochu a dej Přiložit sondu sem, "
+                                         "nebo drž Alt a táhni sondou po povrchu.")
 
     def _user_library(self) -> UserLibrary:
         """Moje sondy (``~/SkodaCAD/ndt-knihovna.json``); znovu se čtou jen po změně souboru."""

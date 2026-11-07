@@ -7,12 +7,16 @@ popisek vlevo, hodnota vpravo – a řádek, jehož čára je právě ve 3D, zv�
 viditelných řádků (u uložených měření nejvýš ``SAVED_ROWS``, pak pojistka posuvníkem).
 """
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QAbstractItemView,
+    QBoxLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QLayout,
     QListWidget,
     QPushButton,
     QStyle,
@@ -158,3 +162,86 @@ def separator() -> QWidget:
     line.setFrameShape(QFrame.Shape.HLine)
     line.setStyleSheet("color: palette(mid);")
     return line
+
+
+class FlowLayout(QLayout):
+    """Řada tlačítek, která se v úzké kartě zalomí na další řádek (P7.55)."""
+
+    def __init__(self, parent=None, spacing: int = 6) -> None:
+        super().__init__(parent)
+        self._items = []
+        self._spacing = spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):  # noqa: N802
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):  # noqa: N802
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):  # noqa: N802
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):  # noqa: N802
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):  # noqa: N802
+        return True
+
+    def heightForWidth(self, width):  # noqa: N802
+        return self._place(QRect(0, 0, width, 0), apply=False)
+
+    def setGeometry(self, rect):  # noqa: N802
+        super().setGeometry(rect)
+        self._place(rect, apply=True)
+
+    def sizeHint(self):  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self):  # noqa: N802
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        return size
+
+    def _place(self, rect, apply):
+        x, y, line = rect.x(), rect.y(), 0
+        for item in self._items:
+            if item.widget() is not None and item.widget().isHidden():
+                continue
+            hint = item.sizeHint()
+            if x > rect.x() and x + hint.width() > rect.right() + 1:
+                x, y, line = rect.x(), y + line + self._spacing, 0
+            if apply:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + self._spacing
+            line = max(line, hint.height())
+        return y + line - rect.y()
+
+
+def reflow_button_rows(widget: QWidget) -> int:
+    """Řady jen s tlačítky (a mezerou) v ``widget`` převede na ``FlowLayout``."""
+    changed = 0
+    for row in widget.findChildren(QHBoxLayout):
+        parent = row.parent()
+        if not isinstance(parent, QBoxLayout):
+            continue
+        items = [row.itemAt(i) for i in range(row.count())]
+        buttons = [item.widget() for item in items if item.widget() is not None]
+        if not buttons or len(buttons) < 2 or not all(
+                isinstance(b, QAbstractButton) for b in buttons) or any(
+                item.layout() is not None for item in items):
+            continue
+        flow = FlowLayout(spacing=max(row.spacing(), 4))
+        index = parent.indexOf(row)
+        for button in buttons:
+            row.removeWidget(button)
+            flow.addWidget(button)
+        parent.removeItem(row)
+        row.deleteLater()
+        parent.insertLayout(index, flow)
+        changed += 1
+    return changed
