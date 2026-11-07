@@ -102,6 +102,13 @@
 - **Uzavření P8.5:** PR #119 je sloučený a vydání `e7f5e6d` ověřené včetně
   skutečných veřejných ZIPů obou OS; [protokol vydání](docs/p8-5-overeni-vydani.md)
   má přednost před průběžnými předslučovacími stavy výše.
+- **Rozhodnutí autora ze 7. 11. 2026 „Vyjmout kontrolu z měření“:** po
+  [rozboru pauz nového okna](docs/p8-5-rozbor-pauz-noveho-okna.md) se z intervalů
+  Qt sondy P8.5 odečítá jen čas kontroly měřiče `inspect_assembly(..., 800)`
+  (`LoopProbe.exclude`, jediný povolený název v `budget_p8.EXCLUDED_CHECKS`,
+  vyhodnocení žádá právě 22 vyjmutí). Kontrola dál běží a může zkoušku zastavit;
+  limity a `p85-budgets.json` beze změny, P8.4 samostatně beze změny. Starší
+  neúspěchy `c5a6b13`/`ad7fb19` zůstávají historií. Další vyjmutí = nové rozhodnutí.
 - **Navazující pokyn autora „tu přejímku přeskočíme“:** doporučenou automatickou
   přejímku na reprezentativní NDT úloze přeskočit. Zůstává neprovedená a neblokuje
   další vývoj. Nejde o odborné ověření NDT-17 ani rozšíření platnosti výkonových

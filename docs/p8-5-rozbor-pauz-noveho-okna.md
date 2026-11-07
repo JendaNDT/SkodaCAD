@@ -75,7 +75,8 @@ a `test_tree_refresh_measures_rows_once_not_once_per_changed_row`
 
 ## Co zůstává otevřené
 
-Mez `qt.max_gap_s` počítá i vlastní kontrolu geometrie měřicího programu v hlavní
-smyčce okna. Změna měřicího postupu (např. tuto kontrolu z intervalů Qt vyjmout)
-by byla nová změna pravidel P8.5 a čeká na rozhodnutí autora; nic z toho zde není
-provedeno ani předpokládáno. Výsledky hostovaných běhů s opravami jsou v PR.
+Mez `qt.max_gap_s` počítala i vlastní kontrolu geometrie měřicího programu v hlavní
+smyčce okna. Autor 7. 11. 2026 rozhodl tuto jednu kontrolu z intervalů Qt vyjmout
+(kontrola dál proběhne, limit 3 s zůstává) – pravidlo a jeho meze jsou zapsané
+v [P8.5 rozpočtech](p8-5-rozpocty.md#úlohy-a-význam-času).
+Výsledky hostovaných běhů s opravami jsou v PR.
