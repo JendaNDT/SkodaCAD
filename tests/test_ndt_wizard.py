@@ -52,7 +52,7 @@ def wizard(states):
     w = Wizard("Přístupnost UT sondy")
     for title in ("Kontrolovaná oblast", "Sonda", "Přiložení sondy", "Geometrické pokrytí"):
         w.add_step(title, QtWidgets.QWidget(), short="pokrytí" if "pokrytí" in title else None)
-    w.update(states, key="s1")
+    w.set_states(states, key="s1")
     return w
 
 
@@ -68,12 +68,12 @@ def test_wizard_derives_step_then_stays_until_next(app):
     assert w.next.isEnabled()  # přiložení jde přeskočit (návrh poloh v kroku 4)
     assert not w.steps[3].change.isVisible() and w.steps[0].summary_label.text() == "1 plocha"
     # přiložená sonda: krok 3 hotový, ale zůstává otevřený (rám 2c)
-    w.update([StepState(True), StepState(True), StepState(True, "Přiloženo"), StepState(False)],
+    w.set_states([StepState(True), StepState(True), StepState(True, "Přiloženo"), StepState(False)],
              key="s1")
     assert w.active == 2 and w.steps[2].kind == "active"
     w.go_next()
     assert w.active == 3 and w.next.text() == "Hotovo" and not w.next.isEnabled()
-    w.update([StepState(True)] * 4, key="s1")
+    w.set_states([StepState(True)] * 4, key="s1")
     assert w.next.isEnabled()
     w.go_next()  # Hotovo: všechny kroky jako hotové řádky
     assert w.active is None and kinds(w) == ["done"] * 4
@@ -90,12 +90,12 @@ def test_wizard_resets_for_another_study_and_when_step_disappears(app):
     w = wizard([StepState(True), StepState(True), StepState(True), StepState(True)])
     assert w.active == 3
     w.open_step(0)
-    w.update([StepState(False, "není zadaná"), StepState(False), StepState(False),
+    w.set_states([StepState(False, "není zadaná"), StepState(False), StepState(False),
               StepState(False)], key="s1")
     assert w.active == 0 and kinds(w) == ["active", "future", "future", "future"]
     w.open_step(2)  # nedostupný krok nejde otevřít
     assert w.active == 0 and not w.next.isEnabled()
-    w.update([StepState(True), StepState(True), StepState(False), StepState(False)], key="s2")
+    w.set_states([StepState(True), StepState(True), StepState(False), StepState(False)], key="s2")
     assert w.active == 2  # jiná studie: krok podle jejího stavu
 
 
@@ -213,3 +213,98 @@ def test_long_checkbox_labels_move_detail_into_tooltip(plate):
         assert not re.search(r" \(.*\)$", box.text()), box.text()
     assert panel.plan_robust.text() == "ověřit odolnost"
     assert "Posun řádků o ± půl rozteče." in panel.plan_robust.toolTip()
+
+
+# --- P7.56: průvodce PT, MT, RT, audit a návrh úpravy -------------------------------------
+
+
+@pytest.fixture
+def open_example(app, examples_dir, tmp_path):
+    windows = []
+
+    def opener(name):
+        model = tmp_path / name
+        shutil.copy(examples_dir / "ndt" / name, model)
+        window = MainWindow(viewer_factory=FakeViewer, examples_dir=examples_dir,
+                            user_dir=tmp_path)
+        assert window.open_model(model)
+        window.resize(1440, 900)
+        window.show()
+        window.workspace.show_panel("ndt")
+        app.processEvents()
+        windows.append(window)
+        return window
+
+    yield opener
+    for window in windows:
+        window.session.dirty = False
+        window.close()
+
+
+def test_pt_and_mt_studies_use_the_same_four_steps(open_example):
+    from skodacad.ndt import MT_ACCESS, PT_ACCESS
+
+    w = open_example("kapsa.json")  # s1 UT, s2 PT, s3 MT
+    panel = w.ndt_panel
+    panel.select("s2")
+    pt = panel.pt_box
+    assert pt.isVisibleTo(panel) and pt.title() == PT_ACCESS
+    assert not panel.ut_wizard.isVisibleTo(panel) and not panel.mt_box.isVisibleTo(panel)
+    assert panel.warning.text() == PT_DISCLAIMER
+    assert [s.title for s in pt.steps] == ["Kontrolovaná oblast", "Nastavení PT", "Výpočet",
+                                           "Mapa geometrické přístupnosti PT"]
+    assert kinds(pt) == ["done", "done", "active", "future"]
+    assert pt.steps[0].summary_label.text() == "5 ploch"
+    assert pt.steps[1].summary_label.text() == "výchozí – zvoleno pro výpočet"
+    assert not pt.next.isEnabled() and pt.next.text() == "Další: mapa"
+    assert panel.pt_action.isEnabled()  # Spočítat mapu PT je v aktivním kroku
+    assert not panel.pt_bar.bar.isVisibleTo(panel)
+    panel.select("s3")
+    mt = panel.mt_box
+    assert mt.isVisibleTo(panel) and mt.title() == MT_ACCESS
+    assert kinds(mt) == ["done", "done", "active", "future"]
+    assert mt.steps[1].summary_label.text() == "Materiál ocel je feromagnetický"
+    assert panel.mt_material.property("cardState") == "ok"
+    assert w.workspace.heading("ndt") == "MT dna kapsy"
+
+
+def test_rt_steps_projection_count_compute_advances_to_map_with_bar(open_example):
+    from skodacad.gui.ndt_wizard import AREA_NOTE
+    from skodacad.ndt import RT_ACCESS
+
+    w = open_example("otvor.json")  # s1 UT, s2 RT se dvěma projekcemi
+    panel = w.ndt_panel
+    panel.select("s2")
+    rt = panel.rt_box
+    assert rt.isVisibleTo(panel) and rt.title() == RT_ACCESS
+    assert kinds(rt) == ["done", "done", "active", "future"]
+    assert rt.steps[1].summary_label.text() == "2 projekce"
+    rt.compute_action.trigger()
+    assert w.session.ndt_rt_map is not None
+    assert rt.active == 3, "po výpočtu se průvodce sám přesune na mapu"
+    assert rt.bar.bar.isVisibleTo(panel) and rt.bar.note.text() == AREA_NOTE
+    assert sum(rt.bar.percents.values()) == pytest.approx(100, abs=0.05)
+    assert rt.details.isVisibleTo(panel) and not rt.details.expanded  # souhrn sbalený
+    assert not rt.legend.isHidden() or rt.view.currentData() == ""
+    assert rt.steps[3].summary_label.text().startswith("Promítne se")
+
+
+def test_audit_and_design_cards_fit_the_narrow_card(plate):
+    w = plate
+    for panel, primary in ((w.audit_panel, "Spustit audit"), (w.design_panel, "Spustit návrh")):
+        buttons = {b.text(): b for b in panel.findChildren(QtWidgets.QPushButton)}
+        assert buttons[primary].property("role") == "primary"
+        assert panel.warning.property("ndtWarning") is True  # celé upozornění, 12 px
+        for table in panel.findChildren(QtWidgets.QTableWidget):
+            assert table.sizePolicy().horizontalPolicy() == QtWidgets.QSizePolicy.Policy.Ignored
+
+
+def test_card_height_counts_wrapped_rows(open_example):
+    w = open_example("kapsa.json")
+    w.ndt_panel.select("s2")
+    for _ in range(3):
+        QtWidgets.QApplication.processEvents()
+        w.card_layer.relayout()
+    scroll = w.ndt_dock.widget()
+    wanted = scroll.widget().heightForWidth(scroll.viewport().width())
+    assert w.ndt_dock.preferred_height() >= wanted  # zalomené řádky (dřív karta kratší)

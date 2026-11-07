@@ -1595,12 +1595,35 @@ def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
         width = _card_fits(window.ndt_dock)
         window.session.clear_ndt_coverage()
         panel.remove_probe()
+        # P7.56: PT a MT (kapsa) a RT (otvor) – stejné čtyři kroky, šířka karty
+        assert window.open_model(examples_dir() / "ndt" / "kapsa.json", template=True)
+        QApplication.processEvents()
+        others = []
+        for study, box in (("s2", panel.pt_box), ("s3", panel.mt_box)):
+            panel.select(study)
+            for _ in range(3):
+                QApplication.processEvents()
+                layer.relayout()
+            kinds = [step.kind for step in box.steps]
+            assert box.isVisible() and kinds == ["done", "done", "active", "future"], kinds
+            others.append(_card_fits(window.ndt_dock))
+        assert window.open_model(examples_dir() / "ndt" / "otvor.json", template=True)
+        QApplication.processEvents()
+        panel.select("s2")
+        panel.rt_box.compute_action.trigger()
+        for _ in range(3):
+            QApplication.processEvents()
+            layer.relayout()
+        assert panel.rt_box.active == 3 and panel.rt_box.bar.bar.isVisible(), "RT mapa"
+        others.append(_card_fits(window.ndt_dock))
+        panel.rt_box.clear()  # Skrýt mapu
         window.ribbon.select_page("model")
         window.workspace.show_panel("editor")
         lines.append(f"✓ NDT průvodce: skupina studií v levé kartě (klik), {badge}, kroky "
                      f"hotovo/hotovo/aktivní/budoucí, přiložení, skutečné „Další: pokrytí“, "
                      f"pokryto {covered:.2f} % v pilulce i pruhu, vymezení UT přibalené, "
-                     f"obsah karty {width} px se vejde")
+                     f"obsah karty {width} px se vejde; PT/MT/RT čtyři kroky, výpočet RT "
+                     f"přejde na mapu s pruhem, karty {'/'.join(map(str, others))} px")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ NDT průvodce: {type(exc).__name__}: {exc}")

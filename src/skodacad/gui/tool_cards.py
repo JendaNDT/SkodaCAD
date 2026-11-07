@@ -13,14 +13,18 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QBoxLayout,
+    QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLayout,
     QListWidget,
     QPushButton,
+    QSizePolicy,
     QStyle,
     QStyledItemDelegate,
+    QTableWidget,
     QWidget,
 )
 
@@ -245,3 +249,23 @@ def reflow_button_rows(widget: QWidget) -> int:
         parent.insertLayout(index, flow)
         changed += 1
     return changed
+
+
+def fit_card(widget: QWidget) -> None:
+    """Obsah plovoucí karty 304–320 px (P7.55/P7.56): nabídky se neroztahují podle nejdelší
+    položky, tabulky dostanou šířku karty, řady tlačítek se zalomí a dlouhé zaškrtávací
+    popisky dají závorku do bubliny (jinak by obsah přetékal vpravo)."""
+    for combo in widget.findChildren(QComboBox):
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(min(combo.minimumContentsLength() or 8, 8))
+    for box in widget.findChildren(QCheckBox):
+        text = box.text()
+        if " (" in text and text.endswith(")"):
+            short, detail = text[:-1].split(" (", 1)
+            box.setText(short)
+            box.setToolTip("\n".join(filter(None, (box.toolTip(),
+                                                   detail[0].upper() + detail[1:] + "."))))
+    reflow_button_rows(widget)
+    for table in widget.findChildren(QTableWidget):
+        table.setSizePolicy(QSizePolicy.Policy.Ignored, table.sizePolicy().verticalPolicy())
+        table.setMinimumWidth(120)

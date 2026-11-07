@@ -29,13 +29,11 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QSizePolicy,
     QSlider,
     QSpinBox,
     QTableWidget,
@@ -47,6 +45,7 @@ from PySide6.QtWidgets import (
 from skodacad.document import DocumentError
 from skodacad.gui.mt_dialog import MtDialog
 from skodacad.gui.ndt_wizard import (
+    AREA_NOTE,
     BADGES,
     CoverageBar,
     ScopeDialog,
@@ -58,7 +57,7 @@ from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.pt_dialog import PtDialog
 from skodacad.gui.rt_box import RtBox
 from skodacad.gui.target_dialog import TargetDialog
-from skodacad.gui.tool_cards import reflow_button_rows
+from skodacad.gui.tool_cards import fit_card
 from skodacad.gui.workspace import Section
 from skodacad.gui.zone_dialog import ZoneDialog
 from skodacad.materials import material_key
@@ -112,6 +111,7 @@ from skodacad.ndt.pt import GRADE_COLORS as PT_GRADE_COLORS
 from skodacad.ndt.pt import GRADES as PT_GRADES
 from skodacad.ndt.pt import STATES as PT_STATES
 from skodacad.ndt.pt import PtError, PtMap
+from skodacad.ndt.rt import STATES as RT_STATES
 from skodacad.ndt.study import METHODS, StudyResult
 from skodacad.ndt.volume_coverage import VolumeCoverageMap
 from skodacad.ndt.volume_drawing import UNRESOLVED_LABEL
@@ -129,6 +129,8 @@ ANGLE_HINT = ("Směr paprsku ve stupních: 0° = osa +X sklopená do plochy (u p
               "osa +Y), kladně proti směru hodin při pohledu na plochu zvenku.")
 METHOD_LABELS = {key: f"{key} – {name}" for key, name in METHODS.items()}
 BAR_LABELS = {"covered": "Pokryto", "uncovered": "Nepokryto", "uncertain": "Nelze vyhodnotit"}
+METHOD_WIZARDS = {"PT": "pt_box", "MT": "mt_box", "RT": "rt_box"}  # průvodce metod (P7.56)
+METHOD_STATES = {"PT": PT_STATES, "MT": MT_STATES, "RT": RT_STATES}
 HINT = ("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Nová studie. "
         "Studie nemění díl; po změně dílu se označí jako zastaralá.")
 PT_PICK_HINT = "Klikni ve 3D do mapy – napíšu, proč je místo omezené nebo nepřístupné."
@@ -371,19 +373,7 @@ class NdtPanel(QWidget):
         # P7.55: UT průvodce (rámy 2c a 3d) – 1 oblast, 2 sonda, 3 přiložení, 4 pokrytí.
         self.ut_wizard = Wizard(UT_ACCESS, "ndt_ut")
         self.probe_box = self.ut_wizard  # dřívější skupina sondy UT (testy, viditelnost)
-        target_body = QWidget()
-        target_layout = QVBoxLayout(target_body)
-        self.target_hint = QLabel(
-            "Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej Oblast "
-            "z výběru, nebo zadej svar či jiný objem uvnitř dílu.")
-        self.target_hint.setWordWrap(True)
-        self.target_hint.setProperty("cardHint", True)
-        target_layout.addWidget(self.target_hint)
-        buttons = QHBoxLayout()
-        for item in (self.target_action, self.volume_action, self.cross_section_action):
-            buttons.addWidget(window._tool_button(item))
-        buttons.addStretch()
-        target_layout.addLayout(buttons)
+        target_body = self._target_step()
         self.ut_wizard.add_step("Kontrolovaná oblast", target_body)
 
         probe_body = QWidget()
@@ -605,47 +595,59 @@ class NdtPanel(QWidget):
         self.refresh()
 
     def _fit_card_width(self) -> None:
-        """Karta má 320 px (návrh 1a): nabídky a pole se nesmí roztáhnout podle nejdelší
-        položky a dlouhé zaškrtávací popisky dají závorku do bubliny (jinak by obsah
-        přetékal vpravo – P7.55)."""
-        for combo in self.findChildren(QComboBox):
-            combo.setSizeAdjustPolicy(
-                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-            combo.setMinimumContentsLength(min(combo.minimumContentsLength() or 8, 8))
-        for box in self.findChildren(QCheckBox):
-            text = box.text()
-            if " (" in text and text.endswith(")"):
-                short, detail = text[:-1].split(" (", 1)
-                box.setText(short)
-                box.setToolTip("\n".join(filter(None, (box.toolTip(), detail[0].upper()
-                                                       + detail[1:] + "."))))
-        reflow_button_rows(self)
-        for table in self.findChildren(QTableWidget):
-            table.setSizePolicy(QSizePolicy.Policy.Ignored, table.sizePolicy().verticalPolicy())
-            table.setMinimumWidth(120)
+        """Karta má 320 px (návrh 1a) – sdílené úpravy úzké karty (``tool_cards.fit_card``)."""
+        fit_card(self)
+
+    def _target_step(self) -> QWidget:
+        """Krok 1 průvodce každé metody: kontrolovaná oblast (sdílené akce panelu)."""
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        hint = QLabel("Vyber ve 3D plochy kontrolované oblasti (Ctrl+klik přidá další) a dej "
+                      "Oblast z výběru, nebo zadej svar či jiný objem uvnitř dílu.")
+        hint.setWordWrap(True)
+        hint.setProperty("cardHint", True)
+        layout.addWidget(hint)
+        buttons = QHBoxLayout()
+        for item in (self.target_action, self.volume_action, self.cross_section_action):
+            buttons.addWidget(self.window._tool_button(item))
+        buttons.addStretch()
+        layout.addLayout(buttons)
+        return body
+
+    @staticmethod
+    def _step_body() -> tuple[QWidget, QVBoxLayout]:
+        body = QWidget()
+        return body, QVBoxLayout(body)
 
     def _build_pt(self, layout: QVBoxLayout) -> None:
-        """Skupina Přístupnost povrchu pro PT (etapa 11): nastavení, výpočet, mapa, důvody."""
+        """Průvodce PT (P7.56; etapa 11): oblast → nastavení → výpočet → mapa a důvody."""
         window = self.window
-        self.pt_box = QGroupBox(PT_ACCESS)
-        self.pt_box.setObjectName("ndt_pt")
-        box = QVBoxLayout(self.pt_box)
+        self.pt_box = Wizard(PT_ACCESS, "ndt_pt")  # dřívější skupina (testy, viditelnost)
+        self.pt_box.add_step("Kontrolovaná oblast", self._target_step())
+        body, box = self._step_body()
         self.pt_settings_label = QLabel()
         self.pt_settings_label.setObjectName("ndt_pt_settings")
         self.pt_settings_label.setWordWrap(True)
+        self.pt_settings_label.setProperty("cardHint", True)
         box.addWidget(self.pt_settings_label)
-        for row_items in ((self.pt_settings_action, self.pt_action, self.pt_stop_action),
-                          (self.pt_clear_action, self.pt_export_action)):
-            row = QHBoxLayout()
-            for item in row_items:
-                row.addWidget(window._tool_button(item))
-            row.addStretch()
-            box.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(window._tool_button(self.pt_settings_action))
+        row.addStretch()
+        box.addLayout(row)
+        self.pt_box.add_step("Nastavení PT", body, short="nastavení")
+        body, box = self._step_body()
         self.pt_estimate = QLabel()
         self.pt_estimate.setObjectName("ndt_pt_estimate")
         self.pt_estimate.setWordWrap(True)
         box.addWidget(self.pt_estimate)
         self._pt_estimate_cache: tuple[tuple, str] | None = None
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.pt_action, "Spočítat mapu PT", "primary"))
+        row.addWidget(window._action_button(self.pt_stop_action, "Zastavit", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        self.pt_box.add_step("Výpočet", body, short="výpočet", auto_next=True)
+        body, box = self._step_body()
         show_row = QHBoxLayout()
         show_row.addWidget(QLabel("Ukázat ve 3D:"))
         self.pt_check = QComboBox()
@@ -654,54 +656,71 @@ class NdtPanel(QWidget):
         for key, label in PT_CHECKS.items():
             self.pt_check.addItem(label.lower(), key)
         self.pt_check.currentIndexChanged.connect(lambda _index: self._pt_check_changed())
-        show_row.addWidget(self.pt_check)
-        show_row.addStretch()
+        show_row.addWidget(self.pt_check, 1)
         box.addLayout(show_row)
         self.pt_legend = QLabel()
         self.pt_legend.setObjectName("ndt_pt_legend")
         self.pt_legend.setWordWrap(True)
         self.pt_legend.setTextFormat(Qt.TextFormat.RichText)
         box.addWidget(self.pt_legend)
+        self.pt_bar = CoverageBar(name="ndt_pt_bar", note=AREA_NOTE, decimals=1, comma=True)
+        box.addWidget(self.pt_bar)
         self.pt_summary = QLabel()
         self.pt_summary.setObjectName("ndt_pt_summary")
         self.pt_summary.setWordWrap(True)
         self.pt_summary.setTextFormat(Qt.TextFormat.RichText)
         self.pt_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        box.addWidget(self.pt_summary)
+        self.pt_details = Section("Podrobnosti výpočtu", self.pt_summary)
+        box.addWidget(self.pt_details)
         self.pt_pick = QLabel(PT_PICK_HINT)
         self.pt_pick.setObjectName("ndt_pt_pick")
         self.pt_pick.setWordWrap(True)
+        self.pt_pick.setProperty("cardState", "info")
         self.pt_pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         box.addWidget(self.pt_pick)
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.pt_export_action, "Export CSV…", "secondary"))
+        row.addWidget(window._action_button(self.pt_clear_action, "Skrýt mapu", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        self.pt_box.add_step(PT_MAP, body, short="mapa")
         layout.addWidget(self.pt_box)
 
     def _build_mt(self, layout: QVBoxLayout) -> None:
-        """Skupina Přiložení jha a směry magnetizace (etapa 12): nastavení, výpočet, mapa
-        celkem a po směrech, důvody, Ukázat jho a Přiložit jho sem."""
+        """Průvodce MT (P7.56; etapa 12): oblast → materiál a nastavení → výpočet → mapa
+        celkem i po směrech, důvody, Ukázat jho a Přiložit jho sem."""
         window = self.window
-        self.mt_box = QGroupBox(MT_ACCESS)
-        self.mt_box.setObjectName("ndt_mt")
-        box = QVBoxLayout(self.mt_box)
+        self.mt_box = Wizard(MT_ACCESS, "ndt_mt")
+        self.mt_box.add_step("Kontrolovaná oblast", self._target_step())
+        body, box = self._step_body()
         self.mt_material = QLabel()
         self.mt_material.setObjectName("ndt_mt_material")
         self.mt_material.setWordWrap(True)
+        self.mt_material.setProperty("cardState", "info")
         box.addWidget(self.mt_material)
         self.mt_settings_label = QLabel()
         self.mt_settings_label.setObjectName("ndt_mt_settings")
         self.mt_settings_label.setWordWrap(True)
+        self.mt_settings_label.setProperty("cardHint", True)
         box.addWidget(self.mt_settings_label)
-        for row_items in ((self.mt_settings_action, self.mt_action, self.mt_stop_action),
-                          (self.mt_clear_action, self.mt_export_action)):
-            row = QHBoxLayout()
-            for item in row_items:
-                row.addWidget(window._tool_button(item))
-            row.addStretch()
-            box.addLayout(row)
+        row = QHBoxLayout()
+        row.addWidget(window._tool_button(self.mt_settings_action))
+        row.addStretch()
+        box.addLayout(row)
+        self.mt_box.add_step("Materiál a nastavení MT", body, short="nastavení")
+        body, box = self._step_body()
         self.mt_estimate = QLabel()
         self.mt_estimate.setObjectName("ndt_mt_estimate")
         self.mt_estimate.setWordWrap(True)
         box.addWidget(self.mt_estimate)
         self._mt_estimate_cache: tuple[tuple, str] | None = None
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.mt_action, "Spočítat mapu MT", "primary"))
+        row.addWidget(window._action_button(self.mt_stop_action, "Zastavit", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        self.mt_box.add_step("Výpočet", body, short="výpočet", auto_next=True)
+        body, box = self._step_body()
         show_row = QHBoxLayout()
         show_row.addWidget(QLabel("Ukázat ve 3D:"))
         self.mt_view = QComboBox()
@@ -709,25 +728,36 @@ class NdtPanel(QWidget):
         for key, label in MT_VIEWS.items():
             self.mt_view.addItem(label.lower(), key or "")
         self.mt_view.currentIndexChanged.connect(lambda _index: self._mt_view_changed())
-        show_row.addWidget(self.mt_view)
-        show_row.addStretch(1)
+        show_row.addWidget(self.mt_view, 1)
         box.addLayout(show_row)
         self.mt_legend = QLabel()
         self.mt_legend.setObjectName("ndt_mt_legend")
         self.mt_legend.setWordWrap(True)
         self.mt_legend.setTextFormat(Qt.TextFormat.RichText)
         box.addWidget(self.mt_legend)
+        self.mt_bar = CoverageBar(name="ndt_mt_bar", note=AREA_NOTE, decimals=1, comma=True)
+        box.addWidget(self.mt_bar)
         self.mt_summary = QLabel()
         self.mt_summary.setObjectName("ndt_mt_summary")
         self.mt_summary.setWordWrap(True)
         self.mt_summary.setTextFormat(Qt.TextFormat.RichText)
         self.mt_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        box.addWidget(self.mt_summary)
+        self.mt_details = Section("Podrobnosti výpočtu", self.mt_summary)
+        box.addWidget(self.mt_details)
         self.mt_pick = QLabel(MT_PICK_HINT)
         self.mt_pick.setObjectName("ndt_mt_pick")
         self.mt_pick.setWordWrap(True)
+        self.mt_pick.setProperty("cardState", "info")
         self.mt_pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         box.addWidget(self.mt_pick)
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.mt_export_action, "Export CSV…", "secondary"))
+        row.addWidget(window._action_button(self.mt_clear_action, "Skrýt mapu", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        yoke_box = QWidget()  # jho: sbalitelná sekce pod mapou
+        yoke = QVBoxLayout(yoke_box)
+        yoke.setContentsMargins(0, 0, 0, 0)
         yoke_row = QHBoxLayout()
         yoke_row.addWidget(QLabel("Natočení jha:"))
         self.mt_angle = QDoubleSpinBox()
@@ -737,15 +767,21 @@ class NdtPanel(QWidget):
         self.mt_angle.setDecimals(1)
         self.mt_angle.setSuffix(" °")
         self.mt_angle.setToolTip(ANGLE_HINT.replace("Směr paprsku", "Směr spojnice pólů"))
-        yoke_row.addWidget(self.mt_angle)
+        yoke_row.addWidget(self.mt_angle, 1)
+        yoke.addLayout(yoke_row)
+        row = QHBoxLayout()
         for item in (self.mt_place_yoke_action, self.mt_show_yoke_action,
                      self.mt_hide_yoke_action):
-            yoke_row.addWidget(window._tool_button(item))
-        box.addLayout(yoke_row)
+            row.addWidget(window._tool_button(item))
+        row.addStretch()
+        yoke.addLayout(row)
         self.mt_yoke = QLabel(MT_YOKE_HINT)
         self.mt_yoke.setObjectName("ndt_mt_yoke")
         self.mt_yoke.setWordWrap(True)
-        box.addWidget(self.mt_yoke)
+        yoke.addWidget(self.mt_yoke)
+        self.mt_yoke_section = Section("Jho na místě", yoke_box, True)
+        box.addWidget(self.mt_yoke_section)
+        self.mt_box.add_step(MT_MAP, body, short="mapa")
         layout.addWidget(self.mt_box)
 
     def _build_access(self, layout: QVBoxLayout) -> None:
@@ -1156,7 +1192,15 @@ class NdtPanel(QWidget):
                 badge = (BADGES[result.state] if result is not None and not session.computing
                          else ("⏳", "info"))
                 workspace.set_badge("ndt", *badge)
-        if method != "UT" or study_id is None:
+        if study_id is None:
+            return
+        # Během přepočtu je stav studie přechodný: krok průvodce se z něj neodvozuje (jiný
+        # klíč), určí ho až hotový stav – jinak by zůstal viset na kroku 1.
+        key = ("pending", study_id) if session.computing else study_id
+        if method in METHOD_WIZARDS:
+            self._show_method_steps(method, study_id, record or {}, result, key)
+            return
+        if method != "UT":
             return
         placed_here = (session.ndt_placement_request is not None
                        and session.ndt_placement_request[0] == study_id)
@@ -1164,7 +1208,8 @@ class NdtPanel(QWidget):
         target_done = result is not None and result.state in ("ok", "stale")
         if result is None:
             states = [StepState(False, "⏳ přepočítává se")] + [StepState(False)] * 3
-            self.ut_wizard.update(states, key=study_id)
+            # Bez stavu studie se krok neodvozuje – až skutečný stav (jiný klíč) ho určí.
+            self.ut_wizard.set_states(states, key=("pending", study_id))
             return
         placed = placement is not None and placement.state == "ok"
         if placed:
@@ -1184,13 +1229,64 @@ class NdtPanel(QWidget):
             StepState(placed, place_text, skippable=target_done),
             StepState(coverage is not None or (record or {}).get("plan") is not None, covered),
         ]
-        self.ut_wizard.update(states, key=study_id)
+        self.ut_wizard.set_states(states, key=key)
         state = ("info" if placement is None else "ok" if placement.state == "ok"
                  else "err" if placement.state == "collision" else "warn")
         if self.placement_label.property("cardState") != state:
             self.placement_label.setProperty("cardState", state)
             self.placement_label.style().unpolish(self.placement_label)
             self.placement_label.style().polish(self.placement_label)
+
+    def _show_method_steps(self, method: str, study_id: str, record: dict,
+                           result: StudyResult | None, key) -> None:
+        """P7.56: kroky PT / MT / RT – oblast → nastavení → výpočet → mapa, ze stavu studie."""
+        session = self.window.session
+        wizard = getattr(self, METHOD_WIZARDS[method])
+        if result is None:
+            wizard.set_states([StepState(False, "⏳ přepočítává se")]
+                              + [StepState(False)] * 3, key=("pending", study_id))
+            return
+        name = method.lower()
+        target_done = result.state in ("ok", "stale")
+        found = getattr(session, f"ndt_{name}_map")
+        computed = found is not None and getattr(session, f"ndt_{name}_study")() == study_id
+        pending = getattr(session, f"{name}_pending")
+        if method == "MT":
+            try:
+                confirmed = session.ndt_mt_settings(study_id).ferromagnetic
+            except DocumentError:
+                confirmed = None
+            material = session.document.material if session.document is not None else ""
+            status, text = material_status(material, confirmed)
+            settings_done = target_done and status in ("ok", "confirmed")
+            settings_text = text.split(" – ")[0] if status in ("ok", "confirmed") else text
+            state = {"ok": "ok", "confirmed": "ok", "confirm": "warn"}.get(status, "err")
+            if self.mt_material.property("cardState") != state:
+                self.mt_material.setProperty("cardState", state)
+                self.mt_material.style().unpolish(self.mt_material)
+                self.mt_material.style().polish(self.mt_material)
+        elif method == "RT":
+            settings = self.rt_box._settings(study_id)
+            count = len(settings.projections) if settings is not None else 0
+            settings_done = target_done and count > 0
+            settings_text = (_count(count, "projekce", "projekce", "projekcí") if count
+                             else "Přidej projekci: Zdroj nad vybrané místo")
+        else:
+            settings_done = target_done
+            settings_text = ("uloženo ve studii" if name in record
+                             else "výchozí – zvoleno pro výpočet")
+        states = METHOD_STATES[method]
+        first = next(iter(states))
+        map_text = (f"{states[first]} {found.percent(first):.1f} %".replace(".", ",")
+                    if computed else "Po výpočtu")
+        compute_text = ("⏳ počítá se" if pending else "Spočítáno" if computed
+                        else "Po nastavení" if not settings_done else "")
+        wizard.set_states([
+            StepState(target_done, self._target_summary(result, record)),
+            StepState(settings_done, settings_text if target_done else "Po zvolení oblasti"),
+            StepState(computed, compute_text),
+            StepState(computed, map_text),
+        ], key=key)
 
     def _show_details(self) -> None:
         result = self.current()
@@ -1274,7 +1370,7 @@ class NdtPanel(QWidget):
         self.pt_stop_action.setEnabled(session.pt_pending)
         self.pt_clear_action.setEnabled(has_pt)
         self.pt_export_action.setEnabled(has_pt)
-        self.pt_box.setVisible(bool(pt or has_pt or session.pt_pending))
+        self.pt_box.setVisible(bool(pt))  # průvodce jen u vybrané PT studie (P7.56)
         mt = selected and (record or {}).get("method") == "MT"
         has_mt = session.ndt_mt_map is not None
         picked = self.window.viewer.picked_point if self.window._picked else None
@@ -1287,7 +1383,7 @@ class NdtPanel(QWidget):
         self.mt_show_yoke_action.setEnabled(bool(has_mt and picked is not None))
         self.mt_place_yoke_action.setEnabled(bool(mt and has_part and picked is not None))
         self.mt_hide_yoke_action.setEnabled(ready and session.ndt_yoke is not None)
-        self.mt_box.setVisible(bool(mt or has_mt or session.mt_pending))
+        self.mt_box.setVisible(bool(mt))
         self.rt_box.refresh_actions(ready, has_part, result is not None and result.state == "ok")
         self._show_wizard()
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
@@ -1586,6 +1682,8 @@ class NdtPanel(QWidget):
         else:
             self.pt_legend.setText(f"{escape(PT_CHECKS[check])}: " + _swatches(
                 PT_GRADE_COLORS, {key: PT_GRADES[key] for key in PT_GRADE_COLORS}))
+        # celkem = barvy a procenta ukazuje pruh (P7.56); legenda jen u jedné kontroly
+        self.pt_legend.setVisible(check is not None or self.window.session.ndt_pt_map is None)
 
     def _pt_estimate_text(self, study_id: str) -> str:
         """Odhad počtu vzorků a doby (síť ploch); pamatuje se pro stejné zadání."""
@@ -1633,6 +1731,9 @@ class NdtPanel(QWidget):
             self.pt_summary.setText("<br>".join(lines))
         else:
             self.pt_summary.setText("")
+        self.pt_bar.show_result(PT_STATES, PT_COLORS, None if found is None else
+                                {state: found.percent(state) for state in PT_STATES})
+        self.pt_details.setVisible(found is not None)
         self.pt_pick.setVisible(found is not None)
         self.show_pt_pick()
 
@@ -1718,6 +1819,7 @@ class NdtPanel(QWidget):
             self.mt_legend.setText(f"{escape(MT_VIEWS[view])}: " + _swatches(PT_COLORS, {
                 "ok": "jho se vejde", "uncertain": "nejisté",
                 "blocked": "jho se v tomto směru nevejde"}))
+        self.mt_legend.setVisible(view is not None or self.window.session.ndt_mt_map is None)
 
     def _mt_estimate_text(self, study_id: str) -> str:
         """Odhad počtu míst, středů jha a doby; pamatuje se pro stejné zadání."""
@@ -1771,6 +1873,9 @@ class NdtPanel(QWidget):
             self.mt_summary.setText("<br>".join(lines))
         else:
             self.mt_summary.setText("")
+        self.mt_bar.show_result(MT_STATES, PT_COLORS, None if found is None else
+                                {state: found.percent(state) for state in MT_STATES})
+        self.mt_details.setVisible(found is not None)
         self.mt_settings_label.setVisible(found is None)  # se spočítanou mapou je v souhrnu
         self.mt_pick.setVisible(found is not None)
         self.show_mt_pick()

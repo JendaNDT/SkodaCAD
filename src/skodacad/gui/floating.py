@@ -132,7 +132,10 @@ class FloatingCard(QFrame):
         height = 1 + self.bottom_pad + (self._title.sizeHint().height() if self._title else 0)
         widget = self._widget
         width = self.width() - 2  # okraje rozvržení karty 1 + 1 px
-        if isinstance(widget, QScrollArea) and widget.widget() is not None:
+        if isinstance(widget, ContentScroll) and widget.widget() is not None:
+            # i zalomené řádky v šířce karty (P7.56: průvodce PT/MT byl nižší než obsah)
+            height += widget.sizeHint().height()
+        elif isinstance(widget, QScrollArea) and widget.widget() is not None:
             height += _wanted(widget.widget()) + 2 * widget.frameWidth()
         elif widget is not None:
             wanted = _wanted(widget)

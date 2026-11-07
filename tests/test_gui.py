@@ -2674,7 +2674,9 @@ def test_rt_panel_settings_projections_map_preview_and_export(rt_window, no_dial
     box.view.setCurrentIndex(box.view.findData("p1"))
     assert w.viewer.coverage_map is not shown  # mapa jedné projekce se nakreslí znovu
     assert box.projection_name() == "P1" and not box.preview.pixmap().isNull()
-    assert box.preview.pixmap().width() == 420  # náhled zmenšený na šířku panelu
+    from skodacad.gui.rt_box import PREVIEW_WIDTH
+
+    assert box.preview.pixmap().width() == PREVIEW_WIDTH == 220  # karta 320 px (P7.56)
     w.viewer.click([top], (60, 0, 20))
     assert "P1:" in box.pick.text() and "P3:" in box.pick.text()
     path = tmp_path / "rt.csv"

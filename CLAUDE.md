@@ -170,6 +170,7 @@
   [P7.53](docs/p7-53-pilulka-a-pohledy.md) = stavová pilulka a přepínač pohledů.
   [P7.54](docs/p7-54-karty-nastroju.md) = karty Měření, Řez, Mapa tloušťky a náhled prvku (rámy 3a–3c).
   [P7.55](docs/p7-55-ndt-pruvodce-ut.md) = NDT průvodce UT a skupina NDT studie v levé kartě (rámy 2c, 3d).
+  [P7.56](docs/p7-56-pruvodce-pt-mt-rt.md) = stejný průvodce pro PT, MT, RT; úzké karty Audit a Návrh.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -771,6 +772,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (`ndt_study_list`, `StudyRowDelegate`) jen v činnosti NDT, řádky podle id; strom
   pak má výšku podle řádků (`TREE_MIN_HEIGHT` jen mimo NDT). Celé `*_DISCLAIMER`
   zůstává v kartě doslova (R7), „Celé upozornění“ = `ScopeDialog`.
+- P7.56: `pt_box`, `mt_box` jsou `Wizard` a `RtBox` je podtřída `Wizard` (`title()` =
+  doporučený název metody); krok 1 všech metod = `NdtPanel._target_step()` (sdílené
+  akce). Kroky PT/MT/RT `_show_method_steps`: výpočet má `auto_next` (po doběhnutí mapa).
+  Metoda průvodce je `set_states` – **ne** `update` (přepsala by `QWidget.update`). Krok
+  se během `session.computing` neodvozuje (klíč `("pending", id)`), jinak by po otevření
+  dílu uvízl na přechodném stavu. Průvodce metody je vidět jen u její vybrané studie.
+  Mapy: `CoverageBar` s `AREA_NOTE`, souhrn v sekci *Podrobnosti výpočtu*, legenda jen
+  u dílčího pohledu. `tool_cards.fit_card` (sdílené NDT, audit, návrh) – nabídky, tabulky,
+  zalomení řad tlačítek, závorka zaškrtávátek do bubliny. `FloatingCard.preferred_height`
+  u `ContentScroll` bere `sizeHint` (výška pro šířku karty), jinak je karta nižší než
+  zalomený obsah. Náhled RT `PREVIEW_WIDTH` 220 px (karta i s posuvníkem).
 
 ## Známé pasti (výběr kliknutím)
 
@@ -1866,7 +1878,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.55 v rozpracované dávce | P7.56–P7.58 (vydání C–D); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C) v PR #130 | P7.57–P7.58 (vydání D); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

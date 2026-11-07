@@ -20,17 +20,19 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
-    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.ndt_wizard import AREA_NOTE, CoverageBar, Wizard
 from skodacad.gui.rt_dialog import ProjectionDialog, RtDialog
+from skodacad.gui.workspace import Section
 from skodacad.ndt import RT_ACCESS, RT_MAP, RT_PREVIEW
 from skodacad.ndt.rt import COLORS, PREVIEW_LEGEND, STATES, RtError, RtMap
 
@@ -40,7 +42,7 @@ if TYPE_CHECKING:
 PICK_HINT = "Klikni ve 3D do mapy – napíšu stav místa v každé projekci s čísly a důvody."
 ADD_HINT = ("Zdroj nad vybrané místo: klikni ve 3D na plochu (u svaru na temeno) – zdroj bude "
             "500 mm nad ní po kolmici, detektor na protější ploše.")
-PREVIEW_WIDTH = 420  # náhled v panelu: delší strana detektoru na tuto šířku
+PREVIEW_WIDTH = 220  # delší strana detektoru; karta 320 px i s posuvníkem (P7.56)
 
 
 def _swatches() -> str:
@@ -69,9 +71,11 @@ def describe(projection) -> str:
     return text
 
 
-class RtBox(QGroupBox):
+class RtBox(Wizard):
+    """Průvodce RT v panelu NDT (P7.56); ``title()`` = doporučený název skupiny."""
+
     def __init__(self, panel: NdtPanel) -> None:
-        super().__init__(RT_ACCESS)
+        super().__init__(RT_ACCESS, "ndt_rt")
         self.panel = panel
         window = panel.window
         action = window._action
@@ -98,13 +102,16 @@ class RtBox(QGroupBox):
         self.remove_action = action("Smazat projekci", self.remove_projection)
         self._estimate_cache: tuple[tuple, str] | None = None
 
-        self.setObjectName("ndt_rt")
-        box = QVBoxLayout(self)
+        # P7.56: průvodce RT – oblast → nastavení a projekce → výpočet → mapa a náhled.
+        self.add_step("Kontrolovaná oblast", panel._target_step())
+        body = QWidget()
+        box = QVBoxLayout(body)
         self.settings_label = QLabel()
         self.settings_label.setObjectName("ndt_rt_settings")
         self.settings_label.setWordWrap(True)
+        self.settings_label.setProperty("cardHint", True)
         box.addWidget(self.settings_label)
-        self._row(box, (self.settings_action, self.compute_action, self.stop_action))
+        self._row(box, (self.settings_action,))
         box.addWidget(QLabel("Projekce (zdroj a detektor):"))
         self.projections = QListWidget()
         self.projections.setObjectName("ndt_rt_projections")
@@ -113,56 +120,83 @@ class RtBox(QGroupBox):
         self.projections.currentRowChanged.connect(lambda _row: self._projection_changed())
         self.projections.itemDoubleClicked.connect(lambda _item: self.edit_projection())
         box.addWidget(self.projections)
-        self._row(box, (self.add_action, self.edit_action))
-        self._row(box, (self.copy_action, self.remove_action))
+        self._row(box, (self.add_action, self.edit_action, self.copy_action, self.remove_action))
         self.setup_label = QLabel(ADD_HINT)
         self.setup_label.setObjectName("ndt_rt_setup")
         self.setup_label.setWordWrap(True)
+        self.setup_label.setProperty("cardState", "info")
         box.addWidget(self.setup_label)
+        self.add_step("Nastavení a projekce", body, short="projekce")
+        body = QWidget()
+        box = QVBoxLayout(body)
         self.estimate = QLabel()
         self.estimate.setObjectName("ndt_rt_estimate")
         self.estimate.setWordWrap(True)
         box.addWidget(self.estimate)
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.compute_action, "Spočítat projekce", "primary"))
+        row.addWidget(window._action_button(self.stop_action, "Zastavit", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        self.add_step("Výpočet", body, short="výpočet", auto_next=True)
+        body = QWidget()
+        box = QVBoxLayout(body)
         show_row = QHBoxLayout()
         show_row.addWidget(QLabel("Ukázat ve 3D:"))
         self.view = QComboBox()
         self.view.setObjectName("ndt_rt_view")
-        self.view.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.view.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.view.setMinimumContentsLength(8)
         self.view.addItem("celkem", "")
         self.view.currentIndexChanged.connect(lambda _index: self.window._refresh_coverage())
-        show_row.addWidget(self.view)
-        show_row.addStretch(1)
+        show_row.addWidget(self.view, 1)
         box.addLayout(show_row)
         self.legend = QLabel(_swatches())
         self.legend.setObjectName("ndt_rt_legend")
         self.legend.setWordWrap(True)
         self.legend.setTextFormat(Qt.TextFormat.RichText)
         box.addWidget(self.legend)
+        self.bar = CoverageBar(name="ndt_rt_bar", note=AREA_NOTE, decimals=1, comma=True)
+        box.addWidget(self.bar)
         self.summary = QLabel()
         self.summary.setObjectName("ndt_rt_summary")
         self.summary.setWordWrap(True)
         self.summary.setTextFormat(Qt.TextFormat.RichText)
         self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        box.addWidget(self.summary)
+        self.details = Section("Podrobnosti výpočtu", self.summary)
+        box.addWidget(self.details)
         self.pick = QLabel(PICK_HINT)
         self.pick.setObjectName("ndt_rt_pick")
         self.pick.setWordWrap(True)
+        self.pick.setProperty("cardState", "info")
         self.pick.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         box.addWidget(self.pick)
+        row = QHBoxLayout()
+        row.addWidget(window._action_button(self.export_action, "Export CSV…", "secondary"))
+        row.addWidget(window._action_button(self.clear_action, "Skrýt mapu", "secondary"))
+        row.addStretch()
+        box.addLayout(row)
+        preview_box = QWidget()
+        preview = QVBoxLayout(preview_box)
+        preview.setContentsMargins(0, 0, 0, 0)
         self.preview_title = QLabel(f"<b>{escape(RT_PREVIEW)}</b>")
         self.preview_title.setObjectName("ndt_rt_preview_title")
         self.preview_title.setWordWrap(True)
-        box.addWidget(self.preview_title)
+        preview.addWidget(self.preview_title)
         self.preview = QLabel()
         self.preview.setObjectName("ndt_rt_preview")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        box.addWidget(self.preview)
+        preview.addWidget(self.preview)
         self.preview_legend = QLabel(PREVIEW_LEGEND)
         self.preview_legend.setObjectName("ndt_rt_preview_legend")
         self.preview_legend.setWordWrap(True)
-        self.preview_legend.setStyleSheet("color: #555;")
-        box.addWidget(self.preview_legend)
-        self._row(box, (self.png_action, self.clear_action, self.export_action))
+        self.preview_legend.setProperty("cardHint", True)
+        preview.addWidget(self.preview_legend)
+        self._row(preview, (self.png_action,))
+        self.preview_section = Section("Náhled prozařované tloušťky", preview_box, True)
+        box.addWidget(self.preview_section)
+        self.add_step(RT_MAP, body, short="mapa")
 
     @property
     def window(self):
@@ -243,6 +277,10 @@ class RtBox(QGroupBox):
             self.summary.setText("<br>".join(lines))
         else:
             self.summary.setText("")
+        self.bar.show_result(STATES, COLORS, None if found is None else
+                             {state: found.percent(state) for state in STATES})
+        self.details.setVisible(found is not None)
+        self.legend.setVisible(found is None)  # se spočítanou mapou barvy ukazuje pruh
         self.pick.setVisible(found is not None)
         self.show_pick()
         self._show_setup()
@@ -301,8 +339,7 @@ class RtBox(QGroupBox):
         scale = math.ceil(PREVIEW_WIDTH / image.columns) if image is not None else 1
         shown = session.ndt_rt_preview(name, scale) if image is not None else None
         visible = shown is not None
-        for widget in (self.preview_title, self.preview, self.preview_legend):
-            widget.setVisible(visible)
+        self.preview_section.setVisible(visible)
         if not visible:
             self.preview.clear()
             return
@@ -342,7 +379,7 @@ class RtBox(QGroupBox):
                                         and info.faces == 1 and info.edges == 0))
         for item in (self.edit_action, self.copy_action, self.remove_action):
             item.setEnabled(selected)
-        self.setVisible(bool(rt or has_map or session.rt_pending))
+        self.setVisible(bool(rt))  # průvodce jen u vybrané RT studie (P7.56)
         if self.window.ai_busy:  # AI pracuje – ruční úpravy počkají
             for item in self.actions():
                 item.setEnabled(False)

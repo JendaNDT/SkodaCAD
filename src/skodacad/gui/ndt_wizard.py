@@ -110,9 +110,10 @@ class WizardStep(QFrame):
     change_requested = Signal()
 
     def __init__(self, number: int, title: str, body: QWidget, short: str | None = None,
-                 parent=None) -> None:
+                 parent=None, auto_next: bool = False) -> None:
         super().__init__(parent)
         self.number, self.title = number, title
+        self.auto_next = auto_next  # výpočet: po dokončení sám otevře další krok (mapu)
         self.short = short or title[0].lower() + title[1:]  # „Další: pokrytí“
         self.setObjectName("ndt_step")
         self.setProperty("stepState", "future")
@@ -129,6 +130,7 @@ class WizardStep(QFrame):
         texts.setSpacing(0)
         self.title_label = QLabel(title)
         self.title_label.setObjectName("ndt_step_title")
+        self.title_label.setWordWrap(True)  # dlouhé doporučené názvy map (MT, RT)
         self.summary_label = QLabel()
         self.summary_label.setObjectName("ndt_step_summary")
         self.summary_label.setProperty("cardHint", True)
@@ -145,6 +147,8 @@ class WizardStep(QFrame):
         head.addWidget(self.change, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(head)
         self.body = body
+        if body.layout() is not None:
+            body.layout().setContentsMargins(0, 0, 0, 0)  # odsazení dává krok
         body.setContentsMargins(CIRCLE + 10, 0, 0, 0)  # obsah odsazený pod název (návrh 30 px)
         layout.addWidget(body)
         self.kind = ""
@@ -185,6 +189,7 @@ class Wizard(QWidget):
         self.caption = QLabel(title)  # doporučený název metody (závazné vymezení)
         self.caption.setObjectName("ndt_wizard_caption")
         self.caption.setProperty("cardHint", True)
+        self.caption.setWordWrap(True)
         self.caption.setVisible(bool(title))
         layout.addWidget(self.caption)
         self._list = QVBoxLayout()
@@ -215,8 +220,9 @@ class Wizard(QWidget):
     def title(self) -> str:
         return self._title
 
-    def add_step(self, title: str, body: QWidget, short: str | None = None) -> WizardStep:
-        step = WizardStep(len(self.steps) + 1, title, body, short, self)
+    def add_step(self, title: str, body: QWidget, short: str | None = None,
+                 auto_next: bool = False) -> WizardStep:
+        step = WizardStep(len(self.steps) + 1, title, body, short, self, auto_next)
         index = len(self.steps)
         step.change_requested.connect(lambda i=index: self.open_step(i))
         self.steps.append(step)
@@ -249,9 +255,15 @@ class Wizard(QWidget):
         return 0 <= index < len(self._states) and all(
             s.done or s.skippable for s in self._states[:index])
 
-    def update(self, states: list[StepState], key=None) -> None:  # noqa: A003
+    def set_states(self, states: list[StepState], key=None) -> None:
         """Nový stav kroků; jiný ``key`` (jiná studie) vrátí průvodce na odvozený krok."""
+        before = self._states
         self._states = list(states)
+        chosen = self._chosen
+        if (key == self._key and chosen is not None and chosen + 1 < len(self.steps)
+                and self.steps[chosen].auto_next and chosen < len(before)
+                and not before[chosen].done and self._states[chosen].done):
+            self._chosen = chosen + 1  # výpočet doběhl → mapa
         if key != self._key:  # jiná studie: krok podle jejího stavu
             self._key = key
             self._overview = False
@@ -321,14 +333,17 @@ class TitledBox(QWidget):
 
 
 COVERAGE_NOTE = "Geometrický podíl plochy, ne pravděpodobnost nálezu vady."
+AREA_NOTE = "Geometrický podíl kontrolované oblasti, ne pravděpodobnost nálezu vady."
 
 
 class CoverageBar(QWidget):
     """Pruh 8 px pokryto / nepokryto / nelze vyhodnotit, legenda s procenty (rám 3d)."""
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, name: str = "ndt_coverage_bar", note: str = COVERAGE_NOTE,
+                 decimals: int = 2, comma: bool = False) -> None:
         super().__init__(parent)
-        self.setObjectName("ndt_coverage_bar")
+        self.setObjectName(name)
+        self._decimals, self._comma = decimals, comma  # PT/MT/RT píšou „94,9 %“ jako souhrn
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
@@ -348,8 +363,8 @@ class CoverageBar(QWidget):
         self.sensitivity.setWordWrap(True)
         self.sensitivity.setTextFormat(Qt.TextFormat.RichText)
         layout.addWidget(self.sensitivity)
-        self.note = QLabel(COVERAGE_NOTE)
-        self.note.setObjectName("ndt_coverage_note")
+        self.note = QLabel(note)
+        self.note.setObjectName(f"{name}_note")
         self.note.setWordWrap(True)
         self.note.setProperty("cardHint", True)
         layout.addWidget(self.note)
@@ -369,6 +384,7 @@ class CoverageBar(QWidget):
                 row = QLabel()
                 row.setObjectName(f"ndt_coverage_row_{key}")
                 row.setTextFormat(Qt.TextFormat.RichText)
+                row.setWordWrap(True)  # dlouhé stavy RT/MT se zalomí, karta je úzká
                 self.rows[key] = row
                 self.legend.addWidget(row)
             rgb = colors.get(key, (0.5, 0.5, 0.5))
@@ -377,9 +393,12 @@ class CoverageBar(QWidget):
             self.parts[key].setStyleSheet(f"background: {hex_color};")
             self._bar.setStretch(self._bar.indexOf(self.parts[key]), max(0, round(value * 10)))
             self.parts[key].setVisible(percents is not None and value > 0)
+            number = f"{value:.{self._decimals}f}"
+            if self._comma:
+                number = number.replace(".", ",")
             self.rows[key].setText(
                 f'<table width="100%"><tr><td><span style="color: {hex_color};">■</span> '
-                f"{label}</td><td align=\"right\"><b>{value:.2f} %</b></td></tr></table>")
+                f"{label}</td><td align=\"right\"><b>{number} %</b></td></tr></table>")
             self.rows[key].setVisible(percents is not None)
         self.sensitivity.setText(sensitivity)
         self.sensitivity.setVisible(bool(sensitivity) and percents is not None)

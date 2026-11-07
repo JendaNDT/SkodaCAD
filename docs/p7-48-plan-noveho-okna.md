@@ -218,4 +218,5 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] P7.53 stavová pilulka a přepínač pohledů ([evidence](p7-53-pilulka-a-pohledy.md)).
 - [x] P7.54 karty Měření, Řez, Mapa tloušťky a náhled prvku ([evidence](p7-54-karty-nastroju.md)).
 - [x] P7.55 NDT průvodce UT a skupina NDT studie v levé kartě ([evidence](p7-55-ndt-pruvodce-ut.md)).
-- [ ] P7.56–P7.58 dle kroků výše.
+- [x] P7.56 průvodce PT, MT, RT, audit a návrh úpravy ([evidence](p7-56-pruvodce-pt-mt-rt.md)).
+- [ ] P7.57–P7.58 dle kroků výše.
