@@ -7,8 +7,8 @@ hledání ve stromu i čtečky obrazovky. Mění se jen kreslení: ikona typu pr
 stav (a počet těles) vpravo, řádek 26 px, vybraný řádek ``--accentbg`` a tučně.
 """
 
-from PySide6.QtCore import QObject, QSize, Qt, Signal
-from PySide6.QtGui import QFont, QPalette
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QStackedWidget,
     QStyle,
@@ -26,6 +26,9 @@ STATUS_ROLE = Qt.ItemDataRole.UserRole + 41  # "ok" / "error" / "skipped" / "pen
 # Klíč nastavené ikony řádku („druh|barva“): QIcon nejde porovnat, takže by každé nové
 # nastavení hlásilo změnu a sloupec s ResizeToContents by přeměřil všechny řádky (P8.5).
 ICON_ROLE = Qt.ItemDataRole.UserRole + 42
+# Řádek náhledu nového nebo upravovaného prvku (P7.54, rám 3a): rámeček 1 px a kurzíva.
+PREVIEW_ROLE = Qt.ItemDataRole.UserRole + 44
+PREVIEW_COLOR = "#4782d1"  # duch náhledu ve 3D (viewer.py 0,28 / 0,51 / 0,82)
 GLYPHS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 # Ikona Duo podle typu prvku (stejné druhy jako v paletě příkazů).
 FEATURE_ICONS = {"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",
@@ -134,6 +137,13 @@ class FeatureRowDelegate(QStyledItemDelegate):
             font = QFont(option.font)
             font.setPixelSize(11)
             option.font = font
+        if index.siblingAtColumn(0).data(PREVIEW_ROLE):
+            font = QFont(option.font)
+            font.setItalic(index.column() == 0)
+            option.font = font
+            if index.column() == 1:
+                option.text = "náhled"
+            option.palette.setColor(QPalette.ColorRole.Text, QColor(PREVIEW_COLOR))
         if option.state & QStyle.StateFlag.State_Selected:
             font = QFont(option.font)
             font.setWeight(QFont.Weight.DemiBold)
@@ -142,3 +152,68 @@ class FeatureRowDelegate(QStyledItemDelegate):
                                     ui_theme.opaque(t["accentbg"], ui_theme.card_color()))
             text = option.palette.color(QPalette.ColorRole.Text)
             option.palette.setColor(QPalette.ColorRole.HighlightedText, text)
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        if not index.siblingAtColumn(0).data(PREVIEW_ROLE):
+            return
+        view = self.parent()
+        row = view.visualRect(index.siblingAtColumn(0)).united(
+            view.visualRect(index.siblingAtColumn(1)))
+        painter.save()
+        painter.setClipRect(option.rect)  # každá buňka kreslí svou část rámečku řádku
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(PREVIEW_COLOR))
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setWidthF(1.0)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(QRectF(row).adjusted(1.5, 1.5, -1.5, -1.5), 6, 6)
+        painter.restore()
+
+
+# Skupina „NDT studie“ v levé kartě (P7.55, rám 2c): stav vpravo, barva podle stavu.
+STUDY_STATES = {"ok": ("✓ platná", "ok"), "stale": ("⚠ zastaralá", "warn"),
+                "incomplete": ("⚠ neúplná", "warn"), "broken": ("✕ neplatná vazba", "err"),
+                "pending": ("⏳", "fg3")}
+
+
+class StudyRowDelegate(QStyledItemDelegate):
+    """Řádek studie: ikona metody, název, vpravo stav 11 px (⚠ neúplná / ✓ platná)."""
+
+    def sizeHint(self, option, index):  # noqa: N802
+        hint = super().sizeHint(option, index)
+        return QSize(hint.width(), max(hint.height(), ROW_HEIGHT))
+
+    def paint(self, painter, option, index):
+        state = index.data(STATUS_ROLE) or "pending"
+        text, token = STUDY_STATES.get(state, ("", "fg3"))
+        t = ui_theme.tokens()
+        font = QFont(option.font)
+        font.setPixelSize(11)
+        width = QFontMetrics(font).horizontalAdvance(text) + 12
+        opt = type(option)(option)
+        self.initStyleOption(opt, index)
+        if opt.state & QStyle.StateFlag.State_Selected:
+            bold = QFont(opt.font)
+            bold.setWeight(QFont.Weight.DemiBold)
+            opt.font = bold
+            opt.palette.setColor(QPalette.ColorRole.Highlight,
+                                 ui_theme.opaque(t["accentbg"], ui_theme.card_color()))
+            opt.palette.setColor(QPalette.ColorRole.HighlightedText, ui_theme.color(t["fg"]))
+        opt.palette.setColor(QPalette.ColorRole.Text, ui_theme.color(t["fg"]))
+        opt.rect = option.rect.adjusted(0, 0, -width, 0)
+        style = opt.widget.style() if opt.widget is not None else None
+        if style is not None and opt.state & QStyle.StateFlag.State_Selected:
+            full = type(option)(opt)
+            full.rect = option.rect
+            full.text = ""
+            full.icon = type(opt.icon)()
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, full, painter, opt.widget)
+        super().paint(painter, opt, index)
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(ui_theme.color(t.get(token, t["fg3"])))
+        painter.drawText(option.rect.adjusted(0, 0, -6, 0),
+                         int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), text)
+        painter.restore()

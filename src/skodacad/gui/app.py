@@ -290,6 +290,8 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_model_card(window, lines) and ok
     ok = _self_test_inspector(window, lines) and ok
     ok = _self_test_status_pill(window, lines) and ok
+    ok = _self_test_tool_cards(window, lines) and ok
+    ok = _self_test_ndt_wizard(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1430,6 +1432,201 @@ def _self_test_status_pill(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Pilulka a pohledy: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _card_fits(card) -> int:
+    """Šířka obsahu karty; obsah širší než karta by byl vpravo oříznutý (P7.54)."""
+    scroll = card.widget()
+    content = scroll.widget() if hasattr(scroll, "widget") and callable(scroll.widget) \
+        else scroll
+    assert content.width() <= scroll.viewport().width(), (
+        f"{card.objectName()}: obsah {content.width()} px je širší než karta "
+        f"{scroll.viewport().width()} px")
+    return content.width()
+
+
+def _self_test_tool_cards(window, lines: list[str]) -> bool:
+    """P7.54: karty Měření, Řez a Mapa tloušťky a náhled prvku (rámy 3a–3c) – skutečná
+    tlačítka a klávesa Esc, šířka obsahu se skutečným písmem systému."""
+    from build123d import Vector
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.model_card import PREVIEW_ROLE
+
+    pill, layer = window.status_pill, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        part = window.session.result.part
+        holes = [min(part.faces(), key=lambda f, x=x: f.distance_to(Vector(x, 0, 10)))
+                 for x in (-16.6, 23.4)]  # stěny závitů M8 v ose X ±20 mm
+        window.workspace.show_panel("measure")
+        window._selection_changed([h.wrapped for h in holes])
+        QApplication.processEvents()
+        layer.relayout()
+        first = window.measure_list.item(0).text()
+        assert first == "Rozteč os: 40.00 mm", first
+        assert pill.focus == ("measure", "Rozteč os 40.00 mm"), pill.focus
+        window.measure_sections["drawing"].set_expanded(True)  # nejširší obsah karty
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths = [_card_fits(window.measure_dock)]
+        window.measure_sections["drawing"].set_expanded(False)
+        QTest.mouseClick(window.measure_buttons["save"], Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.saved_list.count() == 1, "Uložit nepřidalo měření"
+        QTest.mouseClick(window.measure_buttons["delete"], Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.saved_list.count() == 0, "Smazat neodebralo měření"
+        window._selection_changed([])
+
+        window.workspace.show_panel("section")
+        QTest.mouseClick(window.section_toggle, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.session.section is not None, "zaškrtávátko řez nezapnulo"
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths.append(_card_fits(window.section_dock))
+        area = window.section_area.text()
+        assert pill.focus == ("section", "Řez · Y = 0 mm"), pill.focus
+        QTest.mouseClick(window.section_toggle, Qt.MouseButton.LeftButton)
+        QApplication.processEvents()  # okno self-testu počítá synchronně
+        assert window.session.section is None and pill.focus is None
+
+        window.workspace.show_panel("map")
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        widths.append(_card_fits(window.map_dock))
+
+        part = window.session.result.part  # uložení měření díl přepočítalo
+        before = (window.session.document.to_dict(), len(window.session._undo))
+        top = min(part.faces(), key=lambda f: f.distance_to(Vector(0, 30, 15)))
+        window.start_feature_preview("chamfer", shapes=[e.wrapped for e in top.edges()])
+        rows = [window.tree.topLevelItem(i) for i in range(window.tree.topLevelItemCount())]
+        assert rows and rows[-1].data(0, PREVIEW_ROLE), "strom nemá řádek náhledu"
+        assert pill.focus and pill.focus[0] == "preview", pill.focus
+        assert not window.ribbon.isEnabled(), "paleta je během náhledu aktivní"
+        focus = pill.state.text()
+        panel = window.feature_preview
+        for _ in range(4):  # karta náhledu se ukáže a rozmístí jako u uživatele
+            QApplication.processEvents()
+            layer.relayout()
+        panel.setFocus()
+        QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
+        QApplication.processEvents()
+        assert window.feature_preview is None, "Esc nezrušil náhled"
+        assert not any(window.tree.topLevelItem(i).data(0, PREVIEW_ROLE)
+                       for i in range(window.tree.topLevelItemCount()))
+        assert window.ribbon.isEnabled() and pill.focus is None
+        after = (window.session.document.to_dict(), len(window.session._undo))
+        assert after == before, "zrušený náhled změnil model nebo historii"
+        window.workspace.show_panel("editor")
+        lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
+                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s řádkem ve stromu "
+                     f"a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Karty nástrojů: {type(exc).__name__}: {exc}")
+        if window.feature_preview is not None:
+            window.cancel_feature_preview()
+        return False
+
+
+def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
+    """P7.55: NDT průvodce UT a skupina „NDT studie“ – skutečné kliky, přibalené vymezení
+    UT, šířka obsahu karty se skutečným písmem."""
+    from build123d import Vector
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from skodacad.gui.ndt_wizard import scope_text
+    from skodacad.ndt import UT_DISCLAIMER
+
+    panel, layer = window.ndt_panel, window.card_layer
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "ndt" / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        QApplication.processEvents()
+        assert UT_DISCLAIMER in scope_text("UT"), "chybí přibalené vymezení UT (docs/ndt)"
+        window.ribbon.select_page("ndt")
+        studies = window.ndt_study_list
+        QApplication.processEvents()
+        layer.relayout()
+        assert studies.isVisible() and studies.count() == 2, "skupina NDT studie v levé kartě"
+        rect = studies.visualItemRect(studies.item(0))
+        QTest.mouseClick(studies.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+        QApplication.processEvents()
+        assert panel.current_id() == "s1" and window.workspace.active == "ndt"
+        wizard = panel.ut_wizard
+        assert [step.kind for step in wizard.steps] == ["done", "done", "active", "future"]
+        assert panel.warning.text() == UT_DISCLAIMER and panel.warning.isVisible()
+        badge = window.workspace.badges["ndt"].text()
+        part = window.session.result.part
+        top = min(part.faces(), key=lambda f: f.distance_to(Vector(40, 0, 20)))
+        window._selection_changed([top.wrapped])
+        window.viewer.picked_point = (40.0, 0.0, 20.0)
+        QApplication.processEvents()
+        panel.place_action.trigger()
+        QApplication.processEvents()
+        assert window.session.ndt_placement.state == "ok", "sonda nedosedla"
+        assert wizard.active == 2 and wizard.next.isEnabled()
+        QTest.mouseClick(wizard.next, Qt.MouseButton.LeftButton)  # Další: pokrytí
+        QApplication.processEvents()
+        assert wizard.active == 3, "Další neotevřelo krok pokrytí"
+        panel.coverage_step.setValue(25)
+        panel.coverage_convergence.setChecked(False)
+        panel.coverage_action.trigger()
+        QApplication.processEvents()
+        layer.relayout()
+        QApplication.processEvents()
+        covered = window.session.ndt_coverage.percent("covered")
+        assert window.status_pill.focus == ("measure", f"● Pokryto {covered:.2f} %")
+        assert panel.coverage_bar.bar.isVisible(), "pruh pokrytí není vidět"
+        width = _card_fits(window.ndt_dock)
+        window.session.clear_ndt_coverage()
+        panel.remove_probe()
+        # P7.56: PT a MT (kapsa) a RT (otvor) – stejné čtyři kroky, šířka karty
+        assert window.open_model(examples_dir() / "ndt" / "kapsa.json", template=True)
+        QApplication.processEvents()
+        others = []
+        for study, box in (("s2", panel.pt_box), ("s3", panel.mt_box)):
+            panel.select(study)
+            for _ in range(3):
+                QApplication.processEvents()
+                layer.relayout()
+            kinds = [step.kind for step in box.steps]
+            assert box.isVisible() and kinds == ["done", "done", "active", "future"], kinds
+            others.append(_card_fits(window.ndt_dock))
+        assert window.open_model(examples_dir() / "ndt" / "otvor.json", template=True)
+        QApplication.processEvents()
+        panel.select("s2")
+        panel.rt_box.compute_action.trigger()
+        for _ in range(3):
+            QApplication.processEvents()
+            layer.relayout()
+        assert panel.rt_box.active == 3 and panel.rt_box.bar.bar.isVisible(), "RT mapa"
+        others.append(_card_fits(window.ndt_dock))
+        panel.rt_box.clear()  # Skrýt mapu
+        window.ribbon.select_page("model")
+        window.workspace.show_panel("editor")
+        lines.append(f"✓ NDT průvodce: skupina studií v levé kartě (klik), {badge}, kroky "
+                     f"hotovo/hotovo/aktivní/budoucí, přiložení, skutečné „Další: pokrytí“, "
+                     f"pokryto {covered:.2f} % v pilulce i pruhu, vymezení UT přibalené, "
+                     f"obsah karty {width} px se vejde; PT/MT/RT čtyři kroky, výpočet RT "
+                     f"přejde na mapu s pruhem, karty {'/'.join(map(str, others))} px")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ NDT průvodce: {type(exc).__name__}: {exc}")
         return False
 
 

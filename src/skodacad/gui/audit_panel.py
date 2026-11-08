@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad.document import DocumentError
+from skodacad.gui.tool_cards import fit_card
 from skodacad.ndt import DISCLAIMER
 from skodacad.ndt.audit import (
     METHODS,
@@ -115,14 +116,16 @@ class AuditPanel(QWidget):
         self._capture: AuditEntry | None = None  # studie, jejíž mapu export právě fotí
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 2, 10, 10)
         self.warning = QLabel(DISCLAIMER)  # po auditu upozornění všech metod ve zprávě
         self.warning.setObjectName("audit_warning")
         self.warning.setWordWrap(True)
-        self.warning.setStyleSheet("color: #8a4b00; font-size: 8pt;")  # dlouhé, ale doslova
+        self.warning.setProperty("ndtWarning", True)  # 12 px --fg2, doslova (R7, P7.56)
         self.warning.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.warning)
         hint = QLabel(HINT)
         hint.setWordWrap(True)
+        hint.setProperty("cardHint", True)
         layout.addWidget(hint)
         layout.addWidget(QLabel("Studie (zaškrtnuté se spočítají):"))
         self.studies = QListWidget()
@@ -143,7 +146,13 @@ class AuditPanel(QWidget):
         self.estimate.setObjectName("audit_estimate")
         self.estimate.setWordWrap(True)
         layout.addWidget(self.estimate)
-        self._row(layout, (self.run_action, self.stop_action, self.refresh_action))
+        row = QHBoxLayout()  # P7.56: hlavní krok karty je primární tlačítko
+        row.addWidget(window._action_button(self.run_action, "Spustit audit", "primary"))
+        row.addWidget(window._action_button(self.stop_action, "Zastavit", "secondary"))
+        row.addWidget(window._action_button(self.refresh_action, "Obnovit seznam",
+                                            "secondary"))
+        row.addStretch()
+        layout.addLayout(row)
         self.progress = QLabel()
         self.progress.setObjectName("audit_progress")
         self.progress.setWordWrap(True)
@@ -171,15 +180,15 @@ class AuditPanel(QWidget):
         self.place_info.setWordWrap(True)
         self.place_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.place_info)
-        self._row(layout, (self.export_action, self.hide_action))
-        layout.addStretch(1)
-
-    def _row(self, layout: QVBoxLayout, actions: tuple) -> None:
         row = QHBoxLayout()
-        for item in actions:
-            row.addWidget(self.window._tool_button(item))
+        row.addWidget(window._action_button(self.export_action, "Exportovat zprávu…",
+                                            "secondary"))
+        row.addWidget(window._action_button(self.hide_action, "Skrýt místo ve 3D",
+                                            "secondary"))
         row.addStretch()
         layout.addLayout(row)
+        layout.addStretch(1)
+        fit_card(self)
 
     def actions(self) -> tuple:
         return (self.refresh_action, self.run_action, self.stop_action, self.export_action,

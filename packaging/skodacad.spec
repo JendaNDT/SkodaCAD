@@ -21,6 +21,9 @@ datas += [(str(path), path.parent.relative_to(ROOT).as_posix())  # i pomocné c�
 datas += [(str(path), path.parent.relative_to(ROOT).as_posix())  # ukázková sestava a její díly
           for path in sorted((ROOT / "examples" / "sestavy").rglob("*.json"))]
 datas.append((str(ROOT / "README.md"), "."))  # popis formátu modelu pro AI asistenta
+# Závazná vymezení UT/PT/MT/RT pro odkaz „Celé upozornění“ v NDT průvodci (P7.55, R7).
+datas += [(str(ROOT / "docs" / "ndt" / name), "docs/ndt") for name in (
+    "04-zavazne-vymezeni-ut.md", "20-vymezeni-pt.md", "22-vymezeni-mt.md", "24-vymezeni-rt.md")]
 binaries = []
 if sys.platform == "darwin":
     builder = runpy.run_path(str(ROOT / "packaging" / "build_macos_accessibility.py"))

@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -41,7 +40,9 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSlider,
+    QSpacerItem,
     QStackedWidget,
     QStyle,
     QToolButton,
@@ -74,9 +75,12 @@ from skodacad.gui.main_bar import MainBar
 from skodacad.gui.model_card import (
     FEATURE_ICONS,
     ICON_ROLE,
+    PREVIEW_COLOR,
+    PREVIEW_ROLE,
     STATUS_ROLE,
     FeatureRowDelegate,
     ModelTabs,
+    StudyRowDelegate,
     TabSection,
     count_text,
 )
@@ -84,6 +88,21 @@ from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.status_pill import StatusPill, ViewSwitcher
+from skodacad.gui.tool_cards import (
+    SAVED_ROWS,
+    SECTION_COLOR,
+    SECTION_GREY,
+    STATE_ROLE,
+    FlowLayout,
+    fit_rows,
+    focus_text,
+    reflow_button_rows,
+    result_list,
+    separator,
+    set_role,
+    set_swatch,
+    swatch,
+)
 from skodacad.gui.tree_filter import SEARCH_ROLE, FormFilter, ListFilter, TreeFilter
 from skodacad.gui.ui_colors import status_color
 from skodacad.gui.viewer_views import VIEW_LABELS
@@ -126,6 +145,7 @@ MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost
 _MEASURE_COLOR = QColor("#1b7f3b")
 
 _SLIDER_STEPS = 1000  # jemnost posuvníku řezu
+TREE_MIN_HEIGHT = 150  # strom prvků; v činnosti NDT jen podle řádků (pod ním studie)
 
 _STATUS_ICONS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 _STATUS_WORDS = {"ok": "", "error": "chyba", "skipped": "přeskočeno", "pending": ""}
@@ -238,6 +258,8 @@ class MainWindow(QMainWindow):
         self._icons_after_view = False
         self._icon_loader_closed = False
         self._build_ribbon()
+        self.ribbon.page_changed.connect(lambda _page: self._refresh_ndt_studies())
+        self.ndt_group_add.clicked.connect(self._new_ndt_study_from_card)
         favorites_path = user_dir / "oblibene-prikazy.json" if user_dir else None
         self.favorite_store = (favorite_store if favorite_store is not None
                                else FavoriteStore(favorites_path, self))
@@ -428,7 +450,7 @@ class MainWindow(QMainWindow):
         tree_layout.setSpacing(6)
         self.tree = QTreeWidget()
         self.tree.setObjectName("feature_tree")
-        self.tree.setMinimumHeight(150)
+        self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
         self.tree.setHeaderLabels(["Prvek", "Tělesa"])
         self.tree.setHeaderHidden(True)  # stav a počet těles vpravo v řádku (návrh 1a)
         self.tree.setColumnWidth(1, 65)
@@ -447,6 +469,46 @@ class MainWindow(QMainWindow):
         for box in (self.tree_filter, self.param_filter):
             box.field.setProperty("cardFilter", True)
         tree_layout.addWidget(self.tree)
+        # P7.55 (rám 2c): v činnosti NDT jsou pod prvky studie se stavem; klik = panel NDT.
+        self.ndt_group = QWidget()
+        self.ndt_group.setObjectName("ndt_study_group")
+        group = QVBoxLayout(self.ndt_group)
+        group.setContentsMargins(0, 4, 0, 0)
+        group.setSpacing(2)
+        head = QHBoxLayout()
+        title = QLabel("NDT studie")
+        title.setStyleSheet("font-size: 11px; font-weight: 600;")
+        title.setProperty("secondaryText", True)
+        head.addWidget(title, 1)
+        self.ndt_group_add = QToolButton()
+        self.ndt_group_add.setText("+")
+        self.ndt_group_add.setAutoRaise(True)
+        self.ndt_group_add.setAccessibleName("Nová NDT studie z výběru")
+        self.ndt_group_add.setToolTip("Nová NDT studie; vybrané plochy budou kontrolovaná oblast")
+        head.addWidget(self.ndt_group_add)
+        group.addLayout(head)
+        self.ndt_study_list = QListWidget()
+        self.ndt_study_list.setObjectName("ndt_study_list")
+        self.ndt_study_list.setFrameShape(QFrame.Shape.NoFrame)
+        self.ndt_study_list.setStyleSheet("QListWidget { background: transparent; }")
+        self.ndt_study_list.setIconSize(QSize(16, 16))
+        self.ndt_study_list.setItemDelegate(StudyRowDelegate(self.ndt_study_list))
+        self.ndt_study_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.ndt_study_list.currentItemChanged.connect(
+            lambda item, _previous: self._ndt_study_chosen(item))
+        group.addWidget(self.ndt_study_list)
+        self.ndt_group_hint = QLabel("Zatím žádná – vyber plochy a dej +.")
+        self.ndt_group_hint.setProperty("cardHint", True)
+        self.ndt_group_hint.setWordWrap(True)
+        group.addWidget(self.ndt_group_hint)
+        self.ndt_group.hide()
+        self.ndt_group.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        tree_layout.addWidget(self.ndt_group)
+        # V činnosti NDT má strom výšku podle řádků a volné místo zůstane pod studiemi.
+        self._ndt_spacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum,
+                                       QSizePolicy.Policy.Minimum)
+        tree_layout.addItem(self._ndt_spacer)
+        self._tree_layout = tree_layout
         tree_buttons = QHBoxLayout()
         self.add_feature_button = QToolButton()
         self.add_feature_button.setText("+")
@@ -525,48 +587,84 @@ class MainWindow(QMainWindow):
         self.editor_stack.addWidget(page)
         self.editor_dock.setWidget(self.editor_stack)
 
+    def _action_button(self, action: QAction, text: str, role: str) -> QPushButton:
+        """Tlačítko karty (24 px, primární / vedlejší) se stálým krátkým textem; spouští
+        akci a přebírá její dostupnost, celý název akce je v bublině (P7.54)."""
+        button = QPushButton(text)
+        button.setProperty("role", role)
+        button.setAccessibleName(action.text())
+
+        def sync() -> None:
+            button.setEnabled(action.isEnabled())
+            button.setToolTip(action.toolTip() or action.text())
+        action.changed.connect(sync)
+        button.clicked.connect(lambda _checked=False: action.trigger())
+        sync()
+        return button
+
     def _build_measure_panel(self) -> None:
+        # P7.54, rám 3b: výsledky jako řádky (hlavní hodnota zvýrazněná), tlačítka v řadě,
+        # uložená měření a kóty výkresu jako sbalitelné sekce – karta neposouvá.
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 2, 10, 10)
+        layout.setSpacing(6)
         self.measure_hint = QLabel(MEASURE_HINT)
         self.measure_hint.setWordWrap(True)
         self.measure_hint.setProperty("secondaryText", True)
         layout.addWidget(self.measure_hint)
-        self.measure_list = QListWidget()
-        self.measure_list.setObjectName("measure_list")
-        self.measure_list.setMaximumHeight(96)
+        self.measure_list = result_list("measure_list")
         self.measure_list.currentRowChanged.connect(lambda _row: self._measure_row_changed())
+        fit_rows(self.measure_list)
         layout.addWidget(self.measure_list)
         buttons = QHBoxLayout()
-        buttons.addWidget(self._tool_button(self.save_measurement_action))
+        buttons.setSpacing(6)
+        self.measure_buttons = {
+            "save": self._action_button(self.save_measurement_action, "Uložit", "primary"),
+            "rename": self._action_button(self.rename_measurement_action, "Přejmenovat…",
+                                          "secondary"),
+            "delete": self._action_button(self.delete_measurement_action, "Smazat",
+                                          "secondary"),
+        }
+        for button in self.measure_buttons.values():
+            buttons.addWidget(button)
         buttons.addStretch()
         layout.addLayout(buttons)
 
-        saved_box = QGroupBox("Uložená měření (počítají se při každé změně)")
+        saved_box = QWidget()
         saved_layout = QVBoxLayout(saved_box)
-        self.saved_list = QListWidget()
-        self.saved_list.setObjectName("saved_measurements")
+        saved_layout.setContentsMargins(0, 0, 0, 0)
+        saved_layout.setSpacing(4)
+        saved_note = QLabel("Přepočítají se při každé změně modelu.")
+        saved_note.setProperty("cardHint", True)
+        saved_note.setWordWrap(True)
+        saved_layout.addWidget(saved_note)
+        self.saved_list = result_list("saved_measurements")
         self.saved_list.currentRowChanged.connect(lambda _row: self._saved_row_changed())
         self.saved_list.itemDoubleClicked.connect(lambda _item: self.rename_measurement())
-        saved_buttons = QHBoxLayout()  # nad seznamem, aby byla vidět i na malé obrazovce
-        for action in (self.rename_measurement_action, self.delete_measurement_action):
-            saved_buttons.addWidget(self._tool_button(action))
-        saved_buttons.addStretch()
-        saved_layout.addLayout(saved_buttons)
         self.saved_filter = ListFilter(self.saved_list, placeholder="Filtr uložených měření…",
                                        nouns=("měření", "měření", "měření"))
+        self.saved_filter.applied.connect(lambda: fit_rows(self.saved_list, SAVED_ROWS))
         saved_layout.addWidget(self.saved_filter)
-        self.saved_list.setMinimumHeight(60)
+        self.saved_empty = QLabel("Zatím žádné – vyber měření nahoře a stiskni Uložit.")
+        self.saved_empty.setProperty("cardHint", True)
+        self.saved_empty.setWordWrap(True)
+        saved_layout.addWidget(self.saved_empty)
         saved_layout.addWidget(self.saved_list)
-        layout.addWidget(saved_box, stretch=1)
-        drawing_box = QGroupBox("Příprava kót výkresu")
+        fit_rows(self.saved_list, SAVED_ROWS)
+        self.measure_sections = {"saved": Section("Uložená měření", saved_box, True)}
+        layout.addWidget(self.measure_sections["saved"])
+        drawing_box = QWidget()
         drawing_layout = QVBoxLayout(drawing_box)
+        drawing_layout.setContentsMargins(0, 0, 0, 0)
+        drawing_layout.setSpacing(6)
         note = QLabel("Pracovní výkres vyžaduje kontrolu před výrobou. Průměr a poloměr "
                       "lze navázat na válcovou plochu otvoru vytvořeného jednou kruhovou skicou; "
                       "vzdálenost na dvě rovnoběžné plochy obdélníkového vysunutí.")
         note.setWordWrap(True)
+        note.setProperty("cardHint", True)
         drawing_layout.addWidget(note)
-        preview_settings = QHBoxLayout()
+        sheet = QHBoxLayout()
         self.drawing_paper = QComboBox()
         self.drawing_paper.addItems(["A4", "A3"])
         self.drawing_scale = QComboBox()
@@ -576,16 +674,13 @@ class MainWindow(QMainWindow):
         # List a měřítko se ukládají s výkresem (Zpět/Znovu), okno je jen ukazuje.
         self.drawing_paper.currentIndexChanged.connect(self._drawing_sheet_changed)
         self.drawing_scale.currentIndexChanged.connect(self._drawing_sheet_changed)
-        preview = QPushButton("Náhled pohledů")
-        preview.clicked.connect(self.show_drawing_preview)
-        preview_settings.addWidget(self.drawing_paper)
-        preview_settings.addWidget(self.drawing_scale)
-        preview_settings.addWidget(preview)
-        export_drawing = QPushButton("Export PDF/DXF…")
-        export_drawing.clicked.connect(self.export_drawing)
-        preview_settings.addWidget(export_drawing)
-        drawing_layout.addLayout(preview_settings)
-        views_row = QHBoxLayout()
+        sheet.addWidget(QLabel("List"))
+        sheet.addWidget(self.drawing_paper, 1)
+        sheet.addWidget(QLabel("Měřítko"))
+        sheet.addWidget(self.drawing_scale, 1)
+        drawing_layout.addLayout(sheet)
+        # Zaškrtávátka pohledů se v úzké kartě zalomí (písmo macOS je širší, P7.54).
+        views_row = FlowLayout(spacing=6)
         views_row.addWidget(QLabel("Pohledy:"))
         self.drawing_view_boxes: dict[str, QCheckBox] = {}
         for label, key in (("Zepředu", "front"), ("Shora", "top"), ("Zprava", "right")):
@@ -594,11 +689,20 @@ class MainWindow(QMainWindow):
             box.toggled.connect(self._drawing_views_changed)
             views_row.addWidget(box)
             self.drawing_view_boxes[key] = box
-        views_row.addStretch()
         drawing_layout.addLayout(views_row)
-        title_button = QPushButton("Popisové pole…")
-        title_button.clicked.connect(self.edit_drawing_title_block)
-        drawing_layout.addWidget(title_button)
+        sheet_buttons = QHBoxLayout()
+        export_row = QHBoxLayout()
+        for row, text, slot in ((sheet_buttons, "Náhled pohledů", self.show_drawing_preview),
+                                (sheet_buttons, "Popisové pole…", self.edit_drawing_title_block),
+                                (export_row, "Export PDF/DXF…", self.export_drawing)):
+            button = QPushButton(text)
+            button.setProperty("role", "secondary")
+            button.clicked.connect(slot)
+            row.addWidget(button)
+        for row in (sheet_buttons, export_row):
+            row.addStretch()
+            drawing_layout.addLayout(row)
+        drawing_layout.addWidget(separator())
         section_settings = QHBoxLayout()
         self.drawing_section_enabled = QCheckBox("Řez A–A")
         self.drawing_section_axis = QComboBox()
@@ -607,13 +711,20 @@ class MainWindow(QMainWindow):
         self.drawing_section_position.setRange(-1000000, 1000000)
         self.drawing_section_position.setDecimals(3)
         self.drawing_section_position.setSuffix(" mm")
+        section_settings.addWidget(self.drawing_section_enabled)
+        section_settings.addWidget(self.drawing_section_axis)
+        section_settings.addWidget(self.drawing_section_position, 1)
+        drawing_layout.addLayout(section_settings)
+        section_buttons = QHBoxLayout()
         self.drawing_section_flipped = QCheckBox("Otočit")
         save_section = QPushButton("Nastavit řez")
+        save_section.setProperty("role", "secondary")
         save_section.clicked.connect(self.set_drawing_section)
-        for widget in (self.drawing_section_enabled, self.drawing_section_axis,
-                       self.drawing_section_position, self.drawing_section_flipped, save_section):
-            section_settings.addWidget(widget)
-        drawing_layout.addLayout(section_settings)
+        section_buttons.addWidget(self.drawing_section_flipped)
+        section_buttons.addStretch()
+        section_buttons.addWidget(save_section)
+        drawing_layout.addLayout(section_buttons)
+        drawing_layout.addWidget(separator())
         self.drawing_kind = QComboBox()
         for label, kind, axis in (("Celkový rozměr X", "overall", "x"),
                                   ("Celkový rozměr Y", "overall", "y"),
@@ -624,16 +735,18 @@ class MainWindow(QMainWindow):
             self.drawing_kind.addItem(label, (kind, axis))
         drawing_layout.addWidget(self.drawing_kind)
         drawing_buttons = QHBoxLayout()
-        add = QPushButton("Přidat kótu")
-        add.clicked.connect(self.add_drawing_dimension)
-        remove = QPushButton("Odebrat kótu")
-        remove.clicked.connect(self.remove_drawing_dimension)
-        drawing_buttons.addWidget(add)
-        drawing_buttons.addWidget(remove)
+        for text, slot in (("Přidat kótu", self.add_drawing_dimension),
+                           ("Odebrat kótu", self.remove_drawing_dimension)):
+            button = QPushButton(text)
+            button.setProperty("role", "secondary")
+            button.clicked.connect(slot)
+            drawing_buttons.addWidget(button)
+        drawing_buttons.addStretch()
         drawing_layout.addLayout(drawing_buttons)
         self.drawing_list = QListWidget()
         self.drawing_list.setObjectName("drawing_dimensions")
         self.drawing_list.setMinimumHeight(70)
+        self.drawing_list.setMaximumHeight(120)
         drawing_layout.addWidget(self.drawing_list)
         self.drawing_list.currentRowChanged.connect(self._drawing_selection_changed)
         placement = QHBoxLayout()
@@ -643,72 +756,112 @@ class MainWindow(QMainWindow):
         self.dimension_side = QComboBox()
         self.dimension_side.addItem("Dole / vlevo", "low")
         self.dimension_side.addItem("Nahoře / vpravo", "high")
+        placement.addWidget(self.dimension_view, 1)
+        placement.addWidget(self.dimension_side, 1)
+        drawing_layout.addLayout(placement)
+        offset_row = QHBoxLayout()
         self.dimension_offset = QDoubleSpinBox()
         self.dimension_offset.setRange(1, 60)
         self.dimension_offset.setValue(6)
         self.dimension_offset.setSuffix(" mm")
+        self.dimension_offset.setPrefix("Odstup ")
         apply_placement = QPushButton("Umístit kótu")
+        apply_placement.setProperty("role", "secondary")
         apply_placement.clicked.connect(self.set_drawing_dimension_placement)
-        for widget in (self.dimension_view, self.dimension_side, self.dimension_offset,
-                       apply_placement):
-            placement.addWidget(widget)
-        drawing_layout.addLayout(placement)
+        offset_row.addWidget(self.dimension_offset, 1)
+        offset_row.addWidget(apply_placement)
+        drawing_layout.addLayout(offset_row)
         tolerance_row = QHBoxLayout()
         self.dimension_upper = QDoubleSpinBox()
         self.dimension_lower = QDoubleSpinBox()
         for control in (self.dimension_upper, self.dimension_lower):
             control.setDecimals(6)
             control.setSuffix(" mm")
+            tolerance_row.addWidget(control, 1)
         self.dimension_upper.setRange(0, 1000000)
         self.dimension_lower.setRange(-1000000, 0)
         self.dimension_upper.setPrefix("Horní +")
         self.dimension_lower.setPrefix("Dolní ")
+        drawing_layout.addLayout(tolerance_row)
+        tolerance_buttons = QHBoxLayout()
         save_tolerance = QPushButton("Nastavit toleranci")
         save_tolerance.clicked.connect(self.set_drawing_dimension_tolerance)
         remove_tolerance = QPushButton("Odebrat toleranci")
         remove_tolerance.clicked.connect(self.remove_drawing_dimension_tolerance)
-        for widget in (self.dimension_upper, self.dimension_lower,
-                       save_tolerance, remove_tolerance):
-            tolerance_row.addWidget(widget)
-        drawing_layout.addLayout(tolerance_row)
-        layout.addWidget(drawing_box)
+        for button in (save_tolerance, remove_tolerance):
+            button.setProperty("role", "secondary")
+            tolerance_buttons.addWidget(button)
+        tolerance_buttons.addStretch()
+        drawing_layout.addLayout(tolerance_buttons)
+        # Pole a nabídky dostanou šířku karty, ne podle rozsahu čísel (304 px, rám 3b).
+        for control in (self.drawing_paper, self.drawing_scale, self.drawing_section_position,
+                        self.drawing_kind, self.dimension_view,
+                        self.dimension_side, self.dimension_offset, self.dimension_upper,
+                        self.dimension_lower):
+            control.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            control.setMinimumWidth(48)
+        self.measure_sections["drawing"] = Section("Příprava kót výkresu", drawing_box)
+        layout.addWidget(self.measure_sections["drawing"])
+        layout.addStretch()
+        # Řady tlačítek se zalomí, když se se skutečným písmem systému do 304 px nevejdou.
+        reflow_button_rows(panel)
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
+        self.measure_sections["saved"].set_count(
+            self.saved_filter_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
 
     def _build_map_panel(self) -> None:
+        # P7.54: stejný vzor jako Řez (rám 3c) – mřížka nastavení, tlačítka, škála, souhrn.
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        top = QHBoxLayout()
-        top.addWidget(self._tool_button(self.thickness_map_action))
-        top.addWidget(self._tool_button(self.export_map_action))
-        top.addStretch()
-        layout.addLayout(top)
+        layout.setContentsMargins(10, 2, 10, 10)
+        layout.setSpacing(8)
         form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
         self.map_fields: dict[str, QLineEdit] = {}
         for key, label, hint in (
-                ("limit", "Minimální tloušťka [mm]", "bez hranice"),
+                ("limit", "Min. tloušťka [mm]", "bez hranice"),
                 ("step", "Krok bodů [mm]", "automaticky"),
-                ("scale_max", "Horní mez škály [mm]", "nejčastější tloušťka")):
+                ("scale_max", "Horní mez [mm]", "nejčastější tloušťka")):
             field = QLineEdit()
             field.setObjectName(f"map_{key}")
             field.setPlaceholderText(hint)
             field.editingFinished.connect(lambda k=key: self._map_field_edited(k))
             self.map_fields[key] = field
             form.addRow(label, field)
+        self.map_fields["limit"].setToolTip("Minimální tloušťka stěny – tenčí místa fialově")
+        self.map_fields["scale_max"].setToolTip("Horní mez barevné škály (modrá)")
         layout.addLayout(form)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(6)
+        self.map_buttons = {
+            "toggle": self._action_button(self.thickness_map_action, "Zapnout mapu",
+                                          "primary"),
+            "export": self._action_button(self.export_map_action, "Export CSV…", "secondary"),
+        }
+        for button in self.map_buttons.values():
+            buttons.addWidget(button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+        layout.addWidget(separator())
         self.map_legend = QLabel()
         self.map_legend.setObjectName("map_legend")
-        self.map_legend.setMinimumHeight(18)
+        self.map_legend.setFixedHeight(10)
         stops = ", ".join(f"stop:{t} rgb({int(r * 255)}, {int(g * 255)}, {int(b * 255)})"
                           for t, (r, g, b) in SCALE)
-        self.map_legend.setStyleSheet("border: 1px solid #777; background: qlineargradient("
+        self.map_legend.setStyleSheet("border-radius: 4px; background: qlineargradient("
                                       f"x1:0, y1:0, x2:1, y2:0, {stops});")
         layout.addWidget(self.map_legend)
         self.map_scale_label = QLabel()
+        self.map_scale_label.setProperty("cardHint", True)
         layout.addWidget(self.map_scale_label)
         swatches = QLabel(f"{_swatch(BELOW_LIMIT)} pod minimem &nbsp; {_swatch(NO_MATERIAL)} "
                           "nejde změřit (u okraje jamky či hrany)")
         swatches.setTextFormat(Qt.TextFormat.RichText)
+        swatches.setWordWrap(True)
+        swatches.setProperty("cardHint", True)
         layout.addWidget(swatches)
         self.map_summary = QLabel()
         self.map_summary.setObjectName("map_summary")
@@ -716,19 +869,21 @@ class MainWindow(QMainWindow):
         self.map_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.map_summary)
         layout.addStretch()
+        reflow_button_rows(panel)  # písmo macOS je širší než na Linuxu
         self.map_dock = self._add_dock("Mapa tloušťky", "map_dock", panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
 
     def _build_section_panel(self) -> None:
+        # P7.54, rám 3c: rovina, poloha (posuvník + mm), rozsah, tlačítka, vzorek barvy
+        # plochy řezu s plochou a šedý rámeček „řez je jen pohled“.
         panel = QWidget()
         layout = QVBoxLayout(panel)
-        top = QHBoxLayout()
-        for action in (self.section_action, self.flip_section_action,
-                       self.export_section_action):
-            top.addWidget(self._tool_button(action))
-        top.addStretch()
-        layout.addLayout(top)
+        layout.setContentsMargins(10, 2, 10, 10)
+        layout.setSpacing(8)
         form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
         self.section_combo = QComboBox()
         self.section_combo.setObjectName("section_plane")
         for axis, name in AXIS_NAMES.items():
@@ -737,28 +892,72 @@ class MainWindow(QMainWindow):
         self.section_combo.addItem("Kolmo na osu cíle (průřez svarem)", "target")
         self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
         self.section_combo.activated.connect(lambda _index: self._section_kind_chosen())
+        # Nejdelší položka („Kolmo na osu cíle …“) by kartu roztáhla přes 304 px.
+        self.section_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.section_combo.setMinimumContentsLength(12)
+        # Zapnutí řezu (R) jako první řádek mřížky; tlačítka dole jsou jako v rámu 3c.
+        self.section_toggle = QCheckBox("zapnutý (klávesa R)")
+        self.section_toggle.setObjectName("section_toggle")
+        self.section_toggle.setToolTip(self.section_action.toolTip())
+        self.section_toggle.toggled.connect(
+            lambda checked: checked != self.section_action.isChecked()
+            and self.section_action.trigger())
+        form.addRow("Řez", self.section_toggle)
         form.addRow("Rovina", self.section_combo)
         self.section_slider = QSlider(Qt.Orientation.Horizontal)
         self.section_slider.setObjectName("section_slider")
         self.section_slider.setRange(0, _SLIDER_STEPS)
         self.section_slider.valueChanged.connect(lambda _value: self._section_slider_moved())
         self.section_slider.sliderReleased.connect(self._section_slider_released)
-        form.addRow("Poloha", self.section_slider)
         self.section_field = QLineEdit()
         self.section_field.setObjectName("section_position")
+        self.section_field.setFixedWidth(64)
         self.section_field.editingFinished.connect(self._section_field_edited)
-        self.section_position_label = QLabel("Poloha [mm]")
-        form.addRow(self.section_position_label, self.section_field)
+        position = QHBoxLayout()
+        position.setSpacing(8)
+        position.addWidget(self.section_slider, 1)
+        position.addWidget(self.section_field)
+        self.section_position_label = QLabel("Poloha")
+        form.addRow(self.section_position_label, position)
         self.section_range_label = QLabel()
-        self.section_range_label.setProperty("secondaryText", True)
+        self.section_range_label.setProperty("cardHint", True)
         form.addRow("", self.section_range_label)
         layout.addLayout(form)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(6)
+        self.section_buttons = {
+            "flip": self._action_button(self.flip_section_action, "Otočit stranu",
+                                        "secondary"),
+            "export": self._action_button(self.export_section_action, "Export DXF/SVG…",
+                                          "secondary"),
+        }
+        for button in self.section_buttons.values():
+            buttons.addWidget(button)
+        buttons.addStretch()
+        layout.addLayout(buttons)
+        layout.addWidget(separator())
+        self.section_area_row = QWidget()
+        area = QHBoxLayout(self.section_area_row)
+        area.setContentsMargins(0, 0, 0, 0)
+        area.setSpacing(8)
+        self.section_swatch = swatch(SECTION_COLOR)
+        area.addWidget(self.section_swatch)
+        self.section_area_label = QLabel("Plocha řezu")
+        area.addWidget(self.section_area_label, 1)
+        self.section_area = QLabel()
+        self.section_area.setObjectName("section_area")
+        self.section_area.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        area.addWidget(self.section_area)
+        layout.addWidget(self.section_area_row)
         self.section_info = QLabel()
         self.section_info.setObjectName("section_info")
         self.section_info.setWordWrap(True)
+        self.section_info.setProperty("cardNote", True)
         self.section_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.section_info)
         layout.addStretch()
+        reflow_button_rows(panel)  # písmo macOS je širší než na Linuxu
         self.section_dock = self._add_dock("Řez", "section_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 
@@ -1388,6 +1587,7 @@ class MainWindow(QMainWindow):
     def focus_saved_filter(self) -> None:
         """Otevře panel Měření a dá fokus do filtru uložených měření (P7.44)."""
         self.workspace.show_panel("measure")
+        self.measure_sections["saved"].set_expanded(True)
         self.saved_filter.show()
         self.saved_filter.focus()
 
@@ -1754,12 +1954,17 @@ class MainWindow(QMainWindow):
         panel.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         panel.setFocus()
         self.model_dock.widget().setEnabled(False)
+        self.ribbon.setEnabled(False)  # rám 3a: paleta během náhledu neaktivní (i menu)
         self._preview_probe_drag = self.viewer.probe_drag_enabled
         self.viewer.probe_drag_enabled = False
         self.viewer.show_guides(None)
         self._lock_preview_actions()
         panel.show_result()
-        self.statusBar().showMessage("Náhled prvku · Potvrdit / Zrušit · Esc zruší")
+        self._sync_preview_row()
+        self._refresh_pill_focus()
+        self.statusBar().showMessage(  # rám 3a: „● Náhled · Sražení | Potvrzení přidá …“
+            "Potvrzení přijme úpravu jako jeden krok Zpět · Esc zruší" if preview.editing
+            else "Potvrzení přidá jeden krok Zpět · Esc zruší")
 
     def _lock_preview_actions(self):
         allowed = [self.fit_action, *self._view_actions]
@@ -1787,6 +1992,7 @@ class MainWindow(QMainWindow):
         panel.hide()
         panel.deleteLater()
         self.model_dock.widget().setEnabled(True)
+        self.ribbon.setEnabled(True)
         self.viewer.probe_drag_enabled = self._preview_probe_drag
         for action, enabled in self._preview_action_states:
             if isValid(action):
@@ -1796,6 +2002,8 @@ class MainWindow(QMainWindow):
         self._shown_key = None  # obnovit také řez, mapy, skicu a zvýraznění původního dílu
         self._reload_all()
         self.workspace.show_panel("editor" if accepted else self._preview_previous_panel)
+        self._sync_preview_row()
+        self._refresh_pill_focus()
         self.statusBar().showMessage("Prvek potvrzen." if accepted else "Náhled zrušen.", 8000)
 
     def start_profile_preview(self):
@@ -2315,6 +2523,7 @@ class MainWindow(QMainWindow):
                 chosen = item
         for item in previous.values():
             self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(item))
+        self._sync_preview_row()
         if self.tree.currentItem() is not chosen:
             self.tree.setCurrentItem(chosen)
         if self._selected_id not in {row[0] for row in rows}:
@@ -2325,6 +2534,133 @@ class MainWindow(QMainWindow):
         problem = self.session.model_problem if document is not None else ""
         self.error_label.setText(problem)
         self.error_label.setVisible(bool(problem))
+
+    def _ndt_group_visible(self) -> bool:
+        ribbon = getattr(self, "ribbon", None)
+        return ribbon is not None and ribbon.page == "ndt" and self.session.document is not None
+
+    def _refresh_ndt_studies(self) -> None:
+        """Skupina „NDT studie“ levé karty: tytéž studie a stav jako panel NDT (P7.55).
+
+        Řádky se znovu používají podle id (Cocoa AX drží odkazy na buňky – žádné clear())."""
+        if not hasattr(self, "ndt_study_list"):
+            return
+        shown = self._ndt_group_visible()
+        if self.ndt_group.isHidden() == shown:
+            self.ndt_group.setVisible(shown)
+            self._ndt_spacer.changeSize(0, 0, QSizePolicy.Policy.Minimum,
+                                        QSizePolicy.Policy.Expanding if shown
+                                        else QSizePolicy.Policy.Minimum)
+            self._tree_layout.invalidate()
+        if shown:
+            rows = sum(not self.tree.topLevelItem(i).isHidden()
+                       for i in range(self.tree.topLevelItemCount()))
+            height = max(60, rows * 26 + 6)
+            self.tree.setMinimumHeight(min(TREE_MIN_HEIGHT, height))
+            self.tree.setMaximumHeight(height)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        else:
+            self.tree.setMinimumHeight(TREE_MIN_HEIGHT)
+            self.tree.setMaximumHeight(16777215)
+            self.tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            return
+        widget = self.ndt_study_list
+        session = self.session
+        document = session.document
+        records = (document.ndt or {}).get("studies", []) if document is not None else []
+        results = {r.id: r for r in session.ndt_studies}
+        previous = {widget.item(i).data(_FEATURE_ID): widget.item(i)
+                    for i in range(widget.count())}
+        color = QApplication.palette().color(QPalette.ColorRole.Link).name()
+        current = self.ndt_panel.current_id()
+        widget.blockSignals(True)
+        chosen = None
+        for index, record in enumerate(records):
+            key = record["id"]
+            item = previous.pop(key, None)
+            if item is None:
+                item = QListWidgetItem()
+                item.setData(_FEATURE_ID, key)
+            if widget.row(item) != index:
+                if widget.row(item) >= 0:
+                    widget.takeItem(widget.row(item))
+                widget.insertItem(index, item)
+            result = results.get(key)
+            name = record.get("name") or key
+            if item.text() != name:
+                item.setText(name)
+            state = "pending" if session.computing or result is None else result.state
+            item.setData(STATUS_ROLE, state)
+            item.setToolTip("\n".join([name, *(result.messages if result else [])]))
+            kind = str(record.get("method", "UT")).lower()
+            if item.data(ICON_ROLE) != f"{kind}|{color}":
+                item.setIcon(cad_icon(kind, color))
+                item.setData(ICON_ROLE, f"{kind}|{color}")
+            if key == current:
+                chosen = item
+        for item in previous.values():
+            widget.takeItem(widget.row(item))
+        if widget.currentItem() is not chosen:
+            widget.setCurrentItem(chosen)
+        widget.blockSignals(False)
+        widget.setFixedHeight(min(widget.count(), 6) * 26 + 2)
+        widget.setVisible(widget.count() > 0)
+        self.ndt_group_hint.setVisible(widget.count() == 0)
+        widget.viewport().update()
+
+    def _new_ndt_study_from_card(self) -> None:
+        self.workspace.show_panel("ndt")
+        if self.ndt_panel.new_action.isEnabled():
+            self.ndt_panel.new_action.trigger()
+
+    def _ndt_study_chosen(self, item) -> None:
+        if item is None:
+            return
+        self.ndt_panel.select(item.data(_FEATURE_ID))
+        self.workspace.show_panel("ndt")
+
+    def _sync_preview_row(self) -> None:
+        """Rám 3a: během náhledu má strom řádek „Sražení · náhled“ (rámeček, kurzíva).
+
+        Nový prvek dostane dočasný řádek na místě, kam se vloží (bez id prvku – po náhledu
+        zmizí s obnovou stromu), upravovaný prvek se označí ve svém řádku. Model se nemění."""
+        preview = self.feature_preview.preview if self.feature_preview is not None else None
+        target = preview.feature_id if preview is not None and preview.editing else None
+        extra = None
+        for index in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(index)
+            key = item.data(0, _FEATURE_ID)
+            if key is None:
+                extra = item
+            elif bool(item.data(0, PREVIEW_ROLE)) != (key == target):
+                item.setData(0, PREVIEW_ROLE, key == target or None)
+        if preview is None or preview.editing:
+            if extra is not None:
+                self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(extra))
+            return
+        feature = preview.session.feature(preview.feature_id)
+        schema = FEATURE_SCHEMAS.get(feature["type"])
+        name = feature.get("name") or (schema.label if schema else feature["type"])
+        if extra is None:
+            extra = QTreeWidgetItem()
+            extra.setData(0, PREVIEW_ROLE, True)
+            extra.setData(0, STATUS_ROLE, "preview")
+            extra.setFlags(Qt.ItemFlag.ItemIsEnabled)  # nejde vybrat, jen ukazuje
+        position = min(preview.session.feature_index(preview.feature_id),
+                       self.tree.topLevelItemCount())
+        if self.tree.indexOfTopLevelItem(extra) != position:
+            if self.tree.indexOfTopLevelItem(extra) >= 0:
+                self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(extra))
+            self.tree.insertTopLevelItem(position, extra)
+        if extra.text(0) != name:  # „náhled“ kreslí delegát vpravo
+            extra.setText(0, name)
+            extra.setToolTip(0, f"{name} – náhled nového prvku; Potvrdit ho přidá do stromu.")
+            extra.setData(0, SEARCH_ROLE, f"{name} náhled")
+        kind = FEATURE_ICONS.get(feature["type"], "box")
+        if extra.data(0, ICON_ROLE) != f"{kind}|{PREVIEW_COLOR}":
+            extra.setIcon(0, cad_icon(kind, PREVIEW_COLOR))
+            extra.setData(0, ICON_ROLE, f"{kind}|{PREVIEW_COLOR}")
+        self.tree.scrollToItem(extra)
 
     def _status_message(self, text: str) -> None:
         """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
@@ -2342,6 +2678,46 @@ class MainWindow(QMainWindow):
         self.status_pill.set_state(
             "empty" if document is None else
             "error" if self.session.model_problem else "ok")
+
+    def _ndt_focus(self) -> tuple[str, str] | None:
+        """Rámy 2c a 3d: v panelu NDT pilulka ukazuje pokrytí, nebo stav přiložení sondy."""
+        coverage = self.session.ndt_coverage
+        if coverage is not None:
+            return ("measure", f"● Pokryto {coverage.percent('covered'):.2f} %")
+        placement = self.session.ndt_placement
+        if placement is not None:
+            return (("measure", "● Přiloženo") if placement.state == "ok"
+                    else ("warn", "● Sonda nedosedá"))
+        return None
+
+    def _refresh_pill_focus(self) -> None:
+        """Pilulka ukazuje, co je právě ve 3D (P7.54): náhled prvku, hlavní hodnotu měření
+        (jen s otevřeným panelem Měření) nebo polohu řezu – jinak stav přepočtu."""
+        if not hasattr(self, "status_pill"):  # během stavby okna ještě není
+            return
+        workspace = getattr(self, "workspace", None)
+        settings = self.session.section_settings
+        if self.feature_preview is not None:
+            preview = self.feature_preview.preview
+            feature = preview.session.feature(preview.feature_id)
+            schema = FEATURE_SCHEMAS.get(feature["type"])
+            name = feature.get("name") or (schema.label if schema else feature["type"])
+            focus = ("preview", f"● Náhled · {name}")
+        elif (workspace is not None and workspace.active == "measure"
+              and getattr(self, "_pill_measure", None)):
+            focus = ("measure", focus_text(self._pill_measure))
+        elif workspace is not None and workspace.active == "ndt" and self._ndt_focus():
+            focus = self._ndt_focus()
+        elif settings is not None and self.session.section is not None:
+            position = format_parameter_value(round(settings.position, 2))
+            focus = ("section", "Řez · průřez svarem" if settings.target is not None
+                     else f"Řez · {position} mm pod plochou" if settings.axis is None
+                     else f"Řez · {settings.axis} = {position} mm")
+        else:
+            focus = (None, "")
+        if self.status_pill.focus != (focus if focus[0] else None):
+            self.status_pill.set_focus(*focus)
+            self.card_layer.schedule()
 
     def _refresh_actions(self) -> None:
         self._refresh_status_state()
@@ -2566,7 +2942,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(HELP_HINT)
             return
         text = info.text
-        if self._measured and (info.faces + info.edges == 2 or self.session.map_visible):
+        if self._measured and self.workspace.active == "measure":
+            text = "Zelená čára ukazuje, odkud kam se měřilo"  # hodnota je vlevo v pilulce
+        elif self._measured and (info.faces + info.edges == 2 or self.session.map_visible):
             text += f"  ·  {self._measured[0].text}"  # hlavní hodnota měření
         hints = []
         if info.edges:
@@ -2586,15 +2964,19 @@ class MainWindow(QMainWindow):
         for value in self._measured:
             self.measure_list.addItem(value.text)
         self.measure_list.blockSignals(False)
+        fit_rows(self.measure_list)
         info = self.session.selection_info(self._picked)
-        if self._measured:
-            self.measure_hint.setText("Vyber řádek – jeho čára se ukáže ve 3D. Uložené měření "
-                                      "se přepočítá při každé změně modelu.")
+        if self._measured:  # rám 3b: co je vybráno; jak číst řádky, řekne bublina
+            self.measure_hint.setText(info.text or "Vybráno")
+            self.measure_hint.setToolTip("Vyber řádek – jeho čára se ukáže ve 3D. Uložené "
+                                         "měření se přepočítá při každé změně modelu.")
         elif info.faces + info.edges > 2:
             self.measure_hint.setText("Měřit jde jednu nebo dvě věci – zruš část výběru "
                                       "(Ctrl+klik vybranou věc odebere).")
         else:
             self.measure_hint.setText(MEASURE_HINT)
+        if not self._measured:
+            self.measure_hint.setToolTip("")
         if self._measured:
             self.measure_list.setCurrentRow(0)  # → čára ve 3D
         else:
@@ -2621,6 +3003,8 @@ class MainWindow(QMainWindow):
         self._refresh_measure_actions()
 
     def _show_measure_line(self, value: Value | None) -> None:
+        self._pill_measure = value.text if value is not None and value.value is not None else None
+        self._refresh_pill_focus()
         lines = []
         if value is not None and value.points is not None:
             lines = [(*value.points, format_value(value.value, value.unit))]
@@ -2647,17 +3031,22 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(text)
             item.setData(_FEATURE_ID, record["id"])
             item.setData(SEARCH_ROLE, f"{record.get('name') or ''} {record['id']}")
+            item.setData(STATE_ROLE, "pending" if self.session.computing or result is None
+                         else "error" if result.value is None else "ok")
             if result is not None and result.value is None:
                 item.setForeground(_STATUS_COLORS["error"])
                 item.setToolTip(result.error)
             elif result is not None:
                 item.setForeground(_MEASURE_COLOR)
+                item.setToolTip(text)
             self.saved_list.addItem(item)
             if record["id"] == selected:
                 self.saved_list.setCurrentItem(item)
         self.saved_filter.setVisible(bool(records) or self.saved_filter.active)
         self.saved_filter.apply()  # nové položky také podle filtru, vybraná zůstane vidět
         self.saved_list.blockSignals(False)
+        fit_rows(self.saved_list, SAVED_ROWS)
+        self.saved_empty.setVisible(not records)
         if self._current_saved() is not None and not self._measured:
             self._show_measure_line(self._current_saved().value)  # díl je nový – čáru znovu
         self._refresh_measure_actions()
@@ -2964,6 +3353,7 @@ class MainWindow(QMainWindow):
         self.save_measurement_action.setText(
             f"Uložit měření do modelu: {value.text}" if value is not None
             else "Uložit měření do modelu")
+        self.save_measurement_action.setToolTip(self.save_measurement_action.text())
         has_saved = self._current_saved_id() is not None
         self.rename_measurement_action.setEnabled(has_saved)
         self.delete_measurement_action.setEnabled(has_saved)
@@ -3073,6 +3463,8 @@ class MainWindow(QMainWindow):
             if field.text() != text:
                 field.setText(text)
         self.thickness_map_action.setChecked(session.map_visible)
+        set_role(self.map_buttons["toggle"], "Vypnout mapu" if session.map_visible
+                 else "Zapnout mapu", "secondary" if session.map_visible else "primary")
         self.export_map_action.setEnabled(
             found is not None and not session.model_problem and not self.ai_busy)
         if found is not None:
@@ -3088,7 +3480,7 @@ class MainWindow(QMainWindow):
             self.map_summary.setText(f"✕ {session.result.map_error}")
         else:
             self.map_scale_label.setText("")
-            self.map_summary.setText("Zapni mapu tlačítkem nahoře (nebo klávesou M): díl se "
+            self.map_summary.setText("Zapni mapu tlačítkem výše (nebo klávesou M): díl se "
                                      "obarví podle tloušťky stěny. Kliknutím na místo ve 3D "
                                      "změříš přesnou tloušťku (panel Měření).")
 
@@ -3215,12 +3607,18 @@ class MainWindow(QMainWindow):
             has_part and session.selection_info(self._picked).faces == 1)
         for widget in (self.section_slider, self.section_field):
             widget.setEnabled(settings is not None)
+        self.section_toggle.blockSignals(True)
+        self.section_toggle.setChecked(settings is not None)
+        self.section_toggle.setEnabled(self.section_action.isEnabled())
+        self.section_toggle.blockSignals(False)
+        self.section_area_row.hide()
         if settings is None:
-            self.section_position_label.setText("Poloha [mm]")
+            self.section_position_label.setText("Poloha")
             self.section_range_label.setText("")
-            self.section_info.setText("Zapni řez tlačítkem nahoře (nebo klávesou R): díl se "
-                                      "rozřízne a uvidíš ho uvnitř. Model se nemění. Na "
-                                      "plochy řezu jde klikat a měřit.")
+            self.section_info.setText("Zapni řez (klávesa R): díl se rozřízne a uvidíš ho "
+                                      "uvnitř. Řez je jen pohled – model se nemění a do "
+                                      "souboru se neukládá. Na plochy řezu jde klikat a měřit.")
+            self._refresh_pill_focus()
             return
         kind = "target" if settings.target is not None else settings.axis or "face"
         index = self.section_combo.findData(kind)
@@ -3230,10 +3628,11 @@ class MainWindow(QMainWindow):
             low, high = session.section_range()
         except DocumentError:
             low, high = settings.position, settings.position
-        word = ("Od začátku cíle" if settings.target is not None else "Hloubka"
+        word = ("Od začátku" if settings.target is not None else "Hloubka"
                 if settings.axis is None else f"Poloha {settings.axis}")
-        self.section_position_label.setText(f"{word} [mm]")
-        self.section_range_label.setText(f"od {number(low)} do {number(high)} mm")
+        self.section_position_label.setText(word)
+        self.section_field.setToolTip(f"{word} [mm]")
+        self.section_range_label.setText(f"{number(low)} až {number(high)} mm")
         if not self.section_field.hasFocus():
             self.section_field.setText(format_parameter_value(round(settings.position, 2)))
         if not self.section_slider.isSliderDown() and high > low:
@@ -3241,6 +3640,7 @@ class MainWindow(QMainWindow):
             self.section_slider.setValue(round((settings.position - low) / (high - low)
                                                * _SLIDER_STEPS))
             self.section_slider.blockSignals(False)
+        self._refresh_pill_focus()
         section = session.section
         if section is None:
             self.section_info.setText(f"✕ {session.section_error}")
@@ -3250,11 +3650,15 @@ class MainWindow(QMainWindow):
             where = f"kolmo na osu cíle, {number(settings.position)} mm od jeho začátku"
         elif settings.axis is None:
             where = f"rovnoběžně s plochou, {number(settings.position)} mm pod ní"
-        color = ("šedě pod mapou pokrytí" if isinstance(session.ndt_coverage, VolumeCoverageMap)
-                 else "cihlově")
-        self.section_info.setText(f"Řez {where}\nPlocha řezu: {number(section.area)} mm² "
-                                  f"({color})\nKlikni na plochu řezu a změříš ji v panelu "
-                                  "Měření.")
+        grey = isinstance(session.ndt_coverage, VolumeCoverageMap)
+        color = "šedě pod mapou pokrytí" if grey else "cihlově"
+        set_swatch(self.section_swatch, SECTION_GREY if grey else SECTION_COLOR)
+        self.section_area.setText(f"{number(section.area)} mm²")
+        self.section_area_row.setToolTip(f"Plochy řezu jsou ve 3D {color}.")
+        self.section_area_row.show()
+        self.section_info.setText(f"Řez {where} ({color}). Řez je jen pohled – model se "
+                                  "nemění a do souboru se neukládá. Na plochy řezu jde "
+                                  "klikat a měřit v panelu Měření.")
 
     def export_map(self) -> None:
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""

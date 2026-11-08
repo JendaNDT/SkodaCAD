@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from skodacad.document import DocumentError
 from skodacad.gui.audit_panel import write_pdf
+from skodacad.gui.tool_cards import fit_card
 from skodacad.ndt import DISCLAIMER
 from skodacad.ndt.design import (
     BANNER,
@@ -291,16 +292,22 @@ class DesignPanel(QWidget):
         self.reject_action = action("Odmítnout výsledky", self.reject_results)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 2, 10, 10)
         layout.addWidget(_label(BEFORE))
         self.warning = _label(DISCLAIMER + "\n" + DESIGN_NOTE, "design_warning")
-        self.warning.setStyleSheet("color: #8a4b00; font-size: 8pt;")
+        self.warning.setProperty("ndtWarning", True)  # 12 px --fg2, doslova (P7.56)
         layout.addWidget(self.warning)
         self.settings = _label("", "design_settings")
         layout.addWidget(self.settings)
         self.estimate = _label("", "design_estimate")
         layout.addWidget(self.estimate)
         self._actions(layout, self.edit_action, self.estimate_action)
-        self._actions(layout, self.run_action, self.stop_action)
+        row = QHBoxLayout()  # P7.56: hlavní krok karty je primární tlačítko
+        row.addWidget(self.window._action_button(self.run_action, "Spustit návrh", "primary"))
+        row.addWidget(self.window._action_button(self.stop_action, "Zastavit návrh",
+                                                 "secondary"))
+        row.addStretch()
+        layout.addLayout(row)
         self.progress = _label("", "design_progress")
         layout.addWidget(self.progress)
         layout.addWidget(QLabel(BANNER))
@@ -321,6 +328,7 @@ class DesignPanel(QWidget):
         self._actions(layout, self.apply_action, self.save_action, self.hide_action)
         self._actions(layout, self.export_action, self.reject_action)
         layout.addStretch(1)
+        fit_card(self)
         self.refresh()
 
     def _actions(self, layout: QVBoxLayout, *actions) -> None:

@@ -463,6 +463,7 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     nodes, triangles, _colors = w.viewer.coverage_map  # 07C.3: povrch cíle navrch
     assert triangles and w.viewer.coverage_topmost and w.viewer.coverage_fill == []
     assert w.viewer.target is None  # mapa nahradí průhledný náhled cíle
+    panel.ut_wizard.open_step(3)  # P7.55: legenda je v kroku 4 průvodce (Geometrické pokrytí)
     assert panel.volume_legend.isVisibleTo(panel)
     percent = result.percent("covered")
     assert panel.cross_section_action.isEnabled()
@@ -1688,12 +1689,19 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert len(w.viewer.accent) == 2  # dvě plochy řezu vedle otvoru
     area = 2 * (165 - 62) / 2 * 18 - 4 * 2  # bez sražení obvodu 2 a otvoru 1 mm (2 × 2 rohy)
     assert w.session.section.area == pytest.approx(area, rel=0.02)
-    assert "Plocha řezu" in w.section_info.text()
+    # P7.54 (rám 3c): plocha se vzorkem barvy ve vlastním řádku, poloha řezu v pilulce
+    assert w.section_area_row.isVisibleTo(w.section_dock)
+    assert w.section_area.text() == f"{number(w.session.section.area)} mm²"
+    assert w.section_swatch.property("swatch") == "#d16154"  # plochy řezu „cihlově“
+    assert "jen pohled" in w.section_info.text() and w.section_toggle.isChecked()
+    assert w.status_pill.focus == ("section", "Řez · Y = 0 mm")
+    assert w.status_pill.state.text() == "Řez · Y = 0 mm"
     assert w.session.document.to_dict() == w.session.document.to_dict() and not \
         w.session.dirty  # řez model nemění
 
     set_text(w.section_field, "40")  # poloha číslem
     assert w.session.section_settings.position == 40
+    assert w.status_pill.focus == ("section", "Řez · Y = 40 mm")
     w.section_slider.setValue(1000)  # posuvník na konec dílu → řez díl míjí
     assert w.session.section is None and "✕" in w.section_info.text()
     w.section_slider.setValue(500)
@@ -1726,8 +1734,15 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert w.viewer.map_fill == w.session.section.faces  # plochy řezu vyplněné
     action(w, "Mapa tloušťky stěny").trigger()
 
-    action(w, "Řez modelem").trigger()  # vypnout → zase celý díl
+    w.section_toggle.click()  # vypnout zaškrtávátkem v kartě → zase celý díl
     assert w.viewer.parts[-1][0] is w.session.result.part and w.session.section is None
+    assert not w.section_action.isChecked() and not w.section_area_row.isVisibleTo(
+        w.section_dock)
+    assert w.status_pill.focus is None and w.status_pill.state.text() == "✓ Spočítáno"
+    w.section_toggle.click()  # a znovu zapnout
+    assert w.session.section is not None and w.section_action.isChecked()
+    action(w, "Řez modelem").trigger()
+    assert w.session.section is None and not w.section_toggle.isChecked()
     assert slot_errors == []
 
 
@@ -1959,13 +1974,13 @@ def rib_window(app, examples_dir, tmp_path, no_dialogs, slot_errors):
 
 
 def test_place_turn_and_remove_probe(rib_window, slot_errors):
-    from PySide6.QtWidgets import QGroupBox
+    from PySide6.QtWidgets import QWidget
 
     from skodacad.ndt import UT_DISCLAIMER
 
     w = rib_window
     panel = w.ndt_panel
-    assert panel.findChild(QGroupBox, "ndt_ut").title() == "Přístupnost UT sondy"
+    assert panel.findChild(QWidget, "ndt_ut").title() == "Přístupnost UT sondy"
     assert panel.warning.text() == UT_DISCLAIMER  # povinné upozornění (04-zavazne-…)
     assert panel.warning.isVisibleTo(panel)
     assert "Úhlová sonda 40 × 20 × 25 mm" in panel.probe_label.text()
@@ -1984,8 +1999,8 @@ def test_place_turn_and_remove_probe(rib_window, slot_errors):
     assert w.viewer.beam[1] == pytest.approx((2, 0, 0), abs=1e-4)
     assert "Přiloženo. Mezera pod sondou 0.00 mm, volno k překážkám 5.00 mm." in \
         panel.placement_label.text()
-    assert "Dráha paprsku (úhel lomu 45.0°" in panel.placement_label.text()
-    assert "půlkrok 20.00 mm, celý krok 40.00 mm" in panel.placement_label.text()
+    assert "Dráha paprsku (úhel lomu 45.0°" in panel.beam_label.text()  # P7.55: sekce
+    assert "půlkrok 20.00 mm, celý krok 40.00 mm" in panel.beam_label.text()
     panel.angle.setValue(0)  # otočit: zadní konec sondy zajede do žebra
     assert w.viewer.probe[0] == "collision"
     assert "Koliduje" in panel.placement_label.text()
@@ -2226,6 +2241,8 @@ def test_access_panel_runs_shows_applies_and_draws_maps(rib_window, slot_errors,
     w = rib_window
     panel = w.ndt_panel
     session = w.session
+    panel.ut_wizard.open_step(3)  # P7.55: krok 4 průvodce, sbalená sekce Návrh poloh
+    panel.ut_sections["access"].set_expanded(True)
     assert panel.access_box.isVisibleTo(panel) and panel.access_box.title() == \
         "Návrh poloh sondy"
     top = face_at(session.result.part, 50, 0, 20)
@@ -2295,6 +2312,8 @@ def test_plan_panel_builds_plays_edits_zones_and_exports(rib_window, no_dialogs,
     w = rib_window
     panel = w.ndt_panel
     session = w.session
+    panel.ut_wizard.open_step(3)  # P7.55: krok 4 průvodce, sbalená sekce Plán dráhy
+    panel.ut_sections["plan"].set_expanded(True)
     assert panel.plan_box.isVisibleTo(panel) and panel.plan_box.title() == "Plán dráhy sondy"
     top = face_at(session.result.part, 50, 0, 20)
     w.viewer.click([top], (50, 0, 20))
@@ -2655,7 +2674,9 @@ def test_rt_panel_settings_projections_map_preview_and_export(rt_window, no_dial
     box.view.setCurrentIndex(box.view.findData("p1"))
     assert w.viewer.coverage_map is not shown  # mapa jedné projekce se nakreslí znovu
     assert box.projection_name() == "P1" and not box.preview.pixmap().isNull()
-    assert box.preview.pixmap().width() == 420  # náhled zmenšený na šířku panelu
+    from skodacad.gui.rt_box import PREVIEW_WIDTH
+
+    assert box.preview.pixmap().width() == PREVIEW_WIDTH == 220  # karta 320 px (P7.56)
     w.viewer.click([top], (60, 0, 20))
     assert "P1:" in box.pick.text() and "P3:" in box.pick.text()
     path = tmp_path / "rt.csv"
