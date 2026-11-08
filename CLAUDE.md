@@ -37,6 +37,12 @@
   posledního nahrání do draftu; opožděný běh draftu by jinak mohl zrušit nové
   kontroly hotové dávky. Potom ověř běžící kontroly aktuálního commitu.
   Kontroly obou systémů před sloučením platí dál.
+- **Rozhodnutí autora z 8. 11. 2026 „Větší dávky“** (po námitce, že kontroly běží
+  zbytečně často): pravidla a sada kontrol se nemění, mění se postup. Drobné kroky
+  (např. jednotlivé rozdíly okna proti návrhu) se nevydávají každý zvlášť: zůstávají
+  v jednom draftu, dokud nevznikne ucelený celek (zhruba 3–5 kroků) nebo autor nenapíše
+  „sestav“. Teprve pak PR připravit, ověřit na obou systémech, sloučit a ověřit vydání.
+  Každé samostatné vydání = úplné kontroly v PR i po sloučení (asi 2 × 40 min).
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -180,7 +186,8 @@
   [P7.60](docs/p7-60-karta-prvku-a-pilulka.md) = číslovaná tabulka poloh, hodnoty jen pro
   čtení běžnou barvou a pilulka „Vybráno: Upínání · M6 ×4“ (rám 2a); PR #133, `016cde7`,
   ověřeně vydané. [P7.61](docs/p7-61-karta-nahledu-a-pilulka-rezu.md) = karta náhledu
-  prvku (krátký popis hran, *Náhled* jen po chybě, věta rámu 3a) a pilulka řezu (rám 3c).
+  prvku (krátký popis hran, *Náhled* jen po chybě, věta rámu 3a) a pilulka řezu (rám 3c);
+  první krok dávky v draftu PR #134 (podle rozhodnutí „Větší dávky“).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
