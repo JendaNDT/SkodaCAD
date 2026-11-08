@@ -344,6 +344,8 @@ class Workspace:
             if hasattr(self.window, name):
                 getattr(self.window, name).refresh_style()
         self.window._refresh_tree()
+        if hasattr(self.window, "feature_editor"):  # hodnoty karty v barvě vzhledu (P7.60)
+            self.window.feature_editor.restyle()
         self.window.viewer.set_dark_background(ui_theme.is_dark())
 
     def inspector_sections(self):

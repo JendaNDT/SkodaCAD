@@ -17,9 +17,10 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QAction, QFontDatabase
+from PySide6.QtGui import QAction, QFontDatabase, QPalette
 from PySide6.QtWidgets import (
     QAbstractButton,
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -293,6 +294,7 @@ class FieldsForm(QWidget):
         self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         self._compact = False  # prohlížení: jen vyplněné hodnoty (P7.59, rám 2a)
+        self._point_views: dict[int, QLabel] = {}  # číslovaná tabulka bodů (P7.60)
         self._layout = layout = QFormLayout(self)
         # P7.52: mřížka popisek (vpravo zarovnaný) / pole jako v návrhu 1a; dlouhé řádky
         # (vodítka, seznamy, obrysy) se zalomí pod popisek, aby měly celou šířku karty.
@@ -345,33 +347,53 @@ class FieldsForm(QWidget):
     def _update_visibility(self) -> None:
         for field, widget, _ in self._rows:
             shown = self._belongs(field) and (not self._compact or self._has_value(field))
+            view = self._point_views.get(id(widget))
+            if view is not None:  # zkrácené prohlížení: místo pole bodů jejich tabulka
+                self._refresh_point_view(field, view)
+                table = shown and self._compact
+                if table != self._layout.isRowVisible(view):
+                    self._layout.setRowVisible(view, table)
+                shown = shown and not self._compact
             if shown != self._layout.isRowVisible(widget):
                 self._layout.setRowVisible(widget, shown)
+
+    def point_view(self, key: str) -> QLabel | None:
+        """Tabulka bodů zkráceného prohlížení (P7.60), ``None`` mimo něj."""
+        return self._point_views.get(id(self.widget(key)))
+
+    def _refresh_point_view(self, field: Field, view: QLabel) -> None:
+        """„Středy děr · 4“ a pod tím číslovaná tabulka souřadnic jako v rámu 2a."""
+        points = [p for p in (self._data.get(field.key) or []) if isinstance(p, list | tuple)]
+        title = field.label.split(" [")[0]
+        muted = view.palette().color(QPalette.ColorRole.PlaceholderText).name()
+        rows = "".join(
+            f"<tr><td style='color:{muted}; padding-right:10px'>{number}</td>"
+            + "".join(f"<td style='padding-right:14px'>{html.escape(_number_text(value))}</td>"
+                      for value in point) + "</tr>"
+            for number, point in enumerate(points, start=1))
+        family = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+        view.setText(f"<b>{html.escape(title)}</b> · {len(points)}"
+                     f"<table cellspacing='0' cellpadding='1' "
+                     f"style='font-family:\"{html.escape(family)}\"'>{rows}</table>")
 
     def set_compact(self, compact: bool = True) -> int:
         """Prohlížení prvku podle rámu 2a: nevyplněná pole skrytá, body jako krátký seznam
         neproporcionálním písmem s počtem v popisku. Vrátí počet skrytých voleb."""
         self._compact = compact
-        self._update_visibility()
-        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         for field, widget, _ in self._rows:
-            if field.kind not in ("points", "points3") or not isinstance(widget, QPlainTextEdit):
-                continue
-            lines = [line for line in widget.toPlainText().splitlines() if line.strip()]
-            widget.setFont(mono)
-            widget.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-            metrics = widget.fontMetrics()
-            height = metrics.lineSpacing() * max(len(lines), 1) + 14
-            widget.setFixedHeight(min(height, 110))
-            # Nejdelší řádek určí nejmenší šířku: dlouhé body formulář (WrapLongRows)
-            # položí pod popisek přes celou šířku karty, místo aby se zalomily.
-            longest = max((metrics.horizontalAdvance(line) for line in lines), default=0)
-            widget.setMinimumWidth(min(longest + 24, 260))
-            label = self._layout.labelForField(widget)
-            if isinstance(label, QLabel):
-                label.setText(f"{field.label} · {len(lines)}" if lines else field.label)
+            if (compact and field.kind in ("points", "points3")
+                    and id(widget) not in self._point_views):
+                view = QLabel()  # pole bodů zůstává (testy, úprava), jen se skryje
+                view.setObjectName(f"points_{field.key}")
+                view.setTextFormat(Qt.TextFormat.RichText)
+                view.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                row, _role = self._layout.getWidgetPosition(widget)
+                self._layout.insertRow(row + 1, view)
+                self._point_views[id(widget)] = view
+        self._update_visibility()
         return sum(1 for field, widget, _ in self._rows
-                   if self._belongs(field) and not self._layout.isRowVisible(widget))
+                   if self._belongs(field) and not self._layout.isRowVisible(widget)
+                   and id(widget) not in self._point_views)
 
     # --- stavba polí -----------------------------------------------------------------
 
@@ -952,3 +974,20 @@ class FeatureEditor(QWidget):
                 widget.setEnabled(view)
         for action in self.form.findChildren(QAction):
             action.setEnabled(False)
+        self.restyle()
+
+    def restyle(self) -> None:
+        """Hodnoty jen pro čtení běžnou barvou textu jako v rámu 2a, ne šedě jako
+        neaktivní pole (P7.60). Okno volá znovu po změně vzhledu."""
+        if self.form is None:
+            return
+        app = QApplication.palette()
+        for widget in self.form.findChildren(QComboBox) + self.form.findChildren(QCheckBox):
+            if widget.isEnabled():
+                continue
+            palette = widget.palette()
+            for role in (QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText,
+                         QPalette.ColorRole.WindowText):
+                palette.setColor(QPalette.ColorGroup.Disabled, role,
+                                 app.color(QPalette.ColorGroup.Active, role))
+            widget.setPalette(palette)

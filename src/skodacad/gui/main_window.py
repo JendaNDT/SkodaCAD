@@ -2712,11 +2712,24 @@ class MainWindow(QMainWindow):
     def _status_message(self, text: str) -> None:
         """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
         if not text or text == HELP_HINT:
-            self.status_pill.set_message(SHORT_HINT)
+            # Bez hlášení ukáže vybraný prvek (rám 2a, P7.60), jinak odkaz na F1.
+            self.status_pill.set_message(self._selection_hint() or SHORT_HINT)
             self.status_pill.context.setToolTip(HELP_HINT)
         else:
             self.status_pill.set_message(text)
         self.card_layer.schedule()
+
+    def _selection_hint(self) -> str:
+        """„Vybráno: Upínání · M6 ×4“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
+        document = self.session.document
+        if self._selected_id is None or document is None:
+            return ""
+        feature = next((f for f in document.features if f["id"] == self._selected_id), None)
+        if feature is None:
+            return ""
+        params = self.session.result.parameters if self.session.result is not None else None
+        summary = tree_summary(feature, params)
+        return f"Vybráno: {tree_name(feature)}" + (f" · {summary}" if summary else "")
 
     def _refresh_status_state(self) -> None:
         if not hasattr(self, "status_pill"):  # během stavby okna ještě není
@@ -2847,6 +2860,8 @@ class MainWindow(QMainWindow):
             self.workspace.set_heading("editor", name, kind)
 
     def _load_editor(self) -> None:
+        if hasattr(self, "status_pill"):  # pilulka „Vybráno: …“ podle výběru (P7.60)
+            self._status_message(self.statusBar().currentMessage())
         if self._selected_id is None or self.session.document is None:
             self._editor_heading(None)
             self.feature_editor.show_feature(None)

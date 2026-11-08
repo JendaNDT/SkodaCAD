@@ -160,3 +160,41 @@ def test_tree_refresh_measures_rows_once_not_once_per_changed_row(plate, example
     assert len(calls) <= 4 * rows, (len(calls), rows)
     header = w.tree.header()
     assert header.sectionResizeMode(1) == header.ResizeMode.ResizeToContents
+
+
+def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
+    """P7.60, rám 2a: polohy jako číslovaná tabulka, hodnoty jen pro čtení běžnou barvou,
+    pilulka „Vybráno: …“ podle prvku vybraného ve stromu."""
+    from PySide6.QtGui import QPalette
+
+    from skodacad.gui.main_window import SHORT_HINT
+
+    w = plate
+    w.workspace.show_panel("editor")
+    assert w.status_pill.message == SHORT_HINT  # nic nevybráno
+    item = next(w.tree.topLevelItem(i) for i in range(w.tree.topLevelItemCount())
+                if w.tree.topLevelItem(i).data(0, model_card.NAME_ROLE) == "Upínání")
+    w.tree.setCurrentItem(item)
+    QtWidgets.QApplication.processEvents()
+    assert w.status_pill.message == "Vybráno: Upínání · M6 ×4"
+    form = w.feature_editor.form
+    view = form.point_view("positions")
+    assert view is not None and view.isVisibleTo(form)
+    assert not form.layout().isRowVisible(form.widget("positions"))  # pole skryté, data dál
+    text = view.text()
+    assert "Středy děr</b> · 4" in text and text.count("<tr>") == 4
+    assert ">1</td>" in text and ">4</td>" in text
+    assert "A/2 - e" in text and "B/2 - e" in text
+    assert form.widget("positions").toPlainText().count("\n") == 3  # původní pole beze změny
+    kind = form.widget("kind")
+    palette = kind.palette()
+    assert not kind.isEnabled()
+    assert (palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText)
+            == palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.ButtonText))
+    w.statusBar().showMessage("Uloženo: deska.json", 8000)
+    assert w.status_pill.message == "Uloženo: deska.json"  # hlášení má přednost
+    w.statusBar().clearMessage()
+    assert w.status_pill.message == "Vybráno: Upínání · M6 ×4"
+    w.tree.setCurrentItem(None)
+    QtWidgets.QApplication.processEvents()
+    assert w.status_pill.message == SHORT_HINT

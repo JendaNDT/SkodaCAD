@@ -176,7 +176,9 @@
   ([skript](docs/p7-58-srovnani-ramu.py)); průsvitnost karet ne (R1).
   Vydání C (PR #130, `0a0683e`) a D (PR #131, `0a2f37b`) sloučená a ověřeně vydaná.
   [P7.59](docs/p7-59-strom-a-karta-prvku.md) = krátké řádky stromu („Upínání · M6 ×4“)
-  a zkrácená karta prvku při prohlížení (rámy 2a/2b).
+  a zkrácená karta prvku při prohlížení (rámy 2a/2b); PR #132, `c85a561`, ověřeně vydané.
+  [P7.60](docs/p7-60-karta-prvku-a-pilulka.md) = číslovaná tabulka poloh, hodnoty jen pro
+  čtení běžnou barvou a pilulka „Vybráno: Upínání · M6 ×4“ (rám 2a).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -818,6 +820,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   hodnoty a Název; `is_shown`/`widget` dál znamenají „patří k volbě“ (`_belongs`), ne
   viditelnost – testy kontrolují i skrytá nevyplněná pole. Body: neproporcionální písmo,
   nejmenší šířka podle nejdelšího řádku, počet v popisku.
+- P7.60: v `set_compact` dostane pole bodů sourozence `QLabel` (`FieldsForm.point_view`,
+  řádek vložený pod pole) s číslovanou tabulkou z `_data`; skryté pole bodů zůstává
+  (testy, zápis). `set_compact(False)` vrátí pole a tabulku skryje – testy, které píší do
+  polí prohlížecí karty, to musí udělat (skrytý widget nedostane fokus ani Tab).
+  Neaktivní nabídky a zaškrtávátka mají v `FeatureEditor.restyle` barvu Disabled =
+  Active (volá i `Workspace.refresh_palette`). Pilulka: `MainWindow._selection_hint`,
+  obnovuje ji `_load_editor` (i po programovém výběru), hlášení `statusBar` má přednost.
 ## Známé pasti (výběr kliknutím)
 
 - Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
@@ -1912,7 +1921,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) ověřeně vydané, P7.59 rozpracované | P7.59; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) a P7.59 (PR #132) ověřeně vydané, P7.60 rozpracované | P7.60; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
