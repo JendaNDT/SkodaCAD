@@ -1298,6 +1298,7 @@ def _self_test_main_bar(window, lines: list[str]) -> bool:
 def _self_test_model_card(window, lines: list[str]) -> bool:
     """P7.51: levá karta Prvky | Parametry | Díl – skutečné kliky a zkratky v balíčku."""
     from PySide6.QtCore import Qt
+    from PySide6.QtGui import QPalette
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QStyleOptionViewItem
 
@@ -1305,6 +1306,7 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
     from skodacad.gui.model_card import ROW_HEIGHT
 
     tabs, pages = window.model_tabs.tabs, window.model_tabs
+    pill = window.status_pill
     try:
         window.session.dirty = False
         assert window.open_model(examples_dir() / "deska.json", template=True)
@@ -1355,9 +1357,15 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         assert window._selected_id == "upinani", window._selected_id
         editor = window.feature_editor
         form = editor.form
-        label = form.layout().labelForField(form.widget("positions")).text()
-        assert label.endswith("· 4") and editor.hidden_hint.isVisible(), label
+        view = form.point_view("positions")  # číslovaná tabulka poloh (P7.60)
+        label = view.text() if view is not None else ""
+        assert "Středy děr</b> · 4" in label and view.isVisible(), label
+        assert editor.hidden_hint.isVisible() and pill.message.startswith("Vybráno: Upínání")
         assert not form.layout().isRowVisible(form.widget("name"))
+        kind = form.widget("kind")  # hodnota jen pro čtení běžnou barvou, ne šedě
+        assert not kind.isEnabled() and kind.palette().color(
+            QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText) == kind.palette().color(
+            QPalette.ColorGroup.Active, QPalette.ColorRole.ButtonText)
         window.card_layer.relayout()
         QApplication.processEvents()
         width = _card_fits(window.editor_dock)
@@ -1365,7 +1373,8 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
                      f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“; "
                      f"řádek „{drawn[0]} · {drawn[1]}“, klik → karta jen s vyplněnými "
-                     f"hodnotami ({editor.hidden_hint.text()[:20]}…, {width} px)")
+                     f"hodnotami a tabulkou poloh ({editor.hidden_hint.text()[:20]}…, "
+                     f"{width} px), pilulka „{pill.message}“")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")

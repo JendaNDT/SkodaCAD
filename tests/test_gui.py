@@ -1099,6 +1099,9 @@ def test_tab_commits_four_hole_positions_once(empty_window):
     build_box(w)
     w.add_feature("hole")
     w.show()
+    # Prohlížecí karta ukazuje polohy jako tabulku (P7.60); zápis Tabem patří plnému
+    # formuláři (Upravit prvek), proto se tu zkrácené prohlížení vypne.
+    w.feature_editor.form.set_compact(False)
     QtWidgets.QApplication.processEvents()
     points = form_field(w, "positions")
     points.setFocus()
