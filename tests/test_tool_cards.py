@@ -141,7 +141,12 @@ def test_section_card_toggle_area_and_note(plate):
     assert w.section_buttons["flip"].isEnabled() and w.section_buttons["export"].isEnabled()
     assert w.section_area.text() == f"{number(section.area)} mm²".replace(".", ",")
     assert w.section_range_label.text() == "-40,00 až 40,00 mm"  # deska B = 80
-    assert w.section_position_label.text() == "Poloha Y"
+    assert w.section_position_label.text() == "Poloha"  # rám 3c (P7.70)
+    assert w.section_field.toolTip() == "Poloha Y [mm]"
+    assert w.section_combo.currentText() == "Kolmo na Y"
+    assert w.section_info.text() == ("Řez je jen pohled. Model se nemění a do souboru "
+                                     "se neukládá.")
+    assert "cihlově" in w.section_info.toolTip()
     assert w.section_info.property("cardNote") is True and "jen pohled" in \
         w.section_info.text()
     assert w.status_pill.focus == ("section", "Řez · Y = 0 mm")

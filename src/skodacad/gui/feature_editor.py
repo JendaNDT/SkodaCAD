@@ -46,6 +46,7 @@ from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.guide_drag import DEFAULT_STEP, DIRECTION_CHOICES, MAX_STEP
 from skodacad.gui.guide_style import COLORS as GUIDE_COLORS
 from skodacad.gui.loft_wall_panel import LoftWallPanel
+from skodacad.gui.workspace import Section
 from skodacad.guided_loft import CORNERS, LABELS, default_guides
 from skodacad.schema import (
     FACE_CHOICES,
@@ -295,6 +296,8 @@ class FieldsForm(QWidget):
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         self._compact = False  # prohlížení: jen vyplněné hodnoty (P7.59, rám 2a)
         self._point_views: dict[int, QLabel] = {}  # číslovaná tabulka bodů (P7.60)
+        self._point_sections: dict[int, Section] = {}  # sekce „Středy děr  4“ (P7.69)
+        self.extra_section: Section | None = None  # sbalené nevyplněné volby (P7.69)
         self._layout = layout = QFormLayout(self)
         # P7.52: mřížka popisek (vpravo zarovnaný) / pole jako v návrhu 1a; dlouhé řádky
         # (vodítka, seznamy, obrysy) se zalomí pod popisek, aby měly celou šířku karty.
@@ -344,27 +347,50 @@ class FieldsForm(QWidget):
         value = self._data.get(field.key)
         return value not in (None, "", [], False)
 
+    def _extra(self, field: Field) -> bool:
+        """Nevyplněná volba zkráceného prohlížení – patří do sbalené sekce „Další volby“."""
+        return (self._compact and self._belongs(field) and field.key != "name"
+                and not self._has_value(field))
+
     def _update_visibility(self) -> None:
+        expanded = self.extra_section is not None and self.extra_section.expanded
         for field, widget, _ in self._rows:
-            shown = self._belongs(field) and (not self._compact or self._has_value(field))
+            shown = self._belongs(field) and (
+                not self._compact or self._has_value(field) or (expanded and self._extra(field)))
             view = self._point_views.get(id(widget))
             if view is not None:  # zkrácené prohlížení: místo pole bodů jejich tabulka
                 self._refresh_point_view(field, view)
+                section = self._point_sections[id(widget)]
                 table = shown and self._compact
-                if table != self._layout.isRowVisible(view):
-                    self._layout.setRowVisible(view, table)
+                if table != self._layout.isRowVisible(section):
+                    self._layout.setRowVisible(section, table)
                 shown = shown and not self._compact
             if shown != self._layout.isRowVisible(widget):
                 self._layout.setRowVisible(widget, shown)
+        if self.extra_section is not None:
+            extra = [field for field, _, _ in self._rows if self._extra(field)]
+            self._layout.setRowVisible(self.extra_section, bool(extra))
+            self.extra_section.set_count(str(len(extra)) if extra else "")
+            self.extra_section.setToolTip(
+                "Nevyplněné volby – platí výchozí hodnoty; změnit je jde přes Upravit prvek "
+                "(Ctrl+E): " + ", ".join(f.label.split(" [")[0] for f in extra))
+
+    def sections(self) -> list[Section]:
+        """Sbalitelné sekce zkráceného prohlížení (zůstávají ovladatelné i jen pro čtení)."""
+        return [*self._point_sections.values(),
+                *([self.extra_section] if self.extra_section is not None else [])]
+
+    def point_section(self, key: str) -> Section | None:
+        """Sekce s tabulkou bodů zkráceného prohlížení (P7.69), ``None`` mimo něj."""
+        return self._point_sections.get(id(self.widget(key)))
 
     def point_view(self, key: str) -> QLabel | None:
         """Tabulka bodů zkráceného prohlížení (P7.60), ``None`` mimo něj."""
         return self._point_views.get(id(self.widget(key)))
 
     def _refresh_point_view(self, field: Field, view: QLabel) -> None:
-        """„Středy děr · 4“ a pod tím číslovaná tabulka souřadnic jako v rámu 2a."""
+        """Sekce „Středy děr  4“ a v ní číslovaná tabulka souřadnic jako v rámu 2a."""
         points = [p for p in (self._data.get(field.key) or []) if isinstance(p, list | tuple)]
-        title = field.label.split(" [")[0]
         muted = view.palette().color(QPalette.ColorRole.PlaceholderText).name()
         rows = "".join(
             f"<tr><td style='color:{muted}; padding-right:10px'>{number}</td>"
@@ -372,8 +398,10 @@ class FieldsForm(QWidget):
                       for value in point) + "</tr>"
             for number, point in enumerate(points, start=1))
         family = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
-        view.setText(f"<b>{html.escape(title)}</b> · {len(points)}"
-                     f"<table cellspacing='0' cellpadding='1' "
+        for widget_id, item in self._point_views.items():
+            if item is view:
+                self._point_sections[widget_id].set_count(str(len(points)))
+        view.setText(f"<table cellspacing='0' cellpadding='1' "
                      f"style='font-family:\"{html.escape(family)}\"'>{rows}</table>")
 
     def set_compact(self, compact: bool = True) -> int:
@@ -387,13 +415,21 @@ class FieldsForm(QWidget):
                 view.setObjectName(f"points_{field.key}")
                 view.setTextFormat(Qt.TextFormat.RichText)
                 view.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                section = Section(field.label.split(" [")[0], view, expanded=True)
+                section.setObjectName(f"section_{field.key}")
                 row, _role = self._layout.getWidgetPosition(widget)
-                self._layout.insertRow(row + 1, view)
+                self._layout.insertRow(row + 1, section)
                 self._point_views[id(widget)] = view
+                self._point_sections[id(widget)] = section
+        if compact and self.extra_section is None:
+            # P7.69: nevyplněné volby jako sbalená sekce na konci (rám 2a „Vlastní průměr“)
+            # místo věty o jejich počtu; rozbalená je ukáže jen pro čtení.
+            self.extra_section = Section("Další volby", QWidget())
+            self.extra_section.setObjectName("section_extra")
+            self._layout.addRow(self.extra_section)
+            self.extra_section.toggled.connect(lambda _expanded: self._update_visibility())
         self._update_visibility()
-        return sum(1 for field, widget, _ in self._rows
-                   if self._belongs(field) and not self._layout.isRowVisible(widget)
-                   and id(widget) not in self._point_views)
+        return sum(1 for field, _, _ in self._rows if self._extra(field))
 
     # --- stavba polí -----------------------------------------------------------------
 
@@ -914,12 +950,6 @@ class FeatureEditor(QWidget):
         self.help.setWordWrap(True)
         self.help.setProperty("secondaryText", True)
         self._layout.addWidget(self.help)
-        self.hidden_hint = QLabel()  # zkrácené prohlížení: kolik voleb je nevyplněných
-        self.hidden_hint.setObjectName("feature_hidden_hint")
-        self.hidden_hint.setWordWrap(True)
-        self.hidden_hint.setProperty("cardHint", True)
-        self.hidden_hint.hide()
-        self._layout.addWidget(self.hidden_hint)
         self.wall_panel = LoftWallPanel()
         self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
@@ -938,7 +968,6 @@ class FeatureEditor(QWidget):
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None
-        self.hidden_hint.hide()
         self.title.setToolTip("")
         self.wall_panel.setVisible(feature is not None and feature.get("type") == "loft")
         if feature is None:
@@ -970,14 +999,11 @@ class FeatureEditor(QWidget):
         zkrácený (P7.59): jen vyplněné hodnoty, nápověda prvku v bublině titulku."""
         if self.form is None:
             return
-        hidden = self.form.set_compact()
+        self.form.set_compact()
         if self.help.text():
             self.title.setToolTip(self.help.text())
             self.help.hide()
-        self.hidden_hint.setText(
-            f"Nevyplněné volby: {hidden}. Ukáže je Upravit prvek (Ctrl+E)." if hidden else "")
-        self.hidden_hint.setVisible(bool(hidden))
-        views = []
+        views = [section.button for section in self.form.sections()]
         for guides in self.form.findChildren(GuidesEditor):
             views.extend([guides.corner_picker, guides.drag_step, guides.drag_direction,
                           *guides.buttons.buttons(), *guides.handle_buttons.buttons()])

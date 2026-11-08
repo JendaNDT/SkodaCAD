@@ -42,6 +42,7 @@ from skodacad.gui import ui_theme
 from skodacad.gui.cad_icons import icon as cad_icon
 from skodacad.gui.ribbon import RibbonButton
 from skodacad.gui.sketcher import COLOR_REFERENCE, TOOL_HELP, SketcherDialog, _plural
+from skodacad.gui.status_pill import ViewSwitcher
 from skodacad.gui.tool_cards import FlowLayout
 from skodacad.gui.workspace import Section
 from skodacad.profile_edit import EditError
@@ -364,6 +365,11 @@ class SketchMode(QObject):
             self._margins()
             self.canvas.fit()
 
+    def _center_origin(self) -> None:
+        if isValid(self.canvas):
+            self._margins()
+            self.canvas.center_origin()
+
     def _margins(self) -> None:
         """Karty zakrývají okraje plochy – „Celý obrys“ se vejde mezi ně."""
         free = self.window.card_layer.free_rect()
@@ -405,6 +411,21 @@ class SketchMode(QObject):
         window.ribbon.select_page("sketch")
         window.palette_card.hide()
         window.view_card.hide()
+        # P7.71: přepínač pohledů skicáře vpravo dole jako v rámu 2d
+        views = getattr(window, "sketch_view_card", None)
+        if views is None:
+            views = window.sketch_view_card = window.card_layer.card(
+                "Pohledy skici", "sketch_view_card", "corner")
+        self.origin_action = QAction("Kolmo na skicu – počátek doprostřed", dialog)
+        self.origin_action.triggered.connect(self._center_origin)
+        self.views = ViewSwitcher({}, None, entries=[
+            ("normal", "Kolmo na skicu", self.origin_action),
+            ("fit", "Celá skica", dialog.fit_action)])
+        old = views.widget()
+        views.setWidget(self.views)
+        if old is not None:
+            old.deleteLater()
+        views.show()
         card = getattr(window, "sketch_palette_card", None)
         if card is None:
             card = window.sketch_palette_card = window.card_layer.card(
@@ -458,6 +479,7 @@ class SketchMode(QObject):
         self.panel.hide()
         self.panel.deleteLater()
         window.sketch_palette_card.hide()
+        window.sketch_view_card.hide()
         window.palette_card.setVisible(self._restore["palette"])
         window.view_card.setVisible(self._restore["view"])
         window.ribbon.select_page(self._restore["page"])

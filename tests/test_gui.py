@@ -470,8 +470,8 @@ def test_panel_volume_coverage_options_estimate_and_summary(ndt_window, slot_err
     panel.cross_section_action.trigger()
     assert session.section_settings.target is not None and session.section_range() == (0, 20)
     assert w.section_combo.currentData() == "target"
-    assert "kolmo na osu cíle, 10.00 mm od jeho začátku" in w.section_info.text()
-    assert "(šedě pod mapou pokrytí)" in w.section_info.text()
+    assert "kolmo na osu cíle, 10.00 mm od jeho začátku" in w.section_info.toolTip()
+    assert "(šedě pod mapou pokrytí)" in w.section_info.toolTip()
     assert w.viewer.coverage_fill  # plochy řezu dílu šedě, průřez cíle barevně
     assert session.ndt_coverage is result and result.percent("covered") == percent
     assert "Průřez svarem</b>" not in panel.coverage_label.text()

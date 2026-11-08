@@ -176,16 +176,32 @@ def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
                 if w.tree.topLevelItem(i).data(0, model_card.NAME_ROLE) == "Upínání")
     w.tree.setCurrentItem(item)
     QtWidgets.QApplication.processEvents()
-    assert w.status_pill.message == "Vybráno: Upínání · M6 ×4"
+    assert w.status_pill.message == "Vybráno: Upínání · 4 díry M6"
     form = w.feature_editor.form
     view = form.point_view("positions")
     assert view is not None and view.isVisibleTo(form)
     assert not form.layout().isRowVisible(form.widget("positions"))  # pole skryté, data dál
     text = view.text()
-    assert "Středy děr</b> · 4" in text and text.count("<tr>") == 4
+    section = form.point_section("positions")  # P7.69: sekce s počtem vpravo
+    assert section.button.text() == "Středy děr" and section.count_label.text() == "4"
+    assert section.expanded and text.count("<tr>") == 4
     assert ">1</td>" in text and ">4</td>" in text
     assert "A/2 - e" in text and "B/2 - e" in text
     assert form.widget("positions").toPlainText().count("\n") == 3  # původní pole beze změny
+    # P7.69: nevyplněné volby sbalené v sekci „Další volby“ (rám 2a „Vlastní průměr“).
+    extra = form.extra_section
+    assert extra.isVisibleTo(form) and not extra.expanded and extra.button.isEnabled()
+    assert int(extra.count_label.text()) >= 1 and "Vlastní průměr" in extra.toolTip()
+    assert not form.layout().isRowVisible(form.widget("diameter"))
+    assert not form.layout().isRowVisible(form.widget("name"))
+    extra.button.click()
+    assert form.layout().isRowVisible(form.widget("diameter"))  # jen pro čtení
+    assert form.widget("diameter").isReadOnly()
+    assert not form.layout().isRowVisible(form.widget("name"))  # název je v titulku
+    section.button.click()  # sbalí tabulku poloh
+    assert not view.isVisibleTo(form) and section.isVisibleTo(form)
+    extra.button.click()
+    assert not form.layout().isRowVisible(form.widget("diameter"))
     kind = form.widget("kind")
     palette = kind.palette()
     assert not kind.isEnabled()
@@ -194,7 +210,7 @@ def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
     w.statusBar().showMessage("Uloženo: deska.json", 8000)
     assert w.status_pill.message == "Uloženo: deska.json"  # hlášení má přednost
     w.statusBar().clearMessage()
-    assert w.status_pill.message == "Vybráno: Upínání · M6 ×4"
+    assert w.status_pill.message == "Vybráno: Upínání · 4 díry M6"
     w.tree.setCurrentItem(None)
     QtWidgets.QApplication.processEvents()
     assert w.status_pill.message == SHORT_HINT

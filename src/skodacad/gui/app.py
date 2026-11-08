@@ -1301,7 +1301,7 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QPalette
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QStyleOptionViewItem
+    from PySide6.QtWidgets import QScrollArea, QStyleOptionViewItem
 
     from skodacad.gui import model_card
     from skodacad.gui.model_card import ROW_HEIGHT
@@ -1359,9 +1359,35 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         editor = window.feature_editor
         form = editor.form
         view = form.point_view("positions")  # číslovaná tabulka poloh (P7.60)
+        section = form.point_section("positions")  # sekce „Středy děr  4“ (P7.69)
         label = view.text() if view is not None else ""
-        assert "Středy děr</b> · 4" in label and view.isVisible(), label
-        assert editor.hidden_hint.isVisible() and pill.message.startswith("Vybráno: Upínání")
+        assert label.count("<tr>") == 4 and view.isVisible(), label
+        assert section.count_label.text() == "4" and section.expanded, \
+            f"sekce poloh: počet „{section.count_label.text()}“, rozbalená {section.expanded}"
+        extra = form.extra_section  # nevyplněné volby sbalené na konci karty
+        assert extra.isVisible() and not extra.expanded and int(extra.count_label.text()) > 0, \
+            f"Další volby: vidět {extra.isVisible()}, rozbalené {extra.expanded}"
+        hidden = int(extra.count_label.text())
+
+        def click_extra() -> None:
+            # Se širším písmem (macOS) se karta posouvá – skutečný klik jen na viditelné
+            # tlačítko, jinak by trefil, co je v okně na jeho místě.
+            scroll = extra.parentWidget()
+            while scroll is not None and not isinstance(scroll, QScrollArea):
+                scroll = scroll.parentWidget()
+            if scroll is not None:
+                scroll.ensureWidgetVisible(extra.button)
+                QApplication.processEvents()
+            QTest.mouseClick(extra.button, Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+
+        click_extra()  # skutečný klik rozbalí
+        assert extra.expanded and form.layout().isRowVisible(form.widget("diameter")), \
+            f"klik nerozbalil Další volby (rozbalené {extra.expanded})"
+        click_extra()
+        assert not form.layout().isRowVisible(form.widget("diameter")), \
+            "druhý klik Další volby nesbalil"
+        assert pill.message == "Vybráno: Upínání · 4 díry M6", pill.message
         assert not form.layout().isRowVisible(form.widget("name"))
         kind = form.widget("kind")  # hodnota jen pro čtení běžnou barvou, ne šedě
         assert not kind.isEnabled() and kind.palette().color(
@@ -1374,8 +1400,8 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
                      f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“; "
                      f"řádek „{drawn[0]} · {drawn[1]}“, klik → karta jen s vyplněnými "
-                     f"hodnotami a tabulkou poloh ({editor.hidden_hint.text()[:20]}…, "
-                     f"{width} px), pilulka „{pill.message}“")
+                     f"hodnotami, sekcí „Středy děr  4“ a sbalenými dalšími volbami "
+                     f"({hidden}; klik rozbalí a sbalí, {width} px), pilulka „{pill.message}“")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")
@@ -1824,6 +1850,16 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
             seen["pill"] = window.status_pill.state.text()
             seen["width"] = _card_fits(window.editor_dock)
             seen["palette"] = window.sketch_palette_card.isVisible()
+            # P7.71: pohledy skicáře vpravo dole, skutečný klik na „Celá skica“
+            views = window.sketch_view_card
+            mode._fit()
+            before = dialog.canvas.scale
+            dialog.canvas.scale = before / 4
+            QTest.mouseClick(mode.views.buttons["fit"], Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+            seen["views"] = (views.isVisible() and window.view_card.isHidden()
+                             and abs(dialog.canvas.scale - before) < 1e-6 * before
+                             and not views.geometry().intersects(window.editor_dock.geometry()))
             QTest.mouseClick(mode.palette.done, Qt.MouseButton.LeftButton)
         except Exception as exc:  # noqa: BLE001
             seen["error"] = exc
@@ -1843,6 +1879,7 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
         assert seen["over3d"], "plátno skicáře není místo 3D pohledu"
         assert seen["segments"] == 4 and seen["chain"] is None, seen
         assert seen["palette"], "paleta Skica není vidět"
+        assert seen["views"], "pohledy skicáře (Kolmo na skicu | Celá skica) nefungují"
         preview = window.feature_preview
         assert preview is not None, "Hotovo nezaložilo náhled skici"
         feature = preview.preview.session.feature(preview.preview.feature_id)
@@ -1852,7 +1889,8 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
         after = (window.session.document.to_dict(), len(window.session._undo))
         assert after == before, "zrušený náhled změnil model nebo historii"
         assert window.palette_card.isVisible() and not window.sketch_palette_card.isVisible()
-        lines.append(f"✓ Skicář v okně: plátno místo 3D, paleta Skica, skutečné kliky "
+        lines.append(f"✓ Skicář v okně: plátno místo 3D, paleta Skica, pohledy „Kolmo na "
+                     f"skicu | Celá skica“ (klik přizpůsobí), skutečné kliky "
                      f"(obdélník 4 čáry), Esc ukončí čáru, „{seen['pill']}“ v pilulce, "
                      f"karta Výběr {seen['width']} px se vejde, Hotovo → náhled skici, "
                      f"Zrušit bez změny modelu")

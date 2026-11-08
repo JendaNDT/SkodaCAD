@@ -145,7 +145,9 @@ class StatusPill(QWidget):
 class ViewSwitcher(QWidget):
     """Izo | Zepředu | Shora | Celý díl – sdílené akce pohledů, aktivní zvýrazněný."""
 
-    def __init__(self, view_actions: dict, fit_action, parent=None) -> None:
+    def __init__(self, view_actions: dict, fit_action, parent=None, entries=None) -> None:
+        """``entries`` = vlastní tlačítka (klíč, text, akce) – skicář: „Kolmo na skicu |
+        Celá skica“ (P7.71); klíč „fit“ pohled jen přizpůsobí a zvýrazněný nezůstane."""
         super().__init__(parent)
         self.setObjectName("view_switcher")
         layout = QHBoxLayout(self)
@@ -153,8 +155,10 @@ class ViewSwitcher(QWidget):
         layout.setSpacing(2)
         self.buttons: dict[str, QToolButton] = {}
         self.actions = {}
-        for key, text in LABELS.items():
-            action = fit_action if key == "fit" else view_actions[key]
+        if entries is None:
+            entries = [(key, text, fit_action if key == "fit" else view_actions[key])
+                       for key, text in LABELS.items()]
+        for key, text, action in entries:
             # Bez setDefaultAction: tlačítko by si při každé změně akce vzalo její dlouhý
             # název („Izometrie“). Klik spustí tutéž akci, dostupnost se přebírá.
             button = QToolButton()
@@ -173,8 +177,8 @@ class ViewSwitcher(QWidget):
             self.actions[key] = action
             if key != "fit":
                 action.triggered.connect(lambda _checked=False, k=key: self.set_active(k))
-        self.active = "iso"
-        self.set_active("iso")
+        self.active = entries[0][0]
+        self.set_active(self.active)
 
     def set_active(self, key: str) -> None:
         """Zvýrazní naposledy zvolený standardní pohled (Celý díl pohled nemění)."""
