@@ -98,11 +98,13 @@ from skodacad.gui.sketch_mode import SketchMode
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.status_pill import StatusPill, ViewSwitcher
 from skodacad.gui.tool_cards import (
+    RELATIONS,
     SAVED_ROWS,
     SECTION_COLOR,
     SECTION_GREY,
     STATE_ROLE,
     FlowLayout,
+    decimal_comma,
     fit_rows,
     focus_text,
     reflow_button_rows,
@@ -124,6 +126,7 @@ from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.section import AXIS_NAMES
 from skodacad.section import describe as describe_section
+from skodacad.selectors import FACE_DIRECTIONS, FACE_NAMES_CZ
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 from skodacad.thickness_map import BELOW_LIMIT, NO_MATERIAL, SCALE, ThicknessMap
 
@@ -136,6 +139,7 @@ HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+l
              "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
              "Pravý klik: co s výběrem  ·  Dvojklik: celý díl  ·  F1: všechny zkratky")
 SHORT_HINT = "F1: zkratky a ovládání myší"  # v pilulce místo dlouhé nápovědy (R5, P7.53)
+SECTION_HINT = "Na plochy řezu jde klikat a měřit"  # pilulka u zapnutého řezu (rám 3c)
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
@@ -201,6 +205,7 @@ class MainWindow(QMainWindow):
         self.feature_preview = None
         self._sketch_mode = None  # skicář jako režim okna (P7.57)
         self._sketch_focus = None  # stav obrysu pro pilulku během skicáře
+        self._selection_message = ""  # poslední popis výběru ve 3D (pilulka mu dá nižší váhu)
         self._feature_preview_runner = None
         self._preview_action_states = []
         self.session = ModelSession(runner)
@@ -2711,13 +2716,44 @@ class MainWindow(QMainWindow):
 
     def _status_message(self, text: str) -> None:
         """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
-        if not text or text == HELP_HINT:
+        ndt = self._ndt_hint() if text and text == self._selection_message else ""
+        if ndt:  # rám 2c: u přiložené sondy paprsek a plocha místo popisu kliknuté plochy
+            self.status_pill.set_message(ndt)
+            self.status_pill.context.setToolTip(text)
+        elif not text or text == HELP_HINT:
             # Bez hlášení ukáže vybraný prvek (rám 2a, P7.60), jinak odkaz na F1.
-            self.status_pill.set_message(self._selection_hint() or SHORT_HINT)
+            self.status_pill.set_message(self._idle_hint())
             self.status_pill.context.setToolTip(HELP_HINT)
         else:
             self.status_pill.set_message(text)
         self.card_layer.schedule()
+
+    def _idle_hint(self) -> str:
+        """Pilulka bez hlášení: u řezu co s ním jde (rám 3c, P7.61), jinak vybraný prvek
+        (rám 2a, P7.60), jinak odkaz na F1."""
+        if self.status_pill.focus is not None and self.status_pill.focus[0] == "section":
+            return SECTION_HINT
+        return self._ndt_hint() or self._selection_hint() or SHORT_HINT
+
+    def _ndt_hint(self) -> str:
+        """„Paprsek s 1 odrazem · horní plocha“ u přiložené UT sondy (rám 2c, P7.63)."""
+        focus = self.status_pill.focus
+        if focus is None or focus[1] not in ("● Přiloženo", "● Sonda nedosedá"):
+            return ""
+        placement = self.session.ndt_placement
+        if placement is None:
+            return ""
+        if not placement.ok:
+            return placement.messages[0] if placement.messages else placement.label
+        bounces = placement.probe.bounces
+        beam = ("Paprsek bez odrazu" if bounces == 0 else "Paprsek s 1 odrazem" if bounces == 1
+                else f"Paprsek s {bounces} odrazy")
+        normal = placement.z_dir
+        side = next((name for name, (direction, _) in FACE_DIRECTIONS.items()
+                     if sum(a * b for a, b in zip(normal, direction, strict=True)) > 0.999),
+                    None)
+        face = f"{FACE_NAMES_CZ[side]} plocha" if side else "šikmá nebo zakřivená plocha"
+        return f"{beam} · {face}"
 
     def _selection_hint(self) -> str:
         """„Vybráno: Upínání · M6 ×4“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
@@ -2780,6 +2816,9 @@ class MainWindow(QMainWindow):
         if self.status_pill.focus != (focus if focus[0] else None):
             self.status_pill.set_focus(*focus)
             self.card_layer.schedule()
+        message = self.statusBar().currentMessage()
+        if not message or message in (HELP_HINT, self._selection_message):
+            self._status_message(message)  # klidová věta závisí na zaměření (sonda se posune)
 
     def _refresh_actions(self) -> None:
         self._refresh_status_state()
@@ -3019,7 +3058,8 @@ class MainWindow(QMainWindow):
         if info.faces == 1:
             hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
-        self.statusBar().showMessage(f"{text}  ·  " + ", ".join(hints))
+        self._selection_message = f"{text}  ·  " + ", ".join(hints)
+        self.statusBar().showMessage(self._selection_message)
 
     # --- měření ----------------------------------------------------------------------
 
@@ -3030,11 +3070,17 @@ class MainWindow(QMainWindow):
         self.measure_list.clear()
         for value in self._measured:
             self.measure_list.addItem(value.text)
+        relation = next((RELATIONS[v.label] for v in self._measured
+                         if v.kind == "parallel" and v.label in RELATIONS), None)
+        if relation:  # rám 3b: „Osy · rovnoběžné“ – jen informace, nejde vybrat ani uložit
+            item = QListWidgetItem(relation)
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.measure_list.addItem(item)
         self.measure_list.blockSignals(False)
         fit_rows(self.measure_list)
         info = self.session.selection_info(self._picked)
         if self._measured:  # rám 3b: co je vybráno; jak číst řádky, řekne bublina
-            self.measure_hint.setText(info.text or "Vybráno")
+            self.measure_hint.setText(self._selection_title(info.text or "Vybráno"))
             self.measure_hint.setToolTip("Vyber řádek – jeho čára se ukáže ve 3D. Uložené "
                                          "měření se přepočítá při každé změně modelu.")
         elif info.faces + info.edges > 2:
@@ -3049,6 +3095,18 @@ class MainWindow(QMainWindow):
         else:
             self._show_measure_line(None)
         self._refresh_measure_actions()
+
+    def _selection_title(self, text: str) -> str:
+        """„Vybráno: 2 díry · Závity M8 ×2“ – ke kterému prvku vybrané plochy patří (rám 3b)."""
+        owner = self.session.selection_owner(self._picked)
+        document = self.session.document
+        feature = next((f for f in document.features if f["id"] == owner), None) \
+            if owner and document is not None else None
+        if feature is None:
+            return text
+        params = self.session.result.parameters if self.session.result is not None else None
+        summary = tree_summary(feature, params)
+        return f"{text} · {tree_name(feature)}" + (f" {summary}" if summary else "")
 
     def _measure_row_changed(self) -> None:
         row = self.measure_list.currentRow()
@@ -3074,7 +3132,7 @@ class MainWindow(QMainWindow):
         self._refresh_pill_focus()
         lines = []
         if value is not None and value.points is not None:
-            lines = [(*value.points, format_value(value.value, value.unit))]
+            lines = [(*value.points, decimal_comma(format_value(value.value, value.unit)))]
         if self._selected_id is not None:
             lines += self.session.feature_direction(self._selected_id)
             lines += self.session.loft_wall_measurement(
@@ -3699,7 +3757,7 @@ class MainWindow(QMainWindow):
                 if settings.axis is None else f"Poloha {settings.axis}")
         self.section_position_label.setText(word)
         self.section_field.setToolTip(f"{word} [mm]")
-        self.section_range_label.setText(f"{number(low)} až {number(high)} mm")
+        self.section_range_label.setText(decimal_comma(f"{number(low)} až {number(high)} mm"))
         if not self.section_field.hasFocus():
             self.section_field.setText(format_parameter_value(round(settings.position, 2)))
         if not self.section_slider.isSliderDown() and high > low:
@@ -3720,7 +3778,7 @@ class MainWindow(QMainWindow):
         grey = isinstance(session.ndt_coverage, VolumeCoverageMap)
         color = "šedě pod mapou pokrytí" if grey else "cihlově"
         set_swatch(self.section_swatch, SECTION_GREY if grey else SECTION_COLOR)
-        self.section_area.setText(f"{number(section.area)} mm²")
+        self.section_area.setText(decimal_comma(f"{number(section.area)} mm²"))
         self.section_area_row.setToolTip(f"Plochy řezu jsou ve 3D {color}.")
         self.section_area_row.show()
         self.section_info.setText(f"Řez {where} ({color}). Řez je jen pohled – model se "

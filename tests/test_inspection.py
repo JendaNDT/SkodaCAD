@@ -1,6 +1,6 @@
 from build123d import Box, Cylinder, GeomType
 
-from skodacad.inspection import describe_shape, number
+from skodacad.inspection import describe_shape, is_hole, number
 
 
 def test_number_format():
@@ -28,3 +28,14 @@ def test_describe_cylinder():
     assert "R 9.00 (Ø 18.00)" in describe_shape(side.wrapped)
     circle = cyl.edges().filter_by(GeomType.CIRCLE)[0]
     assert describe_shape(circle.wrapped).startswith("Hrana – kružnice R 9.00 (Ø 18.00) mm")
+
+
+def test_hole_is_a_cylinder_facing_its_axis():
+    """P7.62: stěna díry (normála ven z materiálu míří k ose) ano, čep ne."""
+    pin = Cylinder(9, 20)
+    side = next(f for f in pin.faces() if f.geom_type == GeomType.CYLINDER)
+    assert not is_hole(side)
+    plate = Box(40, 40, 10) - Cylinder(5, 10)
+    wall = next(f for f in plate.faces() if f.geom_type == GeomType.CYLINDER)
+    assert is_hole(wall)
+    assert not is_hole(plate.faces().sort_by()[-1])  # rovina

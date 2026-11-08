@@ -563,15 +563,30 @@ class FieldsForm(QWidget):
         return holder, read
 
     def _build_picked_edges(self, value: Any):
-        """Výběr kliknutím ve 3D (hrana mezi plochami, nejbližší k bodu …) – jen ukázat."""
-        label = QLabel(f"<b>Vybráno ve 3D:</b> {describe_edges(value)}<br>"
-                       "<span>Další hrany: vyber je ve 3D (Ctrl+klik) → "
-                       "pravé tlačítko → Přidat vybrané hrany. Hrany prvku jsou ve 3D "
-                       "zvýrazněné (v náhledu modře).</span>")
-        label.setWordWrap(True)
-        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        """Výběr kliknutím ve 3D (hrana mezi plochami, nejbližší k bodu …) – jen ukázat.
+
+        P7.61 (rám 3a): popis hran jako hodnota řádku „Hrany“, pod ním krátce, jak výběr
+        změnit (náhled prvku ho skryje – během náhledu se ve 3D nevybírá)."""
+        holder = QWidget()
+        column = QVBoxLayout(holder)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(2)
+        text = describe_edges(value)
+        summary = QLabel(text[:1].upper() + text[1:])
+        summary.setObjectName("edges_summary")
+        summary.setWordWrap(True)
+        summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        hint = QLabel("Změnit: Ctrl+klik na hrany ve 3D → pravé tlačítko")
+        hint.setObjectName("edges_hint")
+        hint.setWordWrap(True)
+        hint.setProperty("cardHint", True)
+        for label in (summary, hint):
+            label.setToolTip("Hrany vybrané ve 3D. Další přidáš tak, že je ve 3D vybereš "
+                             "(Ctrl+klik), klikneš pravým tlačítkem a zvolíš Přidat vybrané "
+                             "hrany. Hrany prvku jsou ve 3D zvýrazněné (v náhledu modře).")
+            column.addWidget(label)
         kept = copy.deepcopy(value)
-        return label, lambda: copy.deepcopy(kept)
+        return holder, lambda: copy.deepcopy(kept)
 
     def _build_profile(self, field: Field, value: Any):
         """Obrys z čar: souhrn (body, čáry, vazby) a tlačítko do skicáře."""

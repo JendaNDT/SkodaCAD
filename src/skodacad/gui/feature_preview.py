@@ -52,6 +52,8 @@ class FeaturePreviewPanel(QWidget):
                                  [(f["id"], short_label(f)) for f in before
                                   if f["type"] in REPEATABLE_FEATURES])
         self.editor.wall_panel.hide()
+        for hint in self.editor.findChildren(QLabel, "edges_hint"):
+            hint.hide()  # během náhledu se ve 3D hrany nevybírají (P7.61)
         if self.editor.help.text():  # popis druhu prvku v bublině nadpisu (místo v kartě)
             self.editor.title.setToolTip(self.editor.help.text())
             self.editor.help.hide()
@@ -84,6 +86,9 @@ class FeaturePreviewPanel(QWidget):
         self.refresh_button.setToolTip("Zobrazit náhled s aktuálními hodnotami")
         self.refresh_button.setAccessibleName("Zobrazit náhled")
         self.refresh_button.clicked.connect(self.refresh)
+        # Náhled se obnovuje sám po každé změně; tlačítko je jen pro nový pokus po chybě
+        # (rám 3a má v patičce jen Zrušit a Potvrdit, P7.61).
+        self.refresh_button.hide()
         # P7.52: patička jako v návrhu 1a – „Esc zahodí“, Zrušit (vedlejší), Potvrdit.
         buttons = QHBoxLayout()
         self.esc_hint = QLabel("Esc zahodí")
@@ -132,6 +137,7 @@ class FeaturePreviewPanel(QWidget):
         self.timer.start()
 
     def invalid(self, message):
+        self.refresh_button.show()
         self._dirty = True
         self.accept_button.setEnabled(False)
         self._message(f"{message}\nZobrazen je původní díl.")
@@ -178,6 +184,9 @@ class FeaturePreviewPanel(QWidget):
         self.accept_button.setEnabled(ready)
         if self._dirty:
             return
+        failed = not session.computing and (
+            bool(session.failure) or (result is not None and not result.ok))
+        self.refresh_button.setVisible(failed)
         if session.computing:
             self._message("Počítám náhled… Zrušit je dostupné i během výpočtu.")
         elif session.failure:
@@ -188,9 +197,12 @@ class FeaturePreviewPanel(QWidget):
             self._show_original()
         elif ready:
             props = session.properties
-            self._message("Náhled je připravený. " +
-                                 (f"Objem {number(props.volume_mm3, 3)} mm³, "
-                                  f"počet těles {props.solids}." if props else "Skica je platná."))
+            # Rám 3a: co svítí, že se dá otáčet a co počká na Potvrdit; objem zůstává.
+            self._message("Náhled je připravený" +
+                          (f": objem {number(props.volume_mm3, 3)} mm³, "
+                           f"počet těles {props.solids}." if props else ", skica je platná.") +
+                          " Hrany prvku svítí ve 3D modře, pohled můžeš dál otáčet. "
+                          "Uložení a export počkají na Potvrdit.")
         if ready and result is not self._last_result:
             first = self._last_result is None
             self._last_result = result

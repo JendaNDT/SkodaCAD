@@ -16,6 +16,7 @@ from skodacad.gui.model_card import PREVIEW_ROLE  # noqa: E402
 from skodacad.gui.tool_cards import (  # noqa: E402
     ROW_HEIGHT,
     STATE_ROLE,
+    decimal_comma,
     focus_text,
     split_value,
 )
@@ -54,7 +55,9 @@ def test_value_text_is_split_into_label_and_value():
     assert split_value("Rozteč os: 40.00 mm") == ("Rozteč os", "40.00 mm")
     assert split_value("Tloušťka desky: 15.00 mm") == ("Tloušťka desky", "15.00 mm")
     assert split_value("⏳ Tloušťka desky") == ("⏳ Tloušťka desky", "")
-    assert focus_text("Rozteč os: 40.00 mm") == "Rozteč os 40.00 mm"
+    assert focus_text("Rozteč os: 40.00 mm") == "Rozteč os 40,00 mm"
+    assert decimal_comma("Plocha: 1 493.91 mm², krok 2.5. Konec.") == \
+        "Plocha: 1 493,91 mm², krok 2,5. Konec."  # tečka za větou zůstane
 
 
 def test_measure_card_rows_buttons_sections_and_pill(plate):
@@ -66,10 +69,13 @@ def test_measure_card_rows_buttons_sections_and_pill(plate):
     w.viewer.click(threads(w))
     rows = [w.measure_list.item(i).text() for i in range(w.measure_list.count())]
     assert rows[0] == "Rozteč os: 40.00 mm" and w.measure_list.currentRow() == 0
+    # rám 3b (P7.62): poslední řádek „Osy · rovnoběžné“ jen pro informaci – nejde vybrat
+    relation = w.measure_list.item(len(rows) - 1)
+    assert rows[-1] == "Osy: rovnoběžné" and relation.flags() == Qt.ItemFlag.NoItemFlags
     # rám 3b: řádky výsledků bez posouvání, výška = počet řádků
     assert w.measure_list.height() == len(rows) * ROW_HEIGHT
     assert w.measure_list.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-    assert w.measure_hint.text().startswith("Vybráno: 2")
+    assert w.measure_hint.text() == "Vybráno: 2 díry · Závity M8 ×2"  # rám 3b (P7.62)
     # tlačítka v jedné řadě: Uložit (primární), Přejmenovat…, Smazat (vedlejší)
     buttons = w.measure_buttons
     assert [b.text() for b in buttons.values()] == ["Uložit", "Přejmenovat…", "Smazat"]
@@ -77,9 +83,10 @@ def test_measure_card_rows_buttons_sections_and_pill(plate):
     assert not buttons["rename"].isEnabled() and not buttons["delete"].isEnabled()
     assert buttons["save"].toolTip() == "Uložit měření do modelu: Rozteč os: 40.00 mm"
     # pilulka: hlavní hodnota vlevo (zeleně), zpráva ji neopakuje
-    assert w.status_pill.focus == ("measure", "Rozteč os 40.00 mm")
-    assert w.status_pill.state.text() == "Rozteč os 40.00 mm"
-    assert "Zelená čára" in w.status_pill.message and "40.00" not in w.status_pill.message
+    assert w.status_pill.focus == ("measure", "Rozteč os 40,00 mm")  # desetinná čárka
+    assert w.status_pill.state.text() == "Rozteč os 40,00 mm"
+    assert "Zelená čára" in w.status_pill.message and "40," not in w.status_pill.message
+    assert w.viewer.measurement[0][2] == "40,00 mm"  # popisek čáry ve 3D
     w.measure_list.setCurrentRow(1)  # nejkratší vzdálenost
     assert w.status_pill.focus[1].startswith("Nejkratší vzdálenost")
     w.workspace.show_panel("editor")  # mimo panel Měření zase stav přepočtu
@@ -95,7 +102,7 @@ def test_measure_card_rows_buttons_sections_and_pill(plate):
     assert saved.item(0).data(STATE_ROLE) == "ok" and not w.saved_empty.isVisibleTo(
         w.measure_dock)
     assert saved.height() == ROW_HEIGHT and buttons["delete"].isEnabled()
-    assert w.status_pill.focus == ("measure", "Rozteč os 40.00 mm")  # uložené je vybrané
+    assert w.status_pill.focus == ("measure", "Rozteč os 40,00 mm")  # uložené je vybrané
     buttons["delete"].click()
     assert saved.count() == 0 and not saved.isVisibleTo(w.measure_dock)
     assert w.status_pill.focus is None
@@ -132,8 +139,8 @@ def test_section_card_toggle_area_and_note(plate):
     section = w.session.section
     assert section is not None and w.section_action.isChecked()
     assert w.section_buttons["flip"].isEnabled() and w.section_buttons["export"].isEnabled()
-    assert w.section_area.text() == f"{number(section.area)} mm²"
-    assert w.section_range_label.text() == "-40.00 až 40.00 mm"  # deska B = 80
+    assert w.section_area.text() == f"{number(section.area)} mm²".replace(".", ",")
+    assert w.section_range_label.text() == "-40,00 až 40,00 mm"  # deska B = 80
     assert w.section_position_label.text() == "Poloha Y"
     assert w.section_info.property("cardNote") is True and "jen pohled" in \
         w.section_info.text()
@@ -207,3 +214,46 @@ def test_edit_preview_marks_existing_row_and_confirm_clears_it(plate):
     assert w.feature_preview is None
     assert not any(item.data(0, PREVIEW_ROLE) for item in preview_rows(w))
     assert w.status_pill.focus is None and w.ribbon.isEnabled()
+
+
+def test_preview_card_short_edges_auto_refresh_and_section_pill(plate):
+    """P7.61, rámy 3a a 3c: hrany jako krátká hodnota, Náhled jen po chybě, věta o řezu."""
+    from skodacad.gui.main_window import SECTION_HINT, SHORT_HINT
+
+    w = plate
+    top = max(w.session.result.part.faces(), key=lambda f: (round(f.center().Z, 6), f.area))
+    w.start_feature_preview("chamfer", shapes=[e.wrapped for e in top.outer_wire().edges()])
+    panel = w.feature_preview
+    edges = panel.editor.form.widget("edges")
+    summary = edges.findChild(QtWidgets.QLabel, "edges_summary")
+    hint = edges.findChild(QtWidgets.QLabel, "edges_hint")
+    assert summary.text()[:1].isupper() and "Vybráno ve 3D" not in summary.text()
+    assert "Přidat vybrané hrany" in summary.toolTip()
+    assert not hint.isVisibleTo(panel)  # během náhledu se ve 3D hrany nevybírají
+    assert panel.accept_button.isEnabled() and not panel.refresh_button.isVisibleTo(panel)
+    assert panel.message.text().startswith("Náhled je připravený: objem")
+    assert "svítí ve 3D modře" in panel.message.text()
+    distance = panel.editor.form.widget("distance")
+    distance.setText("1+")  # chybná hodnota → původní díl a tlačítko pro nový pokus
+    distance.editingFinished.emit()
+    assert panel.refresh_button.isVisibleTo(panel) and not panel.accept_button.isEnabled()
+    distance.setText("1")
+    panel.refresh_button.click()
+    assert panel.accept_button.isEnabled() and not panel.refresh_button.isVisibleTo(panel)
+    panel.accept_button.click()
+    assert w.feature_preview is None
+    QtWidgets.QApplication.processEvents()  # karta prvku se načte po potvrzení
+    # Prohlížecí karta hotového sražení: krátký popis i věta, jak výběr změnit.
+    edges = w.feature_editor.form.widget("edges")
+    assert edges.findChild(QtWidgets.QLabel, "edges_hint").isVisibleTo(w.editor_dock)
+
+    w._selected_id = None
+    w._reload_all()
+    w.statusBar().clearMessage()
+    assert w.status_pill.message == SHORT_HINT
+    w.workspace.show_panel("section")
+    w.section_toggle.click()  # rám 3c: bez hlášení pilulka řekne, co s řezem jde
+    w.statusBar().clearMessage()
+    assert w.status_pill.focus[0] == "section" and w.status_pill.message == SECTION_HINT
+    w.section_toggle.click()
+    assert w.status_pill.focus is None and w.status_pill.message == SHORT_HINT

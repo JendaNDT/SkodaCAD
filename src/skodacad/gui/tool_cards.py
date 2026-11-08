@@ -7,6 +7,8 @@ popisek vlevo, hodnota vpravo – a řádek, jehož čára je právě ve 3D, zv�
 viditelných řádků (u uložených měření nejvýš ``SAVED_ROWS``, pak pojistka posuvníkem).
 """
 
+import re
+
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -44,10 +46,29 @@ def split_value(text: str) -> tuple[str, str]:
     return (label, value) if separator else (text, "")
 
 
+_DECIMAL_POINT = re.compile(r"(?<=\d)\.(?=\d)")
+
+# Druh dvojice → řádek „Osy · rovnoběžné“ pod hodnotami (rám 3b, P7.62); jen kresba,
+# do modelu se neukládá (nemá číslo).
+RELATIONS = {
+    "Rozteč os": "Osy: rovnoběžné",
+    "Vzdálenost rovnoběžných ploch": "Plochy: rovnoběžné",
+    "Vzdálenost rovnoběžných hran": "Hrany: rovnoběžné",
+    "Vzdálenost osy od hrany": "Osa a hrana: rovnoběžné",
+}
+
+
+def decimal_comma(text: str) -> str:
+    """„40.00 mm“ → „40,00 mm“: desetinná čárka jen v kresbě karet (rám 3b, P7.62).
+
+    Data položek, uložené soubory, CSV i příkazová řádka dál používají tečku."""
+    return _DECIMAL_POINT.sub(",", text)
+
+
 def focus_text(text: str) -> str:
-    """Hlavní hodnota do pilulky bez dvojtečky (rám 3b: „Rozteč os 40.00 mm“)."""
+    """Hlavní hodnota do pilulky bez dvojtečky (rám 3b: „Rozteč os 40,00 mm“)."""
     label, value = split_value(text)
-    return f"{label} {value}" if value else label
+    return decimal_comma(f"{label} {value}" if value else label)
 
 
 class ValueRowDelegate(QStyledItemDelegate):
@@ -61,6 +82,7 @@ class ValueRowDelegate(QStyledItemDelegate):
         t = ui_theme.tokens()
         current = isinstance(view, QAbstractItemView) and view.currentIndex() == index
         label, value = split_value(index.data(Qt.ItemDataRole.DisplayRole) or "")
+        value = decimal_comma(value)
         state = index.data(STATE_ROLE)
         glyph = GLYPHS.get(state, "")
         rect = QRectF(option.rect).adjusted(0, 1, 0, -1)

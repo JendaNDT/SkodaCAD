@@ -855,6 +855,11 @@ def selected_text(w):
     return item.text(0) if item else None
 
 
+def edges_text(w):
+    """Krátký popis hran vybraných ve 3D v kartě prvku (P7.61)."""
+    return form_field(w, "edges").findChild(QtWidgets.QLabel, "edges_summary").text()
+
+
 def form_field(w, key):
     return w.feature_editor.form.widget(key)
 
@@ -1064,7 +1069,7 @@ def test_fillet_from_clicked_edge(empty_window):
     assert w.session.properties.volume_mm3 == pytest.approx(12000)
     w.feature_preview.accept_button.click()
     assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
-    assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
+    assert edges_text(w).startswith("Hrana mezi přední a pravou plochou")
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
     assert len(w.viewer.highlighted) == 1  # zvýrazněná zaoblená hrana
@@ -1143,7 +1148,7 @@ def test_add_clicked_edges_to_selected_fillet(empty_window):
     w.feature_preview.accept_button.click()
     edges = w.session.feature("chamfer1")["edges"]
     assert edges == [{"between": ["front", "right"]}, {"face": "left", "parallel": "Z"}]
-    assert "hrany na levé ploše, rovnoběžné s osou Z" in form_field(w, "edges").text()
+    assert "hrany na levé ploše, rovnoběžné s osou Z" in edges_text(w)
     assert len(w.viewer.highlighted) == 3
     w.viewer.click([edge_at(shown_part(w), 0, 15, 0)])
     action(w, "Nahradit hrany vybraného prvku výběrem").trigger()
@@ -1591,7 +1596,7 @@ def test_measuring_on_click_and_saving_into_the_model(window, no_dialogs, slot_e
     assert measure_rows(w)[0] == "Tloušťka stěny: 18.00 mm"  # deska příruby t = 18
     [(start, end, label)] = w.viewer.measurement  # čára od kliknutí skrz desku
     assert start == pytest.approx((60, 0, 18)) and end == pytest.approx((60, 0, 0))
-    assert label == "18.00 mm"
+    assert label == "18,00 mm"  # popisek ve 3D s desetinnou čárkou (P7.62)
     assert w.save_measurement_action.text() == \
         "Uložit měření do modelu: Tloušťka stěny: 18.00 mm"
     w.save_measurement_action.trigger()
@@ -1628,8 +1633,9 @@ def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
         [item.text() for item in menu.actions() if item.isEnabled()]))
     w.viewer.context_menu_requested.emit(QPoint(10, 10))
     assert f"Uložit měření do modelu: Rozteč os: {number(pitch)} mm" in shown[-1]
-    w.measure_list.setCurrentRow(len(measure_rows(w)) - 1)  # nejkratší vzdálenost
-    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm"  # mezi stěnami děr Ø18
+    shortest = next(i for i, row in enumerate(measure_rows(w)) if row.startswith("Nejkratší"))
+    w.measure_list.setCurrentRow(shortest)  # poslední řádek je „Osy: rovnoběžné“ (P7.62)
+    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm".replace(".", ",")  # Ø18
     w.viewer.click(list(part.faces())[:3])
     assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()
 
@@ -1694,7 +1700,7 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert w.session.section.area == pytest.approx(area, rel=0.02)
     # P7.54 (rám 3c): plocha se vzorkem barvy ve vlastním řádku, poloha řezu v pilulce
     assert w.section_area_row.isVisibleTo(w.section_dock)
-    assert w.section_area.text() == f"{number(w.session.section.area)} mm²"
+    assert w.section_area.text() == f"{number(w.session.section.area)} mm²".replace(".", ",")
     assert w.section_swatch.property("swatch") == "#d16154"  # plochy řezu „cihlově“
     assert "jen pohled" in w.section_info.text() and w.section_toggle.isChecked()
     assert w.status_pill.focus == ("section", "Řez · Y = 0 mm")

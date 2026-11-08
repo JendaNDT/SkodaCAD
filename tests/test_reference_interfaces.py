@@ -184,7 +184,7 @@ def settle(window, session=None):
 def test_qt_window_repairs_actual_worker_geometry_by_replacing_the_picked_edge(window, tmp_path,
                                                                            monkeypatch):
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QFileDialog
+    from PySide6.QtWidgets import QFileDialog, QLabel
 
     source, copy = tmp_path / "source.json", tmp_path / "copy.json"
     edge_document().save(source)
@@ -195,7 +195,8 @@ def test_qt_window_repairs_actual_worker_geometry_by_replacing_the_picked_edge(w
     item = next(window.tree.topLevelItem(i) for i in range(window.tree.topLevelItemCount())
                 if window.tree.topLevelItem(i).data(0, Qt.UserRole) == "bad")
     window.tree.setCurrentItem(item)
-    assert "nejbližší k bodu" in window.feature_editor.form.widget("edges").text()
+    edges = window.feature_editor.form.widget("edges")  # krátký popis hran (P7.61)
+    assert "nejbližší k bodu" in edges.findChild(QLabel, "edges_summary").text()
     edge = edge_at(window.session.result.part, 10, -15, 20)
     window.viewer.click([edge])
     assert window.replace_in_feature_action.isEnabled()

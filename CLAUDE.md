@@ -37,6 +37,12 @@
   posledního nahrání do draftu; opožděný běh draftu by jinak mohl zrušit nové
   kontroly hotové dávky. Potom ověř běžící kontroly aktuálního commitu.
   Kontroly obou systémů před sloučením platí dál.
+- **Rozhodnutí autora z 8. 11. 2026 „Větší dávky“** (po námitce, že kontroly běží
+  zbytečně často): pravidla a sada kontrol se nemění, mění se postup. Drobné kroky
+  (např. jednotlivé rozdíly okna proti návrhu) se nevydávají každý zvlášť: zůstávají
+  v jednom draftu, dokud nevznikne ucelený celek (zhruba 3–5 kroků) nebo autor nenapíše
+  „sestav“. Teprve pak PR připravit, ověřit na obou systémech, sloučit a ověřit vydání.
+  Každé samostatné vydání = úplné kontroly v PR i po sloučení (asi 2 × 40 min).
 - **Každou odpověď zakonči jasně označeným nejvhodnějším dalším krokem** v tomto tvaru:
   `➡️ **Nejvhodnější další krok:** <jeden konkrétní krok> – <proč právě tento>`.
   Případné alternativy uveď až za ním, krátce.
@@ -178,7 +184,14 @@
   [P7.59](docs/p7-59-strom-a-karta-prvku.md) = krátké řádky stromu („Upínání · M6 ×4“)
   a zkrácená karta prvku při prohlížení (rámy 2a/2b); PR #132, `c85a561`, ověřeně vydané.
   [P7.60](docs/p7-60-karta-prvku-a-pilulka.md) = číslovaná tabulka poloh, hodnoty jen pro
-  čtení běžnou barvou a pilulka „Vybráno: Upínání · M6 ×4“ (rám 2a).
+  čtení běžnou barvou a pilulka „Vybráno: Upínání · M6 ×4“ (rám 2a); PR #133, `016cde7`,
+  ověřeně vydané. [P7.61](docs/p7-61-karta-nahledu-a-pilulka-rezu.md) = karta náhledu
+  prvku (krátký popis hran, *Náhled* jen po chybě, věta rámu 3a) a pilulka řezu (rám 3c);
+  první krok dávky v draftu PR #134 (podle rozhodnutí „Větší dávky“).
+  [P7.62](docs/p7-62-karta-mereni.md) = karta Měření (rám 3b): „Vybráno: 2 díry · Závity
+  M8 ×2“, řádek „Osy: rovnoběžné“, desetinná čárka v kresbě karet Měření a Řez.
+  [P7.63](docs/p7-63-pilulka-ndt.md) = pilulka NDT (rám 2c): „Paprsek s 1 odrazem · horní
+  plocha“ u přiložené sondy. P7.61–P7.63 tvoří dávku k jednomu vydání (PR #134).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -827,6 +840,25 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Neaktivní nabídky a zaškrtávátka mají v `FeatureEditor.restyle` barvu Disabled =
   Active (volá i `Workspace.refresh_palette`). Pilulka: `MainWindow._selection_hint`,
   obnovuje ji `_load_editor` (i po programovém výběru), hlášení `statusBar` má přednost.
+- P7.61: pole hran vybraných ve 3D je `QWidget` se dvěma popisky `edges_summary` (popis
+  s velkým písmenem, návod v bublině) a `edges_hint` (jak změnit; `FeaturePreviewPanel`
+  ho skryje – v náhledu je výběr ve 3D vypnutý). Testy čtou `edges_summary`, ne `.text()`
+  pole. `refresh_button` náhledu je skrytý, ukáže ho `invalid` a `show_result` při chybě
+  (nový pokus); patička je jinak Esc zahodí · Zrušit · Potvrdit. Klidová věta pilulky je
+  `MainWindow._idle_hint` (řez `SECTION_HINT` > výběr > `SHORT_HINT`); `_refresh_pill_focus`
+  ji obnoví při změně zaměření, jen když `statusBar` nic nehlásí.
+- P7.62: desetinná čárka je **jen kresba** (`tool_cards.decimal_comma`: delegát hodnot,
+  `focus_text` pilulky, popisek čáry ve 3D, plocha a rozsah řezu); text položek
+  `measure_list`/`saved_list`, soubory, CSV a CLI dál s tečkou. Za hodnotami může být
+  informační řádek `RELATIONS` („Osy: rovnoběžné“, `NoItemFlags`) – index řádku ≠ index
+  v `_measured` jen za koncem, testy hledají řádek podle názvu, ne „poslední“. „2 díry“
+  = `inspection.is_hole` (normála k ose) v `ModelSession.selection_info`; prvek plochy
+  `ModelSession.selection_owner` (stejný `face_origin` jako pojistka P2, při nejistotě None).
+- P7.63: `MainWindow._selection_message` = poslední popis výběru ze `_selection_changed`;
+  `_status_message` mu u zaměření „● Přiloženo“ / „● Sonda nedosedá“ dá nižší váhu a ukáže
+  `_ndt_hint` (odrazy ze `placement.probe.bounces`, plocha podle `z_dir` a
+  `selectors.FACE_DIRECTIONS`). `statusBar` dál nese celý popis. `_refresh_pill_focus`
+  klidovou větu obnovuje vždy, když zpráva je prázdná, HELP_HINT nebo popis výběru.
 ## Známé pasti (výběr kliknutím)
 
 - Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
@@ -1921,7 +1953,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) a P7.59 (PR #132) ověřeně vydané, P7.60 rozpracované | P7.60; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132) a P7.60 (PR #133, `016cde7`) ověřeně vydané, P7.61 rozpracované | P7.61; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
