@@ -1301,7 +1301,7 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QPalette
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QStyleOptionViewItem
+    from PySide6.QtWidgets import QScrollArea, QStyleOptionViewItem
 
     from skodacad.gui import model_card
     from skodacad.gui.model_card import ROW_HEIGHT
@@ -1362,16 +1362,31 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         section = form.point_section("positions")  # sekce „Středy děr  4“ (P7.69)
         label = view.text() if view is not None else ""
         assert label.count("<tr>") == 4 and view.isVisible(), label
-        assert section.count_label.text() == "4" and section.expanded
+        assert section.count_label.text() == "4" and section.expanded, \
+            f"sekce poloh: počet „{section.count_label.text()}“, rozbalená {section.expanded}"
         extra = form.extra_section  # nevyplněné volby sbalené na konci karty
-        assert extra.isVisible() and not extra.expanded and int(extra.count_label.text()) > 0
+        assert extra.isVisible() and not extra.expanded and int(extra.count_label.text()) > 0, \
+            f"Další volby: vidět {extra.isVisible()}, rozbalené {extra.expanded}"
         hidden = int(extra.count_label.text())
-        QTest.mouseClick(extra.button, Qt.MouseButton.LeftButton)  # skutečný klik rozbalí
-        QApplication.processEvents()
-        assert extra.expanded and form.layout().isRowVisible(form.widget("diameter"))
-        QTest.mouseClick(extra.button, Qt.MouseButton.LeftButton)
-        QApplication.processEvents()
-        assert not form.layout().isRowVisible(form.widget("diameter"))
+
+        def click_extra() -> None:
+            # Se širším písmem (macOS) se karta posouvá – skutečný klik jen na viditelné
+            # tlačítko, jinak by trefil, co je v okně na jeho místě.
+            scroll = extra.parentWidget()
+            while scroll is not None and not isinstance(scroll, QScrollArea):
+                scroll = scroll.parentWidget()
+            if scroll is not None:
+                scroll.ensureWidgetVisible(extra.button)
+                QApplication.processEvents()
+            QTest.mouseClick(extra.button, Qt.MouseButton.LeftButton)
+            QApplication.processEvents()
+
+        click_extra()  # skutečný klik rozbalí
+        assert extra.expanded and form.layout().isRowVisible(form.widget("diameter")), \
+            f"klik nerozbalil Další volby (rozbalené {extra.expanded})"
+        click_extra()
+        assert not form.layout().isRowVisible(form.widget("diameter")), \
+            "druhý klik Další volby nesbalil"
         assert pill.message == "Vybráno: Upínání · 4 díry M6", pill.message
         assert not form.layout().isRowVisible(form.widget("name"))
         kind = form.widget("kind")  # hodnota jen pro čtení běžnou barvou, ne šedě
