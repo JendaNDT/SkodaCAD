@@ -1596,7 +1596,7 @@ def test_measuring_on_click_and_saving_into_the_model(window, no_dialogs, slot_e
     assert measure_rows(w)[0] == "Tloušťka stěny: 18.00 mm"  # deska příruby t = 18
     [(start, end, label)] = w.viewer.measurement  # čára od kliknutí skrz desku
     assert start == pytest.approx((60, 0, 18)) and end == pytest.approx((60, 0, 0))
-    assert label == "18.00 mm"
+    assert label == "18,00 mm"  # popisek ve 3D s desetinnou čárkou (P7.62)
     assert w.save_measurement_action.text() == \
         "Uložit měření do modelu: Tloušťka stěny: 18.00 mm"
     w.save_measurement_action.trigger()
@@ -1634,7 +1634,7 @@ def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
     w.viewer.context_menu_requested.emit(QPoint(10, 10))
     assert f"Uložit měření do modelu: Rozteč os: {number(pitch)} mm" in shown[-1]
     w.measure_list.setCurrentRow(len(measure_rows(w)) - 1)  # nejkratší vzdálenost
-    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm"  # mezi stěnami děr Ø18
+    assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm".replace(".", ",")  # Ø18
     w.viewer.click(list(part.faces())[:3])
     assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()
 
@@ -1699,7 +1699,7 @@ def test_section_in_window(window, no_dialogs, slot_errors, monkeypatch, tmp_pat
     assert w.session.section.area == pytest.approx(area, rel=0.02)
     # P7.54 (rám 3c): plocha se vzorkem barvy ve vlastním řádku, poloha řezu v pilulce
     assert w.section_area_row.isVisibleTo(w.section_dock)
-    assert w.section_area.text() == f"{number(w.session.section.area)} mm²"
+    assert w.section_area.text() == f"{number(w.session.section.area)} mm²".replace(".", ",")
     assert w.section_swatch.property("swatch") == "#d16154"  # plochy řezu „cihlově“
     assert "jen pohled" in w.section_info.text() and w.section_toggle.isChecked()
     assert w.status_pill.focus == ("section", "Řez · Y = 0 mm")

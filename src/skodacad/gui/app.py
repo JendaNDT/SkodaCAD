@@ -1527,7 +1527,11 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         layer.relayout()
         first = window.measure_list.item(0).text()
         assert first == "Rozteč os: 40.00 mm", first
-        assert pill.focus == ("measure", "Rozteč os 40.00 mm"), pill.focus
+        assert pill.focus == ("measure", "Rozteč os 40,00 mm"), pill.focus
+        hint = window.measure_hint.text()  # rám 3b: díry a prvek, ke kterému patří (P7.62)
+        assert hint == "Vybráno: 2 díry · Závity M8 ×2", hint
+        last = window.measure_list.item(window.measure_list.count() - 1)
+        assert last.text() == "Osy: rovnoběžné" and not last.flags(), last.text()
         window.measure_sections["drawing"].set_expanded(True)  # nejširší obsah karty
         QApplication.processEvents()
         layer.relayout()
@@ -1606,7 +1610,8 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         after = (window.session.document.to_dict(), len(window.session._undo))
         assert after == before, "zrušený náhled změnil model nebo historii"
         window.workspace.show_panel("editor")
-        lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
+        lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce („{hint}“, řádek "
+                     f"„Osy: rovnoběžné“), Uložit/Smazat, řez "
                      f"{area} (zaškrtávátko, pilulka „{SECTION_HINT}“), náhled „{focus}“ s modrými "
                      f"hranami bez tlačítka Náhled, řádkem "
                      f"ve stromu a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")

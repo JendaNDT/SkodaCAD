@@ -44,7 +44,7 @@ from skodacad.expressions import (
     resolve_parameters,
 )
 from skodacad.features import describe, profile_problem, sketch_plane
-from skodacad.inspection import describe_shape
+from skodacad.inspection import describe_shape, is_hole
 from skodacad.loft_inspection import WallReport, inspect_loft, wall_feature
 from skodacad.materials import density_g_cm3, material_key
 from skodacad.measure import MeasureError, SavedResult, Value, measure, new_measurement
@@ -1139,10 +1139,40 @@ class ModelSession:
             except Exception:  # noqa: BLE001 – popis je jen informace navíc
                 text = "Vybraný prvek"
         else:
-            counts = [_count(len(faces), "plocha", "plochy", "ploch"),
+            # Rám 3b: samé stěny děr = „2 díry“ (P7.62), jinak plochy.
+            holes = bool(faces) and all(_is_hole(face) for face in faces)
+            counts = [_count(len(faces), "díra", "díry", "děr") if holes
+                      else _count(len(faces), "plocha", "plochy", "ploch"),
                       _count(len(edges), "hrana", "hrany", "hran")]
             text = "Vybráno: " + ", ".join(c for c in counts if c) if faces or edges else ""
         return SelectionInfo(len(faces), len(edges), text, sum(map(_is_flat, faces)))
+
+    def selection_owner(self, shapes: list[Any]) -> str | None:
+        """Id prvku, ze kterého pocházejí všechny vybrané plochy (rám 3b, P7.62).
+
+        Stejné hledání původu jako pojistka přímé úpravy (``face_origin``): od kterého
+        prvku plocha v bodě nepřetržitě existuje. Jen informace – při nejistotě ``None``.
+        """
+        document, result = self.document, self.result
+        if document is None or result is None or result.part is None or self.computing:
+            return None
+        try:
+            faces, edges = split_shapes(self._model_shapes(shapes))
+        except DocumentError:
+            return None
+        if not faces or edges:
+            return None
+        features = document.features
+        history = [(f["id"], result.parts_before.get(features[i + 1]["id"])
+                    if i + 1 < len(features) else result.part)
+                   for i, f in enumerate(features)]
+        owners = set()
+        try:
+            for face in faces:
+                owners.add(face_origin(history, face, face.position_at(0.5, 0.5)))
+        except Exception:  # noqa: BLE001 – popis původu je jen informace navíc
+            return None
+        return owners.pop() if len(owners) == 1 and None not in owners else None
 
     def add_from_selection(self, feature_type: str, shapes: list[Any],
                            point: Any = None) -> str:
@@ -4906,6 +4936,13 @@ def _cut_preview(shape: Any, plane: SectionPlane | None) -> Any:
     except SectionError:
         center = shape.center()
         return shape if plane.side((center.X, center.Y, center.Z)) < 0 else None
+
+
+def _is_hole(face: Any) -> bool:
+    try:
+        return is_hole(face)
+    except Exception:  # noqa: BLE001 – popis je jen informace navíc
+        return False
 
 
 def _count(n: int, one: str, few: str, many: str) -> str:

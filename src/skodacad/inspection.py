@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from build123d import Edge, Face, GeomType, Vertex
+from build123d import Edge, Face, GeomType, Vector, Vertex
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
 
 _FACE_TYPES = {
@@ -26,6 +26,22 @@ def number(value: float, decimals: int = 2) -> str:
     if abs(value) < 0.5 * 10**-decimals:
         value = 0.0  # žádné „-0.00“
     return f"{value:,.{decimals}f}".replace(",", " ")
+
+
+def is_hole(face: Face) -> bool:
+    """Válcová plocha, jejíž vnější normála míří k ose – stěna díry, ne čep (P7.62)."""
+    if face.geom_type != GeomType.CYLINDER:
+        return False
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+
+    axis = BRepAdaptor_Surface(face.wrapped).Cylinder().Axis()
+    location, direction = axis.Location(), axis.Direction()
+    origin = Vector(location.X(), location.Y(), location.Z())
+    along = Vector(direction.X(), direction.Y(), direction.Z())
+    point = face.position_at(0.5, 0.5)
+    offset = point - origin
+    radial = offset - along * offset.dot(along)  # od osy k bodu plochy
+    return radial.dot(face.normal_at(point)) < 0  # normála ven z materiálu míří k ose
 
 
 def describe_shape(shape: Any) -> str:

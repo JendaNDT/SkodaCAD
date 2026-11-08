@@ -98,11 +98,13 @@ from skodacad.gui.sketch_mode import SketchMode
 from skodacad.gui.sketcher import SketcherDialog
 from skodacad.gui.status_pill import StatusPill, ViewSwitcher
 from skodacad.gui.tool_cards import (
+    RELATIONS,
     SAVED_ROWS,
     SECTION_COLOR,
     SECTION_GREY,
     STATE_ROLE,
     FlowLayout,
+    decimal_comma,
     fit_rows,
     focus_text,
     reflow_button_rows,
@@ -3041,11 +3043,17 @@ class MainWindow(QMainWindow):
         self.measure_list.clear()
         for value in self._measured:
             self.measure_list.addItem(value.text)
+        relation = next((RELATIONS[v.label] for v in self._measured
+                         if v.kind == "parallel" and v.label in RELATIONS), None)
+        if relation:  # rám 3b: „Osy · rovnoběžné“ – jen informace, nejde vybrat ani uložit
+            item = QListWidgetItem(relation)
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.measure_list.addItem(item)
         self.measure_list.blockSignals(False)
         fit_rows(self.measure_list)
         info = self.session.selection_info(self._picked)
         if self._measured:  # rám 3b: co je vybráno; jak číst řádky, řekne bublina
-            self.measure_hint.setText(info.text or "Vybráno")
+            self.measure_hint.setText(self._selection_title(info.text or "Vybráno"))
             self.measure_hint.setToolTip("Vyber řádek – jeho čára se ukáže ve 3D. Uložené "
                                          "měření se přepočítá při každé změně modelu.")
         elif info.faces + info.edges > 2:
@@ -3060,6 +3068,18 @@ class MainWindow(QMainWindow):
         else:
             self._show_measure_line(None)
         self._refresh_measure_actions()
+
+    def _selection_title(self, text: str) -> str:
+        """„Vybráno: 2 díry · Závity M8 ×2“ – ke kterému prvku vybrané plochy patří (rám 3b)."""
+        owner = self.session.selection_owner(self._picked)
+        document = self.session.document
+        feature = next((f for f in document.features if f["id"] == owner), None) \
+            if owner and document is not None else None
+        if feature is None:
+            return text
+        params = self.session.result.parameters if self.session.result is not None else None
+        summary = tree_summary(feature, params)
+        return f"{text} · {tree_name(feature)}" + (f" {summary}" if summary else "")
 
     def _measure_row_changed(self) -> None:
         row = self.measure_list.currentRow()
@@ -3085,7 +3105,7 @@ class MainWindow(QMainWindow):
         self._refresh_pill_focus()
         lines = []
         if value is not None and value.points is not None:
-            lines = [(*value.points, format_value(value.value, value.unit))]
+            lines = [(*value.points, decimal_comma(format_value(value.value, value.unit)))]
         if self._selected_id is not None:
             lines += self.session.feature_direction(self._selected_id)
             lines += self.session.loft_wall_measurement(
@@ -3710,7 +3730,7 @@ class MainWindow(QMainWindow):
                 if settings.axis is None else f"Poloha {settings.axis}")
         self.section_position_label.setText(word)
         self.section_field.setToolTip(f"{word} [mm]")
-        self.section_range_label.setText(f"{number(low)} až {number(high)} mm")
+        self.section_range_label.setText(decimal_comma(f"{number(low)} až {number(high)} mm"))
         if not self.section_field.hasFocus():
             self.section_field.setText(format_parameter_value(round(settings.position, 2)))
         if not self.section_slider.isSliderDown() and high > low:
@@ -3731,7 +3751,7 @@ class MainWindow(QMainWindow):
         grey = isinstance(session.ndt_coverage, VolumeCoverageMap)
         color = "šedě pod mapou pokrytí" if grey else "cihlově"
         set_swatch(self.section_swatch, SECTION_GREY if grey else SECTION_COLOR)
-        self.section_area.setText(f"{number(section.area)} mm²")
+        self.section_area.setText(decimal_comma(f"{number(section.area)} mm²"))
         self.section_area_row.setToolTip(f"Plochy řezu jsou ve 3D {color}.")
         self.section_area_row.show()
         self.section_info.setText(f"Řez {where} ({color}). Řez je jen pohled – model se "
