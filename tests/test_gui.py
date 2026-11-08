@@ -3441,22 +3441,26 @@ def test_inspector_sections_are_saved_restored_and_reset(window, tmp_path):
 
 
 def test_ribbon_overflow_keeps_commands_available(window):
+    """P7.64: úzká paleta nemá posuvník – příkaz je vidět jako ikona, nebo v nabídce „»“."""
     window.resize(960, 600)
     window.show()
     window.ribbon.select_page('model')
-    window.ribbon.setFixedWidth(600)  # exercise overflow on every platform/font
     QtWidgets.QApplication.processEvents()
-    scroll = window.ribbon.stack.currentWidget()
-    assert scroll.widget().height() >= scroll.widget().sizeHint().height()
-    assert scroll.horizontalScrollBar().maximum() > 0
-    scroll.horizontalScrollBar().setValue(scroll.horizontalScrollBar().maximum())
-    button = next(b for b in window.ribbon.buttons
-                  if b.defaultAction() is window.edit_feature_action)
-    center = button.mapTo(scroll.viewport(), button.rect().center())
-    assert scroll.viewport().rect().contains(center)
-    # Posuvník nesmí zakrýt popisky tlačítek (P7.50).
-    bar = scroll.horizontalScrollBar().sizeHint().height()
-    assert scroll.height() >= scroll.widget().sizeHint().height() + bar
+    ribbon = window.ribbon
+    index = ribbon.stack.currentIndex()
+    scroll, row = ribbon._pages[index], ribbon._rows[index]
+    for room in (600, 300, 160):  # bez processEvents: rozmístění karet by šířku přepsalo
+        ribbon.fit_width(room)
+        assert row.sizeHint().width() <= room
+        button = next(b for b in ribbon.buttons
+                      if b.defaultAction() is window.edit_feature_action)
+        more = ribbon._more[index]
+        menu_actions = [a for a in more.menu().actions() if a.menu() is None]
+        assert (not button.isHidden()) or window.edit_feature_action in menu_actions
+    for _ in range(5):  # rozmístění karet vrátí skutečnou šířku, řádek se ustálí
+        QtWidgets.QApplication.processEvents()
+    assert scroll.horizontalScrollBar().maximum() == 0
+    assert scroll.height() >= row.sizeHint().height()
 
 
 def test_main_bar_and_floating_palette_follow_design(window, slot_errors, monkeypatch):

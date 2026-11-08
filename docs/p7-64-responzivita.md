@@ -59,7 +59,8 @@ Srovnání (vlevo před, vpravo po):
 |---|---|
 | `tests/test_tool_cards.py` (+3) | paleta: popisky → ikony → nabídka „»“ se stejnými akcemi jako skrytá tlačítka, podnabídka *Další prvky*; skutečné okno 960 × 600 bez posuvníku palety; lišta: záložky celé, hledání full/short/icon; pilulka zkrácená s bublinou |
 | `tests/test_ndt_wizard.py` (+1, upravený 1) | patička je dítětem karty mimo posouvanou oblast, sleduje viditelnost průvodce, přepnutí UT → MT vymění patičku, v 1000 × 600 leží uvnitř karty; pilulka u pokrytí |
-| testy okna (19 souborů, Linux) | viz PR |
+| `tests/test_gui.py` (upravený 1) | přetečení palety: místo posuvníku ikony a nabídka „»“, příkaz *Upravit prvek* je vidět nebo v nabídce, po ustálení bez posuvníku |
+| testy okna (19 souborů, Linux) | 460 úspěšných a 1 starý test posuvníku palety; po jeho úpravě úspěšný; `ruff check src tests` bez nálezů |
 | self-test „Responzivita okna“ (nový, Linux Xvfb) | 960 × 600: paleta s nabídkou „»“, hledání „Najít…“; 1280 × 800: ikony, plné hledání; karta NDT v 960 × 600 bez překryvů a s viditelnou patičkou; celý self-test OK |
 | skript responzivity (Linux Xvfb, 5 velikostí × 7 rámů) | z 22 nálezů zbývá 7, všechny jsou posuvník obsahu karty NDT |
 
