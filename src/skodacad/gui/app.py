@@ -1065,6 +1065,8 @@ def _check_render_size(viewer) -> None:
 
 def _self_test_workspace(window, lines: list[str]) -> bool:
     """Native layout, real fields, geometry and history in each downloaded package."""
+    import json
+
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
 
@@ -1130,12 +1132,19 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
         window.ribbon.set_collapsed(True)
         assert window.ribbon.stack.isHidden()
         window.workspace.save()
+        drawing = window.workspace.inspector_sections()["measure.drawing"]
+        drawing.button.click()  # sekce pravé karty se ukládá (okno.json verze 2, P7.58)
+        window.workspace.save()
         saved = load_state(window.workspace.path)
-        assert saved["panel"] == "editor" and saved["ribbon_collapsed"]
+        assert saved["panel"] == "editor" and saved["palette_collapsed"]
+        assert saved["inspector"]["measure.drawing"] == drawing.expanded, saved
+        raw = json.loads(window.workspace.path.read_text(encoding="utf-8"))
+        assert raw["version"] == 2 and "model_width" not in raw, raw
+        drawing.button.click()
         window.ribbon.set_collapsed(False)
         lines.append("✓ Prostředí CAD: pás příkazů, 8 pravých panelů, široká pole všech "
                      "rukojetí, 78009/77760 mm³ a historie, kompaktní okno 1024, obnova panelů "
-                     "a oddělené nastavení okna")
+                     "a oddělené nastavení okna (verze 2 se sekcemi pravé karty)")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
@@ -1526,6 +1535,20 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         for _ in range(4):  # karta náhledu se ukáže a rozmístí jako u uživatele
             QApplication.processEvents()
             layer.relayout()
+        deadline = time.monotonic() + 30
+        while panel._last_result is None and time.monotonic() < deadline:
+            QApplication.processEvents()  # náhled počítá vlastní pracovní session
+            time.sleep(0.02)
+        shown = getattr(window.viewer, "_highlight", None)
+        assert panel._last_result is not None and shown is not None, "náhled nemá hrany"
+        from OCP.Quantity import Quantity_Color
+
+        from skodacad.gui.viewer import PREVIEW_HIGHLIGHT, _srgb
+
+        color, expected = Quantity_Color(), _srgb(PREVIEW_HIGHLIGHT)
+        shown.Color(color)  # hrany náhledu plně modře #4782d1 jako v rámu 3a (P7.58)
+        assert color.IsEqual(expected) and shown.Transparency() == 0, \
+            f"hrany náhledu: {color.Red():.3f} {color.Green():.3f} {color.Blue():.3f}"
         panel.setFocus()
         QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
         QApplication.processEvents()
@@ -1537,8 +1560,8 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         assert after == before, "zrušený náhled změnil model nebo historii"
         window.workspace.show_panel("editor")
         lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
-                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s řádkem ve stromu "
-                     f"a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
+                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s modrými hranami a řádkem "
+                     f"ve stromu a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Karty nástrojů: {type(exc).__name__}: {exc}")

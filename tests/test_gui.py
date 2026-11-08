@@ -3382,8 +3382,8 @@ def test_workspace_preferences_round_trip_and_cancelled_close(window, tmp_path, 
     monkeypatch.setattr(window, '_confirm_discard', lambda: True)
     assert window.close()
     state = load_state(tmp_path / 'okno.json')
-    assert state['panel'] == 'measure' and state['page'] == 'view'
-    assert state['ribbon_collapsed'] and state['sections']['info']
+    assert state['panel'] == 'measure' and state['activity'] == 'view'
+    assert state['palette_collapsed'] and state['left_sections']['info']
     again = MainWindow(viewer_factory=FakeViewer, user_dir=tmp_path)
     try:
         again.show()
@@ -3393,6 +3393,40 @@ def test_workspace_preferences_round_trip_and_cancelled_close(window, tmp_path, 
         assert again.minimumWidth() <= again.width() <= 1280
         assert again.minimumHeight() <= again.height() <= 720
         assert again.session.document is None
+    finally:
+        again.close()
+
+
+def test_inspector_sections_are_saved_restored_and_reset(window, tmp_path):
+    """P7.58: rozbalení sekcí pravé karty se uloží do okno.json verze 2."""
+    import json
+
+    from skodacad.gui.window_state import INSPECTOR_SECTIONS, load_state
+
+    window.show()
+    QtWidgets.QApplication.processEvents()
+    sections = window.workspace.inspector_sections()
+    assert set(sections) == set(INSPECTOR_SECTIONS)
+    assert sections["measure.saved"].expanded and not sections["measure.drawing"].expanded
+    window.workspace.show_panel(None)
+    sections["measure.drawing"].button.click()  # skutečné kliknutí na řádek sekce
+    sections["measure.saved"].button.click()
+    sections["ndt.plan"].set_expanded(True)
+    window.workspace.save()
+    raw = json.loads((tmp_path / 'okno.json').read_text())
+    assert raw["version"] == 2 and raw["panel"] is None and "model_width" not in raw
+    state = load_state(tmp_path / 'okno.json')
+    assert state["inspector"]["measure.drawing"] and not state["inspector"]["measure.saved"]
+    again = MainWindow(viewer_factory=FakeViewer, user_dir=tmp_path)
+    try:
+        again.show()
+        QtWidgets.QApplication.processEvents()
+        restored = again.workspace.inspector_sections()
+        assert restored["measure.drawing"].expanded and not restored["measure.saved"].expanded
+        assert restored["ndt.plan"].expanded and again.workspace.active is None
+        again.workspace.reset()
+        assert not restored["measure.drawing"].expanded and restored["measure.saved"].expanded
+        assert not restored["ndt.plan"].expanded and again.workspace.active == "editor"
     finally:
         again.close()
 

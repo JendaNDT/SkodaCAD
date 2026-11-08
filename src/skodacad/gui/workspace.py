@@ -18,7 +18,13 @@ from shiboken6 import isValid
 
 from skodacad.gui import ui_theme
 from skodacad.gui.ui_colors import secondary_color
-from skodacad.gui.window_state import PANELS, fit_geometry, load_state, save_state
+from skodacad.gui.window_state import (
+    INSPECTOR_SECTIONS,
+    PANELS,
+    fit_geometry,
+    load_state,
+    save_state,
+)
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +96,7 @@ class Workspace:
         self._changing = False
         self._restored = False
         self._palette_key = None
+        self._inspector_defaults = None
         self.panels_menu = QMenu("Panely", window)
         self.actions = {}
         self.headings = {}  # velké titulky karet (P7.52)
@@ -339,8 +346,29 @@ class Workspace:
         self.window._refresh_tree()
         self.window.viewer.set_dark_background(ui_theme.is_dark())
 
+    def inspector_sections(self):
+        """Sbalitelné sekce pravých karet, jejichž rozbalení se ukládá (P7.58)."""
+        window = self.window
+        found = {"measure.saved": window.measure_sections.get("saved"),
+                 "measure.drawing": window.measure_sections.get("drawing")}
+        ndt = getattr(window, "ndt_panel", None)
+        if ndt is not None:
+            found.update({"ndt.beam": ndt.beam_section, "ndt.ut_details": ndt.coverage_details,
+                          "ndt.access": ndt.ut_sections.get("access"),
+                          "ndt.plan": ndt.ut_sections.get("plan"),
+                          "ndt.pt_details": ndt.pt_details, "ndt.mt_details": ndt.mt_details,
+                          "ndt.mt_yoke": ndt.mt_yoke_section,
+                          "ndt.rt_details": ndt.rt_box.details,
+                          "ndt.rt_preview": ndt.rt_box.preview_section})
+        sections = {key: found[key] for key in INSPECTOR_SECTIONS if found.get(key) is not None}
+        if self._inspector_defaults is None:  # výchozí stav z konstruktorů karet
+            self._inspector_defaults = {key: s.expanded for key, s in sections.items()}
+        return sections
+
     def reset(self):
         window = self.window
+        for key, section in self.inspector_sections().items():
+            section.set_expanded(self._inspector_defaults.get(key, False))
         window.ribbon.select_page("model")
         window.ribbon.set_collapsed(False)
         self.show_panel("editor")
@@ -370,14 +398,17 @@ class Workspace:
             screens = [s.availableGeometry().adjusted(margins[0], margins[1],
                        -margins[2], -margins[3]) for s in QApplication.screens()]
             window.setGeometry(fit_geometry(QRect(*geometry), screens))
-        window.model_dock.setVisible(self.state.get("model_visible", True))
-        self.model_action.setChecked(self.state.get("model_visible", True))
+        window.model_dock.setVisible(self.state.get("left_visible", True))
+        self.model_action.setChecked(self.state.get("left_visible", True))
         self.show_panel(self.state.get("panel", "editor"))
         for key, section in window.sidebar_sections.items():
-            section.set_expanded(self.state.get("sections", {}).get(key, key != "parameters"))
-        window.model_tabs.select(self.state.get("sidebar_tab", window.model_tabs.current))
-        window.ribbon.select_page(self.state.get("page", "model"))
-        window.ribbon.set_collapsed(self.state.get("ribbon_collapsed", False))
+            section.set_expanded(self.state.get("left_sections", {}).get(key, key != "parameters"))
+        window.model_tabs.select(self.state.get("left_tab", window.model_tabs.current))
+        inspector = self.state.get("inspector", {})
+        for key, section in self.inspector_sections().items():
+            section.set_expanded(inspector.get(key, self._inspector_defaults[key]))
+        window.ribbon.select_page(self.state.get("activity", "model"))
+        window.ribbon.set_collapsed(self.state.get("palette_collapsed", False))
         if self.state.get("maximized"):
             window.showMaximized()
 
@@ -386,17 +417,17 @@ class Workspace:
         geometry = window.normalGeometry() if window.isMaximized() else window.geometry()
         state = {"geometry": [geometry.x(), geometry.y(), geometry.width(), geometry.height()],
                  "maximized": window.isMaximized(),
-                 "model_visible": not window.model_dock.isHidden(),
-                 # Karty mají šířku z návrhu 1a (P7.49); klíče zůstávají kvůli verzi 1.
-                 "model_width": window.card_layer.width_of(window.model_dock),
-                 "editor_width": window.card_layer.width_of(
-                     self.docks[self.active or self.last_panel]),
-                 "panel": self.active, "page": window.ribbon.page,
-                 "ribbon_collapsed": window.ribbon.collapsed,
-                 "appearance": QApplication.instance().property("skodacadAppearance") or "system",
-                 "sections": {key: section.expanded
-                              for key, section in window.sidebar_sections.items()},
-                 "sidebar_tab": window.model_tabs.current}
+                 # Verze 2 (P7.58): karty mají pevnou šířku z návrhu 1a, ta se neukládá.
+                 "activity": window.ribbon.page,
+                 "palette_collapsed": window.ribbon.collapsed,
+                 "left_visible": not window.model_dock.isHidden(),
+                 "left_tab": window.model_tabs.current,
+                 "left_sections": {key: section.expanded
+                                   for key, section in window.sidebar_sections.items()},
+                 "panel": self.active,
+                 "inspector": {key: section.expanded
+                               for key, section in self.inspector_sections().items()},
+                 "appearance": QApplication.instance().property("skodacadAppearance") or "system"}
         try:
             save_state(self.path, state)
         except (OSError, ValueError):

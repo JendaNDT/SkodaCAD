@@ -8,35 +8,55 @@ from pathlib import Path
 from PySide6.QtCore import QRect
 
 PANELS = ("editor", "measure", "map", "section", "ndt", "audit", "design", "assistant")
-PAGES = ("file", "model", "sketch", "drawing", "assembly", "ndt", "view")
+# Činnosti hlavní lišty (P7.50); „file“ z verze 1 už není (Soubor je jen nabídka).
+ACTIVITIES = ("model", "sketch", "drawing", "assembly", "ndt", "view")
 MAX_BYTES = 16_384
+VERSION = 2
 SIDEBAR_TABS = ("features", "parameters", "part")
+LEFT_SECTIONS = ("info", "parameters", "properties")
+# Sbalitelné sekce pravé karty, které rozbaluje jen uživatel (P7.58). Sekce, které okno
+# samo otvírá podle stavu (např. „Studie a jejich správa“), se neukládají.
+INSPECTOR_SECTIONS = ("measure.saved", "measure.drawing", "ndt.beam", "ndt.ut_details",
+                      "ndt.access", "ndt.plan", "ndt.pt_details", "ndt.mt_details",
+                      "ndt.mt_yoke", "ndt.rt_details", "ndt.rt_preview")
+# Verze 1 → 2: stejné hodnoty pod novým jménem; šířky karet (model_width, editor_width)
+# jsou od P7.49 pevné podle návrhu a zahazují se.
+V1_NAMES = {"page": "activity", "ribbon_collapsed": "palette_collapsed",
+            "model_visible": "left_visible", "sidebar_tab": "left_tab",
+            "sections": "left_sections"}
+
+
+def _flags(value, keys):
+    if not isinstance(value, dict):
+        return None
+    return {k: value[k] for k in keys if type(value.get(k)) is bool}
 
 
 def clean_state(value):
+    """Ověřené nastavení okna ve tvaru verze 2; verze 1 se převede, neznámé a chybné
+    hodnoty se zahodí (nastavení okna nikdy nebrání otevření)."""
     result = {}
-    if (not isinstance(value, dict) or type(value.get("version")) is not int
-            or value["version"] != 1):
+    if not isinstance(value, dict) or type(value.get("version")) is not int:
         return result
-    for key in ("model_visible", "ribbon_collapsed", "maximized"):
+    if value["version"] == 1:
+        value = {V1_NAMES.get(k, k): v for k, v in value.items() if k not in V1_NAMES.values()}
+    elif value["version"] != VERSION:
+        return result
+    for key in ("left_visible", "palette_collapsed", "maximized"):
         if type(value.get(key)) is bool:
             result[key] = value[key]
-    for key in ("model_width", "editor_width"):
-        number = value.get(key)
-        if type(number) is int and 180 <= number <= 1200:
-            result[key] = number
     if "panel" in value and value["panel"] in (*PANELS, None):
         result["panel"] = value.get("panel")
-    if value.get("page") in PAGES:
-        result["page"] = value["page"]
+    if value.get("activity") in ACTIVITIES:
+        result["activity"] = value["activity"]
     if value.get("appearance") in ("system", "light", "dark"):
         result["appearance"] = value["appearance"]
-    if value.get("sidebar_tab") in SIDEBAR_TABS:  # záložka levé karty (P7.51)
-        result["sidebar_tab"] = value["sidebar_tab"]
-    sections = value.get("sections")
-    if isinstance(sections, dict):
-        result["sections"] = {k: sections[k] for k in ("info", "parameters", "properties")
-                              if type(sections.get(k)) is bool}
+    if value.get("left_tab") in SIDEBAR_TABS:  # záložka levé karty (P7.51)
+        result["left_tab"] = value["left_tab"]
+    for key, names in (("left_sections", LEFT_SECTIONS), ("inspector", INSPECTOR_SECTIONS)):
+        flags = _flags(value.get(key), names)
+        if flags is not None:
+            result[key] = flags
     rect = value.get("geometry")
     if (isinstance(rect, list) and len(rect) == 4 and all(type(n) is int for n in rect)
             and all(abs(n) <= 32_768 for n in rect[:2])
@@ -63,7 +83,7 @@ def save_state(path: Path | None, state):
         return
     temporary = None
     try:
-        data = json.dumps({"version": 1, **clean_state({"version": 1, **state})},
+        data = json.dumps({"version": VERSION, **clean_state({"version": VERSION, **state})},
                           ensure_ascii=False).encode("utf-8")
         if len(data) > MAX_BYTES:
             raise ValueError("Nastavení okna je příliš velké.")

@@ -141,6 +141,7 @@ class FeaturePreviewPanel(QWidget):
         self._last_result = None
         self.window.viewer.show_part(self.window.session.display_part)
         self.window.viewer.disable_model_selection()
+        self.window.viewer.highlight_preview = False  # původní díl: vybraný prvek růžově
         self.window.viewer.highlight(self.window.session.feature_highlight(self.window._selected_id)
                                      if self.window._selected_id else [])
 
@@ -195,6 +196,7 @@ class FeaturePreviewPanel(QWidget):
             self._last_result = result
             self.window.viewer.show_part(session.display_part,
                                          fit=first and self.window.session.display_part is None)
+            self.window.viewer.highlight_preview = True  # hrany náhledu modře (rám 3a)
             self.window.viewer.highlight(session.feature_highlight(self.preview.feature_id))
             self.window.viewer.disable_model_selection()
             if first and self.window.session.display_part is None:

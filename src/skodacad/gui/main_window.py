@@ -2447,6 +2447,7 @@ class MainWindow(QMainWindow):
             shapes = self.session.feature_highlight(self._selected_id)
         else:
             shapes = []
+        self.viewer.highlight_preview = False  # hrany náhledu kreslí panel náhledu
         self.viewer.highlight(shapes)
         self._refresh_target()
 

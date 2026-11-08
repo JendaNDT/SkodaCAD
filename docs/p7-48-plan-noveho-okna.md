@@ -220,4 +220,4 @@ v jednom draftu PR. Úplná sada běží na GitHubu u hotové dávky (pravidlo 6
 - [x] P7.55 NDT průvodce UT a skupina NDT studie v levé kartě ([evidence](p7-55-ndt-pruvodce-ut.md)).
 - [x] P7.56 průvodce PT, MT, RT, audit a návrh úpravy ([evidence](p7-56-pruvodce-pt-mt-rt.md)).
 - [x] P7.57 skicář jako režim hlavního okna ([evidence](p7-57-skicar-v-okne.md)).
-- [ ] P7.58 dle kroků výše.
+- [x] P7.58 uložení stavu okna (verze 2) a srovnání osmi rámů ([evidence](p7-58-ulozeni-a-srovnani.md)); průsvitnost se nezkoušela (R1 = neprůhledné karty).

@@ -182,12 +182,14 @@ def test_new_feature_preview_row_pill_and_palette(plate):
     assert kind == "preview" and text == f"● Náhled · {extra.text(0)}"
     assert w.status_pill.message.startswith("Potvrzení přidá jeden krok Zpět")
     assert not w.ribbon.isEnabled()  # paleta během náhledu neaktivní
+    assert w.viewer.highlight_preview and w.viewer.highlighted  # hrany náhledu modře (P7.58)
     w._refresh_tree()  # obnova stromu řádek náhledu zachová
     assert preview_rows(w)[-1].data(0, PREVIEW_ROLE)
     w.cancel_feature_preview()
     assert [item.text(0) for item in preview_rows(w)] == before
     assert not any(item.data(0, PREVIEW_ROLE) for item in preview_rows(w))
     assert w.ribbon.isEnabled() and w.status_pill.focus is None
+    assert not w.viewer.highlight_preview  # vybraný prvek zase růžově
 
 
 def test_edit_preview_marks_existing_row_and_confirm_clears_it(plate):
