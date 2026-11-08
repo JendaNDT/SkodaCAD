@@ -55,7 +55,13 @@ from shiboken6 import isValid
 
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.document import DocumentError
-from skodacad.features import REPEATABLE_FEATURES, describe, short_label
+from skodacad.features import (
+    REPEATABLE_FEATURES,
+    describe,
+    short_label,
+    tree_name,
+    tree_summary,
+)
 from skodacad.gui.assembly_access import request_project_access
 from skodacad.gui.assembly_window import AssemblyWindow, is_assembly_file
 from skodacad.gui.assistant_panel import AssistantPanel
@@ -75,9 +81,11 @@ from skodacad.gui.main_bar import MainBar
 from skodacad.gui.model_card import (
     FEATURE_ICONS,
     ICON_ROLE,
+    NAME_ROLE,
     PREVIEW_COLOR,
     PREVIEW_ROLE,
     STATUS_ROLE,
+    SUMMARY_ROLE,
     FeatureRowDelegate,
     ModelTabs,
     StudyRowDelegate,
@@ -2513,7 +2521,9 @@ class MainWindow(QMainWindow):
         else:
             rows = [(s.id, s.label, s.status, s.message) for s in result.statuses]
         chosen = None
-        kinds = {f["id"]: f.get("type") for f in document.features} if document else {}
+        features = {f["id"]: f for f in document.features} if document else {}
+        kinds = {key: f.get("type") for key, f in features.items()}
+        params = result.parameters if result is not None else None
         color = QApplication.palette().color(QPalette.ColorRole.Link).name()
         for index, (key, label, status, message) in enumerate(rows):
             text = f"{_STATUS_ICONS[status]}  {label}"
@@ -2536,6 +2546,12 @@ class MainWindow(QMainWindow):
             item.setToolTip(1, message)
             item.setData(0, SEARCH_ROLE, f"{label} {key} {_STATUS_WORDS[status]}")
             item.setData(0, STATUS_ROLE, status)
+            feature = features.get(key)
+            if feature is not None:  # krátký název a údaj vpravo kreslí delegát (P7.59)
+                short = (tree_name(feature), tree_summary(feature, params))
+                if (item.data(0, NAME_ROLE), item.data(0, SUMMARY_ROLE)) != short:
+                    item.setData(0, NAME_ROLE, short[0])
+                    item.setData(0, SUMMARY_ROLE, short[1])
             kind = FEATURE_ICONS.get(kinds.get(key), "box")
             if item.data(0, ICON_ROLE) != f"{kind}|{color}":  # jen skutečná změna ikony
                 item.setIcon(0, cad_icon(kind, color))

@@ -29,6 +29,11 @@ ICON_ROLE = Qt.ItemDataRole.UserRole + 42
 # Řádek náhledu nového nebo upravovaného prvku (P7.54, rám 3a): rámeček 1 px a kurzíva.
 PREVIEW_ROLE = Qt.ItemDataRole.UserRole + 44
 PREVIEW_COLOR = "#4782d1"  # duch náhledu ve 3D (viewer.py 0,28 / 0,51 / 0,82)
+# Krátký název a údaj vpravo podle rámu 2a („Upínání · M6 ×4“, P7.59). Text položky
+# (celý popis „✓  Díra „Upínání“ – M6 …“) a počet těles ve sloupci 1 zůstávají – testy,
+# filtr, bublina a přístupnost; delegát jen kreslí kratší podobu.
+NAME_ROLE = Qt.ItemDataRole.UserRole + 45
+SUMMARY_ROLE = Qt.ItemDataRole.UserRole + 46
 GLYPHS = {"ok": "✓", "error": "✕", "skipped": "·", "pending": "⏳"}
 # Ikona Duo podle typu prvku (stejné druhy jako v paletě příkazů).
 FEATURE_ICONS = {"sketch": "sketch", "extrude": "extrude", "revolve": "revolve",
@@ -123,15 +128,22 @@ class FeatureRowDelegate(QStyledItemDelegate):
         super().initStyleOption(option, index)
         status = index.siblingAtColumn(0).data(STATUS_ROLE) or "pending"
         t = ui_theme.tokens()
+        first = index.siblingAtColumn(0)
         if index.column() == 0:
             glyph = GLYPHS.get(status, "")
             text = option.text
             if glyph and text.startswith(glyph):
                 option.text = text[len(glyph):].lstrip()  # stav se kreslí vpravo
+            if first.data(NAME_ROLE):
+                option.text = first.data(NAME_ROLE)  # krátký název (rám 2a)
             if status != "error":  # název běžnou barvou, chyba zůstane červená
                 option.palette.setColor(QPalette.ColorRole.Text, ui_theme.color(t["fg"]))
         else:
             glyph = GLYPHS.get(status, "")
+            if first.data(NAME_ROLE) is not None:  # údaj prvku místo počtu těles (v bublině)
+                option.text = first.data(SUMMARY_ROLE) or ""
+                if status == "ok":  # rám 2a: údaj a ✓ šedě, chyba dál barvou stavu
+                    option.palette.setColor(QPalette.ColorRole.Text, ui_theme.color(t["fg3"]))
             option.text = f"{option.text}  {glyph}".strip() if option.text else glyph
             option.displayAlignment = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             font = QFont(option.font)

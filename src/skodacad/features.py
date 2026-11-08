@@ -1186,6 +1186,45 @@ def short_label(feature: dict[str, Any]) -> str:
     return f"{label} „{name}“" if name else f"{label} {feature['id']}"
 
 
+def tree_name(feature: dict[str, Any]) -> str:
+    """Krátký název řádku stromu podle návrhu okna 1a: jméno prvku, bez jména druh a id."""
+    name = feature.get("name")
+    if name:
+        return str(name)
+    label = FEATURE_TYPES[feature["type"]].label_cz if feature["type"] in FEATURE_TYPES else "?"
+    return f"{label} {feature['id']}"
+
+
+def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None) -> str:
+    """Krátký údaj vpravo v řádku stromu (rám 2a: „M6 ×4“); prázdný = jen stav.
+
+    Celý popis zůstává v :func:`describe` (bublina, hledání, příkazová řádka)."""
+    kind = feature.get("type")
+    count = len(feature.get("positions") or [None])
+    times = f" ×{count}" if count > 1 else ""
+    if kind in ("hole", "standard") and feature.get("size") is not None:
+        return f"{feature['size']}{times}"
+    if kind == "pattern":
+        first = _plain(feature.get("count", "?"), params)
+        if feature.get("kind", "circular") != "circular" and feature.get("direction2") is not None:
+            return f"{first} × {_plain(feature.get('count2', '?'), params)}"
+        return f"×{first}"
+    if kind == "fillet" and "radius" in feature:
+        return f"R{_plain(feature['radius'], params)}"
+    if kind == "variable_fillet" and "radius_start" in feature and "radius_end" in feature:
+        return (f"R{_plain(feature['radius_start'], params)}"
+                f"→R{_plain(feature['radius_end'], params)}")
+    if kind == "chamfer" and "distance" in feature:
+        return f"{_plain(feature['distance'], params)} mm"
+    if kind == "shell" and "thickness" in feature:
+        return f"{_plain(feature['thickness'], params)} mm"
+    if kind == "move_face" and "distance" in feature:
+        return f"{_plain(feature['distance'], params)} mm"
+    if kind == "face_diameter" and "diameter" in feature:
+        return f"Ø{_plain(feature['diameter'], params)}"
+    return ""
+
+
 def describe(feature: dict[str, Any], params: dict[str, float] | None = None) -> str:
     """Krátký popis prvku pro výpis stromu. S ``params`` se počty z výrazů vyčíslí."""
     text = short_label(feature)
