@@ -93,8 +93,10 @@ from skodacad.gui.tool_cards import (
     SECTION_COLOR,
     SECTION_GREY,
     STATE_ROLE,
+    FlowLayout,
     fit_rows,
     focus_text,
+    reflow_button_rows,
     result_list,
     separator,
     set_role,
@@ -677,7 +679,8 @@ class MainWindow(QMainWindow):
         sheet.addWidget(QLabel("Měřítko"))
         sheet.addWidget(self.drawing_scale, 1)
         drawing_layout.addLayout(sheet)
-        views_row = QHBoxLayout()
+        # Zaškrtávátka pohledů se v úzké kartě zalomí (písmo macOS je širší, P7.54).
+        views_row = FlowLayout(spacing=6)
         views_row.addWidget(QLabel("Pohledy:"))
         self.drawing_view_boxes: dict[str, QCheckBox] = {}
         for label, key in (("Zepředu", "front"), ("Shora", "top"), ("Zprava", "right")):
@@ -686,7 +689,6 @@ class MainWindow(QMainWindow):
             box.toggled.connect(self._drawing_views_changed)
             views_row.addWidget(box)
             self.drawing_view_boxes[key] = box
-        views_row.addStretch()
         drawing_layout.addLayout(views_row)
         sheet_buttons = QHBoxLayout()
         export_row = QHBoxLayout()
@@ -801,6 +803,8 @@ class MainWindow(QMainWindow):
         self.measure_sections["drawing"] = Section("Příprava kót výkresu", drawing_box)
         layout.addWidget(self.measure_sections["drawing"])
         layout.addStretch()
+        # Řady tlačítek se zalomí, když se se skutečným písmem systému do 304 px nevejdou.
+        reflow_button_rows(panel)
         self.measure_dock = self._add_dock("Měření", "measure_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
         self.measure_sections["saved"].set_count(
@@ -865,6 +869,7 @@ class MainWindow(QMainWindow):
         self.map_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.map_summary)
         layout.addStretch()
+        reflow_button_rows(panel)  # písmo macOS je širší než na Linuxu
         self.map_dock = self._add_dock("Mapa tloušťky", "map_dock", panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
 
@@ -952,6 +957,7 @@ class MainWindow(QMainWindow):
         self.section_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.section_info)
         layout.addStretch()
+        reflow_button_rows(panel)  # písmo macOS je širší než na Linuxu
         self.section_dock = self._add_dock("Řez", "section_dock", panel,
                                            Qt.DockWidgetArea.RightDockWidgetArea)
 

@@ -74,3 +74,7 @@ Snímky (Linux Xvfb, `examples/deska.json`, 1440 × 900):
   nevejdou. Rám 3c ukazuje kartu už se zapnutým řezem.
 - Rozbalená sekce kót výkresu je delší než výška okna 900 px; tam karta použije
   posuvník jako pojistku (pravidlo P7.52). Ve výchozím stavu je sbalená.
+- Na macOS (GitHub, systémové písmo) byl obsah karty Měření s rozbalenými kótami
+  o 6 px širší než karta (293 > 287 px). Řady tlačítek a zaškrtávátek pohledů v kartách
+  Měření, Řez a Mapa tloušťky se proto v úzké kartě zalomí; na Linuxu je nejmenší
+  šířka obsahu karty Měření 217 px (dřív 282 px).

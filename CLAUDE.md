@@ -758,6 +758,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   Karta 304 px: dlouhé nabídky a číselná pole s velkým rozsahem chtějí
   `AdjustToMinimumContentsLength…` / `QSizePolicy.Ignored`, jinak obsah přeteče vpravo
   (hlídá nativní self-test „Karty nástrojů“).
+  Řady tlačítek a zaškrtávátek karet Měření, Řez a Mapa = `reflow_button_rows` /
+  `FlowLayout` (písmo macOS je širší: obsah karty Měření 293 > 287 px na GitHubu).
 - P7.55: UT studie v kartě NDT = `ndt_panel.ut_wizard` (`probe_box` je alias, název
   `UT_ACCESS` jako `title()` a nadpis nad kroky – doporučený název ze závazného vymezení
   musí zůstat vidět). Krok se odvodí jen při výběru studie (`Wizard.update(key=…)`),
