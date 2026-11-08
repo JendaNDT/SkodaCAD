@@ -1299,7 +1299,9 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
     """P7.51: levá karta Prvky | Parametry | Díl – skutečné kliky a zkratky v balíčku."""
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QStyleOptionViewItem
 
+    from skodacad.gui import model_card
     from skodacad.gui.model_card import ROW_HEIGHT
 
     tabs, pages = window.model_tabs.tabs, window.model_tabs
@@ -1333,9 +1335,37 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         QApplication.processEvents()
         assert pages.current == "features", "Ctrl+F neotevřelo Prvky"
         QTest.keyClick(window.tree_filter.field, Qt.Key.Key_Escape)
+        # P7.59: krátký název a údaj řádku (rám 2a), skutečný klik vybere díru a pravá
+        # karta ukáže jen vyplněné hodnoty a polohy jako seznam s počtem.
+        window.workspace.show_panel("editor")
+        item = next(window.tree.topLevelItem(i) for i in range(rows)
+                    if window.tree.topLevelItem(i).data(0, model_card.NAME_ROLE) == "Upínání")
+        drawn = []
+        for column in (0, 1):
+            option = QStyleOptionViewItem()
+            window.tree.itemDelegate().initStyleOption(
+                option, window.tree.indexFromItem(item, column))
+            drawn.append(option.text)
+        assert drawn == ["Upínání", "M6 ×4  ✓"], drawn
+        window.tree.scrollToItem(item)
+        QTest.mouseClick(window.tree.viewport(), Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.NoModifier,
+                         window.tree.visualItemRect(item).center())
+        QApplication.processEvents()
+        assert window._selected_id == "upinani", window._selected_id
+        editor = window.feature_editor
+        form = editor.form
+        label = form.layout().labelForField(form.widget("positions")).text()
+        assert label.endswith("· 4") and editor.hidden_hint.isVisible(), label
+        assert not form.layout().isRowVisible(form.widget("name"))
+        window.card_layer.relayout()
+        QApplication.processEvents()
+        width = _card_fits(window.editor_dock)
         assert window.session.document.to_dict() == original
         lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
-                     f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“")
+                     f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“; "
+                     f"řádek „{drawn[0]} · {drawn[1]}“, klik → karta jen s vyplněnými "
+                     f"hodnotami ({editor.hidden_hint.text()[:20]}…, {width} px)")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Levá karta: {type(exc).__name__}: {exc}")

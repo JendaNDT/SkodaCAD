@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFontDatabase
 from PySide6.QtWidgets import (
     QAbstractButton,
     QButtonGroup,
@@ -292,6 +292,7 @@ class FieldsForm(QWidget):
         self._features = features or []  # dřívější prvky, které jde opakovat (id, popis)
         self._profile_editor = profile_editor
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
+        self._compact = False  # prohlížení: jen vyplněné hodnoty (P7.59, rám 2a)
         self._layout = layout = QFormLayout(self)
         # P7.52: mřížka popisek (vpravo zarovnaný) / pole jako v návrhu 1a; dlouhé řádky
         # (vodítka, seznamy, obrysy) se zalomí pod popisek, aby měly celou šířku karty.
@@ -318,19 +319,59 @@ class FieldsForm(QWidget):
 
     def widget(self, key: str) -> QWidget:
         """Pole formuláře; když je pod jedním klíčem víc polí (velikost podle druhu dílu),
-        to, které je právě vidět."""
-        widgets = [widget for field, widget, _ in self._rows if field.key == key]
-        return next((w for w in widgets if self._layout.isRowVisible(w)), widgets[0])
+        to, které k aktuální volbě patří."""
+        rows = [(field, widget) for field, widget, _ in self._rows if field.key == key]
+        return next((w for f, w in rows if self._belongs(f)), rows[0][1])
 
     def is_shown(self, key: str) -> bool:
-        """Je pole vidět? (Některá pole patří jen k jedné volbě, např. k druhu pole.)"""
-        return self._layout.isRowVisible(self.widget(key))
+        """Patří pole k aktuální volbě? (Některá pole jen k jedné volbě, např. k druhu pole.)
+        Ve zkráceném prohlížení může být takové pole i tak skryté, když nemá hodnotu."""
+        field = next(f for f, w, _ in self._rows if w is self.widget(key))
+        return self._belongs(field)
+
+    def _belongs(self, field: Field) -> bool:
+        defaults = {f.key: f.default for f, _, _ in self._rows}
+        return field_shown(field, self._data, defaults)
+
+    def _has_value(self, field: Field) -> bool:
+        """Zkrácené prohlížení ukáže jen pole s hodnotou v prvku (ne název – je v titulku)."""
+        if field.key == "name":
+            return False
+        if field.kind in ("shapes", "guides") or field.required:
+            return True
+        value = self._data.get(field.key)
+        return value not in (None, "", [], False)
 
     def _update_visibility(self) -> None:
-        defaults = {field.key: field.default for field, _, _ in self._rows}
         for field, widget, _ in self._rows:
-            if field.when:
-                self._layout.setRowVisible(widget, field_shown(field, self._data, defaults))
+            shown = self._belongs(field) and (not self._compact or self._has_value(field))
+            if shown != self._layout.isRowVisible(widget):
+                self._layout.setRowVisible(widget, shown)
+
+    def set_compact(self, compact: bool = True) -> int:
+        """Prohlížení prvku podle rámu 2a: nevyplněná pole skrytá, body jako krátký seznam
+        neproporcionálním písmem s počtem v popisku. Vrátí počet skrytých voleb."""
+        self._compact = compact
+        self._update_visibility()
+        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        for field, widget, _ in self._rows:
+            if field.kind not in ("points", "points3") or not isinstance(widget, QPlainTextEdit):
+                continue
+            lines = [line for line in widget.toPlainText().splitlines() if line.strip()]
+            widget.setFont(mono)
+            widget.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            metrics = widget.fontMetrics()
+            height = metrics.lineSpacing() * max(len(lines), 1) + 14
+            widget.setFixedHeight(min(height, 110))
+            # Nejdelší řádek určí nejmenší šířku: dlouhé body formulář (WrapLongRows)
+            # položí pod popisek přes celou šířku karty, místo aby se zalomily.
+            longest = max((metrics.horizontalAdvance(line) for line in lines), default=0)
+            widget.setMinimumWidth(min(longest + 24, 260))
+            label = self._layout.labelForField(widget)
+            if isinstance(label, QLabel):
+                label.setText(f"{field.label} · {len(lines)}" if lines else field.label)
+        return sum(1 for field, widget, _ in self._rows
+                   if self._belongs(field) and not self._layout.isRowVisible(widget))
 
     # --- stavba polí -----------------------------------------------------------------
 
@@ -836,6 +877,12 @@ class FeatureEditor(QWidget):
         self.help.setWordWrap(True)
         self.help.setProperty("secondaryText", True)
         self._layout.addWidget(self.help)
+        self.hidden_hint = QLabel()  # zkrácené prohlížení: kolik voleb je nevyplněných
+        self.hidden_hint.setObjectName("feature_hidden_hint")
+        self.hidden_hint.setWordWrap(True)
+        self.hidden_hint.setProperty("cardHint", True)
+        self.hidden_hint.hide()
+        self._layout.addWidget(self.hidden_hint)
         self.wall_panel = LoftWallPanel()
         self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
@@ -854,6 +901,8 @@ class FeatureEditor(QWidget):
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None
+        self.hidden_hint.hide()
+        self.title.setToolTip("")
         self.wall_panel.setVisible(feature is not None and feature.get("type") == "loft")
         if feature is None:
             self.help.hide()
@@ -880,9 +929,17 @@ class FeatureEditor(QWidget):
         self._layout.insertWidget(2, self.form)
 
     def set_readonly(self) -> None:
-        """Prohlížení hodnot; volby pohledu na rukojeti zůstávají ovladatelné."""
+        """Prohlížení hodnot; volby pohledu na rukojeti zůstávají ovladatelné. Formulář je
+        zkrácený (P7.59): jen vyplněné hodnoty, nápověda prvku v bublině titulku."""
         if self.form is None:
             return
+        hidden = self.form.set_compact()
+        if self.help.text():
+            self.title.setToolTip(self.help.text())
+            self.help.hide()
+        self.hidden_hint.setText(
+            f"Nevyplněné volby: {hidden}. Ukáže je Upravit prvek (Ctrl+E)." if hidden else "")
+        self.hidden_hint.setVisible(bool(hidden))
         views = []
         for guides in self.form.findChildren(GuidesEditor):
             views.extend([guides.corner_picker, guides.drag_step, guides.drag_direction,

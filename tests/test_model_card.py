@@ -53,11 +53,33 @@ def test_left_card_has_three_tabs_and_tree_rows_keep_their_data(plate):
     option = QtWidgets.QStyleOptionViewItem()
     delegate = w.tree.itemDelegate()
     delegate.initStyleOption(option, w.tree.indexFromItem(item, 0))
-    assert option.text.startswith("Díra „Upínání“")  # stav ✓ se kreslí vpravo
+    assert option.text == "Upínání"  # krátký název podle rámu 2a (P7.59), stav vpravo
     option = QtWidgets.QStyleOptionViewItem()
     delegate.initStyleOption(option, w.tree.indexFromItem(item, 1))
-    assert option.text == "1 → 1  ✓"
+    assert option.text == "M6 ×4  ✓"  # údaj prvku místo počtu těles (ten je v bublině)
+    assert "Počet těles: 1 → 1" in item.toolTip(0) and "M6" in item.toolTip(0)
     assert delegate.sizeHint(option, w.tree.indexFromItem(item, 0)).height() >= 26
+    first = w.tree.topLevelItem(0)  # skica bez údaje: vpravo jen stav
+    option = QtWidgets.QStyleOptionViewItem()
+    delegate.initStyleOption(option, w.tree.indexFromItem(first, 1))
+    assert option.text == "✓"
+    assert first.data(0, model_card.NAME_ROLE) == "Obrys desky"
+
+
+def test_tree_names_and_summaries_follow_the_design():
+    from skodacad.features import tree_name, tree_summary
+
+    hole = {"id": "h1", "type": "hole", "name": "Upínání", "size": "M6",
+            "positions": [[0, 0]] * 4}
+    assert (tree_name(hole), tree_summary(hole)) == ("Upínání", "M6 ×4")
+    assert tree_summary({**hole, "positions": [[0, 0]]}) == "M6"
+    assert tree_name({"id": "fillet1", "type": "fillet"}) == "Zaoblení fillet1"
+    assert tree_summary({"id": "f", "type": "fillet", "radius": "r"}, {"r": 2.0}) == "R2"
+    assert tree_summary({"id": "c", "type": "chamfer", "distance": 1}) == "1 mm"
+    assert tree_summary({"id": "p", "type": "pattern", "count": 3}) == "×3"
+    assert tree_summary({"id": "p", "type": "pattern", "kind": "linear", "count": 3,
+                         "direction2": [0, 1, 0], "count2": 2}) == "3 × 2"
+    assert tree_summary({"id": "e", "type": "extrude", "distance": 10}) == ""
 
 
 def test_shortcuts_open_the_right_tab_and_parameters_section_follows_tab(plate):
