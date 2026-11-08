@@ -141,6 +141,13 @@ class SketchCanvas(QWidget):
         self.center = QPointF((max(xs) + min(xs)) / 2 - dx, (max(ys) + min(ys)) / 2 - dy)
         self.update()
 
+    def center_origin(self) -> None:
+        """Pohled kolmo na skicu s počátkem uprostřed volného místa (měřítko zůstane)."""
+        left, top, right, bottom = self.margins
+        self.center = QPointF(-(left - right) / 2 / self.scale,
+                              -(bottom - top) / 2 / self.scale)
+        self.update()
+
     # --- myš --------------------------------------------------------------------------
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802

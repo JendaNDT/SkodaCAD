@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets", exc_type=ImportError)
 
-from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtCore import QPointF, QTimer  # noqa: E402
 
 from skodacad.gui.main_window import MainWindow  # noqa: E402
 from skodacad.gui.sketch_mode import applicable, selection_title  # noqa: E402
@@ -211,3 +211,36 @@ def test_selection_title_words():
     assert selection_title(dialog) == "Bod a kružnice"
     dialog.selection = ["s1", "P1", "P2"]
     assert selection_title(dialog) == "Úsečka a 2 body"
+
+
+def test_sketch_view_switcher_fits_and_centers_the_origin(plate):
+    """P7.71, rám 2d: vpravo dole „Kolmo na skicu | Celá skica“ místo pohledů 3D."""
+    w = plate
+
+    def work(mode, seen):
+        dialog, canvas = mode.dialog, mode.dialog.canvas
+        views = mode.views
+        seen["card"] = (w.sketch_view_card.isVisible(), w.view_card.isHidden())
+        seen["texts"] = [b.text() for b in views.buttons.values()]
+        seen["active"] = views.active
+        draw_rectangle(dialog)
+        canvas.scale, canvas.center = 0.5, canvas.center + QPointF(500, 500)
+        views.buttons["fit"].click()  # celý obrys do volného místa
+        seen["fit"] = canvas.scale > 1
+        views.buttons["normal"].click()  # počátek doprostřed volného místa
+        left, top, right, bottom = canvas.margins
+        free = ((left + canvas.width() - right) / 2, (top + canvas.height() - bottom) / 2)
+        origin = canvas.to_screen(0, 0)
+        seen["origin"] = (abs(origin.x() - free[0]) < 1, abs(origin.y() - free[1]) < 1)
+        seen["inside"] = w.card_layer.cards and all(
+            not c.geometry().intersects(w.sketch_view_card.geometry())
+            for c in w.card_layer.cards if c.isVisible() and c is not w.sketch_view_card)
+        mode.palette.cancel.click()
+
+    seen = in_mode(w, work)
+    w.profile_sketch_action.trigger()
+    assert "error" not in seen, seen.get("error")
+    assert seen["card"] == (True, True)
+    assert seen["texts"] == ["Kolmo na skicu", "Celá skica"] and seen["active"] == "normal"
+    assert seen["fit"] and seen["origin"] == (True, True) and seen["inside"]
+    assert not w.sketch_view_card.isVisible() and w.view_card.isVisible()

@@ -91,6 +91,7 @@ from skodacad.gui.model_card import (
     StudyRowDelegate,
     TabSection,
     count_text,
+    selection_summary,
 )
 from skodacad.gui.ndt_panel import NdtPanel
 from skodacad.gui.ribbon import Ribbon
@@ -916,8 +917,11 @@ class MainWindow(QMainWindow):
         form.setVerticalSpacing(8)
         self.section_combo = QComboBox()
         self.section_combo.setObjectName("section_plane")
-        for axis, name in AXIS_NAMES.items():
-            self.section_combo.addItem(name[0].upper() + name[1:], axis)
+        for axis, name in AXIS_NAMES.items():  # krátce „Kolmo na Y“ jako v rámu 3c
+            self.section_combo.addItem(f"Kolmo na {axis}", axis)
+            self.section_combo.setItemData(self.section_combo.count() - 1,
+                                           name[0].upper() + name[1:],
+                                           Qt.ItemDataRole.ToolTipRole)
         self.section_combo.addItem("Rovnoběžně s vybranou plochou", "face")
         self.section_combo.addItem("Kolmo na osu cíle (průřez svarem)", "target")
         self.section_combo.setCurrentIndex(self.section_combo.findData("Y"))  # výchozí podélně
@@ -2762,7 +2766,7 @@ class MainWindow(QMainWindow):
         return f"{beam} · {face}"
 
     def _selection_hint(self) -> str:
-        """„Vybráno: Upínání · M6 ×4“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
+        """„Vybráno: Upínání · 4 díry M6“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
         document = self.session.document
         if self._selected_id is None or document is None:
             return ""
@@ -2770,7 +2774,7 @@ class MainWindow(QMainWindow):
         if feature is None:
             return ""
         params = self.session.result.parameters if self.session.result is not None else None
-        summary = tree_summary(feature, params)
+        summary = selection_summary(feature, tree_summary(feature, params))
         return f"Vybráno: {tree_name(feature)}" + (f" · {summary}" if summary else "")
 
     def _refresh_status_state(self) -> None:
@@ -3749,6 +3753,7 @@ class MainWindow(QMainWindow):
             self.section_info.setText("Zapni řez (klávesa R): díl se rozřízne a uvidíš ho "
                                       "uvnitř. Řez je jen pohled – model se nemění a do "
                                       "souboru se neukládá. Na plochy řezu jde klikat a měřit.")
+            self.section_info.setToolTip("")
             self._refresh_pill_focus()
             return
         kind = "target" if settings.target is not None else settings.axis or "face"
@@ -3760,9 +3765,10 @@ class MainWindow(QMainWindow):
         except DocumentError:
             low, high = settings.position, settings.position
         word = ("Od začátku" if settings.target is not None else "Hloubka"
-                if settings.axis is None else f"Poloha {settings.axis}")
+                if settings.axis is None else "Poloha")
         self.section_position_label.setText(word)
-        self.section_field.setToolTip(f"{word} [mm]")
+        self.section_field.setToolTip(
+            f"{word} {settings.axis} [mm]" if settings.axis else f"{word} [mm]")
         self.section_range_label.setText(decimal_comma(f"{number(low)} až {number(high)} mm"))
         if not self.section_field.hasFocus():
             self.section_field.setText(format_parameter_value(round(settings.position, 2)))
@@ -3775,6 +3781,7 @@ class MainWindow(QMainWindow):
         section = session.section
         if section is None:
             self.section_info.setText(f"✕ {session.section_error}")
+            self.section_info.setToolTip("")
             return
         where = describe_section(section.plane)
         if settings.target is not None:
@@ -3787,9 +3794,11 @@ class MainWindow(QMainWindow):
         self.section_area.setText(decimal_comma(f"{number(section.area)} mm²"))
         self.section_area_row.setToolTip(f"Plochy řezu jsou ve 3D {color}.")
         self.section_area_row.show()
-        self.section_info.setText(f"Řez {where} ({color}). Řez je jen pohled – model se "
-                                  "nemění a do souboru se neukládá. Na plochy řezu jde "
-                                  "klikat a měřit v panelu Měření.")
+        # Rám 3c: krátká věta v kartě; kde řez je, ukazuje pilulka, podrobnosti bublina.
+        self.section_info.setText("Řez je jen pohled. Model se nemění a do souboru se "
+                                  "neukládá.")
+        self.section_info.setToolTip(f"Řez {where} ({color}). Na plochy řezu jde klikat "
+                                     "a měřit v panelu Měření.")
 
     def export_map(self) -> None:
         """Body mapy tloušťky do CSV (x, y, z, tloušťka) – pro Excel a protokol."""

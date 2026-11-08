@@ -50,6 +50,22 @@ def count_text(count: int) -> str:
     return f"{count} prvky" if 2 <= count <= 4 else f"{count} prvků"
 
 
+def holes_text(count: int) -> str:
+    """„1 díra“, „4 díry“, „6 děr“."""
+    if count == 1:
+        return "1 díra"
+    return f"{count} díry" if 2 <= count <= 4 else f"{count} děr"
+
+
+def selection_summary(feature: dict, summary: str) -> str:
+    """Údaj pilulky u prvku vybraného ve stromu (rám 2a): u díry „4 díry M6“, jinak
+    krátký údaj řádku stromu (``summary`` = ``features.tree_summary``)."""
+    if feature.get("type") == "hole" and isinstance(feature.get("size"), str):
+        count = len(feature.get("positions") or [None])
+        return f"{holes_text(count)} {feature['size']}"
+    return summary
+
+
 class ModelTabs(QWidget):
     """Segment Prvky | Parametry | Díl nad stránkami levé karty."""
 
