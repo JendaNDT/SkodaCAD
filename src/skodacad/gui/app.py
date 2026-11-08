@@ -292,6 +292,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_status_pill(window, lines) and ok
     ok = _self_test_tool_cards(window, lines) and ok
     ok = _self_test_ndt_wizard(window, lines) and ok
+    ok = _self_test_responsive(window, lines) and ok
     ok = _self_test_sketch_mode(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
@@ -1432,6 +1433,79 @@ def _self_test_inspector(window, lines: list[str]) -> bool:
         lines.append(f"✕ Pravá karta: {type(exc).__name__}: {exc}")
         if window.feature_preview is not None:
             window.cancel_feature_preview()
+        return False
+
+
+def _self_test_responsive(window, lines: list[str]) -> bool:
+    """P7.64–P7.67: okno ve dvou menších velikostech se skutečným písmem systému –
+    paleta bez vodorovného posuvníku, záložky celé, pilulka mezi kartami, karty se
+    nepřekrývají a patička průvodce NDT je vidět."""
+    layer, ribbon, bar, pill = window.card_layer, window.ribbon, window.main_bar, \
+        window.status_pill
+    found = []
+    try:
+        def settle() -> None:
+            for _ in range(4):
+                QApplication.processEvents()
+                layer.relayout()
+
+        def check(size) -> str:
+            settle()
+            view = window.viewer.rect()
+            cards = [c for c in layer.cards if c.isVisible()]
+            for card in cards:
+                assert view.contains(card.geometry()), f"{card.objectName()} mimo 3D {size}"
+            for i, a in enumerate(cards):
+                for b in cards[i + 1:]:
+                    assert not a.geometry().intersects(b.geometry()), \
+                        f"překryv {a.objectName()} × {b.objectName()} {size}"
+            index = ribbon.stack.currentIndex()
+            row, scroll = ribbon._rows[index], ribbon._pages[index]
+            if window.palette_card.isVisible():
+                assert row.sizeHint().width() <= scroll.viewport().width() + 1, \
+                    f"paleta s posuvníkem {size}: {row.sizeHint().width()} > " \
+                    f"{scroll.viewport().width()}"
+            assert bar.tabs.width() >= bar.tabs.sizeHint().width() - 1, \
+                f"záložky se nevejdou {size}: {bar.tabs.width()} < {bar.tabs.sizeHint().width()}"
+            assert pill.sizeHint().width() + 2 <= window.pill_card.width() + 1, \
+                f"pilulka širší než místo {size}"
+            buttons = [b for _s, members in ribbon._groups[index] for b in members]
+            mode = ("nabídka »" if ribbon._more[index].isVisible() else
+                    "ikony" if buttons[0].toolButtonStyle()
+                    == Qt.ToolButtonStyle.ToolButtonIconOnly else "popisky")
+            return f"{size[0]}×{size[1]}: paleta {mode}, hledání {bar.search.mode}"
+
+        from PySide6.QtCore import Qt
+
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.workspace.reset()
+        window.workspace.show_panel("editor")
+        for size in ((960, 600), (1280, 800)):
+            window.resize(*size)
+            found.append(check(size))
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "ndt" / "deska.json", template=True)
+        window.resize(960, 600)
+        window.workspace.reset()
+        window.ribbon.select_page("ndt")
+        window.workspace.show_panel("ndt")
+        window.ndt_panel.select("s1")
+        found.append(check((960, 600)) + " (NDT)")
+        footer = window.ndt_panel.ut_wizard.footer
+        card = window.ndt_dock
+        assert footer.isVisible() and card.rect().contains(footer.geometry()), \
+            "patička průvodce NDT není vidět"
+        window.ribbon.select_page("model")
+        window.session.dirty = False
+        window.resize(1440, 900)
+        settle()
+        lines.append("✓ Responzivita okna: " + "; ".join(found)
+                     + "; karty bez překryvu, patička průvodce NDT vidět")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Responzivita okna: {type(exc).__name__}: {exc}")
+        window.resize(1440, 900)
         return False
 
 

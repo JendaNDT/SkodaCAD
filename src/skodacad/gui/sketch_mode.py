@@ -312,6 +312,17 @@ class SketchPalette(QWidget):
         layout.addWidget(self.cancel)
         layout.addWidget(self.done)
 
+    def fit_width(self, room: int) -> None:
+        """Úzké okno (P7.64): nástroje jen ikonami, Zrušit a Hotovo zůstávají s textem."""
+        for button in self.buttons.values():
+            button.set_compact(False)
+        self.layout().invalidate()
+        if self.sizeHint().width() + 2 > room:
+            for button in self.buttons.values():
+                button.set_compact(True)
+            self.layout().invalidate()
+        self.updateGeometry()
+
 
 class SketchMode(QObject):
     """Jeden běh skicáře v hlavním okně; ``run()`` vrací výsledek jako ``QDialog.exec``."""

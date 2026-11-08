@@ -13,6 +13,7 @@ Karta umí tu část rozhraní ``QDockWidget``, kterou okno a ``Workspace`` pou�
 from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen, QRegion
 from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
+from shiboken6 import isValid
 
 from skodacad.gui import ui_theme
 
@@ -68,6 +69,22 @@ def _wanted(widget: QWidget) -> int:
                widget.minimumHeight())
 
 
+class _FooterSync(QObject):
+    """Patička karty sleduje skrytí a ukázání svého průvodce (bez přepisu setVisible)."""
+
+    def __init__(self, owner: QWidget, footer: QWidget) -> None:
+        super().__init__(owner)
+        self.footer = footer
+        owner.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        kind = event.type()
+        if kind in (QEvent.Type.ShowToParent, QEvent.Type.HideToParent) and isValid(
+                self.footer):
+            self.footer.setVisible(kind == QEvent.Type.ShowToParent)
+        return False
+
+
 class FloatingCard(QFrame):
     """Neprůhledná karta se zaoblenými rohy; obsah je jeden widget pod hlavičkou."""
 
@@ -88,6 +105,7 @@ class FloatingCard(QFrame):
         self._layout.setSpacing(0)
         self._title: QWidget | None = None
         self._widget: QWidget | None = None
+        self.footers: list[QWidget] = []  # pevně dole pod posouvaným obsahem (P7.67)
 
     # --- rozhraní jako QDockWidget ---------------------------------------------
 
@@ -107,6 +125,20 @@ class FloatingCard(QFrame):
 
     def widget(self) -> QWidget | None:
         return self._widget
+
+    def add_footer(self, widget: QWidget, owner: QWidget | None = None) -> None:
+        """Pevná patička karty pod obsahem (P7.67): neposouvá se s ním, takže je vidět i
+        v nízkém okně, kde obsah karty posouvá. Je vidět, jen když je vidět ``owner``
+        (průvodce, ke kterému patří)."""
+        hidden = owner is not None and owner.isHidden()
+        widget.setParent(self)
+        self._layout.addWidget(widget, 0)
+        widget.installEventFilter(self)
+        self.footers.append(widget)
+        if owner is not None:
+            _FooterSync(owner, widget)
+        widget.setVisible(not hidden)
+        self._changed()
 
     def setTitleBarWidget(self, widget: QWidget) -> None:  # noqa: N802
         if self._title is not None:
@@ -143,6 +175,7 @@ class FloatingCard(QFrame):
                 # zalomené popisky jsou v úzké kartě vyšší než podle sizeHint
                 wanted = max(wanted, widget.heightForWidth(width))
             height += wanted
+        height += sum(f.sizeHint().height() for f in self.footers if not f.isHidden())
         return height
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
@@ -250,6 +283,11 @@ class CardLayer(QObject):
                 right_edge = min(right_edge, corner.geometry().left() - GAP)
             if low:
                 right_edge = min(right_edge, right.geometry().left() - GAP)
+            fit = getattr(content, "fit_width", None)
+            if fit is not None:  # responzivní pilulka (P7.66): zpráva se zkrátí „…“
+                fit(max(right_edge - left_edge - 2, 0))
+                hint = content.sizeHint()
+                width = max(hint.width(), content.minimumWidth()) + 2
             width = min(width, max(right_edge - left_edge, 0))
             x = min(max((area.width() - width) // 2, left_edge), right_edge - width)
             return QRect(x, top, width, height)
@@ -257,6 +295,9 @@ class CardLayer(QObject):
             free = self.free_rect()
             room = max(free.width() - 4, 0)  # paleta smí využít celé volné místo
             content = card.widget()
+            fit = getattr(content, "fit_width", None)
+            if fit is not None:  # responzivní paleta (P7.64): ikony, pak nabídka „»“
+                fit(max(room - 2, 0))
             wanted = (max(content.sizeHint().width(), content.minimumWidth()) + 2
                       if content is not None else room)
             width = min(wanted, room)

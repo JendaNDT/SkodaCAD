@@ -1003,6 +1003,11 @@ class MainWindow(QMainWindow):
                 self.ndt_panel.on_probe_rotated(steps) if self.feature_preview is None else None)
         self.ndt_dock = self._add_dock("NDT", "ndt_dock", self.ndt_panel,
                                        Qt.DockWidgetArea.RightDockWidgetArea)
+        # P7.67: „Krok N ze M · Zpět · Další“ pevně dole v kartě, mimo posouvaný obsah.
+        for wizard in (self.ndt_panel.ut_wizard, self.ndt_panel.pt_box, self.ndt_panel.mt_box,
+                       self.ndt_panel.rt_box):
+            wizard.footer.layout().setContentsMargins(12, 0, 12, 4)
+            self.ndt_dock.add_footer(wizard.footer, owner=wizard)
         self.ndt_action = self._action("Panel NDT studií", self.show_ndt)
 
     def _build_audit_panel(self) -> None:
@@ -2738,8 +2743,9 @@ class MainWindow(QMainWindow):
     def _ndt_hint(self) -> str:
         """„Paprsek s 1 odrazem · horní plocha“ u přiložené UT sondy (rám 2c, P7.63)."""
         focus = self.status_pill.focus
-        if focus is None or focus[1] not in ("● Přiloženo", "● Sonda nedosedá"):
-            return ""
+        if focus is None or not (focus[1] in ("● Přiloženo", "● Sonda nedosedá")
+                                 or focus[1].startswith("● Pokryto")):
+            return ""  # (P7.66: i u spočítaného pokrytí, rám 3d)
         placement = self.session.ndt_placement
         if placement is None:
             return ""
