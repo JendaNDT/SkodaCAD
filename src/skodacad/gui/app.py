@@ -1406,8 +1406,9 @@ def _self_test_inspector(window, lines: list[str]) -> bool:
             window.card_layer.relayout()
         menu = window.workspace.menu_buttons["editor"].text()
         assert menu == "Úprava prvku · náhled", menu
-        footer = [panel.esc_hint, panel.refresh_button, panel.cancel_button, panel.accept_button]
+        footer = [panel.esc_hint, panel.cancel_button, panel.accept_button]
         assert all(x.isVisible() for x in footer), "patička není vidět"
+        assert not panel.refresh_button.isVisible(), "Náhled jen po chybě (rám 3a)"
         xs = [x.mapTo(panel, x.rect().topLeft()).x() for x in footer]
         assert xs == sorted(xs), "pořadí patičky"
         card = window.editor_dock
@@ -1421,7 +1422,7 @@ def _self_test_inspector(window, lines: list[str]) -> bool:
         assert window.session.document.to_dict() == original
         assert len(window.session._undo) == history
         lines.append(f"✓ Pravá karta: titulek „{hole['name']}“, náhled „{menu}“, patička Esc "
-                     f"zahodí · Náhled · Zrušit · Potvrdit, Esc bez změny modelu "
+                     f"zahodí · Zrušit · Potvrdit, Esc bez změny modelu "
                      f"(karta {height} px)")
         if not fits:
             lines.append(f"! Pravá karta: formulář díry se při 1440 × 900 nevešel, "
@@ -1551,6 +1552,10 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         widths.append(_card_fits(window.section_dock))
         area = window.section_area.text()
         assert pill.focus == ("section", "Řez · Y = 0 mm"), pill.focus
+        window.statusBar().clearMessage()  # bez hlášení věta o řezu (rám 3c, P7.61)
+        from skodacad.gui.main_window import SECTION_HINT
+
+        assert pill.message == SECTION_HINT, pill.message
         QTest.mouseClick(window.section_toggle, Qt.MouseButton.LeftButton)
         QApplication.processEvents()  # okno self-testu počítá synchronně
         assert window.session.section is None and pill.focus is None
@@ -1588,6 +1593,9 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         shown.Color(color)  # hrany náhledu plně modře #4782d1 jako v rámu 3a (P7.58)
         assert color.IsEqual(expected) and shown.Transparency() == 0, \
             f"hrany náhledu: {color.Red():.3f} {color.Green():.3f} {color.Blue():.3f}"
+        # Rám 3a: náhled se obnovuje sám, tlačítko Náhled jen po chybě; věta o modrých hranách.
+        assert not panel.refresh_button.isVisible(), "tlačítko Náhled bez chyby"
+        assert "svítí ve 3D modře" in panel.message.text(), panel.message.text()
         panel.setFocus()
         QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
         QApplication.processEvents()
@@ -1599,7 +1607,8 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         assert after == before, "zrušený náhled změnil model nebo historii"
         window.workspace.show_panel("editor")
         lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
-                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s modrými hranami a řádkem "
+                     f"{area} (zaškrtávátko, pilulka „{SECTION_HINT}“), náhled „{focus}“ s modrými "
+                     f"hranami bez tlačítka Náhled, řádkem "
                      f"ve stromu a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure

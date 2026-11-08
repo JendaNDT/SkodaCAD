@@ -207,3 +207,46 @@ def test_edit_preview_marks_existing_row_and_confirm_clears_it(plate):
     assert w.feature_preview is None
     assert not any(item.data(0, PREVIEW_ROLE) for item in preview_rows(w))
     assert w.status_pill.focus is None and w.ribbon.isEnabled()
+
+
+def test_preview_card_short_edges_auto_refresh_and_section_pill(plate):
+    """P7.61, rámy 3a a 3c: hrany jako krátká hodnota, Náhled jen po chybě, věta o řezu."""
+    from skodacad.gui.main_window import SECTION_HINT, SHORT_HINT
+
+    w = plate
+    top = max(w.session.result.part.faces(), key=lambda f: (round(f.center().Z, 6), f.area))
+    w.start_feature_preview("chamfer", shapes=[e.wrapped for e in top.outer_wire().edges()])
+    panel = w.feature_preview
+    edges = panel.editor.form.widget("edges")
+    summary = edges.findChild(QtWidgets.QLabel, "edges_summary")
+    hint = edges.findChild(QtWidgets.QLabel, "edges_hint")
+    assert summary.text()[:1].isupper() and "Vybráno ve 3D" not in summary.text()
+    assert "Přidat vybrané hrany" in summary.toolTip()
+    assert not hint.isVisibleTo(panel)  # během náhledu se ve 3D hrany nevybírají
+    assert panel.accept_button.isEnabled() and not panel.refresh_button.isVisibleTo(panel)
+    assert panel.message.text().startswith("Náhled je připravený: objem")
+    assert "svítí ve 3D modře" in panel.message.text()
+    distance = panel.editor.form.widget("distance")
+    distance.setText("1+")  # chybná hodnota → původní díl a tlačítko pro nový pokus
+    distance.editingFinished.emit()
+    assert panel.refresh_button.isVisibleTo(panel) and not panel.accept_button.isEnabled()
+    distance.setText("1")
+    panel.refresh_button.click()
+    assert panel.accept_button.isEnabled() and not panel.refresh_button.isVisibleTo(panel)
+    panel.accept_button.click()
+    assert w.feature_preview is None
+    QtWidgets.QApplication.processEvents()  # karta prvku se načte po potvrzení
+    # Prohlížecí karta hotového sražení: krátký popis i věta, jak výběr změnit.
+    edges = w.feature_editor.form.widget("edges")
+    assert edges.findChild(QtWidgets.QLabel, "edges_hint").isVisibleTo(w.editor_dock)
+
+    w._selected_id = None
+    w._reload_all()
+    w.statusBar().clearMessage()
+    assert w.status_pill.message == SHORT_HINT
+    w.workspace.show_panel("section")
+    w.section_toggle.click()  # rám 3c: bez hlášení pilulka řekne, co s řezem jde
+    w.statusBar().clearMessage()
+    assert w.status_pill.focus[0] == "section" and w.status_pill.message == SECTION_HINT
+    w.section_toggle.click()
+    assert w.status_pill.focus is None and w.status_pill.message == SHORT_HINT

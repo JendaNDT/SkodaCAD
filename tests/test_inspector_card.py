@@ -87,12 +87,14 @@ def test_preview_footer_and_card_fit_without_scrolling(plate):
         QtWidgets.QApplication.processEvents()
         w.card_layer.relayout()
     row = panel.accept_button.parentWidget().layout()
-    footer = [panel.esc_hint, panel.refresh_button, panel.cancel_button, panel.accept_button]
+    footer = [panel.esc_hint, panel.cancel_button, panel.accept_button]
+    # Rám 3a: Náhled se obnovuje sám, tlačítko Náhled je jen pro nový pokus po chybě (P7.61).
+    assert not panel.refresh_button.isVisibleTo(panel)
     positions = [panel.layout().indexOf(x) for x in footer]
-    assert positions == [-1] * 4  # patička je jeden řádek, ne samostatné prvky panelu
+    assert positions == [-1] * 3  # patička je jeden řádek, ne samostatné prvky panelu
     assert row is panel.layout()
     xs = [x.mapTo(panel, x.rect().topLeft()).x() for x in footer]
-    assert xs == sorted(xs)  # Esc zahodí · Náhled · Zrušit · Potvrdit zleva doprava
+    assert xs == sorted(xs)  # Esc zahodí · Zrušit · Potvrdit zleva doprava
     assert panel.accept_button.property("role") == "primary"
     assert panel.cancel_button.property("role") == "secondary"
     assert panel.esc_hint.text() == "Esc zahodí"

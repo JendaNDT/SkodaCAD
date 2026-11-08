@@ -136,6 +136,7 @@ HELP_HINT = ("Levé tlačítko: otáčení  ·  Prostřední/pravé nebo Shift+l
              "Kolečko: zoom  ·  Klik: výběr plochy/hrany (Ctrl+klik: další)  ·  "
              "Pravý klik: co s výběrem  ·  Dvojklik: celý díl  ·  F1: všechny zkratky")
 SHORT_HINT = "F1: zkratky a ovládání myší"  # v pilulce místo dlouhé nápovědy (R5, P7.53)
+SECTION_HINT = "Na plochy řezu jde klikat a měřit"  # pilulka u zapnutého řezu (rám 3c)
 
 # Nový prvek z výběru ve 3D: typ → text akce.
 SELECTION_ACTIONS = {
@@ -2713,11 +2714,18 @@ class MainWindow(QMainWindow):
         """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
         if not text or text == HELP_HINT:
             # Bez hlášení ukáže vybraný prvek (rám 2a, P7.60), jinak odkaz na F1.
-            self.status_pill.set_message(self._selection_hint() or SHORT_HINT)
+            self.status_pill.set_message(self._idle_hint())
             self.status_pill.context.setToolTip(HELP_HINT)
         else:
             self.status_pill.set_message(text)
         self.card_layer.schedule()
+
+    def _idle_hint(self) -> str:
+        """Pilulka bez hlášení: u řezu co s ním jde (rám 3c, P7.61), jinak vybraný prvek
+        (rám 2a, P7.60), jinak odkaz na F1."""
+        if self.status_pill.focus is not None and self.status_pill.focus[0] == "section":
+            return SECTION_HINT
+        return self._selection_hint() or SHORT_HINT
 
     def _selection_hint(self) -> str:
         """„Vybráno: Upínání · M6 ×4“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
@@ -2779,6 +2787,9 @@ class MainWindow(QMainWindow):
             focus = (None, "")
         if self.status_pill.focus != (focus if focus[0] else None):
             self.status_pill.set_focus(*focus)
+            message = self.statusBar().currentMessage()
+            if not message or message == HELP_HINT:  # klidová věta závisí na zaměření
+                self._status_message(message)
             self.card_layer.schedule()
 
     def _refresh_actions(self) -> None:

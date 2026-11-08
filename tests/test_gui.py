@@ -855,6 +855,11 @@ def selected_text(w):
     return item.text(0) if item else None
 
 
+def edges_text(w):
+    """Krátký popis hran vybraných ve 3D v kartě prvku (P7.61)."""
+    return form_field(w, "edges").findChild(QtWidgets.QLabel, "edges_summary").text()
+
+
 def form_field(w, key):
     return w.feature_editor.form.widget(key)
 
@@ -1064,7 +1069,7 @@ def test_fillet_from_clicked_edge(empty_window):
     assert w.session.properties.volume_mm3 == pytest.approx(12000)
     w.feature_preview.accept_button.click()
     assert selected_text(w) == "✓  Zaoblení „Zaoblení 1“"
-    assert "hrana mezi přední a pravou plochou" in form_field(w, "edges").text()
+    assert edges_text(w).startswith("Hrana mezi přední a pravou plochou")
     loss = (2 ** 2 - math.pi * 2 ** 2 / 4) * 10
     assert w.session.properties.volume_mm3 == pytest.approx(40 * 30 * 10 - loss)
     assert len(w.viewer.highlighted) == 1  # zvýrazněná zaoblená hrana
@@ -1143,7 +1148,7 @@ def test_add_clicked_edges_to_selected_fillet(empty_window):
     w.feature_preview.accept_button.click()
     edges = w.session.feature("chamfer1")["edges"]
     assert edges == [{"between": ["front", "right"]}, {"face": "left", "parallel": "Z"}]
-    assert "hrany na levé ploše, rovnoběžné s osou Z" in form_field(w, "edges").text()
+    assert "hrany na levé ploše, rovnoběžné s osou Z" in edges_text(w)
     assert len(w.viewer.highlighted) == 3
     w.viewer.click([edge_at(shown_part(w), 0, 15, 0)])
     action(w, "Nahradit hrany vybraného prvku výběrem").trigger()
