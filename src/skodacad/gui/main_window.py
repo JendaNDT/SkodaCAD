@@ -126,6 +126,7 @@ from skodacad.profile_edit import empty_profile
 from skodacad.schema import FEATURE_SCHEMAS
 from skodacad.section import AXIS_NAMES
 from skodacad.section import describe as describe_section
+from skodacad.selectors import FACE_DIRECTIONS, FACE_NAMES_CZ
 from skodacad.session import SELECTION_FEATURES, ModelSession, format_parameter_value
 from skodacad.thickness_map import BELOW_LIMIT, NO_MATERIAL, SCALE, ThicknessMap
 
@@ -204,6 +205,7 @@ class MainWindow(QMainWindow):
         self.feature_preview = None
         self._sketch_mode = None  # skicář jako režim okna (P7.57)
         self._sketch_focus = None  # stav obrysu pro pilulku během skicáře
+        self._selection_message = ""  # poslední popis výběru ve 3D (pilulka mu dá nižší váhu)
         self._feature_preview_runner = None
         self._preview_action_states = []
         self.session = ModelSession(runner)
@@ -2714,7 +2716,11 @@ class MainWindow(QMainWindow):
 
     def _status_message(self, text: str) -> None:
         """Zpráva okna do pilulky; dlouhou nápovědu k myši nahradí odkaz na F1 (R5)."""
-        if not text or text == HELP_HINT:
+        ndt = self._ndt_hint() if text and text == self._selection_message else ""
+        if ndt:  # rám 2c: u přiložené sondy paprsek a plocha místo popisu kliknuté plochy
+            self.status_pill.set_message(ndt)
+            self.status_pill.context.setToolTip(text)
+        elif not text or text == HELP_HINT:
             # Bez hlášení ukáže vybraný prvek (rám 2a, P7.60), jinak odkaz na F1.
             self.status_pill.set_message(self._idle_hint())
             self.status_pill.context.setToolTip(HELP_HINT)
@@ -2727,7 +2733,27 @@ class MainWindow(QMainWindow):
         (rám 2a, P7.60), jinak odkaz na F1."""
         if self.status_pill.focus is not None and self.status_pill.focus[0] == "section":
             return SECTION_HINT
-        return self._selection_hint() or SHORT_HINT
+        return self._ndt_hint() or self._selection_hint() or SHORT_HINT
+
+    def _ndt_hint(self) -> str:
+        """„Paprsek s 1 odrazem · horní plocha“ u přiložené UT sondy (rám 2c, P7.63)."""
+        focus = self.status_pill.focus
+        if focus is None or focus[1] not in ("● Přiloženo", "● Sonda nedosedá"):
+            return ""
+        placement = self.session.ndt_placement
+        if placement is None:
+            return ""
+        if not placement.ok:
+            return placement.messages[0] if placement.messages else placement.label
+        bounces = placement.probe.bounces
+        beam = ("Paprsek bez odrazu" if bounces == 0 else "Paprsek s 1 odrazem" if bounces == 1
+                else f"Paprsek s {bounces} odrazy")
+        normal = placement.z_dir
+        side = next((name for name, (direction, _) in FACE_DIRECTIONS.items()
+                     if sum(a * b for a, b in zip(normal, direction, strict=True)) > 0.999),
+                    None)
+        face = f"{FACE_NAMES_CZ[side]} plocha" if side else "šikmá nebo zakřivená plocha"
+        return f"{beam} · {face}"
 
     def _selection_hint(self) -> str:
         """„Vybráno: Upínání · M6 ×4“ pro prvek vybraný ve stromu (rám 2a), jinak prázdné."""
@@ -2789,10 +2815,10 @@ class MainWindow(QMainWindow):
             focus = (None, "")
         if self.status_pill.focus != (focus if focus[0] else None):
             self.status_pill.set_focus(*focus)
-            message = self.statusBar().currentMessage()
-            if not message or message == HELP_HINT:  # klidová věta závisí na zaměření
-                self._status_message(message)
             self.card_layer.schedule()
+        message = self.statusBar().currentMessage()
+        if not message or message in (HELP_HINT, self._selection_message):
+            self._status_message(message)  # klidová věta závisí na zaměření (sonda se posune)
 
     def _refresh_actions(self) -> None:
         self._refresh_status_state()
@@ -3032,7 +3058,8 @@ class MainWindow(QMainWindow):
         if info.faces == 1:
             hints.append("pravým tlačítkem skica nebo díra na ploše")
         hints.append("Ctrl+klik přidá další")
-        self.statusBar().showMessage(f"{text}  ·  " + ", ".join(hints))
+        self._selection_message = f"{text}  ·  " + ", ".join(hints)
+        self.statusBar().showMessage(self._selection_message)
 
     # --- měření ----------------------------------------------------------------------
 

@@ -1662,6 +1662,8 @@ def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
         panel.place_action.trigger()
         QApplication.processEvents()
         assert window.session.ndt_placement.state == "ok", "sonda nedosedla"
+        beam = window.status_pill.message  # rám 2c: paprsek a plocha místo popisu plochy
+        assert beam == "Paprsek s 1 odrazem · horní plocha", beam
         assert wizard.active == 2 and wizard.next.isEnabled()
         QTest.mouseClick(wizard.next, Qt.MouseButton.LeftButton)  # Další: pokrytí
         QApplication.processEvents()
@@ -1703,7 +1705,8 @@ def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
         window.ribbon.select_page("model")
         window.workspace.show_panel("editor")
         lines.append(f"✓ NDT průvodce: skupina studií v levé kartě (klik), {badge}, kroky "
-                     f"hotovo/hotovo/aktivní/budoucí, přiložení, skutečné „Další: pokrytí“, "
+                     f"hotovo/hotovo/aktivní/budoucí, přiložení („{beam}“), skutečné "
+                     f"„Další: pokrytí“, "
                      f"pokryto {covered:.2f} % v pilulce i pruhu, vymezení UT přibalené, "
                      f"obsah karty {width} px se vejde; PT/MT/RT čtyři kroky, výpočet RT "
                      f"přejde na mapu s pruhem, karty {'/'.join(map(str, others))} px")

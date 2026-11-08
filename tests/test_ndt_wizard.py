@@ -145,6 +145,13 @@ def test_place_probe_then_coverage_step_bar_and_pill(plate):
     assert wiz.active == 2 and wiz.steps[2].kind == "active"  # zůstává do „Další“
     assert panel.placement_label.property("cardState") == "ok"
     assert w.status_pill.focus == ("measure", "● Přiloženo")
+    # rám 2c (P7.63): místo popisu kliknuté plochy paprsek a plocha přiložení
+    assert w.status_pill.message == "Paprsek s 1 odrazem · horní plocha"
+    assert w.statusBar().currentMessage().startswith("Plocha – rovinná")  # zpráva zůstává
+    w.statusBar().showMessage("Uloženo")  # skutečné hlášení okna má přednost
+    assert w.status_pill.message == "Uloženo"
+    w.statusBar().clearMessage()
+    assert w.status_pill.message == "Paprsek s 1 odrazem · horní plocha"
     assert panel.beam_section.isVisibleTo(panel) and "Dráha paprsku" in panel.beam_label.text()
     wiz.next.click()
     assert wiz.active == 3 and wiz.steps[2].summary_label.text() == "Přiloženo · směr 0°"
