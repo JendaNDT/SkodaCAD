@@ -26,6 +26,7 @@ from skodacad.gui.cad_icons import icon as cad_icon
 
 HEIGHT = 52
 SEARCH_SIZE = QSize(220, 26)
+SEARCH_WIDTHS = {"full": 220, "short": 120, "icon": 30}  # úzké okno (P7.65)
 
 
 def _pixel_font(widget: QWidget, size: int, weight=QFont.Weight.Normal) -> QFont:
@@ -64,7 +65,19 @@ class SearchField(QPushButton):
             layout.addWidget(label)
         layout.insertStretch(2, 1)
         self.clicked.connect(action.trigger)
+        self.mode = "full"
         self.refresh_style()
+
+    def set_mode(self, mode: str) -> None:
+        """Responzivní pole (P7.65): ``full`` s textem a zkratkou, ``short`` jen „Najít…“,
+        ``icon`` jen lupa. Bublina i název pro čtečky zůstávají celé."""
+        if mode == self.mode:
+            return
+        self.mode = mode
+        self.setFixedWidth(SEARCH_WIDTHS[mode])
+        self.text_label.setText(self.action.text() if mode == "full" else "Najít…")
+        self.text_label.setVisible(mode != "icon")
+        self.key_label.setVisible(mode == "full")
 
     def refresh_style(self) -> None:
         t = ui_theme.tokens()
@@ -171,6 +184,32 @@ class MainBar(QWidget):
         holder = QWidget()
         holder.setLayout(right)
         layout.addWidget(holder, 1)
+        self._title = title
+        self._right = right
+
+    def needed_width(self, mode: str) -> int:
+        """Šířka lišty, při které se záložky vejdou celé a hledání má podobu ``mode``."""
+        layout = self.layout()
+        margins = layout.contentsMargins()
+        history = sum(b.sizeHint().width() for b in self.history_buttons)
+        inner = self._right.contentsMargins()
+        right = (history + self._right.spacing() * len(self.history_buttons) + 10
+                 + inner.left() + inner.right())
+        return (margins.left() + margins.right() + 2 * layout.spacing()
+                + self._title.minimumWidth() + self.tabs.sizeHint().width()
+                + right + SEARCH_WIDTHS[mode] + 4)  # 4 px rezerva na zaokrouhlení
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        # P7.65: v úzkém okně ustoupí nejdřív hledání (bez zkratky, pak jen lupa), aby
+        # záložky činností zůstaly celé a bez šipek pro posouvání.
+        self.fit(event.size().width())
+        super().resizeEvent(event)
+
+    def fit(self, width: int) -> None:
+        """Podoba hledání pro lištu široké ``width`` px (nejširší, při které se záložky
+        vejdou celé)."""
+        mode = next((m for m in ("full", "short") if self.needed_width(m) <= width), "icon")
+        self.search.set_mode(mode)
 
     def set_document(self, name: str, subtitle: str) -> None:
         self.title_label.setText(name)

@@ -515,7 +515,10 @@ class NdtPanel(QWidget):
         self.coverage_spread = QDoubleSpinBox()
         self.coverage_spread.setRange(0, 45)
         self.coverage_spread.setValue(0)
-        form.addRow("Rozevření (poloviční úhel) [°]:", self.coverage_spread)
+        # P7.67: krátký popisek na jeden řádek (karta 320 px), plný význam v bublině
+        self.coverage_spread.setToolTip("Rozevření svazku – poloviční úhel [°]; 0 = jen "
+                                        "osa paprsku")
+        form.addRow("Rozevření [°]:", self.coverage_spread)
         self.tolerance_box = QWidget()
         tolerance_row = QHBoxLayout(self.tolerance_box)
         tolerance_row.setContentsMargins(0, 0, 0, 0)

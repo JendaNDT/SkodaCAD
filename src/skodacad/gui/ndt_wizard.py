@@ -162,6 +162,9 @@ class WizardStep(QFrame):
             f"font-weight: 600; color: {t['fg3'] if kind == 'future' else t['fg']};")
         self.summary_label.setText(summary)
         self.summary_label.setVisible(bool(summary) and kind != "active")
+        # P7.67: hotové a budoucí kroky jsou jen řádky – nižší okraje, karta se vejde
+        vertical = 8 if kind == "active" else 5
+        self.layout().setContentsMargins(8, vertical, 8, vertical)
         self.change.setVisible(kind == "done")
         self.body.setVisible(kind == "active")
         if self.property("stepState") != kind:
@@ -195,10 +198,17 @@ class Wizard(QWidget):
         self._list = QVBoxLayout()
         self._list.setSpacing(2)
         layout.addLayout(self._list)
+        # Patička (čára + „Krok N ze M · Zpět · Další“) je samostatný widget: okno ji
+        # přesune na spodek karty mimo posouvanou část, aby byla vidět vždy (P7.67).
+        self.footer = QWidget()
+        self.footer.setObjectName(f"{name}_footer")
+        footer_column = QVBoxLayout(self.footer)
+        footer_column.setContentsMargins(0, 0, 0, 0)
+        footer_column.setSpacing(4)
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setStyleSheet("color: palette(mid);")
-        layout.addWidget(line)
+        footer_column.addWidget(line)
         footer = QHBoxLayout()
         self.position = QLabel()
         self.position.setObjectName("ndt_wizard_position")
@@ -215,7 +225,8 @@ class Wizard(QWidget):
         self.next.clicked.connect(self.go_next)
         footer.addWidget(self.back)
         footer.addWidget(self.next)
-        layout.addLayout(footer)
+        footer_column.addLayout(footer)
+        layout.addWidget(self.footer)
 
     def title(self) -> str:
         return self._title

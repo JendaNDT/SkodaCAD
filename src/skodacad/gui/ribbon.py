@@ -12,6 +12,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QMenu,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 from skodacad.gui.main_bar import ActivityTabs
 
 BUTTON_WIDTH = 56  # položka palety podle návrhu: ikona 24 px nad popiskem 11 px
+COMPACT_WIDTH = 34  # úzké okno: jen ikona, název v bublině (P7.64)
 ICON = 24
 
 
@@ -41,18 +43,37 @@ class RibbonButton(QToolButton):
             self._update_label()
         elif text:
             self.setText(text)
+            self.setToolTip(text)  # i jen s ikonou musí být poznat, co tlačítko dělá
+            self.setAccessibleName(text)
         if menu is not None:
-            self.setMenu(menu)
+            # Akce, která sama je nabídkou (menuAction), už nabídku nese; druhé setMenu
+            # by v Qt zrušilo akci i nabídku a tlačítko by nic neotevřelo (P7.64).
+            if action is None or action.menu() is not menu:
+                self.setMenu(menu)
             self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setMinimumWidth(BUTTON_WIDTH)
+
+    def set_compact(self, compact: bool) -> None:
+        """Úzké okno (P7.64): jen ikona, název zůstává v bublině a pro čtečky.
+
+        Tlačítko bez ikony si popisek nechá – jinak by z něj nic nezbylo."""
+        compact = compact and not self.icon().isNull()
+        style = (Qt.ToolButtonStyle.ToolButtonIconOnly if compact
+                 else Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        if self.toolButtonStyle() != style:
+            self.setToolButtonStyle(style)
+            self.setMinimumWidth(COMPACT_WIDTH if compact else BUTTON_WIDTH)
 
     def _update_label(self):
         action = self.defaultAction()
         if self._label is not None:
             self.setText(self._label)
-        self.setAccessibleName(action.text().replace("&", ""))
+        # Akce bez textu (nabídka „Další prvky“) dostane název z popisku tlačítka – jen
+        # s ikonou (P7.64) by jinak nebylo poznat, co tlačítko dělá.
+        name = action.text().replace("&", "") or (self._label or "")
+        self.setAccessibleName(name)
         shortcut = action.shortcut().toString()
-        self.setToolTip(action.toolTip() + (f" ({shortcut})" if shortcut else ""))
+        self.setToolTip((action.toolTip() or name) + (f" ({shortcut})" if shortcut else ""))
 
 
 def _separator() -> QFrame:
@@ -81,6 +102,9 @@ class Ribbon(QWidget):
         self._collapsed = False
         self.buttons = []
         self.command_groups = []
+        self._groups = []  # po stránkách: [(oddělovač nebo None, [tlačítka])]
+        self._more = []  # po stránkách: tlačítko „Další“ s příkazy, které se nevešly
+        self._fitted = None  # (stránka, místo, sbalení, šířka oblíbených) poslední úpravy
         self.tabs = ActivityTabs()
         self.tabs.currentChanged.connect(self._page_changed)
         self.tabs.tabBarClicked.connect(lambda _index: self.set_collapsed(False))
@@ -102,19 +126,38 @@ class Ribbon(QWidget):
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(0)
+        page_groups = []
         for index, (label, commands) in enumerate(groups):
             self.command_groups.append(((title, label),
                                         [action for action, _text, _menu in commands
                                          if action is not None]))
+            separator = None
             if index:
+                separator = _separator()
                 row_layout.addSpacing(6)
-                row_layout.addWidget(_separator())
+                row_layout.addWidget(separator)
                 row_layout.addSpacing(6)
+            members = []
             for action, text, menu in commands:
                 button = RibbonButton(action, text, menu, row)
                 button.setAccessibleDescription(label)  # popisek skupiny pro čtečky
                 row_layout.addWidget(button)
                 self.buttons.append(button)
+                members.append(button)
+            page_groups.append((separator, members))
+        more = QToolButton(row)  # P7.64: příkazy, které se do úzkého okna nevešly
+        more.setObjectName("palette_more")
+        more.setText("»")
+        more.setAutoRaise(True)
+        more.setToolTip("Další příkazy – nevešly se do úzkého okna")
+        more.setAccessibleName("Další příkazy")
+        more.setMenu(QMenu(more))
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more.setMinimumWidth(COMPACT_WIDTH)
+        more.hide()
+        row_layout.addWidget(more)
+        self._groups.append(page_groups)
+        self._more.append(more)
         scroll = QScrollArea()
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidgetResizable(True)
@@ -160,6 +203,57 @@ class Ribbon(QWidget):
         hint = super().sizeHint()
         return QSize(self.preferred_width(), hint.height())
 
+    def fit_width(self, room: int) -> None:
+        """Responzivní paleta (P7.64): plné popisky → jen ikony → zbytek v nabídce „»“.
+
+        Volá ji rozmístění karet s místem, které paleta má; vodorovný posuvník se tak
+        neukáže. Skrytá tlačítka zůstávají v ``buttons`` (hledání, oblíbené, zkratky)."""
+        index = self.stack.currentIndex()
+        if not 0 <= index < len(self._rows):
+            return
+        key = (index, room, self._collapsed, self._trailing.sizeHint().width())
+        if key == self._fitted:
+            return
+        self._fitted = key
+        groups, more, row = self._groups[index], self._more[index], self._rows[index]
+        buttons = [button for _separator, members in groups for button in members]
+        for button in buttons:
+            button.show()
+            button.set_compact(False)
+        more.hide()
+        hidden: list[RibbonButton] = []
+
+        def width() -> int:
+            for separator, members in groups:
+                if separator is not None:
+                    separator.setVisible(any(not b.isHidden() for b in members))
+            row.layout().invalidate()
+            row.setMinimumWidth(row.sizeHint().width())
+            return self.preferred_width()
+
+        if width() > room and not self._collapsed:
+            for button in buttons:
+                button.set_compact(True)
+            if width() > room:
+                more.show()
+                for button in reversed(buttons[1:]):
+                    if width() <= room:
+                        break
+                    button.hide()
+                    hidden.insert(0, button)
+        menu = more.menu()
+        menu.clear()
+        for button in hidden:
+            action = button.defaultAction()
+            source = button.menu() or (action.menu() if action is not None else None)
+            if source is not None:  # vlastní podnabídka se stejnými akcemi
+                menu.addMenu(button.text()).addActions(source.actions())
+            elif action is not None:
+                menu.addAction(button.defaultAction())
+        width()
+        self.updateGeometry()
+        self._fit_height()
+
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self._fit_height()
@@ -176,8 +270,12 @@ class Ribbon(QWidget):
         if scroll.height() != needed:
             scroll.setFixedHeight(needed)
             self.updateGeometry()
+        if self.stack.maximumHeight() != needed:  # jinak výška nejvyšší stránky (P7.64)
+            self.stack.setFixedHeight(needed)
+            self.updateGeometry()
 
     def _page_changed(self, index):
+        self._fitted = None
         self.stack.setCurrentIndex(index)
         self.updateGeometry()
         self._fit_height()
@@ -199,6 +297,7 @@ class Ribbon(QWidget):
     def set_collapsed(self, collapsed):
         changed = self._collapsed != bool(collapsed)
         self._collapsed = bool(collapsed)
+        self._fitted = None
         self.stack.setVisible(not self._collapsed)
         self.updateGeometry()
         if changed:

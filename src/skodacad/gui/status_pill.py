@@ -68,6 +68,7 @@ class StatusPill(QWidget):
         self._kind = "empty"
         self._message = ""
         self._focus: tuple[str, str] | None = None
+        self._text_width = TEXT_WIDTH  # P7.66: zpráva se zkrátí podle místa pilulky
 
     def add_progress(self, *widgets: QWidget) -> None:
         for widget in widgets:
@@ -117,7 +118,7 @@ class StatusPill(QWidget):
             self.state.setStyleSheet(f"color: {colors[self._kind]};")
         metrics = self.context.fontMetrics()
         self.context.setText(metrics.elidedText(self._message, Qt.TextElideMode.ElideRight,
-                                                TEXT_WIDTH))
+                                                self._text_width))
         self.context.setToolTip(self._message if self.context.text() != self._message else "")
         self.context.setStyleSheet(f"color: {t['fg2']};")
         self.separator.setVisible(bool(self._message))
@@ -126,6 +127,19 @@ class StatusPill(QWidget):
 
     def refresh_style(self) -> None:
         self._refresh()
+
+    def fit_width(self, room: int) -> None:
+        """Responzivní pilulka (P7.66): zpráva se zkrátí „…“ na místo, které pilulka má
+        (celá je v bublině); stav vlevo zůstává celý."""
+        layout = self.layout()
+        margins = layout.contentsMargins()
+        fixed = (margins.left() + margins.right() + self.state.sizeHint().width()
+                 + self._progress.sizeHint().width() + self.separator.sizeHint().width()
+                 + 3 * layout.spacing())
+        width = max(min(TEXT_WIDTH, room - fixed - 4), 40)
+        if width != self._text_width:
+            self._text_width = width
+            self._refresh()
 
 
 class ViewSwitcher(QWidget):

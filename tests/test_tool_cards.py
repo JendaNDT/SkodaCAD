@@ -257,3 +257,95 @@ def test_preview_card_short_edges_auto_refresh_and_section_pill(plate):
     assert w.status_pill.focus[0] == "section" and w.status_pill.message == SECTION_HINT
     w.section_toggle.click()
     assert w.status_pill.focus is None and w.status_pill.message == SHORT_HINT
+
+
+def test_palette_fits_narrow_window_with_icons_and_more_menu(plate):
+    """P7.64: paleta bez vodorovného posuvníku – plné popisky, jen ikony, nabídka „»“."""
+    from skodacad.gui.ribbon import RibbonButton
+
+    w = plate
+    ribbon = w.ribbon
+    index = ribbon.stack.currentIndex()
+    scroll, more = ribbon._pages[index], ribbon._more[index]
+    buttons = [b for _s, members in ribbon._groups[index] for b in members]
+    full = Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+
+    ribbon.fit_width(5000)  # dost místa: plné popisky, nic skrytého
+    assert all(b.toolButtonStyle() == full and not b.isHidden() for b in buttons)
+    assert more.isHidden()
+    wide = ribbon.preferred_width()
+
+    ribbon.fit_width(wide - 1)  # o kousek méně: jen ikony, všechny příkazy dál vidět
+    assert all(b.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly for b in buttons)
+    assert not any(b.isHidden() for b in buttons) and more.isHidden()
+    assert ribbon.preferred_width() < wide
+    assert all(b.toolTip() and b.accessibleName() for b in buttons)  # název zůstává
+
+    ribbon.fit_width(160)  # velmi úzko: zbytek v nabídce „»“, žádný posuvník
+    hidden = [b for b in buttons if b.isHidden()]
+    assert hidden and not more.isHidden() and not buttons[0].isHidden()
+    assert ribbon.preferred_width() <= 160 or len(hidden) == len(buttons) - 1
+    entries = more.menu().actions()  # (bez zpracování událostí – karta by paletu přepočítala)
+    assert len(entries) == len(hidden)
+    for button, entry in zip(hidden, entries, strict=True):  # stejné akce, stejné podnabídky
+        source = button.menu() or button.defaultAction().menu()
+        assert entry is button.defaultAction() or (
+            entry.menu().actions() == source.actions() and entry.text() == button.text())
+    more_features = next(b for b in buttons if b.text() == "Další prvky")
+    assert more_features.defaultAction().menu() is w.add_feature_button.menu()  # otevře nabídku
+
+    ribbon.fit_width(5000)  # zpět: vše vidět s popisky
+    assert all(not b.isHidden() and b.toolButtonStyle() == full for b in buttons)
+    assert more.isHidden() and not more.menu().actions()
+    assert isinstance(buttons[0], RibbonButton)
+
+    w.resize(960, 600)  # skutečné rozmístění karet: paleta se vejde do volného místa
+    QtWidgets.QApplication.processEvents()
+    w.card_layer.relayout()
+    free = w.card_layer.free_rect()
+    assert w.palette_card.geometry().width() <= free.width()
+    content = w.palette_card.widget()
+    assert content.preferred_width() + 2 <= w.palette_card.geometry().width()
+    row = ribbon._rows[index]  # žádný vodorovný posuvník: řada se vejde do palety
+    assert row.sizeHint().width() <= scroll.viewport().width() + 1
+
+
+def test_main_bar_search_gives_way_to_activity_tabs(plate):
+    """P7.65: v úzkém okně se zúží hledání (bez zkratky, pak jen lupa), záložky zůstanou."""
+    bar = plate.main_bar
+    search = bar.search
+    modes = {}
+    for mode in ("full", "short", "icon"):
+        bar.fit(bar.needed_width(mode))  # (lištu rozmisťuje panel okna, proto fit přímo)
+        modes[mode] = (search.mode, search.width(), search.text_label.isVisibleTo(search),
+                       search.key_label.isVisibleTo(search))
+    assert modes["full"][0] == "full" and modes["full"][2] and modes["full"][3]
+    assert modes["short"][0] == "short" and modes["short"][2] and not modes["short"][3]
+    assert modes["icon"][0] == "icon" and not modes["icon"][2] and not modes["icon"][3]
+    assert modes["full"][1] > modes["short"][1] > modes["icon"][1]
+    assert search.toolTip().startswith("Najít příkaz") and search.accessibleName()
+    bar.fit(bar.needed_width("icon") - 50)  # užší už ne: aspoň lupa
+    assert search.mode == "icon" and search.isVisibleTo(bar)
+    plate.resize(1440, 900)  # skutečné okno: dost místa → plné pole, záložky celé
+    QtWidgets.QApplication.processEvents()
+    assert bar.tabs.width() >= bar.tabs.sizeHint().width() - 1
+    assert search.action is plate.command_search_action  # klik spouští stejné hledání
+
+
+def test_pill_shortens_message_to_its_room(plate):
+    """P7.66: dlouhá zpráva se v úzké pilulce zkrátí „…“, celá je v bublině."""
+    pill = plate.status_pill
+    text = "Plocha – rovinná, obsah 20 000.00 mm², normála (0.00, 0.00, 1.00) · " * 3
+    pill.set_message(text)
+    pill.fit_width(5000)
+    wide = pill.context.text()
+    pill.fit_width(260)
+    short = pill.context.text()
+    assert short.endswith("…") and len(short) < len(wide) and pill.context.toolTip() == text
+    assert pill.sizeHint().width() <= 260 + 4
+    assert pill.state.text()  # stav vlevo zůstává celý
+    plate.resize(960, 600)  # skutečné rozmístění: pilulka se vejde mezi karty
+    QtWidgets.QApplication.processEvents()
+    plate.card_layer.relayout()
+    card = plate.pill_card
+    assert pill.sizeHint().width() + 2 <= card.geometry().width() + 1

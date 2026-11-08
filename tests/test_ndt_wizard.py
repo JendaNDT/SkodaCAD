@@ -168,6 +168,7 @@ def test_place_probe_then_coverage_step_bar_and_pill(plate):
     assert f"{covered:.2f} %" in bar.rows["covered"].text()
     assert bar.note.text() == COVERAGE_NOTE and bar.note.isVisibleTo(panel)
     assert w.status_pill.focus == ("measure", f"● Pokryto {covered:.2f} %")
+    assert w.status_pill.message == "Paprsek s 1 odrazem · horní plocha"  # P7.66, rám 3d
     assert wiz.steps[3].kind == "active" and wiz.next.isEnabled()
     wiz.next.click()
     assert wiz.active is None
@@ -315,3 +316,32 @@ def test_card_height_counts_wrapped_rows(open_example):
     scroll = w.ndt_dock.widget()
     wanted = scroll.widget().heightForWidth(scroll.viewport().width())
     assert w.ndt_dock.preferred_height() >= wanted  # zalomené řádky (dřív karta kratší)
+
+
+def test_wizard_footer_is_pinned_below_scrolling_card_content(plate):
+    """P7.67: „Krok N ze M · Zpět · Další“ je pevně dole v kartě, mimo posouvaný obsah,
+    a je vidět jen s průvodcem vybrané metody."""
+    w = plate
+    panel = w.ndt_panel
+    card = w.ndt_dock
+    w.workspace.show_panel("ndt")
+    panel.select("s1")  # UT studie
+    QtWidgets.QApplication.processEvents()
+    scroll = card.widget()
+    for wizard in (panel.ut_wizard, panel.pt_box, panel.mt_box, panel.rt_box):
+        footer = wizard.footer
+        assert footer.parentWidget() is card and footer in card.footers
+        assert not scroll.isAncestorOf(footer)  # neposouvá se s obsahem
+        assert footer.isHidden() == wizard.isHidden()
+    ut = panel.ut_wizard.footer
+    assert not ut.isHidden() and panel.ut_wizard.next.isVisibleTo(card)
+    assert card.preferred_height() >= scroll.sizeHint().height() + ut.sizeHint().height()
+    panel.select("s2")  # MT studie: patička UT zmizí, ukáže se patička MT
+    QtWidgets.QApplication.processEvents()
+    assert panel.ut_wizard.isHidden() and ut.isHidden()
+    assert not panel.mt_box.isHidden() and not panel.mt_box.footer.isHidden()
+    w.resize(1000, 600)  # nízké okno: obsah karty se posouvá, patička zůstává vidět
+    QtWidgets.QApplication.processEvents()
+    w.card_layer.relayout()
+    footer = panel.mt_box.footer
+    assert card.rect().contains(footer.geometry())
