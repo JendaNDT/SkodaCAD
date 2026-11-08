@@ -82,7 +82,7 @@ def test_tab_is_saved_and_reset_starts_with_features(plate):
     w = plate
     w.model_tabs.select("part")
     w.workspace.save()
-    assert load_state(w.workspace.path)["sidebar_tab"] == "part"
+    assert load_state(w.workspace.path)["left_tab"] == "part"
     w.workspace.reset()
     assert w.model_tabs.current == "features"
     assert w.sidebar_sections["info"].expanded and w.sidebar_sections["properties"].expanded

@@ -15,7 +15,7 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from skodacad import profile_edit as edit
+from skodacad.gui import ui_theme
 from skodacad.profile_edit import EditError
 from skodacad.solver import DIMENSIONS, ORIGIN, SolveError, arc_midpoint, constraint_text, loops
 
@@ -97,6 +98,9 @@ class SketchCanvas(QWidget):
         self.scale = 6.0  # pixelů na mm
         self.center = QPointF(20, 15)  # bod světa uprostřed plochy
         self._pan_from: QPointF | None = None
+        # Zakryto kartami vlevo, nahoře, vpravo a dole (režim v hlavním okně, P7.57):
+        # „Celý obrys“ se vejde do volného místa mezi ně.
+        self.margins = (0, 0, 0, 0)
 
     # --- převody souřadnic ----------------------------------------------------------
 
@@ -126,9 +130,15 @@ class SketchCanvas(QWidget):
         if len(coordinates) == 1:
             xs, ys = [0.0, 60.0], [0.0, 40.0]
         width, height = max(xs) - min(xs), max(ys) - min(ys)
-        self.center = QPointF((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
-        self.scale = max(0.05, min((self.width() - 120) / max(width, 1.0),
-                                   (self.height() - 120) / max(height, 1.0)))
+        left, top, right, bottom = self.margins
+        room_w = max(self.width() - left - right, 160)
+        room_h = max(self.height() - top - bottom, 160)
+        self.scale = max(0.05, min((room_w - 120) / max(width, 1.0),
+                                   (room_h - 120) / max(height, 1.0)))
+        # střed obrysu do středu volného místa (posun vůči středu plochy, osa Y nahoru)
+        dx = (left - right) / 2 / self.scale
+        dy = (bottom - top) / 2 / self.scale
+        self.center = QPointF((max(xs) + min(xs)) / 2 - dx, (max(ys) + min(ys)) / 2 - dy)
         self.update()
 
     # --- myš --------------------------------------------------------------------------
@@ -176,14 +186,15 @@ class SketchCanvas(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("white"))
+        t = ui_theme.tokens()  # P7.57: barvy skicáře z návrhu (světlý i tmavý vzhled)
+        painter.fillRect(self.rect(), ui_theme.color(t["skbg"]))
         self._paint_grid(painter)
         dialog = self.dialog
         profile = dialog.profile
         failed_refs = dialog.failed_references()
         marked = set(dialog.selection) | dialog.listed_references()
         done = dialog.solution is not None and dialog.solution.ok and dialog.solution.dof == 0
-        base = COLOR_DONE if done else COLOR_FREE
+        base = ui_theme.color(t["fg"]) if done else ui_theme.color(t["skfree"])
 
         painter.setPen(QPen(COLOR_CANDIDATE, 1))
         for points in dialog.candidate_polylines():
@@ -242,7 +253,8 @@ class SketchCanvas(QWidget):
                 break
         x0, y1 = self.to_world(QPointF(0, 0))
         x1, y0 = self.to_world(QPointF(self.width(), self.height()))
-        painter.setPen(QPen(COLOR_GRID, 1))
+        t = ui_theme.tokens()
+        painter.setPen(QPen(ui_theme.opaque(t["skgrid"], t["skbg"]), 1))
         x = math.floor(x0 / step) * step
         while x <= x1:
             painter.drawLine(self.to_screen(x, y0), self.to_screen(x, y1))
@@ -255,8 +267,9 @@ class SketchCanvas(QWidget):
         painter.drawLine(self.to_screen(x0, 0), self.to_screen(x1, 0))
         painter.setPen(QPen(QColor("#81c784"), 1))
         painter.drawLine(self.to_screen(0, y0), self.to_screen(0, y1))
-        painter.setPen(COLOR_TEXT)
-        painter.drawText(8, self.height() - 8, f"mřížka {step:g} mm")
+        painter.setPen(ui_theme.color(t["sktext"]))
+        left, _top, _right, bottom = self.margins
+        painter.drawText(8 + left, self.height() - 8 - bottom, f"mřížka {step:g} mm")
 
     def _paint_preview(self, painter: QPainter) -> None:
         dialog = self.dialog
@@ -376,7 +389,13 @@ def _distance_to_segment(p: tuple, a: tuple, b: tuple) -> float:
 
 
 class SketcherDialog(QDialog):
-    """Skicář obrysu. ``solve`` = ``ModelSession.solve_profile``."""
+    """Skicář obrysu. ``solve`` = ``ModelSession.solve_profile``.
+
+    Od P7.57 běží v hlavním okně jako režim (``gui/sketch_mode.py``): logika zůstává tady,
+    režim si vypůjčí plátno, akce a seznam vazeb. ``changed`` hlásí každou změnu obrysu,
+    výběru nebo nástroje (pravá karta, pilulka)."""
+
+    changed = Signal()
 
     def __init__(self, profile: dict[str, Any], solve: Callable[[dict], Any],
                  parent: QWidget | None = None, projection: Any = None) -> None:
@@ -502,7 +521,7 @@ class SketcherDialog(QDialog):
         self.constraint_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.constraint_list.itemDoubleClicked.connect(
             lambda item: self.edit_constraint_value(self.constraint_list.row(item)))
-        self.constraint_list.itemSelectionChanged.connect(self.canvas.update)
+        self.constraint_list.itemSelectionChanged.connect(self._changed)
         side.addWidget(self.constraint_list, stretch=1)
         self.delete_constraint_action = self._act("Smazat vazbu", self.delete_constraints)
         button = QToolButton()
@@ -539,15 +558,23 @@ class SketcherDialog(QDialog):
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         # Esc nesmí zavřít skicář (ztratila by se práce) – jen ukončí kreslení / výběr.
         if event.key() == Qt.Key.Key_Escape:
-            if self.chain_start or self.arc_points:
-                self.finish_drawing()
-            elif self.selection:
-                self.selection = []
-                self.canvas.update()
-            else:
-                self.set_tool("select")
+            self.escape()
             return
         super().keyPressEvent(event)
+
+    def escape(self) -> None:
+        """Esc: ukončí řetěz čar, druhé Esc zruší výběr, třetí přepne na Výběr."""
+        if self.chain_start or self.arc_points:
+            self.finish_drawing()
+        elif self.selection:
+            self.selection = []
+            self._changed()
+        else:
+            self.set_tool("select")
+
+    def _changed(self) -> None:
+        self.canvas.update()
+        self.changed.emit()
 
     # --- veřejné API (okno i testy) --------------------------------------------------
 
@@ -562,7 +589,7 @@ class SketcherDialog(QDialog):
         self.help_label.setText(TOOL_HELP[tool])
         self.canvas.setCursor(Qt.CursorShape.ArrowCursor if tool == "select"
                               else Qt.CursorShape.CrossCursor)
-        self.canvas.update()
+        self._changed()
 
     def click(self, x: float, y: float, ctrl: bool = False) -> None:
         """Klik do plochy (souřadnice v mm) – pro testy; myš volá press/release."""
@@ -589,7 +616,7 @@ class SketcherDialog(QDialog):
                     hit in self.profile["segments"]
                     and self.profile["segments"][hit]["type"] == "circle")):
                 self._drag, self._drag_moved = hit, False
-            self.canvas.update()
+            self._changed()
         elif self.tool == "line":
             self._line_click(x, y)
         elif self.tool == "arc":
@@ -613,7 +640,7 @@ class SketcherDialog(QDialog):
             else:
                 self.profile["points"][self._drag] = [round(x, 4), round(y, 4)]
                 self._resolve(hold=self._drag)
-        self.canvas.update()
+        self._changed()
 
     def release(self, x: float, y: float) -> None:
         if self._drag is not None and self._drag_moved:
@@ -623,11 +650,11 @@ class SketcherDialog(QDialog):
     def finish_drawing(self) -> None:
         self.chain_start = None
         self.arc_points = []
-        self.canvas.update()
+        self._changed()
 
     def select(self, names: list[str]) -> None:
         self.selection = list(names)
-        self.canvas.update()
+        self._changed()
 
     def apply_constraint(self, kind: str) -> None:
         try:
@@ -746,7 +773,7 @@ class SketcherDialog(QDialog):
         if self.chain_start is None:
             self._remember()
             self.chain_start = self._point_at(x, y)
-            self.canvas.update()
+            self._changed()
             return
         target, _ = self.snap(x, y)
         if target == self.chain_start:
@@ -767,7 +794,7 @@ class SketcherDialog(QDialog):
             if self.arc_points and name == self.arc_points[0]:
                 return
             self.arc_points.append(name)
-            self.canvas.update()
+            self._changed()
             return
         start, end = (edit.point_xy(self.profile, n) for n in self.arc_points)
         try:
@@ -818,7 +845,7 @@ class SketcherDialog(QDialog):
         if not self.arc_points:
             self._remember()
             self.arc_points.append(self._point_at(x, y))
-            self.canvas.update()
+            self._changed()
             return
         center = self.arc_points[0]
         target, (tx, ty) = self.snap(x, y)
@@ -860,7 +887,7 @@ class SketcherDialog(QDialog):
                     profile["segments"][name]["radius"] = round(radius, 6) + 0.0
         self._refresh_list()
         self._refresh_status()
-        self.canvas.update()
+        self._changed()
 
     def failed(self) -> set[int]:
         if self.solution is None or self.solution.ok:
@@ -929,6 +956,7 @@ class SketcherDialog(QDialog):
     def _message(self, text: str, error: bool = False) -> None:
         color = "#c0392b" if error else "#555"
         self.status.setText(f"<span style='color:{color}'>{text}</span>")
+        self.changed.emit()
 
     def _ask_value(self, constraint: dict[str, Any], current: Any) -> Any | None:
         label = constraint_text(len(self.profile["constraints"]), constraint).split("(", 1)[-1]

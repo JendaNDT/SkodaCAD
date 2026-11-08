@@ -20,7 +20,7 @@ from skodacad.gui.window_state import (  # noqa: E402
 
 
 @pytest.mark.parametrize('raw', [b'', b'{', b'[]', b'null', b'\xff', b' '*(MAX_BYTES+1),
-                                b'{"version":2}', b'{"version":true}', b'['*2000])
+                                b'{"version":3}', b'{"version":true}', b'['*2000])
 def test_bad_preferences_fall_back_without_blocking_open(tmp_path, raw):
     path = tmp_path / 'okno.json'
     path.write_bytes(raw)
@@ -28,16 +28,39 @@ def test_bad_preferences_fall_back_without_blocking_open(tmp_path, raw):
 
 
 def test_preferences_validate_types_and_ignore_unknown_fields(tmp_path):
-    state = clean_state({'version': 1, 'model_width': True, 'editor_width': 99999,
-                         'panel': 'not-a-panel', 'page': [], 'geometry': [0, 0, True, 600],
-                         'model_visible': 'false', 'sections': {'info': False, 'unknown': True},
+    state = clean_state({'version': 2, 'left_visible': 'false', 'panel': 'not-a-panel',
+                         'activity': [], 'geometry': [0, 0, True, 600],
+                         'left_sections': {'info': False, 'unknown': True},
+                         'inspector': {'measure.drawing': True, 'ndt.studies': True,
+                                       'ndt.beam': 1},
                          'appearance': 'dark', 'document': {'features': []}})
-    assert state == {'sections': {'info': False}, 'appearance': 'dark'}
+    assert state == {'left_sections': {'info': False}, 'inspector': {'measure.drawing': True},
+                     'appearance': 'dark'}
     path = tmp_path / 'okno.json'
     save_state(path, {'panel': None, 'geometry': [-500, 20, 1200, 720], 'appearance': 'system'})
     assert load_state(path) == {'panel': None, 'geometry': [-500, 20, 1200, 720],
                                 'appearance': 'system'}
-    assert json.loads(path.read_text())['version'] == 1
+    assert json.loads(path.read_text())['version'] == 2
+
+
+def test_version_1_is_converted_and_obsolete_values_are_dropped(tmp_path):
+    """P7.58: verze 1 se načte pod jmény verze 2; šířky karet a stránka Soubor zmizí."""
+    path = tmp_path / 'okno.json'
+    path.write_text(json.dumps({
+        'version': 1, 'model_visible': False, 'ribbon_collapsed': True, 'maximized': False,
+        'model_width': 320, 'editor_width': 360, 'panel': 'measure', 'page': 'ndt',
+        'appearance': 'light', 'sidebar_tab': 'part',
+        'sections': {'info': True, 'parameters': False, 'properties': True},
+        'geometry': [10, 20, 1280, 800], 'activity': 'view'}))
+    assert load_state(path) == {
+        'left_visible': False, 'palette_collapsed': True, 'maximized': False,
+        'panel': 'measure', 'activity': 'ndt', 'appearance': 'light', 'left_tab': 'part',
+        'left_sections': {'info': True, 'parameters': False, 'properties': True},
+        'geometry': [10, 20, 1280, 800]}
+    assert clean_state({'version': 1, 'page': 'file'}) == {}
+    save_state(path, load_state(path))
+    written = json.loads(path.read_text())
+    assert written['version'] == 2 and 'page' not in written and 'model_width' not in written
 
 
 def test_failed_atomic_write_keeps_last_preferences(tmp_path, monkeypatch):

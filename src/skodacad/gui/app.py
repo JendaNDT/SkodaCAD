@@ -292,6 +292,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_status_pill(window, lines) and ok
     ok = _self_test_tool_cards(window, lines) and ok
     ok = _self_test_ndt_wizard(window, lines) and ok
+    ok = _self_test_sketch_mode(window, lines) and ok
     ok = _self_test_theme(window, lines) and ok
     ok = _self_test_feature_preview(window, lines) and ok
     ok = _self_test_feature_edit(window, lines) and ok
@@ -1064,6 +1065,8 @@ def _check_render_size(viewer) -> None:
 
 def _self_test_workspace(window, lines: list[str]) -> bool:
     """Native layout, real fields, geometry and history in each downloaded package."""
+    import json
+
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
 
@@ -1129,12 +1132,19 @@ def _self_test_workspace(window, lines: list[str]) -> bool:
         window.ribbon.set_collapsed(True)
         assert window.ribbon.stack.isHidden()
         window.workspace.save()
+        drawing = window.workspace.inspector_sections()["measure.drawing"]
+        drawing.button.click()  # sekce pravé karty se ukládá (okno.json verze 2, P7.58)
+        window.workspace.save()
         saved = load_state(window.workspace.path)
-        assert saved["panel"] == "editor" and saved["ribbon_collapsed"]
+        assert saved["panel"] == "editor" and saved["palette_collapsed"]
+        assert saved["inspector"]["measure.drawing"] == drawing.expanded, saved
+        raw = json.loads(window.workspace.path.read_text(encoding="utf-8"))
+        assert raw["version"] == 2 and "model_width" not in raw, raw
+        drawing.button.click()
         window.ribbon.set_collapsed(False)
         lines.append("✓ Prostředí CAD: pás příkazů, 8 pravých panelů, široká pole všech "
                      "rukojetí, 78009/77760 mm³ a historie, kompaktní okno 1024, obnova panelů "
-                     "a oddělené nastavení okna")
+                     "a oddělené nastavení okna (verze 2 se sekcemi pravé karty)")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Prostředí CAD: {type(exc).__name__}: {exc}")
@@ -1437,13 +1447,19 @@ def _self_test_status_pill(window, lines: list[str]) -> bool:
 
 def _card_fits(card) -> int:
     """Šířka obsahu karty; obsah širší než karta by byl vpravo oříznutý (P7.54)."""
-    scroll = card.widget()
-    content = scroll.widget() if hasattr(scroll, "widget") and callable(scroll.widget) \
-        else scroll
-    assert content.width() <= scroll.viewport().width(), (
-        f"{card.objectName()}: obsah {content.width()} px je širší než karta "
-        f"{scroll.viewport().width()} px")
-    return content.width()
+    from PySide6.QtWidgets import QScrollArea, QStackedWidget
+
+    holder = card.widget()
+    if isinstance(holder, QScrollArea):
+        content, room = holder.widget(), holder.viewport().width()
+        width = content.width()
+    else:  # pravá karta úprav: přepínač stránek (formulář, náhled, skicář)
+        page = holder.currentWidget() if isinstance(holder, QStackedWidget) else holder
+        content, room = page, holder.width()
+        width = max(page.width(), page.minimumSizeHint().width())
+    assert width <= room, (f"{card.objectName()}: obsah {width} px je širší než karta "
+                           f"{room} px")
+    return width
 
 
 def _self_test_tool_cards(window, lines: list[str]) -> bool:
@@ -1519,6 +1535,20 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         for _ in range(4):  # karta náhledu se ukáže a rozmístí jako u uživatele
             QApplication.processEvents()
             layer.relayout()
+        deadline = time.monotonic() + 30
+        while panel._last_result is None and time.monotonic() < deadline:
+            QApplication.processEvents()  # náhled počítá vlastní pracovní session
+            time.sleep(0.02)
+        shown = getattr(window.viewer, "_highlight", None)
+        assert panel._last_result is not None and shown is not None, "náhled nemá hrany"
+        from OCP.Quantity import Quantity_Color
+
+        from skodacad.gui.viewer import PREVIEW_HIGHLIGHT, _srgb
+
+        color, expected = Quantity_Color(), _srgb(PREVIEW_HIGHLIGHT)
+        shown.Color(color)  # hrany náhledu plně modře #4782d1 jako v rámu 3a (P7.58)
+        assert color.IsEqual(expected) and shown.Transparency() == 0, \
+            f"hrany náhledu: {color.Red():.3f} {color.Green():.3f} {color.Blue():.3f}"
         panel.setFocus()
         QTest.keyClick(panel, Qt.Key.Key_Escape)  # Esc zahodí
         QApplication.processEvents()
@@ -1530,8 +1560,8 @@ def _self_test_tool_cards(window, lines: list[str]) -> bool:
         assert after == before, "zrušený náhled změnil model nebo historii"
         window.workspace.show_panel("editor")
         lines.append(f"✓ Karty nástrojů: měření „{first}“ v pilulce, Uložit/Smazat, řez "
-                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s řádkem ve stromu "
-                     f"a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
+                     f"{area} (zaškrtávátko, pilulka), náhled „{focus}“ s modrými hranami a řádkem "
+                     f"ve stromu a Esc; obsah karet {'/'.join(map(str, widths))} px se vejde")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ Karty nástrojů: {type(exc).__name__}: {exc}")
@@ -1627,6 +1657,80 @@ def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
         lines.append(f"✕ NDT průvodce: {type(exc).__name__}: {exc}")
+        return False
+
+
+def _self_test_sketch_mode(window, lines: list[str]) -> bool:
+    """P7.57: skicář jako režim hlavního okna – skutečná myš na plátně místo 3D, Esc,
+    tlačítka palety, Hotovo = náhled skici; Zrušit náhledu nechá model beze změny."""
+    from PySide6.QtCore import QPoint, Qt, QTimer
+    from PySide6.QtTest import QTest
+
+    seen: dict = {}
+
+    def inside() -> None:
+        mode = window._sketch_mode
+        try:
+            dialog, canvas = mode.dialog, mode.canvas
+            for _ in range(3):
+                QApplication.processEvents()
+                window.card_layer.relayout()
+            mode._fit()
+            QApplication.processEvents()
+            center = window.viewer.rect().center()
+            seen["over3d"] = window.viewer.childAt(center) is canvas
+            QTest.mouseClick(mode.palette.buttons["line"], Qt.MouseButton.LeftButton)
+            assert dialog.tool == "line", "tlačítko Úsečka nepřepnulo nástroj"
+            for x, y in ((0, 0), (40, 0), (40, 20), (0, 20), (0, 0)):
+                point = canvas.to_screen(x, y)
+                QTest.mouseClick(canvas, Qt.MouseButton.LeftButton,
+                                 pos=QPoint(round(point.x()), round(point.y())))
+                QApplication.processEvents()
+            canvas.setFocus()
+            QTest.keyClick(canvas, Qt.Key.Key_Escape)  # konec řetězu čar
+            QApplication.processEvents()
+            seen["segments"] = len(dialog.profile["segments"])
+            seen["chain"] = dialog.chain_start
+            seen["pill"] = window.status_pill.state.text()
+            seen["width"] = _card_fits(window.editor_dock)
+            seen["palette"] = window.sketch_palette_card.isVisible()
+            QTest.mouseClick(mode.palette.done, Qt.MouseButton.LeftButton)
+        except Exception as exc:  # noqa: BLE001
+            seen["error"] = exc
+            mode.dialog.reject()
+
+    try:
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "deska.json", template=True)
+        window.resize(1440, 900)
+        window.workspace.reset()
+        QApplication.processEvents()
+        before = (window.session.document.to_dict(), len(window.session._undo))
+        QTimer.singleShot(200, inside)
+        window.profile_sketch_action.trigger()
+        if "error" in seen:
+            raise seen["error"]
+        assert seen["over3d"], "plátno skicáře není místo 3D pohledu"
+        assert seen["segments"] == 4 and seen["chain"] is None, seen
+        assert seen["palette"], "paleta Skica není vidět"
+        preview = window.feature_preview
+        assert preview is not None, "Hotovo nezaložilo náhled skici"
+        feature = preview.preview.session.feature(preview.preview.feature_id)
+        assert feature["type"] == "sketch"
+        window.cancel_feature_preview()
+        QApplication.processEvents()
+        after = (window.session.document.to_dict(), len(window.session._undo))
+        assert after == before, "zrušený náhled změnil model nebo historii"
+        assert window.palette_card.isVisible() and not window.sketch_palette_card.isVisible()
+        lines.append(f"✓ Skicář v okně: plátno místo 3D, paleta Skica, skutečné kliky "
+                     f"(obdélník 4 čáry), Esc ukončí čáru, „{seen['pill']}“ v pilulce, "
+                     f"karta Výběr {seen['width']} px se vejde, Hotovo → náhled skici, "
+                     f"Zrušit bez změny modelu")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- package test must report a failure
+        lines.append(f"✕ Skicář v okně: {type(exc).__name__}: {exc}")
+        if window.feature_preview is not None:
+            window.cancel_feature_preview()
         return False
 
 

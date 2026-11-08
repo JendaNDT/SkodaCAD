@@ -171,6 +171,9 @@
   [P7.54](docs/p7-54-karty-nastroju.md) = karty Měření, Řez, Mapa tloušťky a náhled prvku (rámy 3a–3c).
   [P7.55](docs/p7-55-ndt-pruvodce-ut.md) = NDT průvodce UT a skupina NDT studie v levé kartě (rámy 2c, 3d).
   [P7.56](docs/p7-56-pruvodce-pt-mt-rt.md) = stejný průvodce pro PT, MT, RT; úzké karty Audit a Návrh.
+  [P7.57](docs/p7-57-skicar-v-okne.md) = skicář jako režim hlavního okna (rám 2d).
+  [P7.58](docs/p7-58-ulozeni-a-srovnani.md) = `okno.json` verze 2 a srovnání osmi rámů
+  ([skript](docs/p7-58-srovnani-ramu.py)); průsvitnost karet ne (R1).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -619,6 +622,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `gui/design_panel.py` | panel *Konstrukční návrh pro NDT* (etapa 15B): srovnání variant na kopiích modelu, použití jen po potvrzení |
 | `gui/status_pill.py` | stavová pilulka a přepínač pohledů dole nad 3D (P7.53) |
 | `gui/ndt_wizard.py` | NDT průvodce (P7.55): `Wizard` / `WizardStep` (kroky odvozené ze stavu studie, Změnit, Zpět / Další / Hotovo, přeskočitelný krok), `StepState`, `CoverageBar` (pruh pokrytí), `TitledBox`, `ScopeDialog` + `scope_text` (závazné vymezení metody z `docs/ndt`, přibalené ve spec) |
+| `gui/sketch_mode.py` | skicář jako režim hlavního okna (P7.57): `SketchMode.run` (plátno `SketcherDialog` místo 3D, paleta Skica, vazby v levé kartě, karta Výběr `SelectionPanel`, pilulka, místní smyčka událostí jako `exec`), `applicable` (vazby přijaté jádrem pro výběr), `selection_title` |
 | `gui/tool_cards.py` | kresba karet Měření, Řez, Mapa tloušťky (P7.54): řádky výsledků „popisek … hodnota“, výška seznamu podle řádků, vzorek barvy plochy řezu |
 | `gui/model_card.py` | levá karta Prvky / Parametry / Díl (P7.51): záložky, `TabSection`, kresba řádků stromu, čeština počtu prvků |
 | `gui/main_bar.py`, `gui/ribbon.py` | hlavní lišta 52 px (název, činnosti, Zpět/Znovu, Najít příkaz) a plovoucí paleta příkazů (P7.50) |
@@ -785,7 +789,25 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   zalomení řad tlačítek, závorka zaškrtávátek do bubliny. `FloatingCard.preferred_height`
   u `ContentScroll` bere `sizeHint` (výška pro šířku karty), jinak je karta nižší než
   zalomený obsah. Náhled RT `PREVIEW_WIDTH` 220 px (karta i s posuvníkem).
+- P7.57: `MainWindow._exec_dialog(SketcherDialog)` spustí `SketchMode` (testy, které
+  `_exec_dialog` nahrazují, dál dostanou dialog). Logika a vlastní Zpět zůstávají ve
+  `SketcherDialog`; režim si půjčí `canvas` (dítě prohlížeče, pod kartami – po
+  `raise_` plátna znovu `card_layer.relayout()`), akce (`WindowShortcut`, přidané do okna,
+  ostatní akce okna zamčené přes `lock`, i v `_refresh_actions`) a `constraint_list`
+  (do `sketch_group_list` levé karty, delegát `ConstraintRowDelegate`, text položky
+  beze změny). `SketcherDialog.changed` hlásí změny obrysu, výběru a nástroje – každé
+  `canvas.update` v dialogu jde přes `_changed`. Esc = `escape()`. Pilulka má přednost
+  `_sketch_focus`. Po návratu z úpravy skici v náhledu prvku se vrátí stránka náhledu
+  a jeho zámek. Zavření okna ve skicáři skicu zruší (`closeEvent` ignoruje první zavření).
 
+- P7.58: `okno.json` verze 2 (`window_state.VERSION`): `activity`, `palette_collapsed`,
+  `left_visible`, `left_tab`, `left_sections`, `panel`, `inspector`, `appearance`.
+  Verze 1 převádí `V1_NAMES`, šířky karet a stránku „file“ zahazuje. Do `inspector`
+  patří jen sekce v `INSPECTOR_SECTIONS` (rozbaluje je jen uživatel; *Studie a jejich
+  správa* ne) – `Workspace.inspector_sections()` je hledá líně (karta NDT vzniká po
+  `Workspace`) a výchozí stav si pamatuje při prvním volání. Hrany náhledu prvku kreslí
+  `FeaturePreviewPanel` s `viewer.highlight_preview = True` (sRGB #4782d1, plné);
+  `_update_highlight` a `_show_original` ho vrací na růžovou.
 ## Známé pasti (výběr kliknutím)
 
 - Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
@@ -1880,7 +1902,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C) v PR #130 | P7.57–P7.58 (vydání D); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C) sloučené (PR #130, `0a0683e`), P7.57–P7.58 (vydání D) v PR #131 | ověřit a vydat D; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

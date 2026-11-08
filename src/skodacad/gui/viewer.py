@@ -305,6 +305,11 @@ def _srgb(hex_color: str) -> Quantity_Color:
     return Quantity_Color(r, g, b, Quantity_TOC_sRGB)
 
 
+# Hrany náhledu nového nebo upravovaného prvku – plná barva #4782d1 z rámu 3a (P7.58),
+# jako sRGB (lineární hodnoty by OCCT na obrazovce zesvětlil).
+PREVIEW_HIGHLIGHT = "#4782d1"
+
+
 class _NativeSurface(QWidget):
     """Holá nativní plocha, do které kreslí OpenGL z OCCT. Události předává prohlížeči."""
 
@@ -453,6 +458,7 @@ class OccViewer(QWidget):
         self._probe_objects: list[Any] = []  # virtuální NDT sonda a směr paprsku
         self._target_objects: list[Any] = []  # náhled cílového objemu NDT (svar)
         self._design_ghost: Any | None = None  # původní díl pod variantou (etapa 15B)
+        self.highlight_preview = False  # hrany náhledu prvku modře (P7.58, rám 3a)
         self._point_objects: list[Any] = []  # barevné body (mapa kontaktních ploch, etapa 09)
         self._plan_objects: list[Any] = []  # plán dráhy sondy a zakázané zóny (etapa 10)
         self.picked_point: tuple[float, float, float] | None = None  # kam mířil poslední klik
@@ -712,7 +718,8 @@ class OccViewer(QWidget):
     def highlight(self, shapes: list[Any]) -> None:
         """Zvýrazní tvary (hrany/plochy, které používá vybraný prvek); [] = nic.
 
-        Kreslí se navrch (vidět i skrz díl) a kliknout na ně nejde.
+        Kreslí se navrch (vidět i skrz díl) a kliknout na ně nejde. Růžově, během
+        náhledu prvku (``highlight_preview``) modře #4782d1 jako v rámu 3a (P7.58).
         """
         if not self.ready:
             return
@@ -724,9 +731,13 @@ class OccViewer(QWidget):
             for shape in shapes:
                 builder.Add(compound, shape)
             ais = AIS_Shape(compound)
-            ais.SetColor(_rgb(0.90, 0.20, 0.55))
-            ais.SetWidth(4.0)
-            ais.SetTransparency(0.45)
+            if self.highlight_preview:
+                ais.SetColor(_srgb(PREVIEW_HIGHLIGHT))
+                ais.SetWidth(3.0)
+            else:
+                ais.SetColor(_rgb(0.90, 0.20, 0.55))
+                ais.SetWidth(4.0)
+                ais.SetTransparency(0.45)
             self._context.Display(ais, False)
             self._context.Deactivate(ais)
             self._context.SetZLayer(ais, Graphic3d_ZLayerId_Topmost)

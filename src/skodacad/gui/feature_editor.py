@@ -504,7 +504,7 @@ class FieldsForm(QWidget):
         label = QLabel(f"<b>Vybráno ve 3D:</b> {describe_edges(value)}<br>"
                        "<span>Další hrany: vyber je ve 3D (Ctrl+klik) → "
                        "pravé tlačítko → Přidat vybrané hrany. Hrany prvku jsou ve 3D "
-                       "zvýrazněné růžově.</span>")
+                       "zvýrazněné (v náhledu modře).</span>")
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         kept = copy.deepcopy(value)
