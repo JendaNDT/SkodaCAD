@@ -38,9 +38,9 @@ ověřeně vydané). Pokyn autora „ok, pokračuj“ (8. 11. 2026). Jedna dávk
 | `tests/test_model_card.py` (upravený 1) | pilulka „Vybráno: Upínání · 4 díry M6“; sekce „Středy děr“ s počtem 4 rozbalená, klik ji sbalí; „Další volby“ sbalené, tlačítko zůstává aktivní i v kartě jen pro čtení, klik ukáže „Vlastní průměr“ jen pro čtení, název nikdy |
 | `tests/test_tool_cards.py` (upravený 1), `tests/test_gui.py` (upravený 1) | karta Řez: „Kolmo na Y“, „Poloha“ a bublina „Poloha Y [mm]“, krátká věta, poloha a barva řezu v bublině |
 | `tests/test_sketch_mode.py` (+1) | přepínač skicáře vidět místo pohledů 3D, „Celá skica“ přizpůsobí měřítko, „Kolmo na skicu“ dá počátek doprostřed volného místa, karta se nepřekrývá s ostatními, po Zrušit zpět pohledy 3D |
-| testy okna (21 souborů, Linux) | viz PR |
+| testy okna (21 souborů, Linux) | 484 úspěšných, 0 chyb; `ruff check src tests` bez nálezů |
 | self-test (Linux Xvfb, skutečné 3D) | „Levá karta“: skutečný klik rozbalí a sbalí „Další volby“ (7), pilulka „4 díry M6“; „Skicář v okně“: skutečný klik na „Celá skica“; celý self-test OK |
-| skript responzivity (5 velikostí × 7 rámů) | viz PR |
+| skript responzivity (5 velikostí × 7 rámů) | žádný nový nález; zůstává jen známých 7 posuvníků obsahu karty NDT (meze P7.64–P7.67), přepínač skicáře se s ničím nepřekrývá |
 
 Srovnání s návrhem (Linux Xvfb, 1440 × 900):
 [2a model](p7-68-srovnani/2a-model-svetly-srovnani.png),
