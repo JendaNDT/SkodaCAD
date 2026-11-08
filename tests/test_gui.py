@@ -1633,7 +1633,8 @@ def test_two_holes_show_pitch_in_panel_and_status_bar(window, monkeypatch):
         [item.text() for item in menu.actions() if item.isEnabled()]))
     w.viewer.context_menu_requested.emit(QPoint(10, 10))
     assert f"Uložit měření do modelu: Rozteč os: {number(pitch)} mm" in shown[-1]
-    w.measure_list.setCurrentRow(len(measure_rows(w)) - 1)  # nejkratší vzdálenost
+    shortest = next(i for i, row in enumerate(measure_rows(w)) if row.startswith("Nejkratší"))
+    w.measure_list.setCurrentRow(shortest)  # poslední řádek je „Osy: rovnoběžné“ (P7.62)
     assert w.viewer.measurement[0][2] == f"{number(pitch - 18)} mm".replace(".", ",")  # Ø18
     w.viewer.click(list(part.faces())[:3])
     assert measure_rows(w) == [] and "jednu nebo dvě" in w.measure_hint.text()

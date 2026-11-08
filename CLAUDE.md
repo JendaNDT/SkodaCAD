@@ -188,6 +188,8 @@
   ověřeně vydané. [P7.61](docs/p7-61-karta-nahledu-a-pilulka-rezu.md) = karta náhledu
   prvku (krátký popis hran, *Náhled* jen po chybě, věta rámu 3a) a pilulka řezu (rám 3c);
   první krok dávky v draftu PR #134 (podle rozhodnutí „Větší dávky“).
+  [P7.62](docs/p7-62-karta-mereni.md) = karta Měření (rám 3b): „Vybráno: 2 díry · Závity
+  M8 ×2“, řádek „Osy: rovnoběžné“, desetinná čárka v kresbě karet Měření a Řez.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -843,6 +845,13 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   (nový pokus); patička je jinak Esc zahodí · Zrušit · Potvrdit. Klidová věta pilulky je
   `MainWindow._idle_hint` (řez `SECTION_HINT` > výběr > `SHORT_HINT`); `_refresh_pill_focus`
   ji obnoví při změně zaměření, jen když `statusBar` nic nehlásí.
+- P7.62: desetinná čárka je **jen kresba** (`tool_cards.decimal_comma`: delegát hodnot,
+  `focus_text` pilulky, popisek čáry ve 3D, plocha a rozsah řezu); text položek
+  `measure_list`/`saved_list`, soubory, CSV a CLI dál s tečkou. Za hodnotami může být
+  informační řádek `RELATIONS` („Osy: rovnoběžné“, `NoItemFlags`) – index řádku ≠ index
+  v `_measured` jen za koncem, testy hledají řádek podle názvu, ne „poslední“. „2 díry“
+  = `inspection.is_hole` (normála k ose) v `ModelSession.selection_info`; prvek plochy
+  `ModelSession.selection_owner` (stejný `face_origin` jako pojistka P2, při nejistotě None).
 ## Známé pasti (výběr kliknutím)
 
 - Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
