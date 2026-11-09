@@ -30,9 +30,9 @@ s návrhem. Změna mění i formulář úprav, proto byla předem odsouhlasená.
 |---|---|
 | `tests/test_model_card.py` (+1, upravený 1) | `choice_text`: zkrácení a velké písmeno; skutečný výběr díry: „Válcové zahloubení“ s plným popisem v bublině a daty `counterbore`, „Na ploše: Horní plocha“ (`top`), „Skrz celý díl“ nad sekcí „Polohy děr  4“, šedý popisek „Díra · upinani“ bez tučného písma |
 | `tests/test_gui.py` (upravený 1) | rovina skici vybraná ve 3D: „Plocha vybraná ve 3D (u bodu …)“ |
-| testy okna, karet, náhledů a schématu (Linux) | viz PR |
-| self-test „Levá karta“ (Linux Xvfb, skutečné 3D) | „Válcové zahloubení · Na ploše: Horní plocha“, sekce „Polohy děr  4“; celý self-test viz PR |
-| skript responzivity (5 velikostí × 7 rámů) | viz PR |
+| testy okna, karet, náhledů, skicáře, sestavy a schématu (22 souborů, Linux) | 541 úspěšných, 0 chyb; `ruff check src tests` bez nálezů |
+| self-test „Levá karta“ (Linux Xvfb, skutečné 3D) | „Válcové zahloubení · Na ploše: Horní plocha“, sekce „Polohy děr  4“; celý self-test OK |
+| skript responzivity (5 velikostí × 7 rámů) | žádný nový nález; zůstává jen známých 7 posuvníků obsahu karty NDT |
 
 Srovnání s návrhem (Linux Xvfb, 1440 × 900):
 [2a světlý](p7-72-srovnani/2a-model-svetly-srovnani.png),
