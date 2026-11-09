@@ -244,3 +244,51 @@ def test_sketch_view_switcher_fits_and_centers_the_origin(plate):
     assert seen["texts"] == ["Kolmo na skicu", "Celá skica"] and seen["active"] == "normal"
     assert seen["fit"] and seen["origin"] == (True, True) and seen["inside"]
     assert not w.sketch_view_card.isVisible() and w.view_card.isVisible()
+
+
+def test_constraint_rows_have_kind_glyph_and_card_shows_only_warnings(plate):
+    """P7.75, rám 2d: značka druhu vazby vlevo v řádku; karta Výběr bez textu „Zbývá určit…“
+    (ten je v pilulce), jen varování a chyby."""
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    from skodacad.gui.sketch_mode import GLYPH_WIDTH, KIND_GLYPHS
+    from skodacad.solver import CONSTRAINT_LABELS
+
+    assert set(KIND_GLYPHS) >= set(CONSTRAINT_LABELS)  # nový druh vazby = nová značka
+    w = plate
+
+    def work(mode, seen):
+        dialog = mode.dialog
+        draw_rectangle(dialog)
+        listing = dialog.constraint_list
+        seen["rows"] = listing.count()
+        listing.resize(240, 200)
+        listing.show()
+        QtWidgets.QApplication.processEvents()
+        delegate = listing.itemDelegate()
+        option = QtWidgets.QStyleOptionViewItem()
+        option.rect = listing.visualItemRect(listing.item(0))
+        option.font = listing.font()
+        image = QImage(option.rect.size(), QImage.Format.Format_ARGB32)
+        image.fill(QColor("white"))
+        painter = QPainter(image)
+        option.rect.moveTo(0, 0)
+        delegate.paint(painter, option, listing.model().index(0, 0))
+        painter.end()
+        # ve sloupci značky je něco nakresleno (ne jen bílé pozadí)
+        seen["glyph"] = any(image.pixelColor(x, y) != QColor("white")
+                            for x in range(6, 6 + GLYPH_WIDTH) for y in range(image.height()))
+        seen["status"] = dialog.status.text()
+        seen["card"] = (mode.panel.status.text(), mode.panel.status.isVisible())
+        dialog.warnings = "<span>Čára s1 má nulovou délku.</span>"
+        mode.panel.refresh()
+        seen["warn"] = (mode.panel.status.text(), mode.panel.status.isVisible())
+        mode.palette.cancel.click()
+
+    seen = in_mode(w, work)
+    w.profile_sketch_action.trigger()
+    assert "error" not in seen, seen.get("error")
+    assert seen["rows"] >= 1 and seen["glyph"]
+    assert "Zbývá určit" in seen["status"]  # text stavu zůstává ve skicáři (testy, čtečky)
+    assert seen["card"] == ("", False)  # karta: žádný text, který opakuje pilulka
+    assert seen["warn"][0].startswith("<span>Čára s1") and seen["warn"][1]

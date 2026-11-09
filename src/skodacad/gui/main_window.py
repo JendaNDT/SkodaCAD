@@ -2907,6 +2907,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "workspace"):
             name = (feature.get("name") or short_label(feature)) if feature else None
             self.workspace.set_heading("editor", name, kind)
+            heading = self.workspace.headings["editor"]
+            heading.setToolTip(f"{short_label(feature)} ({feature['id']})" if feature else "")
 
     def _load_editor(self) -> None:
         if hasattr(self, "status_pill"):  # pilulka „Vybráno: …“ podle výběru (P7.60)

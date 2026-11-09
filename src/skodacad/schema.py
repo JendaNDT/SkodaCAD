@@ -253,7 +253,8 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
         Schema("chamfer", "Sražení", (
             _NAME,
             Field("edges", "Hrany", "edges"),
-            Field("distance", "Velikost [mm]", "number"),
+            Field("distance", "Vzdálenost [mm]", "number",
+                  help="O kolik se hrana sraží (obě strany stejně)."),
         ), "Srazí vybrané hrany."),
         Schema("variable_fillet", "Proměnné zaoblení", (
             _NAME,
