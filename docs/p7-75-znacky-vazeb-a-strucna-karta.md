@@ -27,7 +27,7 @@ dávky“; každá změna vzhledu ověřená i na responzivitu (pravidlo z 8. 11
 |---|---|
 | `tests/test_sketch_mode.py` (+1) | `KIND_GLYPHS` pokrývá všechny druhy v `CONSTRAINT_LABELS`; značka se skutečně vykreslí (delegát do obrázku); karta Výběr bez varování skrytá, s varováním viditelná |
 | `tests/test_inspector_card.py` (+1) | v náhledu je řádek druhu skrytý a má bublinu, nadpis nese „(id)“ v bublině, popisek chamferu je „Vzdálenost [mm]“ |
-| testy okna, karet, náhledů, skicáře, sestavy a schématu (22 souborů, Linux) | viz závěr dávky v PR; `ruff check src tests` bez nálezů |
+| testy okna, karet, náhledů, skicáře, sestavy a schématu (22 souborů, Linux) | 543 úspěšných, 0 chyb; `ruff check src tests` bez nálezů |
 | self-test (Linux Xvfb, skutečné 3D) | „Skicář v okně“: karta Výběr bez opakovaného stavu, „Zbývá určit: 2 rozměry“ v pilulce; celý self-test OK |
 | skript responzivity (5 velikostí × 7 rámů) | 35 snímků, žádný nový nález; zůstává jen známých 7 posuvníků obsahu karty NDT (meze P7.64–P7.67) |
 
