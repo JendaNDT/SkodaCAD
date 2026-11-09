@@ -26,7 +26,7 @@ Jedna dávka podle rozhodnutí „Větší dávky“; změna vzhledu ověřená 
 | Kontrola | Výsledek |
 |---|---|
 | `tests/test_ndt_wizard.py` (+1, upravený 1) | rozevření mimo hlavní formulář a uvnitř podrobností, přepnutí na čáru sekci rozbalí, volba jde do výpočtu; pruh i pilulka s jedním desetinným místem a čárkou; krátká věta citlivosti bez tečky v čísle, úplný text v podrobnostech |
-| testy okna, karet, NDT panelu, skicáře, sestavy a schématu (23 souborů, Linux) | viz závěr dávky v PR; `ruff check src tests` bez nálezů |
+| testy okna, karet, NDT panelu, skicáře, sestavy a schématu (23 souborů, Linux) | 562 úspěšných, 0 chyb; `ruff check src tests` bez nálezů |
 | self-test (Linux Xvfb, skutečné 3D) | „NDT průvodce“ s pilulkou i pruhem, „Responzivita okna“ i celý self-test OK |
 | skript responzivity (5 velikostí × 7 rámů) | 35 snímků, žádný nový nález; zůstává jen známých 7 posuvníků obsahu karty NDT; obsah kroku s pokrytím 871 → 845 px |
 
