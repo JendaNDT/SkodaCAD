@@ -101,6 +101,20 @@ plochy typu B-spline nejdou, kužel se dál zkosí jen kolem své osy podle prav
   neutrální plocha, odmítnutí, pojistky, formát 35, session), `tests/test_gui.py` (příkaz z výběru,
   náhled, potvrzení, Zpět) a nativní self-test „Úkos stěn“.
 
+## Ověření
+
+| Kontrola | Výsledek |
+|---|---|
+| `tests/test_draft.py` (30) | objem podle vzorce (čtyři stěny, opačný směr, neutrální rovina uprostřed / plochou, dvě stěny, válec → kužel, kapsa, tečný řetěz se zaoblenými rohy), změřený sklon ploch, odmítnutí (úhel, vodorovná plocha, duplicita, původ, neutrální plocha, příliš strmý úhel, zaoblení dna, válec s osou mimo tažení, koule), absolutní úhel, formát 35, ukázka, session (výběr, přidání stěn, zvýraznění) |
+| `tests/test_gui.py` (+2) | příkaz *Úkos vybraných stěn* ze skutečného výběru: náhled bez změny modelu, potvrzení = jeden krok, Zpět; příkaz jen pro roviny a válce bez hran |
+| úplná sada `pytest -q` (Linux) | 3 153 úspěšných; 6 testů předpokládalo „nejnovější verze formátu je 34“ – upraveny na 35 a znovu úspěšné (210 v dotčených souborech); `ruff check src tests` bez nálezů |
+| nativní self-test (Linux Xvfb, skutečné 3D) | „Úkos stěn“: ukázka, objem 28 556,588413 mm³ podle vzorce, změna úhlu, Zpět, zvýraznění čtyř stěn, uložení v35; celý self-test OK |
+
+Snímky okna (Linux Xvfb, 1440 × 900):
+[hotový úkos – karta prvku](p6-12-snimky/ukos-hotovy-karta-prvku.png),
+[nový úkos z vybraných stěn – náhled](p6-12-snimky/ukos-nahled-z-vyberu.png),
+[zvýraznění stěn prvku](p6-12-snimky/ukos-zvyrazneni-ploch.png).
+
 ## Meze
 
 - Kužel jako zadaná plocha, válec s osou mimo směr tažení, jiné druhy ploch a směr tažení mimo
