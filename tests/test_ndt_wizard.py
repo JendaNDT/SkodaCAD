@@ -165,14 +165,50 @@ def test_place_probe_then_coverage_step_bar_and_pill(plate):
     assert bar.bar.isVisibleTo(panel)
     assert sum(bar.percents.values()) == pytest.approx(100, abs=0.05)
     covered = result.percent("covered")
-    assert f"{covered:.2f} %" in bar.rows["covered"].text()
+    assert f"{covered:.1f} %".replace(".", ",") in bar.rows["covered"].text()
     assert bar.note.text() == COVERAGE_NOTE and bar.note.isVisibleTo(panel)
-    assert w.status_pill.focus == ("measure", f"● Pokryto {covered:.2f} %")
+    shown = f"{covered:.1f}".replace(".", ",")  # P7.78: jedno desetinné místo, čárka
+    assert w.status_pill.focus == ("measure", f"● Pokryto {shown} %")
     assert w.status_pill.message == "Paprsek s 1 odrazem · horní plocha"  # P7.66, rám 3d
     assert wiz.steps[3].kind == "active" and wiz.next.isEnabled()
     wiz.next.click()
     assert wiz.active is None
-    assert wiz.steps[3].summary_label.text() == f"Pokryto {covered:.2f} %"
+    assert wiz.steps[3].summary_label.text() == f"Pokryto {shown} %"
+
+
+def test_coverage_step_matches_frame_3d_spread_in_details_and_short_sensitivity(plate):
+    """P7.78–P7.80, rám 3d: rozevření je v podrobnostech výpočtu (ne v kroku), čára je
+    otevře, hlavní tlačítko je „Spočítat“ a pruh píše citlivost jednou větou s čárkou."""
+    import re
+
+    w = plate
+    panel = w.ndt_panel
+    w.workspace.show_panel("ndt")
+    panel.select("s1")
+    w.viewer.click([face_at(w.session.result.part, 40, 0, 20)], (40, 0, 20))
+    panel.place_action.trigger()
+    panel.ut_wizard.open_step(3)
+    form = panel.coverage_form
+    assert form.getWidgetPosition(panel.coverage_spread)[0] == -1  # není v hlavním formuláři
+    assert panel.coverage_details.content.isAncestorOf(panel.coverage_spread)
+    assert panel.coverage_label.parentWidget() is panel.coverage_details.content
+    assert "Spočítat" in [b.text() for b in panel.findChildren(QtWidgets.QPushButton)]
+    assert not panel.coverage_details.expanded
+    panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("line"))
+    assert panel.coverage_details.expanded  # čára chce rozevření – je hned vidět
+    panel.coverage_spread.setValue(5)  # volba dál funguje a jde do výpočtu
+    assert panel._coverage_options()["spread_deg"] == 5
+    panel.coverage_spread.setValue(0)
+    panel.coverage_mode.setCurrentIndex(panel.coverage_mode.findData("face"))
+    panel.coverage_step.setValue(25)
+    panel.coverage_convergence.setChecked(True)
+    panel.coverage_action.trigger()
+    short = panel.coverage_bar.sensitivity.text()
+    assert "p. b." in short and re.search(r"\d\.\d", short) is None  # čárka, jedna věta
+    assert len(short) < len(panel.coverage_label.text())
+    full = panel.coverage_label.text()  # podrobnosti nesou celý text beze změny
+    assert "citlivost na krok (" in full or "citlivý na krok" in full
+    assert w.session.ndt_coverage.assumptions["convergence_text"] in full
 
 
 def test_other_methods_keep_their_groups_and_stale_study_asks_for_confirmation(plate):

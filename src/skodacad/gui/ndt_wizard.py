@@ -343,6 +343,14 @@ class TitledBox(QWidget):
         return self._title
 
 
+
+
+def percent_text(value: float) -> str:
+    """Procento v kresbě karty a pilulky: jedno desetinné místo a čárka (jako PT, MT a RT);
+    čísla ve výsledku, CSV a v podrobnostech zůstávají přesná."""
+    return f"{value:.1f}".replace(".", ",")
+
+
 COVERAGE_NOTE = "Geometrický podíl plochy, ne pravděpodobnost nálezu vady."
 AREA_NOTE = "Geometrický podíl kontrolované oblasti, ne pravděpodobnost nálezu vady."
 

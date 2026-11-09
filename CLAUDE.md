@@ -210,6 +210,9 @@
   [P7.75–P7.77](docs/p7-75-znacky-vazeb-a-strucna-karta.md) (pokyn „ok, pokračuj v práci“
   9. 11.) = značky druhu u řádků vazeb skici (rám 2d), karta Výběr bez stavu zopakovaného
   v pilulce, náhled prvku bez opakovaného řádku „Druh (id)“ a pole „Vzdálenost“ u sražení (3a).
+  PR #138, `7d2a236`, ověřeně vydané. [P7.78–P7.80](docs/p7-78-karta-pokryti-ndt.md)
+  (pokyn „srovnat kartu s mapou pokrytí NDT“ 9. 11.) = krok *Geometrické pokrytí* UT podle
+  rámu 3d: rozevření v podrobnostech výpočtu, procenta s čárkou, krátká věta o citlivosti.
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -911,6 +914,12 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ConstraintRowDelegate` kreslí značku v pásu `GLYPH_WIDTH`, text položky beze změny.
   V náhledu prvku je `editor.title` skrytý (bublina zůstává) a druh s id je v bublině
   nadpisu karty (`_editor_heading`). Sražení: popisek pole `distance` je „Vzdálenost [mm]“.
+- P7.78–P7.80: `coverage_spread` (rozevření) leží v sekci `coverage_details` (Podrobnosti
+  výpočtu) spolu s `coverage_label`, ne v `coverage_form`; přepnutí zdroje na *Z přímé
+  dráhy* sekci rozbalí. Procenta v kresbě = `ndt_wizard.percent_text` (jedno desetinné
+  místo, čárka; pruh `CoverageBar(decimals=1, comma=True)`, pilulka, shrnutí kroku),
+  výsledek, CSV a `coverage_label` zůstávají přesné s tečkou. `_sensitivity_html(short=True)`
+  je jen pro pruh. Hlavní tlačítko kroku je *Spočítat* (akce se jmenuje dál *Spočítat pokrytí*).
 ## Známé pasti (výběr kliknutím)
 
 - Kliká se na **hotový** díl, ale prvek uprostřed stromu vybírá na dílu **před sebou**
@@ -2005,7 +2014,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
 | P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 v PR | P7.75–P7.77; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 v PR | P7.78–P7.80; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 
