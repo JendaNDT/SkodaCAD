@@ -1778,7 +1778,8 @@ def _self_test_ndt_wizard(window, lines: list[str]) -> bool:
         layer.relayout()
         QApplication.processEvents()
         covered = window.session.ndt_coverage.percent("covered")
-        assert window.status_pill.focus == ("measure", f"● Pokryto {covered:.2f} %")
+        shown = f"{covered:.1f}".replace(".", ",")
+        assert window.status_pill.focus == ("measure", f"● Pokryto {shown} %")
         assert panel.coverage_bar.bar.isVisible(), "pruh pokrytí není vidět"
         width = _card_fits(window.ndt_dock)
         window.session.clear_ndt_coverage()

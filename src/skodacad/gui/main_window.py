@@ -94,6 +94,7 @@ from skodacad.gui.model_card import (
     selection_summary,
 )
 from skodacad.gui.ndt_panel import NdtPanel
+from skodacad.gui.ndt_wizard import percent_text
 from skodacad.gui.ribbon import Ribbon
 from skodacad.gui.sketch_mode import SketchMode
 from skodacad.gui.sketcher import SketcherDialog
@@ -2789,7 +2790,7 @@ class MainWindow(QMainWindow):
         """Rámy 2c a 3d: v panelu NDT pilulka ukazuje pokrytí, nebo stav přiložení sondy."""
         coverage = self.session.ndt_coverage
         if coverage is not None:
-            return ("measure", f"● Pokryto {coverage.percent('covered'):.2f} %")
+            return ("measure", f"● Pokryto {percent_text(coverage.percent('covered'))} %")
         placement = self.session.ndt_placement
         if placement is not None:
             return (("measure", "● Přiloženo") if placement.state == "ok"

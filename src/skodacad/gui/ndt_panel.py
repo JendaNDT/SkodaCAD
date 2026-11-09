@@ -52,6 +52,7 @@ from skodacad.gui.ndt_wizard import (
     StepState,
     TitledBox,
     Wizard,
+    percent_text,
 )
 from skodacad.gui.probe_dialog import ProbeDialog
 from skodacad.gui.pt_dialog import PtDialog
@@ -518,7 +519,7 @@ class NdtPanel(QWidget):
         # P7.67: krátký popisek na jeden řádek (karta 320 px), plný význam v bublině
         self.coverage_spread.setToolTip("Rozevření svazku – poloviční úhel [°]; 0 = jen "
                                         "osa paprsku")
-        form.addRow("Rozevření [°]:", self.coverage_spread)
+        # P7.78: pokročilá volba leží v sekci Podrobnosti výpočtu (rám 3d ji v kroku nemá)
         self.tolerance_box = QWidget()
         tolerance_row = QHBoxLayout(self.tolerance_box)
         tolerance_row.setContentsMargins(0, 0, 0, 0)
@@ -561,7 +562,7 @@ class NdtPanel(QWidget):
             signal.connect(lambda *_args: self.refresh_actions())
         self.coverage_tolerance_auto.toggled.connect(
             lambda checked: self.coverage_tolerance.setEnabled(not checked))
-        self.coverage_bar = CoverageBar()
+        self.coverage_bar = CoverageBar(decimals=1, comma=True)
         coverage_layout.addWidget(self.coverage_bar)
         self.volume_legend = QLabel(  # jen u objemového cíle (07C)
             f'<span style="color:#9e9e9e">■ {UNRESOLVED_LABEL}</span> (jen kresba – buňka s více '
@@ -570,8 +571,7 @@ class NdtPanel(QWidget):
         self.volume_legend.setWordWrap(True)
         coverage_layout.addWidget(self.volume_legend)
         row = QHBoxLayout()
-        row.addWidget(window._action_button(self.coverage_action, "Spočítat pokrytí",
-                                            "primary"))
+        row.addWidget(window._action_button(self.coverage_action, "Spočítat", "primary"))
         row.addWidget(window._action_button(self.export_coverage_action, "Export CSV…",
                                             "secondary"))
         row.addWidget(window._action_button(self.clear_coverage_action, "Skrýt mapu",
@@ -583,7 +583,19 @@ class NdtPanel(QWidget):
         self.coverage_label.setWordWrap(True)
         self.coverage_label.setTextFormat(Qt.TextFormat.RichText)
         self.coverage_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.coverage_details = Section("Podrobnosti výpočtu", self.coverage_label)
+        details = QWidget()
+        details_layout = QVBoxLayout(details)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        spread_form = QFormLayout()
+        spread_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        spread_form.addRow("Rozevření [°]:", self.coverage_spread)
+        details_layout.addLayout(spread_form)
+        details_layout.addWidget(self.coverage_label)
+        self.coverage_details = Section("Podrobnosti výpočtu", details)
+        # čára bez rozevření objem nevymezuje → volba, kterou je třeba najít, je hned vidět
+        self.coverage_mode.currentIndexChanged.connect(
+            lambda *_args: self.coverage_details.set_expanded(True)
+            if self.coverage_mode.currentData() == "line" else None)
         coverage_layout.addWidget(self.coverage_details)
         coverage_body_layout.addWidget(self.coverage_box)
         self.ut_sections: dict[str, Section] = {}
@@ -1223,7 +1235,8 @@ class NdtPanel(QWidget):
             place_text = ("Nepřiloženo – návrh poloh v kroku 4 hledá polohu sám"
                           if target_done else "Po zvolení oblasti")
         coverage = session.ndt_coverage if placed_here else None
-        covered = (f"Pokryto {coverage.percent('covered'):.2f} %" if coverage is not None
+        covered = (f"Pokryto {percent_text(coverage.percent('covered'))} %"
+                   if coverage is not None
                    else "Po přiložení sondy")
         states = [
             StepState(target_done, self._target_summary(result, record or {})),
@@ -1546,7 +1559,7 @@ class NdtPanel(QWidget):
             self.coverage_label.setText("<br>".join(lines))
             self.coverage_bar.show_result(
                 BAR_LABELS, COVERAGE_COLORS, {state: result.percent(state) for state in STATES},
-                _sensitivity_html(result))
+                _sensitivity_html(result, short=True))
             return
         self.coverage_bar.show_result(BAR_LABELS, COVERAGE_COLORS, None)
         if session.coverage_pending:
@@ -2774,11 +2787,21 @@ def _parse_point(text: str) -> list[float]:
     return [float(part) for part in parts]
 
 
-def _sensitivity_html(result: CoverageMap | VolumeCoverageMap) -> str:
-    """Citlivost na krok nahlas: oranžově citlivý nebo neověřený výsledek."""
+def _sensitivity_html(result: CoverageMap | VolumeCoverageMap, short: bool = False) -> str:
+    """Citlivost na krok nahlas: oranžově citlivý nebo neověřený výsledek.
+
+    ``short`` = věta na jeden řádek pro pruh v kartě (rám 3d, desetinná čárka); úplný text
+    s upozorněním je v podrobnostech výpočtu."""
     found = result.assumptions.get("convergence")
     if found is None:
         return '<span style="color: #b9770e;">Citlivost na krok neověřena.</span>'
+    if short:
+        delta = f'{found["delta_pp"]:.1f}'.replace(".", ",")
+        if found["delta_pp"] > 1:
+            return (f'<span style="color: #b9770e;"><b>Citlivý na krok</b> ({delta} p. b.) – '
+                    f'zjemni krok.</span>')
+        return (f'<span style="color: #1b7f3b;">Nízká citlivost na krok ({delta} p. b.).'
+                f'</span>')
     if found["delta_pp"] > 1:
         return (f'<span style="color: #b9770e;"><b>Výsledek je citlivý na krok</b> (rozdíl '
                 f'{found["delta_pp"]:.2f} p. b.) – zjemni krok.</span>')
