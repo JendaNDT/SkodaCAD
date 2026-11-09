@@ -49,6 +49,7 @@ from skodacad.gui.loft_wall_panel import LoftWallPanel
 from skodacad.gui.workspace import Section
 from skodacad.guided_loft import CORNERS, LABELS, default_guides
 from skodacad.schema import (
+    CHOICE_SHORT,
     FACE_CHOICES,
     FEATURE_SCHEMAS,
     SHAPE_SCHEMAS,
@@ -114,15 +115,30 @@ def _combo(choices, current: Any, optional: bool, empty_label: str = "(automatic
     # seznam se přizpůsobí šířce panelu, celý text je v rozbalené nabídce a v bublině.
     combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     combo.setMinimumContentsLength(12)
-    combo.currentTextChanged.connect(combo.setToolTip)
     if optional:
         combo.addItem(empty_label, None)
     for key, label in choices:
-        combo.addItem(label, key)
+        combo.addItem(choice_text(label), key)
+        combo.setItemData(combo.count() - 1, label, Qt.ItemDataRole.ToolTipRole)
     index = combo.findData(current) if current is not None else 0
     combo.setCurrentIndex(max(index, 0))
-    combo.setToolTip(combo.currentText())
+
+    def tip() -> None:  # bublina = celý popis volby (krátký text je jen v okně)
+        full = combo.itemData(combo.currentIndex(), Qt.ItemDataRole.ToolTipRole)
+        combo.setToolTip(full if isinstance(full, str) and full else combo.currentText())
+
+    combo.currentIndexChanged.connect(lambda _index: tip())
+    tip()
     return combo
+
+
+def choice_text(label: str) -> str:
+    """Text volby v okně podle rámu 2a (P7.72): krátký tvar ze ``CHOICE_SHORT``, jinak
+    s velkým počátečním písmenem. Data volby ani uložený model se nemění."""
+    short = CHOICE_SHORT.get(label)
+    if short is not None:
+        return short
+    return label[:1].upper() + label[1:] if label else label
 
 
 class GuidesEditor(QGroupBox):
@@ -296,7 +312,7 @@ class FieldsForm(QWidget):
         self._rows: list[tuple[Field, QWidget, Callable[[], Any]]] = []
         self._compact = False  # prohlížení: jen vyplněné hodnoty (P7.59, rám 2a)
         self._point_views: dict[int, QLabel] = {}  # číslovaná tabulka bodů (P7.60)
-        self._point_sections: dict[int, Section] = {}  # sekce „Středy děr  4“ (P7.69)
+        self._point_sections: dict[int, Section] = {}  # sekce „Polohy děr  4“ (P7.69)
         self.extra_section: Section | None = None  # sbalené nevyplněné volby (P7.69)
         self._layout = layout = QFormLayout(self)
         # P7.52: mřížka popisek (vpravo zarovnaný) / pole jako v návrhu 1a; dlouhé řádky
@@ -389,7 +405,7 @@ class FieldsForm(QWidget):
         return self._point_views.get(id(self.widget(key)))
 
     def _refresh_point_view(self, field: Field, view: QLabel) -> None:
-        """Sekce „Středy děr  4“ a v ní číslovaná tabulka souřadnic jako v rámu 2a."""
+        """Sekce „Polohy děr  4“ a v ní číslovaná tabulka souřadnic jako v rámu 2a."""
         points = [p for p in (self._data.get(field.key) or []) if isinstance(p, list | tuple)]
         muted = view.palette().color(QPalette.ColorRole.PlaceholderText).name()
         rows = "".join(
@@ -954,6 +970,7 @@ class FeatureEditor(QWidget):
         self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
         self.form: FieldsForm | None = None
+        self._compact = False  # prohlížení (P7.74): titulek šedě, obnovuje restyle
         self.feature_id: str | None = None
         self.show_feature(None)
 
@@ -968,6 +985,7 @@ class FeatureEditor(QWidget):
             self.form.deleteLater()
             self.form = None
         self.feature_id = feature["id"] if feature else None
+        self._compact = False
         self.title.setToolTip("")
         self.wall_panel.setVisible(feature is not None and feature.get("type") == "loft")
         if feature is None:
@@ -1000,6 +1018,8 @@ class FeatureEditor(QWidget):
         if self.form is None:
             return
         self.form.set_compact()
+        self._compact = True
+        self._compact_title()
         if self.help.text():
             self.title.setToolTip(self.help.text())
             self.help.hide()
@@ -1017,11 +1037,22 @@ class FeatureEditor(QWidget):
             action.setEnabled(False)
         self.restyle()
 
+    def _compact_title(self) -> None:
+        """P7.74, rám 2a: název prvku je v hlavičce karty; druh a id jen šedě a menší."""
+        schema = FEATURE_SCHEMAS.get(self.form.data.get("type")) if self.form else None
+        if schema is None or self.feature_id is None:
+            return
+        muted = QApplication.palette().color(QPalette.ColorRole.PlaceholderText).name()
+        self.title.setText(f"<span style='color:{muted}; font-size:small'>"
+                           f"{html.escape(schema.label)} · {html.escape(self.feature_id)}</span>")
+
     def restyle(self) -> None:
         """Hodnoty jen pro čtení běžnou barvou textu jako v rámu 2a, ne šedě jako
         neaktivní pole (P7.60). Okno volá znovu po změně vzhledu."""
         if self.form is None:
             return
+        if self._compact:
+            self._compact_title()
         app = QApplication.palette()
         for widget in self.form.findChildren(QComboBox) + self.form.findChildren(QCheckBox):
             if widget.isEnabled():

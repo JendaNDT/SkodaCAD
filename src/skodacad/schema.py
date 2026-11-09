@@ -62,6 +62,17 @@ AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
 FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.items())
 HOLE_KIND_CHOICES = tuple(KINDS.items())
+# P7.72, rám 2a: krátký text voleb v okně („Válcové zahloubení“); celý popis zůstává
+# v bublině položky, v uloženém modelu, popisu prvku i příkazové řádce.
+CHOICE_SHORT = {
+    KINDS["tapped"]: "Závitová",
+    KINDS["clearance"]: "Průchozí pro šroub",
+    KINDS["counterbore"]: "Válcové zahloubení",
+    KINDS["countersink"]: "Kuželové zahloubení 90°",
+    KINDS["plastic"]: "3D tisk – šroub do plastu",
+    **{label: label.removesuffix(" dílu")[0].upper() + label.removesuffix(" dílu")[1:]
+       for key, label in PLANE_CHOICES if label.endswith(" dílu")},
+}
 HOLE_SIZE_CHOICES = tuple((size, size) for size in SIZES)
 HOLE_FIT_CHOICES = tuple(zip(FITS, ("jemná", "střední", "hrubá"), strict=True))
 PATTERN_KIND_CHOICES = (("circular", "kruhové – dokola kolem osy"),
@@ -259,10 +270,9 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("fit", "Řada průchozí díry", "choice", required=False,
                   choices=HOLE_FIT_CHOICES, default="medium",
                   help="ISO 273 – pro průchozí díry a zahloubení."),
-            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("plane", "Na ploše", "choice", choices=PLANE_CHOICES,
+                  help="Plocha dílu (horní, spodní …) nebo základní rovina XY, XZ, YZ."),
             Field("offset", "Posun roviny [mm]", "number", required=False),
-            Field("positions", "Středy děr [x; y]", "points",
-                  help="Jeden střed na řádek ve tvaru  x; y  (souřadnice jako ve skice)."),
             Field("depth", "Hloubka [mm]", "number", required=False,
                   help="Bez hodnoty: 2× průměr závitu (zálisná matice 2× průměr + 1)."),
             Field("through_all", "Skrz celý díl", "bool", required=False),
@@ -275,7 +285,10 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("print_clearance", "Vůle závitu pro tisk [mm]", "number", required=False,
                   help="Jen vymodelovaný závit: o kolik je závit větší než šroub "
                        "(na průměru). Bez hodnoty 0,2 mm."),
-            Field("diameter", "Vlastní průměr [mm]", "number", required=False,
+            # P7.73, rám 2a: polohy pod volbami díry (Skrz celý díl je nad nimi)
+            Field("positions", "Polohy děr [x; y]", "points",
+                  help="Jeden střed na řádek ve tvaru  x; y  (souřadnice jako ve skice)."),
+Field("diameter", "Vlastní průměr [mm]", "number", required=False,
                   help="Přepíše průměr z tabulky (např. podle zkušebního tisku)."),
         ), "Díra podle strojnických tabulek – závit vyznačený, pro 3D tisk i vymodelovaný."),
         Schema("shell", "Skořepina", (

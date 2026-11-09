@@ -1538,7 +1538,7 @@ def test_sketch_on_inclined_face_from_click(empty_window):
     assert sketch["plane"]["at"] == pytest.approx([4, -12.5, 7.5])
     assert sketch["elements"][0]["center"] == [0.0, 0.0]  # počátek skici = místo kliknutí
     plane = form_field(w, "plane")
-    assert plane.currentText() == "plocha vybraná ve 3D (u bodu 4; -12.5; 7.5)"
+    assert plane.currentText() == "Plocha vybraná ve 3D (u bodu 4; -12.5; 7.5)"  # P7.72
     shapes = form_field(w, "elements")
     set_text(shapes._form.widget("diameter"), "4")  # jiné pole – rovina musí zůstat
     assert w.session.feature("sketch2")["plane"]["at"] == pytest.approx([4, -12.5, 7.5])

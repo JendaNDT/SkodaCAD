@@ -162,6 +162,16 @@ def test_tree_refresh_measures_rows_once_not_once_per_changed_row(plate, example
     assert header.sectionResizeMode(1) == header.ResizeMode.ResizeToContents
 
 
+def test_choice_text_short_and_capitalized():
+    from skodacad.gui.feature_editor import choice_text
+
+    assert choice_text("válcové zahloubení pro imbus (ISO 4762)") == "Válcové zahloubení"
+    assert choice_text("horní plocha dílu") == "Horní plocha"
+    assert choice_text("nové těleso") == "Nové těleso"
+    assert choice_text("XY – vodorovná rovina") == "XY – vodorovná rovina"
+    assert choice_text("") == ""
+
+
 def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
     """P7.60, rám 2a: polohy jako číslovaná tabulka, hodnoty jen pro čtení běžnou barvou,
     pilulka „Vybráno: …“ podle prvku vybraného ve stromu."""
@@ -183,7 +193,7 @@ def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
     assert not form.layout().isRowVisible(form.widget("positions"))  # pole skryté, data dál
     text = view.text()
     section = form.point_section("positions")  # P7.69: sekce s počtem vpravo
-    assert section.button.text() == "Středy děr" and section.count_label.text() == "4"
+    assert section.button.text() == "Polohy děr" and section.count_label.text() == "4"
     assert section.expanded and text.count("<tr>") == 4
     assert ">1</td>" in text and ">4</td>" in text
     assert "A/2 - e" in text and "B/2 - e" in text
@@ -203,6 +213,17 @@ def test_feature_card_shows_point_table_and_readable_values_and_pill(plate):
     extra.button.click()
     assert not form.layout().isRowVisible(form.widget("diameter"))
     kind = form.widget("kind")
+    # P7.72: krátké texty voleb jako v rámu 2a, celý popis v bublině, data beze změny
+    assert kind.currentText() == "Válcové zahloubení" and kind.currentData() == "counterbore"
+    assert kind.toolTip() == "válcové zahloubení pro imbus (ISO 4762)"
+    plane = form.widget("plane")
+    assert plane.currentText() == "Horní plocha" and plane.currentData() == "top"
+    assert form.layout().labelForField(plane).text() == "Na ploše"
+    # P7.73/P7.74: Skrz celý díl nad polohami, druh a id jen šedý popisek
+    row = form.layout().getWidgetPosition
+    assert row(form.widget("through_all"))[0] < row(section)[0]
+    title = w.feature_editor.title.text()
+    assert "Díra · upinani" in title and "<b>" not in title
     palette = kind.palette()
     assert not kind.isEnabled()
     assert (palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText)
