@@ -1359,7 +1359,7 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         editor = window.feature_editor
         form = editor.form
         view = form.point_view("positions")  # číslovaná tabulka poloh (P7.60)
-        section = form.point_section("positions")  # sekce „Středy děr  4“ (P7.69)
+        section = form.point_section("positions")  # sekce „Polohy děr  4“ (P7.69, P7.72)
         label = view.text() if view is not None else ""
         assert label.count("<tr>") == 4 and view.isVisible(), label
         assert section.count_label.text() == "4" and section.expanded, \
@@ -1390,6 +1390,8 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         assert pill.message == "Vybráno: Upínání · 4 díry M6", pill.message
         assert not form.layout().isRowVisible(form.widget("name"))
         kind = form.widget("kind")  # hodnota jen pro čtení běžnou barvou, ne šedě
+        assert (kind.currentText(), form.widget("plane").currentText()) == (
+            "Válcové zahloubení", "Horní plocha"), "krátké texty voleb (P7.72)"
         assert not kind.isEnabled() and kind.palette().color(
             QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText) == kind.palette().color(
             QPalette.ColorGroup.Active, QPalette.ColorRole.ButtonText)
@@ -1399,8 +1401,9 @@ def _self_test_model_card(window, lines: list[str]) -> bool:
         assert window.session.document.to_dict() == original
         lines.append(f"✓ Levá karta: záložky Prvky/Parametry/Díl klikem i zkratkami, "
                      f"{rows} řádků po {min(heights)} px, „{window.feature_count_label.text()}“; "
-                     f"řádek „{drawn[0]} · {drawn[1]}“, klik → karta jen s vyplněnými "
-                     f"hodnotami, sekcí „Středy děr  4“ a sbalenými dalšími volbami "
+                     f"řádek „{drawn[0]} · {drawn[1]}“, klik → karta „Válcové zahloubení · "
+                     f"Na ploše: Horní plocha“ jen s vyplněnými "
+                     f"hodnotami, sekcí „Polohy děr  4“ a sbalenými dalšími volbami "
                      f"({hidden}; klik rozbalí a sbalí, {width} px), pilulka „{pill.message}“")
         return True
     except Exception as exc:  # noqa: BLE001 -- package test must report a failure
