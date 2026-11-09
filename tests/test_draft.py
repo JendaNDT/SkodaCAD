@@ -345,3 +345,69 @@ def test_example_box_with_draft_matches_the_formula():
     t1 = math.tan(math.radians(1))
     assert built(document).part.volume == pytest.approx(
         prism(60, 40, -t1, 0, 20) - prism(50, 30, t1, 0, 15), abs=1e-6)
+
+
+# --- výběr ploch ve 3D přes ModelSession -------------------------------------------------
+
+
+def session_with_plate(tmp_path):
+    from skodacad.session import ModelSession
+
+    path = tmp_path / "deska.json"
+    model().save(path)
+    session = ModelSession()
+    session.open(path)
+    return session
+
+
+SIDES = ((20, 0), (-20, 0), (0, 15), (0, -15))  # středy stěn desky v rovině XY
+
+
+def side_faces(session, which=(0, 1, 2, 3)):
+    """Stěny podle polohy (po úkosu už nejsou svislé, proto se hledají nejbližší)."""
+    walls = [f for f in session.result.part.faces()
+             if f.geom_type.name == "PLANE" and abs(f.normal_at().Z) < 0.5]
+    found = []
+    for index in which:
+        x, y = SIDES[index]
+        found.append(min(walls, key=lambda f: math.hypot(f.center().X - x, f.center().Y - y)))
+    return [face.wrapped for face in found]
+
+
+def test_session_creates_draft_from_selected_faces_with_origin_and_neutral(tmp_path):
+    session = session_with_plate(tmp_path)
+    feature_id = session.add_from_selection("draft", side_faces(session))
+    feature = session.feature(feature_id)
+    assert feature["type"] == "draft" and feature["pull"] == "+Z"
+    assert len(feature["faces"]) == 4
+    assert all(spec["origin"] == "deska" and spec["type"] == "plane" for spec in feature["faces"])
+    assert feature["neutral"] == 0  # dno vybraných stěn (z = 0), rozměr u dna zůstane
+    session.rebuild()
+    assert session.result.ok
+    assert session.result.part.volume == pytest.approx(prism(40, 30, math.tan(math.radians(3)),
+                                                              0, 20), abs=1e-6)
+    session.undo()
+    assert all(f["type"] != "draft" for f in session.document.features)  # jeden krok Zpět
+
+
+def test_session_adds_more_faces_and_highlights_them(tmp_path):
+    session = session_with_plate(tmp_path)
+    feature_id = session.add_from_selection("draft", side_faces(session, (0, 1)))
+    session.rebuild()
+    assert len(session.feature(feature_id)["faces"]) == 2
+    session.apply_selection(feature_id, side_faces(session, (2, 3)))  # zbylé dvě stěny
+    session.rebuild()
+    assert len(session.feature(feature_id)["faces"]) == 4
+    assert session.result.ok
+    assert len(session.feature_highlight(feature_id)) == 4
+
+
+def test_session_rejects_edges_and_counts_draftable_faces(tmp_path):
+    session = session_with_plate(tmp_path)
+    edge = session.result.part.edges()[0].wrapped
+    with pytest.raises(DocumentError, match="bez hran"):
+        session.add_from_selection("draft", [edge])
+    with pytest.raises(DocumentError, match="bez hran"):
+        session.add_from_selection("draft", [])
+    info = session.selection_info(side_faces(session))
+    assert info.faces == 4 and info.edges == 0 and info.draftable_faces == 4

@@ -153,6 +153,7 @@ SELECTION_ACTIONS = {
     "shell": "Skořepina – otevřít vybrané plochy",
     "move_face": "Posunout vybranou plochu…",
     "face_diameter": "Změnit průměr vybrané plochy…",
+    "draft": "Úkos vybraných stěn",
 }
 
 MEASURE_HINT = ("Klikni ve 3D na plochu nebo hranu – ukáže se její velikost a tloušťka stěny "
@@ -2870,7 +2871,9 @@ class MainWindow(QMainWindow):
                  "fillet": info.edges > 0, "chamfer": info.edges > 0,  # skica a díra jdou
                  "sketch": info.faces == 1, "hole": info.faces == 1,  # i na šikmou a válcovou
                  "shell": flat, "move_face": info.faces == 1 and info.edges == 0,
-                 "face_diameter": info.faces == 1 and info.edges == 0}
+                 "face_diameter": info.faces == 1 and info.edges == 0,
+                 "draft": info.faces > 0 and info.edges == 0
+                 and info.draftable_faces == info.faces}
         for key, action in self.selection_actions.items():
             action.setEnabled(has_part and needs[key])
         document = self.session.document
@@ -2883,7 +2886,8 @@ class MainWindow(QMainWindow):
                  "hole": "Přidat díru v místě kliknutí do: ",
                  "shell": "Otevřít vybrané plochy v: ",
                  "move_face": "Převzít vybranou plochu do: ",
-                 "face_diameter": "Převzít vybranou plochu do: "}
+                 "face_diameter": "Převzít vybranou plochu do: ",
+                 "draft": "Přidat vybrané stěny do: "}
         if kind in SELECTION_FEATURES:
             self.add_to_feature_action.setText(texts[kind] + describe(feature))
         else:

@@ -273,6 +273,10 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("angle", "Úhel [°]", "number",
                   help="Kladný úhel nakloní stěnu tak, aby byla vidět ze směru tažení "
                        "(vnější stěna se zúží, kapsa se rozšíří); záporný naopak. Nejvýš ±30°."),
+            Field("neutral", "Neutrální rovina [mm]", "number",
+                  help="Souřadnice roviny na ose tažení; v ní se rozměr stěny nemění. Nový úkos "
+                       "ji dostane na začátku vybraných stěn. V souboru může být i odkaz na "
+                       "rovinnou plochu dílu – ten se ve formuláři jen ukáže."),
         ), "Zkosí vybrané stěny o úhel kolem neutrální roviny, aby šel díl vytáhnout z formy. "
            "Plochy a neutrální rovinu vybereš ve 3D; výsledek se vždy změří.", menu=False),
         Schema("hole", "Díra", (

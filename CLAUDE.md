@@ -535,6 +535,16 @@
   zaniklá osa se odmítne. Změna směru tah zruší. Preference otevřeného okna,
   ne dokumentu; formát 34 a jádro/session beze změny. Výsledky kontrol v PR.
 
+- (9. 11. 2026, autor vybral na otázku po dokončení P6.1 „Úkos stěn“) **Úkos stěn – P6.11/P6.12**
+  (`docs/p6-11-ukos-steny.md`, průzkum `docs/p6-11-pruzkum-ukosu.py`): prvek `draft`, formát
+  **35** jen s ním. Zkosí zadané rovinné a válcové stěny kolem neutrální roviny (`draft.py`,
+  `BRepOffsetAPI_DraftAngle`), směr tažení `±X/±Y/±Z`, úhel ±30° (absolutní, výraz s parametry),
+  neutrální rovina = souřadnice nebo rovinná plocha. Plochy odkazem `{at, normal, type, origin}`
+  s pojistkou původu; výsledek se vždy změří (sklon každé zadané plochy), žádná aproximace.
+  Tečný řetěz se zkosí vcelku; zaoblení dna kapsy úkos blokuje (úkos před zaoblením). Z okna
+  příkazem *Úkos vybraných stěn*. Zápis starší aplikace nepoškodí – o prvku neví a verze 35 ji
+  zastaví. Výsledky kontrol v PR.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -602,6 +612,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `standards.py` | normalizované díly: tabulky (šrouby, matice, podložky, ložiska, kolíky, pera, ocelové profily), tvary v místních souřadnicích, kapsy, průřezy profilů |
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
 | `direct_edit.py` | přímé úpravy ploch (P2): `move_face`, `set_diameter` (posun jen vybrané plochy jádrem, kontroly vstupu G6 a výsledku G5), pojistka původu `face_origin` / `check_origin` nad `BuildContext.history` |
+| `draft.py` | úkos stěn (P6.11–P6.12): `validate` (struktura zápisu), `apply` (odmítnutí nepodporovaných ploch, volání `BRepOffsetAPI_DraftAngle`, **změření sklonu každé zadané plochy ve výsledku** přes `ModifiedShape` + `is_same`), `axis`, `neutral_from_face`, `DraftError`; prvek `draft` je ve `features.py`, z výběru ho vytváří `ModelSession._draft_from_selection` |
 | `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -955,6 +966,27 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   znaménko bere z polohy bodu, jinak bod přeskočí na druhou stranu.
 - Nové kružnicové vazby: `distance` ani `midpoint` s kružnicí slvs neumí (pád) – kontrola
   v `_check_constraint` je nepustí.
+
+## Známé pasti (úkos stěn)
+
+- `BRepOffsetAPI_DraftAngle` nastavuje sklon **absolutně** vůči směru tažení: plocha nakloněná
+  o −4° a zkosená o +2° skončí na +2°. Očekávání „přičíst úhel“ kontrola sklonu odmítla;
+  nevracet to povolením tolerance.
+- `Modified()` u tohoto algoritmu vrací prázdný seznam; výsledná plocha je `ModifiedShape(face)`
+  a v tělese se hledá `is_same`. Orientaci normály čti až z plochy **výsledného tělesa**
+  (`ModifiedShape` samo ji má obrácenou).
+- Jádro šíří úkos po **tečně navazujících** plochách (zaoblené svislé rohy se zkosí s hranou).
+  Vodorovné zaoblení navazující tečně (dno kapsy) `AddDone` odmítne → česká rada „úkos před
+  zaoblením“. Plochy jiné než rovina a válec jádro tiše přeskočí – služba je odmítne předem.
+- `find_face` hledá rovinu podle **přesné normály** – zkosenou stěnu je třeba zadat skloněnou
+  normálou a bodem na ní (testy: `drafted()`), ne původní svislou. `find_face` zná klíče
+  `at/normal/type/radius`, `origin` se před voláním odebírá (`_draft_face`).
+- Kladný úhel = vnější normála plochy se nakloní **ke směru tažení** (vnější stěna se zúží,
+  stěna kapsy se rozšíří). Nový úkos z výběru dostane neutrální rovinu na začátku vybraných stěn
+  proti směru tažení; číslo se sám nepřesouvá, odkaz na plochu ano. Neutrální plocha v souboru
+  se ve formuláři jen ukáže (`_build_number` vrací původní slovník beze změny).
+- Znovu vybrat ve 3D plochu, kterou tentýž úkos už zkosil, nejde (nemá protějšek v dílu před
+  prvkem) – *Přidat vybrané stěny* se hodí pro dosud nezkosené.
 
 ## Známé pasti (šikmé a zakřivené plochy)
 
@@ -2013,7 +2045,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány | P6.4 na autorském dílu výslovně přeskočena; další kandidáti P6.1 jsou rozšíření |
+| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, výběr autora 9. 11.) v PR | P6.4 na autorském dílu výslovně přeskočena; další kandidáti jsou rozšíření (proměnné zaoblení pro víc hran, přechod s kruhy, žebro) |
 | P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 v PR | P7.78–P7.80; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |

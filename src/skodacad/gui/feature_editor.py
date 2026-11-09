@@ -468,6 +468,10 @@ class FieldsForm(QWidget):
         return edit, read
 
     def _build_number(self, field: Field, value: Any):
+        if isinstance(value, dict):  # odkaz na plochu v číselném poli (neutrální rovina úkosu)
+            shown = QLineEdit("rovinná plocha dílu")
+            shown.setReadOnly(True)
+            return shown, lambda: copy.deepcopy(value)
         edit = QLineEdit(_number_text(value))
         if not field.required:
             edit.setPlaceholderText("(nevyplněno)")

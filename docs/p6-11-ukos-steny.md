@@ -2,8 +2,8 @@
 
 *Datum 9. 11. 2026. Autor na otázku „Kterým směrem má P6 pokračovat?“ vybral **Úkos stěn**
 (všechny tři položky tabulky [P6.1](p6-1-vyber-operaci.md) jsou hotové a vydané).
-Tento dokument zaznamenává průzkum a rozhodnutí před implementací; výsledky kontrol
-implementace jsou v PR.*
+Dokument zaznamenává průzkum a rozhodnutí před implementací a na konci provedení (P6.12);
+výsledky kontrol jsou v PR.*
 
 ## K čemu je úkos
 
@@ -56,11 +56,14 @@ Zjištění důležitá pro návrh:
 - **D1** Nový prvek `draft` („Úkos stěn“), formát **35** jen s tímto prvkem. Díly bez něj
   zůstávají ve verzích 24–34; starší aplikace se na novém prvku nezmýlí, protože o něm neví.
 - **D2** `faces`: neprázdný seznam odkazů na plochy `{at, normal, type, origin}` stejné jako
-  u přímých úprav (významem, ne indexem), `type` je `plane`, `cylinder` nebo `cone`; `origin`
-  je pojistka původu plochy (P1.3, P2.2). Dvě shodné plochy v seznamu se odmítnou.
+  u přímých úprav (významem, ne indexem), `type` je `plane` nebo `cylinder` (kužel první verze
+  nezná); `origin` je pojistka původu plochy (P1.3, P2.2). Dvě shodné plochy v seznamu se
+  odmítnou. Válec musí mít osu rovnoběžnou se směrem tažení.
 - **D3** `pull`: směr tažení `+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z` v osách dílu.
 - **D4** `angle`: úhel ve stupních, nenulový, `|angle| ≤ 30°` (výraz s parametry). Znaménko
-  podle zjištění výše. Příliš strmý úhel jádro odmítne a my to řekneme česky.
+  podle zjištění výše. Úhel je **absolutní**: výsledný sklon plochy vůči směru tažení je právě
+  zadaný, i když už byla nakloněná (zjištěno měřením, viz Provedení). Příliš strmý úhel jádro
+  odmítne a my to řekneme česky.
 - **D5** `neutral`: neutrální rovina kolmá na směr tažení. Buď **číslo** (souřadnice v mm
   podél osy tažení, výraz), nebo odkaz na **rovinnou plochu** dílu (stejné pojistky; její
   normála musí být rovnoběžná s osou tažení).
@@ -68,7 +71,8 @@ Zjištění důležitá pro návrh:
   `_accept_modification`): platné jedno těleso, žádné prázdné objemy, nezměněný počet těles.
 - **D7** Po výpočtu se **ověří sklon každé zadané plochy**: vnější normála výsledné plochy
   má složku ve směru tažení rovnou `sin(angle)` (tolerance 10⁻⁶). Neprošlé = chyba, ne tiché
-  přijetí. Ověření přes výsledek, nikoli podle „jádro neohlásilo chybu“.
+  přijetí. Ověření přes výsledek, nikoli podle „jádro neohlásilo chybu“. Výsledná plocha se
+  najde přes `ModifiedShape` + `is_same` v hotovém tělese.
 - **D8** Chyby česky a s radou: plocha jiného druhu, plocha kolmá na směr tažení, tečný
   řetěz s plochou, kterou nejde zkosit („zaoblení dna udělej až po úkosu“), příliš velký
   úhel, neutrální rovina nekolmá na tažení, plocha už na dílu není.
@@ -77,3 +81,32 @@ Zjištění důležitá pro návrh:
 
 Nepřidává se závislost ani náhradní aproximace. Meze: tečný řetěz se zkosí vcelku, výběrové
 plochy typu B-spline nejdou, kužel se dál zkosí jen kolem své osy podle pravidel jádra.
+
+## Provedení (P6.12)
+
+- `draft.py` (služba), prvek `draft` ve `features.py`, formát **35** jen s tímto prvkem
+  (`document.py`, kontrola struktury při načtení), schéma s polem směru, úhlu a neutrální
+  roviny, ukázka [`examples/ukos_krabicka.json`](../examples/ukos_krabicka.json), README.
+- **Měření při implementaci:** kontrola sklonu výsledku zachytila, že jádro nastavuje úhel
+  **absolutně** (plocha nakloněná o −4° a znovu zkosená o +2° skončí na +2°, ne na −2°). Původní
+  očekávání „přičíst úhel“ bylo špatně; opraveno podle měření, nikoli povolením tolerance.
+- **Výběr ve 3D:** nabídka *Úkos vybraných stěn* (jen roviny a válce, bez hran) vytvoří prvek
+  s odkazy a původem ploch; neutrální rovina se nastaví na začátek vybraných stěn proti směru
+  tažení (u dna při tažení nahoru). Náhled i potvrzení jedním krokem jsou stejné jako u ostatních
+  prvků z výběru. Úpravy: *Přidat vybrané stěny do…* přidá další stěny, zvýraznění ukáže plochy
+  prvku.
+- Neutrální rovina zadaná **odkazem na plochu** funguje v souboru a v AI; formulář ji ukáže jen
+  jako „rovinná plocha dílu“ a při úpravě zachová.
+- Testy: `tests/test_draft.py` (objem podle vzorců, změřený sklon, kapsa, tečný řetěz, válec,
+  neutrální plocha, odmítnutí, pojistky, formát 35, session), `tests/test_gui.py` (příkaz z výběru,
+  náhled, potvrzení, Zpět) a nativní self-test „Úkos stěn“.
+
+## Meze
+
+- Kužel jako zadaná plocha, válec s osou mimo směr tažení, jiné druhy ploch a směr tažení mimo
+  osy dílu nejsou podporované.
+- Úkos zkosí vždy celý tečný řetěz navazujících ploch; plocha s navazujícím vodorovným
+  zaoblením (třeba dno kapsy) nejde, úkos patří před zaoblení.
+- Neutrální rovina se ani při změně dílu sama nepřesouvá (číslo nebo výraz s parametry; odkaz
+  na plochu sleduje její polohu).
+- Prvek nelze opakovat polem ani zrcadlením. Nejde o výrobní výkresový úkos podle normy.
