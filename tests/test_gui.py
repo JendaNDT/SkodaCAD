@@ -3640,6 +3640,48 @@ def test_selection_creates_only_preview_and_accepts_selected_corner(empty_window
     assert w.session.properties.volume_mm3 == pytest.approx(12000-(4-math.pi)*10)
 
 
+def test_draft_from_selected_walls_previews_then_accepts_one_step(empty_window):
+    """P6.12: úkos z vybraných stěn ve 3D – náhled bez změny modelu, potvrzení = jeden krok."""
+    w = empty_window
+    build_box(w)
+    part = w.session.result.part
+    walls = [f for f in part.faces()
+             if f.geom_type.name == "PLANE" and abs(f.normal_at().Z) < 1e-6]
+    assert len(walls) == 4
+    assert not w.selection_actions["draft"].isEnabled()  # nic nevybráno
+    w.viewer.click(walls)
+    assert w.selection_actions["draft"].isEnabled()
+    count = len(w.session._undo)
+    w.selection_actions["draft"].trigger()
+    assert w.session.result.part is part and len(w.session._undo) == count  # jen náhled
+    t, h = math.tan(math.radians(3)), 10
+    expected = 40 * 30 * h - 70 * t * h * h + 4 / 3 * t * t * h ** 3
+    assert w.feature_preview.preview.session.properties.volume_mm3 == pytest.approx(
+        expected, abs=1e-6)
+    w.feature_preview.accept_button.click()
+    assert len(w.session._undo) == count + 1
+    assert w.session.properties.volume_mm3 == pytest.approx(expected, abs=1e-6)
+    feature = w.session.document.features[-1]
+    assert feature["type"] == "draft" and len(feature["faces"]) == 4
+    assert selected_text(w).startswith("✓  Úkos stěn")
+    # prohlížecí karta ukazuje směr, úhel i neutrální rovinu; vyberou se jen roviny a válce
+    assert form_field(w, "angle").text() == "3" and form_field(w, "neutral").text() == "0"
+    w.undo_action.trigger()
+    assert w.session.document.features[-1]["type"] == "extrude"
+
+
+def test_draft_action_needs_only_planar_or_cylindrical_faces_without_edges(empty_window):
+    w = empty_window
+    build_box(w)
+    part = w.session.result.part
+    wall = next(f for f in part.faces()
+                if f.geom_type.name == "PLANE" and abs(f.normal_at().Z) < 1e-6)
+    w.viewer.click([wall, edge_at(part, 20, -15, 5)])  # plocha + hrana
+    assert not w.selection_actions["draft"].isEnabled()
+    w.viewer.click([wall])
+    assert w.selection_actions["draft"].isEnabled()
+
+
 def test_cancelled_window_close_keeps_unconfirmed_feature(empty_window, monkeypatch):
     w = empty_window
     build_box(w)

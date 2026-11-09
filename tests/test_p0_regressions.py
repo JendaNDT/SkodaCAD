@@ -34,7 +34,8 @@ def test_all_example_recipes_round_trip_without_aliasing_or_source_write(path, t
     loaded.save(destination)
     restored = Document.load(destination)
     assert restored == expected
-    expected_version = (34 if any(f["type"] == "guided_loft" for f in restored.features)
+    expected_version = (35 if any(f["type"] == "draft" for f in restored.features)
+                        else 34 if any(f["type"] == "guided_loft" for f in restored.features)
                         else 33 if any(f["type"] == "loft" and "wall_mode" in f
                                   for f in restored.features)
                         else 32 if any(f["type"] == "variable_fillet"

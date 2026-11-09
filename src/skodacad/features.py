@@ -50,7 +50,7 @@ from build123d import (
     sweep,
 )
 
-from skodacad import guided_loft, variable_fillet
+from skodacad import draft, guided_loft, variable_fillet
 from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
 from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
@@ -233,7 +233,7 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "guided_loft",
                              "standard", "hole",
                              "pattern", "mirror", "fillet", "variable_fillet", "chamfer", "shell",
-                             "move_face", "face_diameter", "step_import"))
+                             "move_face", "face_diameter", "step_import", "draft"))
 
 
 def feature(name: str, label_cz: str):
@@ -910,6 +910,35 @@ def build_face_diameter(ctx: BuildContext, feature: dict[str, Any]) -> None:
         raise FeatureError(str(exc)) from None
 
 
+def _draft_face(ctx: BuildContext, spec: Any, label: str) -> Face:
+    """Plocha úkosu: odkaz významem (P1.3) + pojistka původu (P2.2)."""
+    face, point = find_face(ctx.part, {k: v for k, v in spec.items() if k != "origin"})
+    try:
+        check_origin(ctx.history, face, point, spec.get("origin"), label)
+    except DirectEditError as exc:
+        raise FeatureError(str(exc)) from None
+    return face
+
+
+@feature("draft", "Úkos stěn")
+def build_draft(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Zkosí vybrané stěny o úhel kolem neutrální roviny (návrh P6.11): výsledek se ověří
+    měřením sklonu každé vybrané plochy, žádná náhradní aproximace."""
+    label = "Úkos stěn"
+    part, before = _modification_input(ctx, label)
+    try:
+        draft.validate(feature)
+        angle = ctx.num(feature["angle"])
+        faces = [_draft_face(ctx, spec, label) for spec in feature["faces"]]
+        neutral = feature["neutral"]
+        position = (draft.neutral_from_face(_draft_face(ctx, neutral, label), feature["pull"])
+                    if isinstance(neutral, dict) else ctx.num(neutral))
+        candidate = draft.apply(part, faces, feature["pull"], angle, position)
+    except draft.DraftError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    _accept_modification(ctx, candidate, before, label)
+
+
 # --- Normalizované díly ----------------------------------------------------------------
 
 
@@ -1214,6 +1243,8 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
     if kind == "variable_fillet" and "radius_start" in feature and "radius_end" in feature:
         return (f"R{_plain(feature['radius_start'], params)}"
                 f"→R{_plain(feature['radius_end'], params)}")
+    if kind == "draft" and "angle" in feature:
+        return f"{_plain(feature['angle'], params)}°"
     if kind == "chamfer" and "distance" in feature:
         return f"{_plain(feature['distance'], params)} mm"
     if kind == "shell" and "thickness" in feature:

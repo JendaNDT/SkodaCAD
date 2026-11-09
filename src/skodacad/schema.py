@@ -59,6 +59,8 @@ DIRECTION_CHOICES = (
     ("both", "symetricky na obě strany"),
 )
 AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
+DRAFT_PULL_CHOICES = (("+Z", "+Z (nahoru)"), ("-Z", "−Z (dolů)"), ("+X", "+X"), ("-X", "−X"),
+                      ("+Y", "+Y"), ("-Y", "−Y"))
 MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
 FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.items())
 HOLE_KIND_CHOICES = tuple(KINDS.items())
@@ -264,6 +266,19 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
         ), "Poloměr roste lineárně po jedné přímé vnější hraně. Boky musí být pravoúhlé "
            "a konce rovinné a kolmé. Vyber hranu ve 3D; R1 a R2 označují její konce.",
            menu=False),
+        Schema("draft", "Úkos stěn", (
+            _NAME,
+            Field("pull", "Směr tažení", "choice", choices=DRAFT_PULL_CHOICES, default="+Z",
+                  help="Směr, kterým se díl (nebo jádro kapsy) vytahuje z formy."),
+            Field("angle", "Úhel [°]", "number",
+                  help="Kladný úhel nakloní stěnu tak, aby byla vidět ze směru tažení "
+                       "(vnější stěna se zúží, kapsa se rozšíří); záporný naopak. Nejvýš ±30°."),
+            Field("neutral", "Neutrální rovina [mm]", "number",
+                  help="Souřadnice roviny na ose tažení; v ní se rozměr stěny nemění. Nový úkos "
+                       "ji dostane na začátku vybraných stěn. V souboru může být i odkaz na "
+                       "rovinnou plochu dílu – ten se ve formuláři jen ukáže."),
+        ), "Zkosí vybrané stěny o úhel kolem neutrální roviny, aby šel díl vytáhnout z formy. "
+           "Plochy a neutrální rovinu vybereš ve 3D; výsledek se vždy změří.", menu=False),
         Schema("hole", "Díra", (
             _NAME,
             Field("kind", "Druh", "choice", choices=HOLE_KIND_CHOICES, default="tapped"),
@@ -502,6 +517,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         feature.update(edges={"face": "top"}, radius=2)
     elif feature_type == "variable_fillet":
         feature.update(radius_start=1, radius_end=2, reverse=False)
+    elif feature_type == "draft":  # plochy a neutrální rovinu doplní až výběr ve 3D
+        feature.update(pull="+Z", angle=3, neutral=0)
     elif feature_type == "chamfer":
         feature.update(edges={"face": "top"}, distance=1)
     elif feature_type == "shell":

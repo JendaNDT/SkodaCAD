@@ -202,7 +202,7 @@ def test_add_and_cut_have_expected_boolean_effect(operation):
 
 def test_format_default_history_overlay_and_save_reopen(tmp_path):
     doc = Document.load(EXAMPLE)
-    assert VERSION == 34 and doc.to_dict()["version"] == 34
+    assert VERSION == 35 and doc.to_dict()["version"] == 34
     data = doc.to_dict()
     data["version"] = 33
     with pytest.raises(DocumentError, match="34"):

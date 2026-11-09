@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from build123d import GeomType, Vector, Vertex
 
-from skodacad import guided_loft, variable_fillet
+from skodacad import draft, guided_loft, variable_fillet
 from skodacad.buildinfo import build_text, libraries_text
 from skodacad.direct_edit import face_origin
 from skodacad.document import FORMAT, VERSION, Document, DocumentError
@@ -228,10 +228,10 @@ _UNDO_LIMIT = 100
 _NOT_EXPRESSION_KEYS = {"id", "type", "name", "sketch", "plane", "operation", "direction", "axis",
                         "shape", "mode", "face", "between", "parallel", "open_faces",
                         "through_all", "kind", "size", "fit", "modeled_thread", "features",
-                        "direction2"}
+                        "direction2", "pull", "faces", "origin"}
 # Prvky, které jde vytvořit z výběru ve 3D (a do kterých jde výběr převzít).
 SELECTION_FEATURES = ("fillet", "variable_fillet", "chamfer", "sketch", "shell", "hole",
-                      "move_face", "face_diameter")
+                      "move_face", "face_diameter", "draft")
 
 
 def parse_parameter_text(text: str) -> int | float | str:
@@ -1145,7 +1145,9 @@ class ModelSession:
                       else _count(len(faces), "plocha", "plochy", "ploch"),
                       _count(len(edges), "hrana", "hrany", "hran")]
             text = "Vybráno: " + ", ".join(c for c in counts if c) if faces or edges else ""
-        return SelectionInfo(len(faces), len(edges), text, sum(map(_is_flat, faces)))
+        return SelectionInfo(len(faces), len(edges), text, sum(map(_is_flat, faces)),
+                             sum(f.geom_type in (GeomType.PLANE, GeomType.CYLINDER)
+                                 for f in faces))
 
     def selection_owner(self, shapes: list[Any]) -> str | None:
         """Id prvku, ze kterého pocházejí všechny vybrané plochy (rám 3b, P7.62).
@@ -1230,6 +1232,9 @@ class ModelSession:
             if kind == "shell" and part is not None:
                 return [face.wrapped for name in feature.get("open_faces", [])
                         for face in select_faces(part, name)]
+            if kind == "draft" and part is not None:
+                return [find_face(part, {k: v for k, v in spec.items() if k != "origin"})[0]
+                        .wrapped for spec in feature.get("faces", [])]
             sketch_id = feature["id"] if kind == "sketch" else feature.get("sketch")
             if sketch_id in self.result.sketches:
                 plane, sketch = self.result.sketches[sketch_id]
@@ -4668,7 +4673,7 @@ class ModelSession:
         faces, edges = split_shapes(shapes)
         kind = feature["type"]
         try:
-            if not new and faces and kind in ("sketch", "hole", "shell"):
+            if not new and faces and kind in ("sketch", "hole", "shell", "draft"):
                 from skodacad.picking import map_faces
 
                 faces = map_faces(faces, part)
@@ -4683,6 +4688,8 @@ class ModelSession:
                     for i, f in enumerate(document.features[:stop])]
                 feature.update(variable_fillet.reference(part, chosen, history))
                 feature["edges"] = edge_selector(part, [chosen])
+            elif kind == "draft":
+                self._draft_from_selection(feature, part, faces, edges, replace, new)
             elif kind in ("fillet", "chamfer"):
                 if not edges:
                     raise DocumentError("Vyber ve 3D aspoň jednu hranu (Ctrl+klik přidá další).")
@@ -4718,6 +4725,57 @@ class ModelSession:
                 raise DocumentError(f"{describe(feature)} výběr z 3D nepoužívá.")
         except (SelectionError, variable_fillet.VariableFilletError) as exc:
             raise DocumentError(str(exc)) from None
+
+    def _draft_from_selection(self, feature: dict[str, Any], part: Any, faces: list[Any],
+                              edges: list[Any], replace: bool, new: bool) -> None:
+        """Stěny úkosu z výběru ve 3D: odkaz významem + původ (jako přímé úpravy ploch).
+
+        Nový úkos dostane neutrální rovinu na začátku vybraných stěn proti směru tažení
+        (nejnižší bod při tažení nahoru), aby rozměr u dna zůstal."""
+        if edges or not faces:
+            raise DocumentError("Vyber ve 3D stěny úkosu – rovinné nebo válcové plochy "
+                                "(Ctrl+klik přidá další), bez hran.")
+        from skodacad.measure import inner_point
+
+        document = self._require()
+        stop = len(document.features) if new else self.feature_index(feature["id"])
+        history = [(f["id"], (self.result.parts_before.get(document.features[i + 1]["id"])
+                              if i + 1 < len(document.features) else self.result.part))
+                   for i, f in enumerate(document.features[:stop])]
+        references = []
+        for face in faces:
+            if face.geom_type not in (GeomType.PLANE, GeomType.CYLINDER):
+                raise DocumentError("Úkos jde jen na rovinné a válcové plochy – vyber jiné.")
+            if not any(face.is_same(known) for known in part.faces()):
+                raise DocumentError("Plocha nepatří k dílu – vyber ji znovu.")
+            _, on_face, _ = face.distance_to_with_closest_points(Vertex(inner_point(face)))
+            spec = {"at": [_clean(v) for v in on_face],
+                    "normal": [_clean(v) for v in face.normal_at(on_face)],
+                    "type": "plane" if face.geom_type == GeomType.PLANE else "cylinder"}
+            found, actual = find_face(part, spec)
+            if not found.is_same(face):
+                raise DocumentError("Plochu nelze jednoznačně určit – vyber ji kousek dál od "
+                                    "hrany.")
+            origin = face_origin(history, found, actual)
+            if not origin:
+                raise DocumentError("Původ plochy nelze bezpečně určit – vyber jinou plochu.")
+            references.append((face, {**spec, "origin": origin}))
+        kept: list[dict[str, Any]] = []
+        if not replace:  # přidat k těm, které už prvek má (bez opakování téže plochy)
+            for spec in feature.get("faces", []):
+                kept.append(spec)
+                try:
+                    known, _ = find_face(part, {k: v for k, v in spec.items() if k != "origin"})
+                except SelectionError:
+                    continue
+                references = [(f, s) for f, s in references if not f.is_same(known)]
+        feature["faces"] = kept + [spec for _, spec in references]
+        if new:
+            pull = draft.axis(feature.get("pull", "+Z"))
+            low = [min(tuple(face.bounding_box().min)[i] for face in faces) for i in range(3)]
+            high = [max(tuple(face.bounding_box().max)[i] for face in faces) for i in range(3)]
+            axis = max(range(3), key=lambda i: abs(tuple(pull)[i]))
+            feature["neutral"] = _clean(low[axis] if tuple(pull)[axis] > 0 else high[axis])
 
     def _hole_from_selection(self, feature: dict[str, Any], part: Any, faces: list[Any],
                              point: Any, new: bool) -> None:
@@ -4903,6 +4961,7 @@ class SelectionInfo:
     edges: int
     text: str  # český popis, "" = nic nevybráno
     flat_faces: int = 0  # rovinné plochy kolmé k ose X/Y/Z – jen na nich jde skica a skořepina
+    draftable_faces: int = 0  # roviny a válce – jen na nich jde úkos (P6.12)
 
 
 @dataclass(frozen=True)

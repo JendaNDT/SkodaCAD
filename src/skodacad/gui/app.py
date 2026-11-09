@@ -284,6 +284,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_variable_fillet(window, lines) and ok
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
+    ok = _self_test_draft(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_cards(window, lines) and ok
     ok = _self_test_main_bar(window, lines) and ok
@@ -2014,6 +2015,60 @@ def _self_test_variable_fillet(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
         lines.append(f"✕ Proměnné zaoblení: {type(exc).__name__}: {exc}")
+        window.session.dirty = False
+        return False
+
+
+def _self_test_draft(window, lines: list[str]) -> bool:
+    """Úkos stěn v zabalené aplikaci: ukázka, objem podle vzorce, změna úhlu, Zpět a zápis v35."""
+    import math
+
+    from skodacad.document import Document
+
+    def prism(a, b, t, s0, s1):  # ∫ (a − 2ts)(b − 2ts) ds
+        def primitive(s):
+            return a * b * s - t * (a + b) * s * s + 4 / 3 * t * t * s ** 3
+        return primitive(s1) - primitive(s0)
+
+    def expected(angle):
+        t = math.tan(math.radians(angle))
+        return prism(60, 40, -t, 0, 20) - prism(50, 30, t, 0, 15)
+
+    model = examples_dir() / "ukos_krabicka.json"
+    window.session.dirty = False
+    try:
+        if not window.open_model(model, template=True):
+            raise ValueError("ukázku nejde otevřít")
+        assert window.session.result.ok, window.session.result.first_error
+        volume = window.session.result.part.volume
+        assert abs(volume - expected(3)) < 1e-6, (volume, expected(3))
+        feature = window.session.feature("ukos_dutina")
+        feature["angle"] = 2
+        window.session.update_feature("ukos_dutina", feature)
+        changed = window.session.result.part.volume
+        assert window.session.result.ok, window.session.result.first_error
+        # menší úhel kapsy = méně zkosená kapsa = větší dutina = méně materiálu
+        t3, t2 = math.tan(math.radians(3)), math.tan(math.radians(2))
+        pocket2 = expected(3) + (prism(50, 30, t3, 0, 15) - prism(50, 30, t2, 0, 15))
+        assert changed < volume and abs(changed - pocket2) < 1e-6, (changed, pocket2, volume)
+        window.session.undo()
+        assert abs(window.session.result.part.volume - volume) < 1e-6, "Zpět nevrátilo objem"
+        marked = len(window.session.feature_highlight("ukos_okraj"))
+        assert marked == 4, f"zvýrazněny {marked} stěny místo čtyř"
+        path = user_dir() / "self-test-ukos.json"
+        window.session.document.save(path)
+        assert Document.load(path).to_dict()["version"] == 35
+        window._selected_id = "ukos_okraj"
+        window._reload_all()
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-ukos.png"))
+        lines.append(f"✓ Úkos stěn: ukázka, objem {volume:.6f} mm³ podle vzorce, změna úhlu, "
+                     "Zpět, zvýraznění čtyř stěn a uložení v35")
+        window.session.dirty = False
+        return True
+    except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
+        lines.append(f"✕ Úkos stěn: {type(exc).__name__}: {exc}")
         window.session.dirty = False
         return False
 

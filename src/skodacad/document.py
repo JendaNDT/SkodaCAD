@@ -67,9 +67,10 @@ FORMAT = "skodacad"
 # dva poloměry, uložený směr a pojistka původu/boků.
 # Verze 33: výslovný význam stěny loftu (wall_mode: normal / sections).
 # Verze 34: řízený obdélníkový přechod se čtyřmi kubickými vodítky (guided_loft).
-VERSION = 34
+# Verze 35: úkos stěn (draft, návrh docs/p6-11-ukos-steny.md).
+VERSION = 35
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35)
 ASSEMBLY_KIND = "assembly"
 
 
@@ -166,6 +167,16 @@ class Document:
                     validate(feature)
                 except GuidedLoftError as exc:
                     raise DocumentError(str(exc)) from None
+            if feature["type"] == "draft":
+                if version < 35:
+                    raise DocumentError("Úkos stěn vyžaduje formát modelu verze 35.")
+                from skodacad.draft import DraftError
+                from skodacad.draft import validate as validate_draft
+
+                try:
+                    validate_draft(feature)
+                except DraftError as exc:
+                    raise DocumentError(str(exc)) from None
             if feature["type"] == "variable_fillet" and version < 32:
                 raise DocumentError("Proměnné zaoblení vyžaduje formát modelu verze 32.")
             if feature["type"] == "loft" and "wall_mode" in feature and version < 33:
@@ -257,7 +268,8 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": (34 if any(f.get("type") == "guided_loft" for f in self.features)
+            "version": (35 if any(f.get("type") == "draft" for f in self.features)
+                else 34 if any(f.get("type") == "guided_loft" for f in self.features)
                 else 33 if any(f.get("type") == "loft" and "wall_mode" in f
                                  for f in self.features)
                 else 32 if any(f.get("type") == "variable_fillet" for f in self.features)
