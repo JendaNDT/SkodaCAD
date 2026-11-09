@@ -57,6 +57,9 @@ class FeaturePreviewPanel(QWidget):
         if self.editor.help.text():  # popis druhu prvku v bublině nadpisu (místo v kartě)
             self.editor.title.setToolTip(self.editor.help.text())
             self.editor.help.hide()
+        # P7.77, rám 3a: řádek „Sražení (chamfer1)“ opakuje nadpis karty – skrytý, druh
+        # a id jsou v bublině nadpisu (`MainWindow._editor_heading`).
+        self.editor.title.hide()
         if session.feature(preview.feature_id)["type"] == "guided_loft":
             guides = self.editor.form.widget("guides")
             guides.set_selection(window._guide_edit_corner, window._guide_edit_handle)

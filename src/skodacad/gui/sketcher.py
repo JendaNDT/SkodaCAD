@@ -534,6 +534,7 @@ class SketcherDialog(QDialog):
         button = QToolButton()
         button.setDefaultAction(self.delete_constraint_action)
         side.addWidget(button)
+        self.warnings = ""
         self.status = QLabel()
         self.status.setObjectName("sketch_status")
         self.status.setWordWrap(True)
@@ -930,11 +931,13 @@ class SketcherDialog(QDialog):
 
     def _refresh_status(self) -> None:
         solution = self.solution
+        self.warnings = ""  # jen varování a chyby – stav určenosti ukazuje pilulka (P7.75)
         if solution is None:
             self._message("Prázdná skica – vyber nástroj Úsečka a klikej body obrysu.")
             return
         if not solution.ok:
             self._message(solution.message, error=True)
+            self.warnings = self.status.text()
             return
         try:
             loops(self.profile, {name: tuple(p) for name, p in self.profile["points"].items()})
@@ -959,6 +962,7 @@ class SketcherDialog(QDialog):
             text = (f"<span style='color:#1f5fbf'>Zbývá určit {solution.dof} {word} – přidej "
                     "vazby nebo kóty (modrý obrys jde ještě posunout tažením bodu).</span>")
         self.status.setText(text + closed)
+        self.warnings = closed.removeprefix("<br>")
 
     def _message(self, text: str, error: bool = False) -> None:
         color = "#c0392b" if error else "#555"

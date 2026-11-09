@@ -106,6 +106,16 @@ def applicable(dialog: SketcherDialog) -> list[str]:
     return found
 
 
+# Značka druhu vazby vlevo v řádku (rám 2d); jen obecně dostupné znaky.
+KIND_GLYPHS = {
+    "fix": "▪", "coincident": "●", "horizontal": "─", "vertical": "│", "parallel": "∥",
+    "perpendicular": "⊥", "tangent": "⌒", "equal": "=", "midpoint": "⊙", "concentric": "○",
+    "symmetric": "⇔", "length": "↔", "distance": "↔", "radius": "R", "diameter": "Ø",
+    "angle": "∠",
+}
+GLYPH_WIDTH = 20
+
+
 class ConstraintRowDelegate(QStyledItemDelegate):
     """Řádek „Vazby skici“ (rám 2d): vlevo druh vazby, vpravo hodnota kóty nebo čeho se
     týká; text položky (``constraint_text``) se nemění – čtou ho testy i čtečky."""
@@ -151,9 +161,14 @@ class ConstraintRowDelegate(QStyledItemDelegate):
         shown = metrics.elidedText(value, Qt.TextElideMode.ElideLeft, room)
         painter.drawText(rect, int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
                          shown)
+        glyph = KIND_GLYPHS.get(kind, "")
+        glyph_rect = rect.adjusted(0, 0, 0, 0)
+        glyph_rect.setWidth(GLYPH_WIDTH)
         painter.setFont(option.font)
+        painter.setPen(ui_theme.color(t["err"] if failed else t["fg3"]))
+        painter.drawText(glyph_rect, int(Qt.AlignmentFlag.AlignCenter), glyph)
         painter.setPen(ui_theme.color(t["err"] if failed else t["fg"]))
-        left = rect.adjusted(0, 0, -metrics.horizontalAdvance(shown) - 8, 0)
+        left = rect.adjusted(GLYPH_WIDTH + 4, 0, -metrics.horizontalAdvance(shown) - 8, 0)
         painter.drawText(left, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
                          painter.fontMetrics().elidedText(label, Qt.TextElideMode.ElideRight,
                                                           left.width()))
@@ -258,8 +273,9 @@ class SelectionPanel(QWidget):
                           "" if kinds else "Pro tenhle výběr žádná vazba nejde – zkus jiné "
                           "body nebo čáry, nebo dej Kótu.")
         self.hint.setVisible(bool(self.hint.text()))
-        self.status.setText(dialog.status.text())
-        self.status.setVisible(bool(dialog.status.text()))
+        # P7.75, rám 2d: karta ukáže jen varování a chyby; „Zbývá určit…“ je v pilulce
+        self.status.setText(dialog.warnings)
+        self.status.setVisible(bool(dialog.warnings))
         return kinds
 
 

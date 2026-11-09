@@ -77,6 +77,25 @@ def test_card_heading_follows_selection_and_preview(plate):
     assert w.workspace.headings["measure"].text() == "Měření"
 
 
+def test_preview_hides_duplicate_title_and_keeps_kind_and_id_in_heading_tooltip(plate):
+    """P7.77, rám 3a: řádek „Druh (id)“ pod nadpisem karty ho jen opakuje – skrytý, druh a id
+    jsou v bublině nadpisu; sražení má pole „Vzdálenost“."""
+    w = plate
+    w._selected_id = w.session.document.features[2]["id"]
+    w._reload_all()
+    w.start_feature_edit()
+    panel = w.feature_preview
+    assert panel.editor.title.isHidden() and panel.editor.title.toolTip()  # popis druhu prvku
+    heading = w.workspace.headings["editor"]
+    assert heading.toolTip().endswith(f"({w.session.document.features[2]['id']})")
+    w.cancel_feature_preview()
+    assert "(" in heading.toolTip()  # prohlížení téhož prvku
+    from skodacad.schema import FEATURE_SCHEMAS
+
+    labels = {field.key: field.label for field in FEATURE_SCHEMAS["chamfer"].fields}
+    assert labels["distance"] == "Vzdálenost [mm]"
+
+
 def test_preview_footer_and_card_fit_without_scrolling(plate):
     w = plate
     w._selected_id = w.session.document.features[2]["id"]

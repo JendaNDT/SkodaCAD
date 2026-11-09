@@ -1853,6 +1853,8 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
             seen["pill"] = window.status_pill.state.text()
             seen["width"] = _card_fits(window.editor_dock)
             seen["palette"] = window.sketch_palette_card.isVisible()
+            # P7.75: karta Výběr neopakuje stav z pilulky, vazby mají značku druhu
+            seen["card_status"] = (mode.panel.status.text(), "Zbývá určit" in dialog.status.text())
             # P7.71: pohledy skicáře vpravo dole, skutečný klik na „Celá skica“
             views = window.sketch_view_card
             mode._fit()
@@ -1882,6 +1884,8 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
         assert seen["over3d"], "plátno skicáře není místo 3D pohledu"
         assert seen["segments"] == 4 and seen["chain"] is None, seen
         assert seen["palette"], "paleta Skica není vidět"
+        assert seen["card_status"] == ("", True), \
+            f"karta Výběr opakuje stav z pilulky: {seen['card_status']}"
         assert seen["views"], "pohledy skicáře (Kolmo na skicu | Celá skica) nefungují"
         preview = window.feature_preview
         assert preview is not None, "Hotovo nezaložilo náhled skici"
@@ -1893,7 +1897,8 @@ def _self_test_sketch_mode(window, lines: list[str]) -> bool:
         assert after == before, "zrušený náhled změnil model nebo historii"
         assert window.palette_card.isVisible() and not window.sketch_palette_card.isVisible()
         lines.append(f"✓ Skicář v okně: plátno místo 3D, paleta Skica, pohledy „Kolmo na "
-                     f"skicu | Celá skica“ (klik přizpůsobí), skutečné kliky "
+                     f"skicu | Celá skica“ (klik přizpůsobí), karta Výběr bez opakovaného stavu, "
+                     f"skutečné kliky "
                      f"(obdélník 4 čáry), Esc ukončí čáru, „{seen['pill']}“ v pilulce, "
                      f"karta Výběr {seen['width']} px se vejde, Hotovo → náhled skici, "
                      f"Zrušit bez změny modelu")
