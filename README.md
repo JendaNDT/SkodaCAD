@@ -1255,6 +1255,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `loft` | přechod mezi skicami | `sketches` (`["dole", "nahore"]`, v pořadí), `ruled`, `wall`, `wall_mode` (`normal` / `sections`, verze 33), `operation` |
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
+| `draft` | úkos stěn kolem neutrální roviny | `faces` (odkazy `{at, normal, type, origin}`), `pull` (`+Z` …), `angle` (±30°), `neutral` (souřadnice v mm nebo rovinná plocha) – verze 35 |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -1302,8 +1303,34 @@ OCCT jej nemění. `origin` je id prvku, od kterého vybraná hrana nepřetržit
 nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v JSON.
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
 neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
-výslovný režim stěny loftu (pak verze 33) nebo řízený přechod (pak verze 34).
-Ostatní díly nadále používají nejnižší potřebnou verzi 24–28; verze 1–34 se stále načítají.
+výslovný režim stěny loftu (pak verze 33), řízený přechod (pak verze 34) nebo úkos stěn
+(pak verze 35). Ostatní díly nadále používají nejnižší potřebnou verzi 24–28; verze 1–35 se
+stále načítají.
+
+### Úkos stěn (`draft`, verze 35)
+
+Zkosí vybrané **rovinné a válcové stěny** o malý úhel kolem **neutrální roviny**, aby šel díl
+vytáhnout z formy a aby se krabičky líp tiskly. V neutrální rovině se rozměr nemění, nad ní
+a pod ní se stěna odklání. `pull` je směr tažení (`+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z` v osách
+dílu). Kladný `angle` nakloní stěnu tak, aby byla vidět ze směru tažení (vnější stěna se ve
+směru tažení zúží, stěna kapsy se rozšíří); záporný úhel dělá opak. Nejvýš ±30°, výraz s
+parametry jde. Úhel je **absolutní**: výsledný sklon plochy je právě zadaný, i když byla
+nakloněná. `neutral` je souřadnice roviny na ose tažení v mm (číslo nebo výraz), nebo odkaz na
+rovinnou plochu dílu kolmou na osu tažení.
+
+```json
+{"id": "ukos", "type": "draft", "pull": "+Z", "angle": 3, "neutral": 0,
+ "faces": [{"at": [30, 0, 10], "normal": [1, 0, 0], "type": "plane", "origin": "telo"}]}
+```
+
+Plochy se odkazují významem (`at`, `normal`, `type` = `plane` nebo `cylinder`) a **každá nese
+`origin`** – id prvku, od kterého existuje; změněnou plochu pojistka odmítne a je třeba ji znovu
+vybrat. Jádro zkosí zadanou stěnu **i všechny tečně navazující plochy** (zaoblené svislé rohy),
+proto stačí zadat jednu. Plochu, na kterou tečně navazuje vodorovné zaoblení (třeba zaoblené dno
+kapsy), zkosit nejde: **úkos dej před zaoblením**. Vodorovné plochy, jiné druhy ploch než rovina
+a válec a válec s osou mimo směr tažení se odmítnou. Výsledek se vždy změří – sklon každé zadané
+plochy musí odpovídat úhlu, jinak se úkos nepřijme. Pole a zrcadlení tento prvek neopakují.
+Ukázka: *Soubor → Otevřít ukázku → ukos_krabicka*.
 
 ### Význam stěny loftu (`wall_mode`, verze 33)
 

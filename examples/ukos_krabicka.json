@@ -1,0 +1,32 @@
+{
+  "format": "skodacad",
+  "version": 35,
+  "name": "Krabička s úkosem 3°",
+  "description": "Blok 60 × 40 × 20 s kapsou 50 × 30 × 15. Vnější stěny mají úkos −3° od dna (dno zůstává 60 × 40, krabička se nahoře rozšíří), stěny kapsy +3° od jejího ústí (kapsa se ke dnu zužuje). Směr tažení je nahoru (+Z). Změň UHEL nebo H; úkos před zaoblením dna kapsy, jinak ho jádro nepustí.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"H": 20, "UHEL": 3},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys 60 × 40", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 60, "height": 40}]},
+    {"id": "telo", "type": "extrude", "name": "Blok", "sketch": "obrys", "distance": "H"},
+    {"id": "kapsa_skica", "type": "sketch", "name": "Kapsa 50 × 30", "plane": "top",
+     "elements": [{"shape": "rectangle", "width": 50, "height": 30}]},
+    {"id": "dutina", "type": "extrude", "name": "Kapsa", "sketch": "kapsa_skica",
+     "operation": "cut", "distance": 15},
+    {"id": "ukos_okraj", "type": "draft", "name": "Úkos vnějších stěn",
+     "pull": "+Z", "angle": "-UHEL", "neutral": 0,
+     "faces": [
+       {"at": [30, 0, 10], "normal": [1, 0, 0], "type": "plane", "origin": "telo"},
+       {"at": [-30, 0, 10], "normal": [-1, 0, 0], "type": "plane", "origin": "telo"},
+       {"at": [0, 20, 10], "normal": [0, 1, 0], "type": "plane", "origin": "telo"},
+       {"at": [0, -20, 10], "normal": [0, -1, 0], "type": "plane", "origin": "telo"}]},
+    {"id": "ukos_dutina", "type": "draft", "name": "Úkos kapsy",
+     "pull": "+Z", "angle": "UHEL", "neutral": "H",
+     "faces": [
+       {"at": [25, 0, 12], "normal": [-1, 0, 0], "type": "plane", "origin": "dutina"},
+       {"at": [-25, 0, 12], "normal": [1, 0, 0], "type": "plane", "origin": "dutina"},
+       {"at": [0, 15, 12], "normal": [0, -1, 0], "type": "plane", "origin": "dutina"},
+       {"at": [0, -15, 12], "normal": [0, 1, 0], "type": "plane", "origin": "dutina"}]}
+  ]
+}
