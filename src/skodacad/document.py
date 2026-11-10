@@ -68,9 +68,10 @@ FORMAT = "skodacad"
 # Verze 33: výslovný význam stěny loftu (wall_mode: normal / sections).
 # Verze 34: řízený obdélníkový přechod se čtyřmi kubickými vodítky (guided_loft).
 # Verze 35: úkos stěn (draft, návrh docs/p6-11-ukos-steny.md).
-VERSION = 35
+# Verze 36: žebro (rib, návrh docs/p6-13-zebro.md) a sloupek (boss, docs/p6-15-sloupek.md).
+VERSION = 36
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36)
 ASSEMBLY_KIND = "assembly"
 
 
@@ -177,6 +178,26 @@ class Document:
                     validate_draft(feature)
                 except DraftError as exc:
                     raise DocumentError(str(exc)) from None
+            if feature["type"] == "boss":
+                if version < 36:
+                    raise DocumentError("Sloupek vyžaduje formát modelu verze 36.")
+                from skodacad.boss import BossError
+                from skodacad.boss import validate as validate_boss
+
+                try:
+                    validate_boss(feature)
+                except BossError as exc:
+                    raise DocumentError(str(exc)) from None
+            if feature["type"] == "rib":
+                if version < 36:
+                    raise DocumentError("Žebro vyžaduje formát modelu verze 36.")
+                from skodacad.rib import RibError
+                from skodacad.rib import validate as validate_rib
+
+                try:
+                    validate_rib(feature)
+                except RibError as exc:
+                    raise DocumentError(str(exc)) from None
             if feature["type"] == "variable_fillet" and version < 32:
                 raise DocumentError("Proměnné zaoblení vyžaduje formát modelu verze 32.")
             if feature["type"] == "loft" and "wall_mode" in feature and version < 33:
@@ -268,7 +289,8 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": (35 if any(f.get("type") == "draft" for f in self.features)
+            "version": (36 if any(f.get("type") in ("rib", "boss") for f in self.features)
+                else 35 if any(f.get("type") == "draft" for f in self.features)
                 else 34 if any(f.get("type") == "guided_loft" for f in self.features)
                 else 33 if any(f.get("type") == "loft" and "wall_mode" in f
                                  for f in self.features)

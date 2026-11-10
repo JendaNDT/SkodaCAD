@@ -97,14 +97,16 @@ def test_display_compound_filters_copy_by_ids_without_changing_full_result(proje
 
 
 def test_a01_part_files_never_get_assembly_version():
-    assert VERSION == 35
+    assert VERSION == 36
     parts = [path for path in EXAMPLES.rglob("*.json")
              if json.loads(path.read_text(encoding="utf-8")).get("kind") is None]
     assert len(parts) > 20
     for path in parts:
         document = Document.load(path)
         saved = document.to_dict()["version"]
-        if any(f["type"] == "draft" for f in document.features):
+        if any(f["type"] in ("rib", "boss") for f in document.features):
+            assert saved == 36, path
+        elif any(f["type"] == "draft" for f in document.features):
             assert saved == 35, path
         elif any(f["type"] == "guided_loft" for f in document.features):
             assert saved == 34, path
@@ -115,7 +117,7 @@ def test_a01_part_files_never_get_assembly_version():
         else:
             assert saved <= 28, path
     # Díl zapsaný ve verzi 29–31 (verze je nadmnožina) se načte jako dosud.
-    for version in (29, 30, 31, 32, 33, 34, 35):
+    for version in (29, 30, 31, 32, 33, 34, 35, 36):
         assert Document.from_dict(part_data() | {"version": version}).features
 
 

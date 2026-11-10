@@ -50,7 +50,7 @@ from build123d import (
     sweep,
 )
 
-from skodacad import draft, guided_loft, variable_fillet
+from skodacad import boss, draft, guided_loft, rib, variable_fillet
 from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
 from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
@@ -233,7 +233,7 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "guided_loft",
                              "standard", "hole",
                              "pattern", "mirror", "fillet", "variable_fillet", "chamfer", "shell",
-                             "move_face", "face_diameter", "step_import", "draft"))
+                             "move_face", "face_diameter", "step_import", "draft", "rib", "boss"))
 
 
 def feature(name: str, label_cz: str):
@@ -939,6 +939,47 @@ def build_draft(ctx: BuildContext, feature: dict[str, Any]) -> None:
     _accept_modification(ctx, candidate, before, label)
 
 
+@feature("rib", "Žebro")
+def build_rib(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Tenká stěna od otevřené trasy až k tělesu (návrh P6.13): přidá jen materiál mezi trasou
+    a prvním materiálem, žádné tiché přečnívání přes okraj."""
+    label = "Žebro"
+    part = ctx.require_part(label)
+    try:
+        rib.validate(feature)
+        plane = _resolve_plane(ctx, feature)
+        points = [_point(ctx, point, "Bod trasy žebra") for point in feature["points"]]
+        thickness = ctx.positive(feature, "thickness", "Tloušťka žebra")
+        solid = rib.build(plane, part, points, thickness, feature.get("side", "left"))
+    except rib.RibError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    ctx.apply(solid, "add", label, empty_add="změň trasu nebo stranu žebra")
+
+
+@feature("boss", "Sloupek")
+def build_boss(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Válcové sloupky od roviny až k tělesu (návrh P6.15); otvor jen do sloupku, žádné
+    tiché přečnívání přes okraj."""
+    label = "Sloupek"
+    part = ctx.require_part(label)
+    try:
+        boss.validate(feature)
+        plane = _resolve_plane(ctx, feature)
+        positions = [_point(ctx, point, "Poloha sloupku") for point in feature["positions"]]
+        diameter = ctx.positive(feature, "diameter", "Průměr sloupku")
+        hole = feature.get("hole_diameter")
+        hole_diameter = ctx.positive(feature, "hole_diameter", "Průměr otvoru") \
+            if hole not in (None, "") else None
+        depth = feature.get("hole_depth")
+        hole_depth = ctx.positive(feature, "hole_depth", "Hloubka otvoru") \
+            if depth not in (None, "") else None
+        solid = boss.build(plane, part, positions, diameter, hole_diameter, hole_depth,
+                           feature.get("direction", "reverse"))
+    except boss.BossError as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    ctx.apply(solid, "add", label, empty_add="změň polohu, rovinu nebo směr sloupku")
+
+
 # --- Normalizované díly ----------------------------------------------------------------
 
 
@@ -1062,7 +1103,7 @@ def _depth_through(part: Part, plane: Plane) -> float:
 
 # Prvky, které přidávají nebo ubírají materiál – jen ty jde opakovat v poli a zrcadlit.
 REPEATABLE_FEATURES = ("extrude", "revolve", "sweep", "loft", "guided_loft", "standard",
-                       "hole", "pattern", "mirror")
+                       "hole", "rib", "boss", "pattern", "mirror")
 PATTERN_KINDS = ("circular", "linear")
 MAX_COPIES = 500
 _AXES = {"X": Vector(1, 0, 0), "Y": Vector(0, 1, 0), "Z": Vector(0, 0, 1)}
@@ -1243,6 +1284,11 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
     if kind == "variable_fillet" and "radius_start" in feature and "radius_end" in feature:
         return (f"R{_plain(feature['radius_start'], params)}"
                 f"→R{_plain(feature['radius_end'], params)}")
+    if kind == "boss" and "diameter" in feature:
+        count = len(feature.get("positions") or [])
+        return f"Ø{_plain(feature['diameter'], params)}" + (f" ×{count}" if count > 1 else "")
+    if kind == "rib" and "thickness" in feature:
+        return f"{_plain(feature['thickness'], params)} mm"
     if kind == "draft" and "angle" in feature:
         return f"{_plain(feature['angle'], params)}°"
     if kind == "chamfer" and "distance" in feature:

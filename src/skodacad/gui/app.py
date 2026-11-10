@@ -285,6 +285,8 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_loft_wall(window, lines) and ok
     ok = _self_test_guided_loft(window, lines) and ok
     ok = _self_test_draft(window, lines) and ok
+    ok = _self_test_rib(window, lines) and ok
+    ok = _self_test_boss(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_cards(window, lines) and ok
     ok = _self_test_main_bar(window, lines) and ok
@@ -2069,6 +2071,91 @@ def _self_test_draft(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
         lines.append(f"✕ Úkos stěn: {type(exc).__name__}: {exc}")
+        window.session.dirty = False
+        return False
+
+
+def _self_test_rib(window, lines: list[str]) -> bool:
+    """Žebro v zabalené aplikaci: ukázka, objem podle vzorce, změna parametrů, Zpět, v36."""
+    from skodacad.document import Document
+
+    def expected(thickness, height):  # blok − dutina + tři žebra 75 × (výška − 2,5) × tloušťka
+        return 80 * 50 * 25 - 75 * 45 * 22.5 + 3 * 75 * (height - 2.5) * thickness
+
+    window.session.dirty = False
+    try:
+        if not window.open_model(examples_dir() / "zebro_krabicka.json", template=True):
+            raise ValueError("ukázku nejde otevřít")
+        assert window.session.result.ok, window.session.result.first_error
+        volume = window.session.result.part.volume
+        assert abs(volume - expected(2, 12)) < 1e-6, (volume, expected(2, 12))
+        assert len(window.session.result.part.solids()) == 1, "žebra nejsou spojená s dílem"
+        window.session.set_parameter("T", "3")
+        assert window.session.result.ok, window.session.result.first_error
+        thick = window.session.result.part.volume
+        assert abs(thick - expected(3, 12)) < 1e-6, (thick, expected(3, 12))
+        window.session.undo()
+        assert abs(window.session.result.part.volume - volume) < 1e-6, "Zpět nevrátilo objem"
+        path = user_dir() / "self-test-zebro.json"
+        window.session.document.save(path)
+        assert Document.load(path).to_dict()["version"] == 36
+        window._selected_id = "zebro"
+        window._reload_all()
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-zebro.png"))
+        lines.append(f"✓ Žebro: ukázka, objem {volume:.6f} mm³ podle vzorce, změna tloušťky, "
+                     "Zpět a uložení v36")
+        window.session.dirty = False
+        return True
+    except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
+        lines.append(f"✕ Žebro: {type(exc).__name__}: {exc}")
+        window.session.dirty = False
+        return False
+
+
+def _self_test_boss(window, lines: list[str]) -> bool:
+    """Sloupek v zabalené aplikaci: ukázka, objem podle vzorce, změna výšky, Zpět, v36."""
+    import math
+
+    from skodacad.document import Document
+
+    def post(diameter, length):
+        return math.pi * (diameter / 2) ** 2 * length
+
+    def expected(height, diameter=6, hole=2.5):  # blok − dutina + čtyři sloupky nad dnem 2,5
+        length = height - 2.5
+        return (80 * 50 * 20 - 75 * 45 * 17.5
+                + 4 * (post(diameter, length) - post(hole, length)))
+
+    window.session.dirty = False
+    try:
+        if not window.open_model(examples_dir() / "sloupky_krabicka.json", template=True):
+            raise ValueError("ukázku nejde otevřít")
+        assert window.session.result.ok, window.session.result.first_error
+        volume = window.session.result.part.volume
+        assert abs(volume - expected(12)) < 1e-6, (volume, expected(12))
+        assert len(window.session.result.part.solids()) == 1, "sloupky nejsou spojené s dílem"
+        window.session.set_parameter("V", "15")
+        assert window.session.result.ok, window.session.result.first_error
+        tall = window.session.result.part.volume
+        assert abs(tall - expected(15)) < 1e-6, (tall, expected(15))
+        window.session.undo()
+        assert abs(window.session.result.part.volume - volume) < 1e-6, "Zpět nevrátilo objem"
+        path = user_dir() / "self-test-sloupek.json"
+        window.session.document.save(path)
+        assert Document.load(path).to_dict()["version"] == 36
+        window._selected_id = "sloupek"
+        window._reload_all()
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-sloupek.png"))
+        lines.append(f"✓ Sloupek: ukázka, objem {volume:.6f} mm³ podle vzorce, změna výšky, "
+                     "Zpět a uložení v36")
+        window.session.dirty = False
+        return True
+    except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
+        lines.append(f"✕ Sloupek: {type(exc).__name__}: {exc}")
         window.session.dirty = False
         return False
 

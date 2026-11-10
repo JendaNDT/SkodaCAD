@@ -61,6 +61,9 @@ DIRECTION_CHOICES = (
 AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 DRAFT_PULL_CHOICES = (("+Z", "+Z (nahoru)"), ("-Z", "−Z (dolů)"), ("+X", "+X"), ("-X", "−X"),
                       ("+Y", "+Y"), ("-Y", "−Y"))
+RIB_SIDE_CHOICES = (("left", "vlevo od trasy"), ("right", "vpravo od trasy"))
+BOSS_DIRECTION_CHOICES = (("reverse", "proti normále roviny (dolů u roviny XY)"),
+                          ("normal", "po normále roviny (nahoru u roviny XY)"))
 MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
 FACE_CHOICES = tuple((key, f"{label} plocha") for key, label in FACE_NAMES_CZ.items())
 HOLE_KIND_CHOICES = tuple(KINDS.items())
@@ -279,6 +282,38 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                        "rovinnou plochu dílu – ten se ve formuláři jen ukáže."),
         ), "Zkosí vybrané stěny o úhel kolem neutrální roviny, aby šel díl vytáhnout z formy. "
            "Plochy a neutrální rovinu vybereš ve 3D; výsledek se vždy změří.", menu=False),
+        Schema("rib", "Žebro", (
+            _NAME,
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+            Field("points", "Trasa – body [x; y]", "points", min_count=2,
+                  help="Jeden bod na řádek ve tvaru  x; y  (souřadnice jako ve skice). Trasa je "
+                       "horní hrana žebra a musí postupovat jedním směrem od prvního bodu "
+                       "k poslednímu."),
+            Field("thickness", "Tloušťka [mm]", "number",
+                  help="Žebro je souměrné kolem roviny skici."),
+            Field("side", "Strana", "choice", choices=RIB_SIDE_CHOICES, default="left",
+                  help="Na kterou stranu od trasy žebro vede k tělesu (při pohledu od prvního "
+                       "bodu k poslednímu). Přidá jen materiál mezi trasou a prvním materiálem; "
+                       "trasa nesmí přečnívat přes okraj."),
+        ), "Tenká stěna od zadané trasy až k tělesu, třeba výztuha uvnitř krabičky."),
+        Schema("boss", "Sloupek", (
+            _NAME,
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False,
+                  help="Výška (u roviny XY), odkud sloupek vede k tělesu."),
+            Field("positions", "Polohy [x; y]", "points",
+                  help="Jedna poloha na řádek ve tvaru  x; y  (souřadnice jako ve skice)."),
+            Field("diameter", "Průměr [mm]", "number"),
+            Field("hole_diameter", "Průměr otvoru [mm]", "number", required=False,
+                  help="Otvor se vyvrtá jen do sloupku, těleso pod ním zůstane celé."),
+            Field("hole_depth", "Hloubka otvoru [mm]", "number", required=False,
+                  help="Bez hodnoty vede otvor celým sloupkem."),
+            Field("direction", "Směr", "choice", choices=BOSS_DIRECTION_CHOICES,
+                  default="reverse",
+                  help="Kterým směrem od roviny sloupek vede k tělesu. Přidá jen materiál "
+                       "mezi rovinou a prvním materiálem; nesmí přečnívat přes okraj."),
+        ), "Válcový sloupek od roviny až k tělesu, třeba pro šroub nebo desku plošných spojů."),
         Schema("hole", "Díra", (
             _NAME,
             Field("kind", "Druh", "choice", choices=HOLE_KIND_CHOICES, default="tapped"),
@@ -517,6 +552,11 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
         feature.update(edges={"face": "top"}, radius=2)
     elif feature_type == "variable_fillet":
         feature.update(radius_start=1, radius_end=2, reverse=False)
+    elif feature_type == "boss":  # dva sloupky Ø8 s otvorem nad blokem 40 × 30 × 10
+        feature.update(plane="XY", offset=15, positions=[[-10, 0], [10, 0]], diameter=8,
+                       hole_diameter=3.2, direction="reverse")
+    elif feature_type == "rib":  # krátká trasa nad deskou; strana a rovinu upraví uživatel
+        feature.update(plane="XZ", points=[[-15, 15], [15, 15]], thickness=3, side="right")
     elif feature_type == "draft":  # plochy a neutrální rovinu doplní až výběr ve 3D
         feature.update(pull="+Z", angle=3, neutral=0)
     elif feature_type == "chamfer":
