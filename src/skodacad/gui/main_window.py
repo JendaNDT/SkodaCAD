@@ -598,6 +598,8 @@ class MainWindow(QMainWindow):
 
     def _build_editor_panel(self) -> None:
         self.feature_editor = FeatureEditor(profile_editor=self.edit_profile)
+        self.feature_editor.edge_namer = (  # P7.81: „Obvod horní plochy“ (rám 3a)
+            lambda feature_id, spec: self.session.edge_outline_name(feature_id, spec))
         self.feature_editor.changed.connect(self._feature_edited)
         self.feature_editor.guide_selected.connect(self._guide_selection_changed)
         self.feature_editor.guide_handle_selected.connect(self._guide_handle_selected)

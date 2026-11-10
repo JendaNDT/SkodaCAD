@@ -401,6 +401,38 @@ _FACE_INSTRUMENTAL = {"top": "horní", "bottom": "spodní", "front": "přední",
                       "right": "pravou", "left": "levou"}
 
 
+def outline_name(part: Part, edges: list[Edge]) -> str | None:
+    """Krátký popis hran, které tvoří celý obrys rovinné plochy (P7.81, rám 3a):
+    „obvod horní plochy“, a když patří k ploše i hrany děr, „všechny hrany horní plochy“.
+
+    Jen popis pro okno – výběr se dál ukládá významem (``describe_edges``). Vrátí ``None``,
+    když vybrané hrany nejsou přesně obrys jedné plochy (nebo takových ploch je víc)."""
+    if not edges:
+        return None
+    found: list[tuple[str, Face]] = []
+    for face in part.faces():
+        if face.geom_type != GeomType.PLANE:
+            continue
+        for kind, wanted in (("obvod", face.outer_wire().edges()), ("všechny", face.edges())):
+            if len(wanted) == len(edges) and all(
+                    any(edge.is_same(other) for other in wanted) for edge in edges):
+                found.append((kind, face))
+                break
+    if not found:
+        return None
+    kinds = {kind for kind, _ in found}
+    names = set()
+    for _, face in found:
+        normal = face.normal_at()
+        names.add(next((_FACE_LOCATIVE[key] for key, (axis, _x) in FACE_DIRECTIONS.items()
+                        if normal.dot(Vector(*axis)) > 1 - _TOLERANCE), None))
+    if len(kinds) != 1 or len(names) != 1 or len(found) > 1 and None in names:
+        return None
+    name, = names
+    where = f"{name} plochy" if name else "plochy"
+    return f"obvod {where}" if kinds == {"obvod"} else f"všechny hrany {where}"
+
+
 def describe_edges(spec: Any) -> str:
     """Výběr hran česky, např. „hrany na horní ploše, kružnice R3“."""
     if isinstance(spec, list):

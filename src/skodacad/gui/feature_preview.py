@@ -45,6 +45,8 @@ class FeaturePreviewPanel(QWidget):
                           "Zrušit ponechá původní díl.")
         self.editor = FeatureEditor(profile_editor=self.edit_profile)
         session = preview.session
+        self.editor.edge_namer = (  # P7.81: popis hran podle dílu před prvkem
+            lambda feature_id, spec: session.edge_outline_name(feature_id, spec))
         index = session.feature_index(preview.feature_id)
         before = session.document.features[:index]
         self.editor.show_feature(session.feature(preview.feature_id),
@@ -52,6 +54,10 @@ class FeaturePreviewPanel(QWidget):
                                  [(f["id"], short_label(f)) for f in before
                                   if f["type"] in REPEATABLE_FEATURES])
         self.editor.wall_panel.hide()
+        if not preview.editing and self.editor.form is not None:
+            # P7.82, rám 3a: nový prvek se v náhledu jmenuje samo („Sražení 1“), pole Název
+            # tu není; přejmenovat jde v běžné kartě prvku. Hodnota názvu zůstává v prvku.
+            self.editor.form.hide_field("name")
         for hint in self.editor.findChildren(QLabel, "edges_hint"):
             hint.hide()  # během náhledu se ve 3D hrany nevybírají (P7.61)
         if self.editor.help.text():  # popis druhu prvku v bublině nadpisu (místo v kartě)
@@ -183,6 +189,8 @@ class FeaturePreviewPanel(QWidget):
     def show_result(self):
         session = self.preview.session
         result = session.result
+        if self.editor.form is not None and result is not None and not session.computing:
+            self.editor.form.refresh_edge_names()  # díl před prvkem už je spočítaný
         ready = not self._dirty and self.preview.ready
         self.accept_button.setEnabled(ready)
         if self._dirty:
