@@ -1,0 +1,21 @@
+{
+  "format": "skodacad",
+  "version": 36,
+  "name": "Krabička se čtyřmi sloupky",
+  "description": "Otevřená krabička 80 × 50 × 20 se stěnami 2,5 mm a čtyřmi sloupky Ø D s otvorem Ø OTVOR pro šrouby nebo desku plošných spojů. Sloupky vedou od roviny ve výšce V nad spodní hranou dolů až ke dnu; otvor je vyvrtaný jen do sloupku, dno zůstane celé. Změň V, D nebo OTVOR. Sloupek musí stát nad materiálem – nesmí přečnívat přes okraj dna.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"V": 12, "D": 6, "OTVOR": 2.5},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys 80 × 50", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 80, "height": 50}]},
+    {"id": "telo", "type": "extrude", "name": "Blok", "sketch": "obrys", "distance": 20},
+    {"id": "dutina_skica", "type": "sketch", "name": "Dutina 75 × 45", "plane": "top",
+     "elements": [{"shape": "rectangle", "width": 75, "height": 45}]},
+    {"id": "dutina", "type": "extrude", "name": "Dutina", "sketch": "dutina_skica",
+     "operation": "cut", "distance": 17.5},
+    {"id": "sloupek", "type": "boss", "name": "Sloupky", "plane": "XY", "offset": "V",
+     "positions": [[-30, -15], [30, -15], [-30, 15], [30, 15]],
+     "diameter": "D", "hole_diameter": "OTVOR", "direction": "reverse"}
+  ]
+}

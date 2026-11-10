@@ -104,7 +104,7 @@ def test_a01_part_files_never_get_assembly_version():
     for path in parts:
         document = Document.load(path)
         saved = document.to_dict()["version"]
-        if any(f["type"] == "rib" for f in document.features):
+        if any(f["type"] in ("rib", "boss") for f in document.features):
             assert saved == 36, path
         elif any(f["type"] == "draft" for f in document.features):
             assert saved == 35, path

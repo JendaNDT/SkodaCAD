@@ -1257,6 +1257,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
 | `draft` | úkos stěn kolem neutrální roviny | `faces` (odkazy `{at, normal, type, origin}`), `pull` (`+Z` …), `angle` (±30°), `neutral` (souřadnice v mm nebo rovinná plocha) – verze 35 |
 | `rib` | žebro – tenká stěna od trasy až k tělesu | `plane`, `offset`, `points` (otevřená trasa `[[x, y], …]`, aspoň 2 body), `thickness`, `side` (`left`/`right`) – verze 36 |
+| `boss` | sloupek – válec od roviny až k tělesu | `plane`, `offset`, `positions` (`[[x, y], …]`), `diameter`, `hole_diameter` (jen do sloupku), `hole_depth`, `direction` (`reverse`/`normal`) – verze 36 |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -1305,7 +1306,7 @@ nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v 
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
 neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
 výslovný režim stěny loftu (pak verze 33), řízený přechod (pak verze 34) nebo úkos stěn
-(pak verze 35) nebo žebro (pak verze 36). Ostatní díly nadále používají nejnižší potřebnou
+(pak verze 35), žebro nebo sloupek (pak verze 36). Ostatní díly nadále používají nejnižší potřebnou
 verzi 24–28; verze 1–36 se stále načítají.
 
 ### Úkos stěn (`draft`, verze 35)
@@ -1353,6 +1354,26 @@ přečnívalo přes okraj dílu (trasa delší než díl), se **odmítne** s če
 jako trasa ležící celá v materiálu nebo vedená na stranu, kde žádný materiál není. Šikmá výztuha
 v rohu: trasa je úhlopříčka od stěny ke dnu a `side` ukazuje do rohu. Ukázka: *Soubor → Otevřít
 ukázku → zebro_krabicka*.
+
+### Sloupek (`boss`, verze 36)
+
+Válcová podpěra pro šroub, desku plošných spojů nebo distanční sloupek. `plane` a `offset`
+určují rovinu, **odkud sloupek vede**, `positions` jsou středy (`[[x, y], …]`, souřadnice jako
+ve skice), `diameter` průměr. `direction` `reverse` vede sloupek proti normále roviny (u roviny
+XY dolů), `normal` po normále. Sloupek končí na **prvním materiálu**: z válce se odečte těleso
+a zůstane jen část od roviny k tělesu.
+
+```json
+{"id": "sloupek", "type": "boss", "plane": "XY", "offset": 12,
+ "positions": [[-30, -15], [30, 15]], "diameter": 6, "hole_diameter": 2.5,
+ "direction": "reverse"}
+```
+
+Volitelný `hole_diameter` vyvrtá otvor **jen do sloupku** (těleso pod ním zůstane celé),
+`hole_depth` omezí jeho hloubku (bez hodnoty vede celým sloupkem). Otvor musí nechat stěnu aspoň
+0,2 mm. Sloupek, který by přečníval přes okraj tělesa (pod ním není materiál), nebo začíná
+v materiálu, se **odmítne** s českým vysvětlením. Opakuje ho pole (`pattern`). Ukázka: *Soubor →
+Otevřít ukázku → sloupky_krabicka*.
 
 ### Význam stěny loftu (`wall_mode`, verze 33)
 

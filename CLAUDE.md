@@ -552,6 +552,10 @@
   Přečnívání přes okraj, strana bez materiálu a trasa celá v materiálu = česká chyba, nic se
   nepřidá potichu. Opakuje ho pole (`REPEATABLE_FEATURES`). Ukázka `zebro_krabicka.json`.
   Zbylí kandidáti P6: proměnné zaoblení pro víc hran, přechod s kruhy.
+- (10. 11. 2026, pokyn autora „další rozšíření P6“) **Sloupek – P6.15** (`docs/p6-15-sloupek.md`):
+  prvek `boss`, týž formát **36** jako žebro (obojí v jedné dávce, PR #141). Válcové sloupky
+  od roviny (`plane`, `offset`) až k tělesu, otvor jen do sloupku (`boss.py`). Stejná
+  pravidla jako žebro: přečnívání, start v materiálu a špatný směr = česká chyba.
 
 ## Architektura (`src/skodacad/`)
 
@@ -622,6 +626,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `direct_edit.py` | přímé úpravy ploch (P2): `move_face`, `set_diameter` (posun jen vybrané plochy jádrem, kontroly vstupu G6 a výsledku G5), pojistka původu `face_origin` / `check_origin` nad `BuildContext.history` |
 | `draft.py` | úkos stěn (P6.11–P6.12): `validate` (struktura zápisu), `apply` (odmítnutí nepodporovaných ploch, volání `BRepOffsetAPI_DraftAngle`, **změření sklonu každé zadané plochy ve výsledku** přes `ModifiedShape` + `is_same`), `axis`, `neutral_from_face`, `DraftError`; prvek `draft` je ve `features.py`, z výběru ho vytváří `ModelSession._draft_from_selection` |
 | `rib.py` | žebro (P6.13–P6.14): `validate` (struktura zápisu), `build` (trasa → stěna dlouhá `reach`, odečtení těla, ponechání kusů ležících na trase, kontrola přečnívání a dotyku s tělesem), `RibError`; prvek `rib` ve `features.py` volá `ctx.apply(…, "add")` |
+| `boss.py` | sloupek (P6.15): `validate`, `build` (válec od roviny, odečtení těla, ponechání kusů na startovním bodě, kontrola přečnívání a dotyku, otvor jen do sloupku), `BossError`; prvek `boss` ve `features.py` volá `ctx.apply(…, "add")` |
 | `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -1010,6 +1015,17 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Pole opakuje jen těleso žebra: kopie mimo materiál vznikne jako samostatné těleso („1 → 2“).
 - Prvek je v `VOLUME_FEATURES` a `REPEATABLE_FEATURES`; `new_feature` dává výchozí trasu
   `[[-15, 15], [15, 15]]` nad blokem 40 × 30 × 10 (aby byl první náhled vidět).
+
+## Známé pasti (sloupek)
+
+- Stejný princip jako žebro (`rib.py`): válec dlouhý `reach` minus těleso, kus musí obsahovat
+  střed startovní kružnice (`distance_to(Vertex)`), kus dosahující konce válce = přečnívá.
+  Reach nezkracovat – vznikl by tichý přečnívající sloupek.
+- Otvor se vrtá do ponechaného kusu, **ne do dílu**: dno pod otvorem zůstane celé. `hole_depth`
+  bez hodnoty = celým sloupkem. Stěna kolem otvoru ≥ `MIN_WALL` 0,2 mm.
+- Sloupek, jehož osa leží ve stěně dílu, ponechá jen volnou polovinu; start leží na hraně kusu
+  (vzdálenost 0), proto se bere vzdálenost k bodu, ne „bod uvnitř“.
+- Formát 36 sdílí žebro i sloupek; `Document.to_dict` volí 36 pro oba typy.
 
 ## Známé pasti (šikmé a zakřivené plochy)
 
