@@ -31,6 +31,10 @@ nezaručí. Sloupek je užitečný pro krabičky a desky plošných spojů a vyu
 | `tests/test_gui.py` (+1) | nabídka *Sloupek*: náhled s objemem podle vzorce, potvrzení = jeden krok, Zpět |
 | ukázka | čtyři sloupky Ø6 s otvorem Ø2,5, objem přesně podle vzorce, jedno těleso |
 
+Snímky okna (Linux Xvfb, 1440 × 900):
+[hotové sloupky](p6-15-snimky/sloupek-hotove-karta-prvku.png),
+[nový sloupek – náhled](p6-15-snimky/sloupek-nove-nahled.png).
+
 ## Meze
 
 - Sloupek je válec (bez kužele, žeber a zaoblení paty); otvor je hladký (bez závitu).
