@@ -1256,6 +1256,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `fillet` | zaoblení hran | `edges`, `radius` |
 | `variable_fillet` | lineární proměnné zaoblení jedné přímé pravoúhlé vnější hrany | `edges`, `radius_start`, `radius_end`, `reverse`; `direction`, `origin`, `normals` vyplní výběr ve 3D |
 | `draft` | úkos stěn kolem neutrální roviny | `faces` (odkazy `{at, normal, type, origin}`), `pull` (`+Z` …), `angle` (±30°), `neutral` (souřadnice v mm nebo rovinná plocha) – verze 35 |
+| `rib` | žebro – tenká stěna od trasy až k tělesu | `plane`, `offset`, `points` (otevřená trasa `[[x, y], …]`, aspoň 2 body), `thickness`, `side` (`left`/`right`) – verze 36 |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -1304,8 +1305,8 @@ nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v 
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
 neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
 výslovný režim stěny loftu (pak verze 33), řízený přechod (pak verze 34) nebo úkos stěn
-(pak verze 35). Ostatní díly nadále používají nejnižší potřebnou verzi 24–28; verze 1–35 se
-stále načítají.
+(pak verze 35) nebo žebro (pak verze 36). Ostatní díly nadále používají nejnižší potřebnou
+verzi 24–28; verze 1–36 se stále načítají.
 
 ### Úkos stěn (`draft`, verze 35)
 
@@ -1331,6 +1332,27 @@ kapsy), zkosit nejde: **úkos dej před zaoblením**. Vodorovné plochy, jiné d
 a válec a válec s osou mimo směr tažení se odmítnou. Výsledek se vždy změří – sklon každé zadané
 plochy musí odpovídat úhlu, jinak se úkos nepřijme. Pole a zrcadlení tento prvek neopakují.
 Ukázka: *Soubor → Otevřít ukázku → ukos_krabicka*.
+
+### Žebro (`rib`, verze 36)
+
+Tenká výztuha, třeba uvnitř krabičky nebo v rohu mezi stěnou a dnem. Zadáš **trasu** – otevřenou
+lomenou čáru v rovině skici (`plane`, `offset`, `points` = `[[x, y], …]`, souřadnice jako ve
+skice) – a `thickness`. Trasa je **horní hrana žebra**. Žebro od ní vede kolmo ke spojnici
+prvního a posledního bodu na stranu `side` (`left` = vlevo, `right` = vpravo při pohledu od
+prvního bodu k poslednímu) **až k prvnímu materiálu** a je souměrné kolem roviny skici. Trasa musí
+postupovat jedním směrem (bez vracení). Dá se opakovat polem (`pattern`).
+
+```json
+{"id": "zebro", "type": "rib", "plane": "XZ", "points": [[-38, 12], [38, 12]],
+ "thickness": 2, "side": "right"}
+```
+
+Přidá se jen materiál mezi trasou a tělesem, zbytek stěny za tělesem zmizí. Proto trasa může
+začínat i končit uvnitř stěn krabičky, žebro pak dosedne na stěny i na dno. Žebro, které by
+přečnívalo přes okraj dílu (trasa delší než díl), se **odmítne** s českým vysvětlením, stejně
+jako trasa ležící celá v materiálu nebo vedená na stranu, kde žádný materiál není. Šikmá výztuha
+v rohu: trasa je úhlopříčka od stěny ke dnu a `side` ukazuje do rohu. Ukázka: *Soubor → Otevřít
+ukázku → zebro_krabicka*.
 
 ### Význam stěny loftu (`wall_mode`, verze 33)
 

@@ -1,0 +1,22 @@
+{
+  "format": "skodacad",
+  "version": 36,
+  "name": "Krabička se třemi žebry",
+  "description": "Otevřená krabička 80 × 50 × 25 se stěnami 2,5 mm. Přes dutinu vedou tři žebra tloušťky T, vysoká do výšky Z. Trasa žebra je jeho horní hrana; žebro samo vede od trasy dolů až ke dnu a do stěn. Změň T nebo Z. Trasa nesmí přečnívat přes okraj dílu a musí vést na stranu, kde je materiál.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"T": 2, "Z": 12},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys 80 × 50", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 80, "height": 50}]},
+    {"id": "telo", "type": "extrude", "name": "Blok", "sketch": "obrys", "distance": 25},
+    {"id": "dutina_skica", "type": "sketch", "name": "Dutina 75 × 45", "plane": "top",
+     "elements": [{"shape": "rectangle", "width": 75, "height": 45}]},
+    {"id": "dutina", "type": "extrude", "name": "Dutina", "sketch": "dutina_skica",
+     "operation": "cut", "distance": 22.5},
+    {"id": "zebro", "type": "rib", "name": "Žebro", "plane": "XZ", "offset": 12,
+     "points": [[-38, "Z"], [38, "Z"]], "thickness": "T", "side": "right"},
+    {"id": "zebra", "type": "pattern", "name": "Tři žebra", "features": ["zebro"],
+     "kind": "linear", "direction": "Y", "spacing": 12, "count": 3}
+  ]
+}

@@ -3858,3 +3858,22 @@ def test_preview_survives_deferred_deletion_of_previous_form_actions(
     assert w.feature_preview is None and len(w.session._undo) == count+int(accept and not editing)
     assert w.save_action.isEnabled() and w.model_dock.widget().isEnabled()
     assert not w.viewer.model_selection_disabled
+
+
+def test_rib_from_menu_previews_then_accepts_one_step(empty_window):
+    """P6.14: nové žebro z nabídky – náhled s výchozí trasou nad blokem, potvrzení = jeden krok."""
+    w = empty_window
+    build_box(w)  # blok 40 × 30 × 10
+    count = len(w.session._undo)
+    w.add_feature_actions["rib"].trigger()
+    assert w.feature_preview is not None
+    expected = 40 * 30 * 10 + 30 * 5 * 3  # trasa 30 mm dlouhá, z 10 do 15, tloušťka 3
+    assert w.feature_preview.preview.session.properties.volume_mm3 == pytest.approx(
+        expected, abs=1e-6)
+    w.feature_preview.accept_button.click()
+    assert len(w.session._undo) == count + 1
+    assert w.session.properties.volume_mm3 == pytest.approx(expected, abs=1e-6)
+    assert w.session.document.features[-1]["type"] == "rib"
+    assert selected_text(w).startswith("✓  Žebro")
+    w.undo_action.trigger()
+    assert w.session.document.features[-1]["type"] == "extrude"

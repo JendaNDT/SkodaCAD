@@ -545,6 +545,14 @@
   příkazem *Úkos vybraných stěn*. Zápis starší aplikace nepoškodí – o prvku neví a verze 35 ji
   zastaví. Výsledky kontrol v PR.
 
+- (10. 11. 2026, pokyn autora „ok, pokračuj dalším rozšířením P6“, výběr nechal na mně)
+  **Žebro – P6.13/P6.14** (`docs/p6-13-zebro.md`): prvek `rib`, formát **36** jen s ním. Otevřená
+  trasa `points` v rovině skici + `thickness` + `side`; tenká stěna kolmo ke spojnici krajních
+  bodů vede od trasy **až k tělesu** (`rib.py`: stěna − těleso, ponechané kusy ležící na trase).
+  Přečnívání přes okraj, strana bez materiálu a trasa celá v materiálu = česká chyba, nic se
+  nepřidá potichu. Opakuje ho pole (`REPEATABLE_FEATURES`). Ukázka `zebro_krabicka.json`.
+  Zbylí kandidáti P6: proměnné zaoblení pro víc hran, přechod s kruhy.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -613,6 +621,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `features.py` | prvky modelu; registrace dekorátorem `@feature("typ", "Český název")`; tažení a přechod; pole a zrcadlení |
 | `direct_edit.py` | přímé úpravy ploch (P2): `move_face`, `set_diameter` (posun jen vybrané plochy jádrem, kontroly vstupu G6 a výsledku G5), pojistka původu `face_origin` / `check_origin` nad `BuildContext.history` |
 | `draft.py` | úkos stěn (P6.11–P6.12): `validate` (struktura zápisu), `apply` (odmítnutí nepodporovaných ploch, volání `BRepOffsetAPI_DraftAngle`, **změření sklonu každé zadané plochy ve výsledku** přes `ModifiedShape` + `is_same`), `axis`, `neutral_from_face`, `DraftError`; prvek `draft` je ve `features.py`, z výběru ho vytváří `ModelSession._draft_from_selection` |
+| `rib.py` | žebro (P6.13–P6.14): `validate` (struktura zápisu), `build` (trasa → stěna dlouhá `reach`, odečtení těla, ponechání kusů ležících na trase, kontrola přečnívání a dotyku s tělesem), `RibError`; prvek `rib` ve `features.py` volá `ctx.apply(…, "add")` |
 | `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -987,6 +996,20 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   se ve formuláři jen ukáže (`_build_number` vrací původní slovník beze změny).
 - Znovu vybrat ve 3D plochu, kterou tentýž úkos už zkosil, nejde (nemá protějšek v dílu před
   prvkem) – *Přidat vybrané stěny* se hodí pro dosud nezkosené.
+
+## Známé pasti (žebro)
+
+- Stěna se táhne od trasy o `reach` = úhlopříčka těla + vzdálenost trasy od jeho středu + 1 mm.
+  Kus, který dosáhne konce stěny, je přečnívající (trasa delší než díl, strana bez těla) a
+  odmítne se – **nepovolovat ho** zkrácením `reach`, vznikl by tichý přečnívající plátek.
+- Kusy „za tělesem“ (pod dnem, za protější stěnou) se zahazují podle toho, že se nedotýkají
+  trasy (`_touches_route`, vzdálenost k úsečkám trasy ≤ 1e-4). Trasa může začínat i končit
+  uvnitř stěn krabičky: v materiálu se ořízne a žebro dosedne na stěny.
+- `side` je vůči rovině skici: u `XZ` (normála −Y) je trasa podél +X a `right` míří −Z (dolů).
+  Špatná strana dá chybu „přečnívá“ nebo „nic nepřidalo“ – správnou ukáže náhled.
+- Pole opakuje jen těleso žebra: kopie mimo materiál vznikne jako samostatné těleso („1 → 2“).
+- Prvek je v `VOLUME_FEATURES` a `REPEATABLE_FEATURES`; `new_feature` dává výchozí trasu
+  `[[-15, 15], [15, 15]]` nad blokem 40 × 30 × 10 (aby byl první náhled vidět).
 
 ## Známé pasti (šikmé a zakřivené plochy)
 
@@ -2045,7 +2068,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, výběr autora 9. 11.) v PR | P6.4 na autorském dílu výslovně přeskočena; další kandidáti jsou rozšíření (proměnné zaoblení pro víc hran, přechod s kruhy, žebro) |
+| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, PR #140, `7e9a95a`, ověřeně vydané); [žebro](docs/p6-13-zebro.md) (v36) v PR | P6.4 na autorském dílu výslovně přeskočena; další kandidáti jsou rozšíření (proměnné zaoblení pro víc hran, přechod s kruhy) |
 | P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 v PR | P7.78–P7.80; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
