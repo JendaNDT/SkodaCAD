@@ -213,6 +213,8 @@
   PR #138, `7d2a236`, ověřeně vydané. [P7.78–P7.80](docs/p7-78-karta-pokryti-ndt.md)
   (pokyn „srovnat kartu s mapou pokrytí NDT“ 9. 11.) = krok *Geometrické pokrytí* UT podle
   rámu 3d: rozevření v podrobnostech výpočtu, procenta s čárkou, krátká věta o citlivosti.
+  [P7.81–P7.82](docs/p7-81-obvod-plochy.md) (pokyn „zbývající rozdíly okna“ 10. 11.) = popis hran
+  „Obvod horní plochy“ v kartě prvku (`selectors.outline_name`) a náhled nového prvku bez pole Název (rám 3a).
 - Vývoj probíhá v **Claude Code v cloudu (Linux)**. Cílová aplikace bude pro Windows, proto
   vše musí jít sestavit a otestovat i na Linuxu.
 
@@ -556,6 +558,16 @@
   prvek `boss`, týž formát **36** jako žebro (obojí v jedné dávce, PR #141). Válcové sloupky
   od roviny (`plane`, `offset`) až k tělesu, otvor jen do sloupku (`boss.py`). Stejná
   pravidla jako žebro: přečnívání, start v materiálu a špatný směr = česká chyba.
+
+- (10. 11. 2026, pokyn autora „dodělat P6 kompletně“ + „ok, začni“) **P6.16 uzavření P6**
+  (`docs/p6-16-zaobleni-vice-hran-a-kruhy.md`, průzkum `docs/p6-16-pruzkum-zaobleni-vice-hran.py`,
+  testy `tests/test_p6_limits.py`): víc nezávislých hran proměnného zaoblení jádro zvládne přesně
+  (4 hrany, chyba 3·10⁻⁷ mm³), ale **nový prvek se nedělá** – jde to prvky po jedné hraně
+  s parametry R1/R2, víc hran v jednom prvku by byla jen změna formátu (37) a výběru kvůli
+  pohodlí. Hrany stýkající se v rohu = trvalá mez (OCCT nemá přesný průběh). Řízený přechod
+  s kruhy se nedělá: dva kruhy nezaručí kruhový průřez, přesně ho dá stávající *Přechod*
+  se třemi kruhovými skicami. Pravidlo pro krabičky: **skořepina před proměnným zaoblením**
+  (po něm je neplatná), zaoblení na hotové skořepině jen do R ≈ 6,8 u stěny 2 mm.
 
 ## Architektura (`src/skodacad/`)
 
@@ -939,6 +951,11 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
   `ConstraintRowDelegate` kreslí značku v pásu `GLYPH_WIDTH`, text položky beze změny.
   V náhledu prvku je `editor.title` skrytý (bublina zůstává) a druh s id je v bublině
   nadpisu karty (`_editor_heading`). Sražení: popisek pole `distance` je „Vzdálenost [mm]“.
+- P7.81–P7.82: krátký popis hran dělá `FieldsForm._edge_text` přes `edge_namer`
+  (`ModelSession.edge_outline_name` = `selectors.outline_name` nad `parts_before` prvku,
+  při přepočtu nebo chybě None → původní popis). Nejednoznačné výběry se nezkracují; text
+  v souboru a `describe_edges` beze změny. Pole *Název* nového prvku v náhledu jen
+  `hide_field` (`hidden_keys`): hodnota zůstává, `_commit` čte podle `field_shown`.
 - P7.78–P7.80: `coverage_spread` (rozevření) leží v sekci `coverage_details` (Podrobnosti
   výpočtu) spolu s `coverage_label`, ne v `coverage_form`; přepnutí zdroje na *Z přímé
   dráhy* sekci rozbalí. Procenta v kresbě = `ndt_wizard.percent_text` (jedno desetinné
@@ -2084,8 +2101,8 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, PR #140, `7e9a95a`, ověřeně vydané); [žebro](docs/p6-13-zebro.md) (v36) v PR | P6.4 na autorském dílu výslovně přeskočena; další kandidáti jsou rozšíření (proměnné zaoblení pro víc hran, přechod s kruhy) |
-| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 v PR | P7.78–P7.80; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
+| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, PR #140, `7e9a95a`, ověřeně vydané); [žebro](docs/p6-13-zebro.md) a [sloupek](docs/p6-15-sloupek.md) (v36, PR #141, `c53a0da`, ověřeně vydané); [P6.16](docs/p6-16-zaobleni-vice-hran-a-kruhy.md) uzavírá zbylé kandidáty jako meze s důvodem | P6.4 na autorském dílu výslovně přeskočena; rohy se stýkajícími hranami a řízený kruhový přechod nemají v jádře přesné řešení |
+| P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 a P7.81–P7.82 v PR | P7.78–P7.82; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
 

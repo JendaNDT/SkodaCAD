@@ -303,9 +303,12 @@ class FieldsForm(QWidget):
                  sketches: list[tuple[str, str]] | None = None,
                  parent: QWidget | None = None,
                  profile_editor: ProfileEditor | None = None,
-                 features: list[tuple[str, str]] | None = None) -> None:
+                 features: list[tuple[str, str]] | None = None,
+                 edge_namer: Callable[[str, Any], str | None] | None = None) -> None:
         super().__init__(parent)
         self._data = copy.deepcopy(data)
+        self._edge_namer = edge_namer  # krátký popis hran „obvod horní plochy“ (P7.81)
+        self.hidden_keys: set[str] = set()  # pole jen skrytá (hodnota zůstane): P7.82
         self._sketches = sketches or []
         self._features = features or []  # dřívější prvky, které jde opakovat (id, popis)
         self._profile_editor = profile_editor
@@ -344,6 +347,11 @@ class FieldsForm(QWidget):
         rows = [(field, widget) for field, widget, _ in self._rows if field.key == key]
         return next((w for f, w in rows if self._belongs(f)), rows[0][1])
 
+    def hide_field(self, key: str) -> None:
+        """Skryje pole formuláře; jeho hodnota v prvku zůstane beze změny (P7.82)."""
+        self.hidden_keys.add(key)
+        self._update_visibility()
+
     def is_shown(self, key: str) -> bool:
         """Patří pole k aktuální volbě? (Některá pole jen k jedné volbě, např. k druhu pole.)
         Ve zkráceném prohlížení může být takové pole i tak skryté, když nemá hodnotu."""
@@ -371,7 +379,7 @@ class FieldsForm(QWidget):
     def _update_visibility(self) -> None:
         expanded = self.extra_section is not None and self.extra_section.expanded
         for field, widget, _ in self._rows:
-            shown = self._belongs(field) and (
+            shown = self._belongs(field) and field.key not in self.hidden_keys and (
                 not self._compact or self._has_value(field) or (expanded and self._extra(field)))
             view = self._point_views.get(id(widget))
             if view is not None:  # zkrácené prohlížení: místo pole bodů jejich tabulka
@@ -627,7 +635,8 @@ class FieldsForm(QWidget):
         column = QVBoxLayout(holder)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(2)
-        text = describe_edges(value)
+        self._edge_value = copy.deepcopy(value)
+        text = self._edge_text()
         summary = QLabel(text[:1].upper() + text[1:])
         summary.setObjectName("edges_summary")
         summary.setWordWrap(True)
@@ -643,6 +652,24 @@ class FieldsForm(QWidget):
             column.addWidget(label)
         kept = copy.deepcopy(value)
         return holder, lambda: copy.deepcopy(kept)
+
+    def _edge_text(self) -> str:
+        """Popis hran vybraných ve 3D: krátký („obvod horní plochy“), když ho dá díl před
+        prvkem, jinak významem."""
+        value = getattr(self, "_edge_value", None)
+        text = ""
+        if self._edge_namer is not None:
+            try:
+                text = self._edge_namer(self._data.get("id"), value) or ""
+            except Exception:  # noqa: BLE001 – kosmetický popis nesmí shodit formulář
+                text = ""
+        return text or describe_edges(value)
+
+    def refresh_edge_names(self) -> None:
+        """Znovu popíše hrany – po dopočtení náhledu, kdy díl před prvkem dřív nebyl."""
+        text = self._edge_text()
+        for label in self.findChildren(QLabel, "edges_summary"):
+            label.setText(text[:1].upper() + text[1:])
 
     def _build_profile(self, field: Field, value: Any):
         """Obrys z čar: souhrn (body, čáry, vazby) a tlačítko do skicáře."""
@@ -974,6 +1001,8 @@ class FeatureEditor(QWidget):
         self._layout.addWidget(self.wall_panel)
         self._layout.addStretch(1)  # volné místo dole, ne mezi poli formuláře
         self.form: FieldsForm | None = None
+        # P7.81: okno sem dá funkci (id prvku, výběr hran) → „obvod horní plochy“ nebo None
+        self.edge_namer: Callable[[str, Any], str | None] | None = None
         self._compact = False  # prohlížení (P7.74): titulek šedě, obnovuje restyle
         self.feature_id: str | None = None
         self.show_feature(None)
@@ -1006,7 +1035,8 @@ class FeatureEditor(QWidget):
         self.help.setText(schema.help)
         self.help.setVisible(bool(schema.help))
         self.form = FieldsForm(schema.fields, feature, sketches,
-                               profile_editor=self._profile_editor, features=features)
+                               profile_editor=self._profile_editor, features=features,
+                               edge_namer=self.edge_namer)
         self.form.setObjectName("feature_form")
         self.form.edited.connect(lambda data: self.changed.emit(self.feature_id, data))
         self.form.invalid.connect(self.invalid)

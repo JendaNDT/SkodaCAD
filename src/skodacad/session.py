@@ -211,6 +211,7 @@ from skodacad.selectors import (
     SelectionError,
     describe_edges,
     find_face,
+    outline_name,
     select_edges,
     select_faces,
 )
@@ -1129,6 +1130,20 @@ class ModelSession:
             raise DocumentError(f"Náhled nelze použít: {detail} Původní model se nezměnil.")
         return DirectEditPreview(copy.deepcopy(document), copy.deepcopy(feature), feature_id,
                                  result)
+
+    def edge_outline_name(self, feature_id: str, spec: Any) -> str | None:
+        """„Obvod horní plochy“ pro hrany prvku ``feature_id``, když tvoří obrys plochy dílu
+        před prvkem (jinak ``None`` – okno použije popis významem)."""
+        if self.result is None or self.computing:
+            return None
+        part = self.result.parts_before.get(feature_id)
+        if part is None:
+            return None
+        try:
+            edges = select_edges(part, spec, self._evaluate)
+            return outline_name(part, edges)
+        except Exception:  # noqa: BLE001 – jen kosmetický popis, nikdy nesmí shodit okno
+            return None
 
     def selection_info(self, shapes: list[Any]) -> SelectionInfo:
         """Co je vybrané kliknutím ve 3D (počty a český popis pro stavový řádek)."""

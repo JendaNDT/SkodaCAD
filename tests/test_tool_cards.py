@@ -233,6 +233,12 @@ def test_preview_card_short_edges_auto_refresh_and_section_pill(plate):
     summary = edges.findChild(QtWidgets.QLabel, "edges_summary")
     hint = edges.findChild(QtWidgets.QLabel, "edges_hint")
     assert summary.text()[:1].isupper() and "Vybráno ve 3D" not in summary.text()
+    # P7.81, rám 3a: hrany tvoří celý obrys horní plochy → krátký popis místo výčtu významem
+    assert summary.text() == "Obvod horní plochy"
+    # P7.82: nový prvek se v náhledu jmenuje sám, pole Název tu není (hodnota zůstává)
+    name = panel.editor.form.widget("name")
+    assert not name.isVisibleTo(panel)
+    assert panel.preview.session.feature(panel.preview.feature_id)["name"].startswith("Sražení")
     assert "Přidat vybrané hrany" in summary.toolTip()
     assert not hint.isVisibleTo(panel)  # během náhledu se ve 3D hrany nevybírají
     assert panel.accept_button.isEnabled() and not panel.refresh_button.isVisibleTo(panel)
@@ -251,6 +257,7 @@ def test_preview_card_short_edges_auto_refresh_and_section_pill(plate):
     # Prohlížecí karta hotového sražení: krátký popis i věta, jak výběr změnit.
     edges = w.feature_editor.form.widget("edges")
     assert edges.findChild(QtWidgets.QLabel, "edges_hint").isVisibleTo(w.editor_dock)
+    assert edges.findChild(QtWidgets.QLabel, "edges_summary").text() == "Obvod horní plochy"
 
     w._selected_id = None
     w._reload_all()
