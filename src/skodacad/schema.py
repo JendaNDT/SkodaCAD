@@ -62,6 +62,8 @@ AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 DRAFT_PULL_CHOICES = (("+Z", "+Z (nahoru)"), ("-Z", "−Z (dolů)"), ("+X", "+X"), ("-X", "−X"),
                       ("+Y", "+Y"), ("-Y", "−Y"))
 RIB_SIDE_CHOICES = (("left", "vlevo od trasy"), ("right", "vpravo od trasy"))
+SPLIT_LIP_SIDE_CHOICES = (("inner", "vnitřní okraj řezu (u dutiny)"),
+                          ("outer", "vnější okraj řezu"))
 SPLIT_KEEP_CHOICES = (("below", "část pod rovinou"), ("above", "část nad rovinou"),
                       ("both", "obě části vedle sebe"))
 BOSS_DIRECTION_CHOICES = (("reverse", "proti normále roviny (dolů u roviny XY)"),
@@ -310,7 +312,21 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
             Field("gap", "Mezera mezi částmi [mm]", "number", required=False,
                   help="Odsune horní část po normále roviny, ať jsou obě části od sebe.",
                   when=("keep", "both")),
-        ), "Rozdělí díl rovinou na základnu a víčko, nebo ponechá jen jednu část."),
+            Field("lip_width", "Šířka lemu [mm]", "number", required=False, when=("keep", "both"),
+                  help="Prázdné = bez lemu. Na základně vznikne lem podél okraje řezu (pás "
+                       "této šířky), ve víčku odpovídající drážka. Lem i s vůlí musí zůstat "
+                       "uvnitř stěny – obvykle nejvýš polovina tloušťky stěny."),
+            Field("lip_height", "Výška lemu [mm]", "number", required=False,
+                  when=("keep", "both")),
+            Field("lip_side", "Strana lemu", "choice", choices=SPLIT_LIP_SIDE_CHOICES,
+                  default="inner", required=False, when=("keep", "both"),
+                  help="Vnitřní lem drží víčko zevnitř (u dutiny), vnější zvenku."),
+            Field("lip_clearance", "Vůle drážky [mm]", "number", required=False,
+                  when=("keep", "both"),
+                  help="Drážka je o tuto vůli širší a hlubší než lem. Prázdné = 0,2 mm "
+                       "(běžná vůle pro tisk FDM)."),
+        ), "Rozdělí díl rovinou na základnu a víčko (volitelně s lemem a drážkou), nebo "
+           "ponechá jen jednu část."),
         Schema("boss", "Sloupek", (
             _NAME,
             Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),

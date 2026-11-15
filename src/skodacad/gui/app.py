@@ -2162,10 +2162,12 @@ def _self_test_boss(window, lines: list[str]) -> bool:
 
 
 def _self_test_split(window, lines: list[str]) -> bool:
-    """Rozříznutí v zabalené aplikaci: základna a víčko, objemy podle vzorce, Zpět, v37."""
+    """Rozříznutí s lemem v zabalené aplikaci: základna a víčko podle vzorce, Zpět, v37."""
     from skodacad.document import Document
 
     walls = 80 * 50 - 75 * 45
+    tongue = (77.4 * 47.4 - 75 * 45) * 3  # lem W = 1,2 × H = 3 kolem dutiny 75 × 45
+    groove = (77.8 * 47.8 - 75 * 45) * 3.2  # drážka o vůli 0,2 mm širší a hlubší
 
     window.session.dirty = False
     try:
@@ -2174,16 +2176,16 @@ def _self_test_split(window, lines: list[str]) -> bool:
         assert window.session.result.ok, window.session.result.first_error
         part = window.session.result.part
         assert len(part.solids()) == 2, "základna a víčko nejsou dvě tělesa"
-        total = 80 * 50 * 25 - 75 * 45 * 20
+        total = 80 * 50 * 25 - 75 * 45 * 20 + tongue - groove
         assert abs(part.volume - total) < 1e-6, (part.volume, total)
         base, lid = sorted(part.solids(), key=lambda solid: solid.bounding_box().min.Z)
-        assert abs(base.volume - (80 * 50 * 2.5 + walls * 12.5)) < 1e-6, base.volume
-        assert abs(lid.volume - (walls * 7.5 + 80 * 50 * 2.5)) < 1e-6, lid.volume
+        assert abs(base.volume - (80 * 50 * 2.5 + walls * 12.5 + tongue)) < 1e-6, base.volume
+        assert abs(lid.volume - (walls * 7.5 + 80 * 50 * 2.5 - groove)) < 1e-6, lid.volume
         window.session.set_parameter("V", "10")
         assert window.session.result.ok, window.session.result.first_error
         moved = sorted(window.session.result.part.solids(),
                        key=lambda solid: solid.bounding_box().min.Z)[0]
-        assert abs(moved.bounding_box().max.Z - 10) < 1e-6, moved.bounding_box().max.Z
+        assert abs(moved.bounding_box().max.Z - 13) < 1e-6, moved.bounding_box().max.Z  # V + lem
         window.session.undo()
         assert abs(window.session.result.part.volume - total) < 1e-6, "Zpět nevrátilo objem"
         path = user_dir() / "self-test-rozrez.json"
@@ -2194,8 +2196,8 @@ def _self_test_split(window, lines: list[str]) -> bool:
         QApplication.processEvents()
         if window.viewer.ready:
             window.viewer.dump(str(user_dir() / "self-test-rozrez.png"))
-        lines.append(f"✓ Rozříznutí: základna {base.volume:.3f} + víčko {lid.volume:.3f} mm³ podle "
-                     "vzorce, změna roviny, Zpět a uložení v37")
+        lines.append(f"✓ Rozříznutí s lemem: základna {base.volume:.3f} + víčko {lid.volume:.3f} "
+                     "mm³ podle vzorce, změna roviny, Zpět a uložení v37")
         window.session.dirty = False
         return True
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku

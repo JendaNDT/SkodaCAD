@@ -217,16 +217,19 @@ def test_example_box_splits_into_base_and_lid_matching_formula():
     document = Document.load("examples/rozriznuta_krabicka.json")
     result = rebuild(document)
     assert all(item.status == "ok" for item in result.statuses), result.statuses
-    # blok 80 × 50 × 25 minus uzavřená dutina 75 × 45 × 20; řez ve V = 15, víčko odsunuto o M = 8
-    assert volume(result.part) == pytest.approx(80 * 50 * 25 - 75 * 45 * 20, abs=1e-6)
+    # blok 80 × 50 × 25 minus uzavřená dutina 75 × 45 × 20; řez ve V = 15, víčko odsunuto o M = 8,
+    # vnitřní lem W = 1,2 × H = 3 (vyroste z dutiny 75 × 45), drážka o vůli 0,2 širší a hlubší
+    walls = 80 * 50 - 75 * 45
+    tongue = (77.4 * 47.4 - 75 * 45) * 3
+    groove = (77.8 * 47.8 - 75 * 45) * 3.2
+    assert volume(result.part) == pytest.approx(80 * 50 * 25 - 75 * 45 * 20 + tongue - groove,
+                                                abs=1e-6)
     base, lid = sorted(result.part.solids(), key=lambda s: s.bounding_box().min.Z)
-    assert base.bounding_box().max.Z == pytest.approx(15, abs=1e-6)
+    assert base.bounding_box().max.Z == pytest.approx(15 + 3, abs=1e-6)  # lem vyčnívá
     assert lid.bounding_box().min.Z == pytest.approx(15 + 8, abs=1e-6)
     assert lid.bounding_box().max.Z == pytest.approx(25 + 8, abs=1e-6)
-    # základna: dno 2,5 a stěny do výšky 15; víčko: stěny 2,5 od roviny a strop 2,5
-    walls = 80 * 50 - 75 * 45
-    assert base.volume == pytest.approx(80 * 50 * 2.5 + walls * 12.5, abs=1e-6)
-    assert lid.volume == pytest.approx(walls * 7.5 + 80 * 50 * 2.5, abs=1e-6)
+    assert base.volume == pytest.approx(80 * 50 * 2.5 + walls * 12.5 + tongue, abs=1e-6)
+    assert lid.volume == pytest.approx(walls * 7.5 + 80 * 50 * 2.5 - groove, abs=1e-6)
     assert document.to_dict()["version"] == 37
 
 
@@ -234,5 +237,148 @@ def test_example_changes_with_parameters():
     result = rebuild(Document.load("examples/rozriznuta_krabicka.json"), {"V": 10, "M": 3})
     assert all(item.status == "ok" for item in result.statuses), result.statuses
     base, lid = sorted(result.part.solids(), key=lambda s: s.bounding_box().min.Z)
-    assert base.bounding_box().max.Z == pytest.approx(10, abs=1e-6)
+    assert base.bounding_box().max.Z == pytest.approx(10 + 3, abs=1e-6)
     assert lid.bounding_box().min.Z == pytest.approx(13, abs=1e-6)
+
+
+# --- lem a drážka (P6.18) ----------------------------------------------------------------
+
+def closed_box(corner_radius: float = 0.0):
+    """Uzavřená krabička 80 × 50 × 25 s dutinou 75 × 45 × 20 (stěny a dno 2,5), z = 0…25."""
+    from build123d import RectangleRounded, extrude
+
+    outer = Pos(0, 0, 12.5) * Box(80, 50, 25)
+    if corner_radius:
+        cavity = Pos(0, 0, 2.5) * extrude(RectangleRounded(75, 45, corner_radius), amount=20)
+    else:
+        cavity = Pos(0, 0, 12.5) * Box(75, 45, 20)
+    return outer - cavity
+
+
+def lip_parts(lip, gap=0.0, box=None):
+    result = split.apply(box or closed_box(), Plane.XY.offset(15), "both", gap, lip)
+    base, lid = sorted(result.solids(), key=lambda s: s.bounding_box().min.Z)
+    return base, lid
+
+
+def test_inner_lip_adds_the_strip_to_the_base_and_cuts_the_wider_groove_into_the_lid():
+    base, lid = lip_parts(split.Lip(1.2, 3, "inner", 0.2))
+    ring = 77.4 * 47.4 - 75 * 45  # pás 1,2 mm kolem dutiny
+    groove = (77.8 * 47.8 - 75 * 45) * 3.2  # pás 1,4 mm, hloubka 3,2
+    assert base.volume == pytest.approx(80 * 50 * 2.5 + (80 * 50 - 75 * 45) * 12.5 + ring * 3,
+                                        abs=1e-6)
+    assert lid.volume == pytest.approx((80 * 50 - 75 * 45) * 7.5 + 80 * 50 * 2.5 - groove,
+                                       abs=1e-6)
+    assert base.bounding_box().max.Z == pytest.approx(18, abs=1e-6)
+    assert len(base.solids()) == 1 and base.is_valid and lid.is_valid
+
+
+def test_outer_lip_follows_the_outer_edge_of_the_section():
+    base, lid = lip_parts(split.Lip(1.0, 2, "outer", 0.3))
+    ring = 80 * 50 - 78 * 48  # pás 1 mm u vnějšího okraje
+    groove = (80 * 50 - 77.4 * 47.4) * 2.3  # pás 1,3 mm, hloubka 2,3
+    assert base.volume == pytest.approx(80 * 50 * 2.5 + (80 * 50 - 75 * 45) * 12.5 + ring * 2,
+                                        abs=1e-6)
+    assert lid.volume == pytest.approx((80 * 50 - 75 * 45) * 7.5 + 80 * 50 * 2.5 - groove,
+                                       abs=1e-6)
+
+
+def test_lip_on_a_rounded_cavity_matches_the_offset_formula():
+    import math
+
+    r = 4.0
+    box = closed_box(r)
+    perimeter = 2 * (75 - 2 * r) + 2 * (45 - 2 * r) + 2 * math.pi * r
+    w, h = 1.2, 3.0
+    base, _ = lip_parts(split.Lip(w, h, "inner", 0.2), box=box)
+    plain, _ = lip_parts(None, box=box)
+    ring = perimeter * w + math.pi * w * w  # odsazení konvexního obrysu: P·w + π·w²
+    assert base.volume - plain.volume == pytest.approx(ring * h, abs=1e-6)
+
+
+@pytest.mark.parametrize("side", ["inner", "outer"])
+def test_the_lid_fits_onto_the_lip_without_collision(side):
+    def overlap(base, lid) -> float:
+        common = base & lid  # prázdný průnik = None
+        return 0.0 if common is None else sum(s.volume for s in common.solids())
+
+    # víčko dosedá na rovinu řezu: lem musí zapadnout do drážky, bez průniku
+    assert overlap(*lip_parts(split.Lip(1.0, 3, side, 0.2), gap=0)) == pytest.approx(0, abs=1e-6)
+    # bez vůle se lem a víčko dotýkají v plochách, ale nepronikají
+    assert overlap(*lip_parts(split.Lip(1.0, 3, side, 0.0), gap=0)) == pytest.approx(0, abs=1e-6)
+    # kontrola, že měření průniku něco odhalí: víčko zasunuté o 1 mm dolů do lemu naráží
+    base, lid = lip_parts(split.Lip(1.0, 3, side, 0.2), gap=0)
+    from build123d import Location
+    assert overlap(base, lid.moved(Location((0, 0, -1)))) > 1.0
+
+
+def test_lip_follows_the_cut_height_without_references():
+    for height in (8, 15, 20):
+        result = split.apply(closed_box(), Plane.XY.offset(height), "both", 0,
+                             split.Lip(1.2, 3, "inner", 0.2))
+        base, lid = sorted(result.solids(), key=lambda s: s.bounding_box().min.Z)
+        assert base.bounding_box().max.Z == pytest.approx(height + 3, abs=1e-6)
+        assert lid.bounding_box().min.Z == pytest.approx(height, abs=1e-6)
+
+
+@pytest.mark.parametrize("lip,message", [
+    (split.Lip(2.5, 3), "stejně široká"),  # lem je celá stěna
+    (split.Lip(2.4, 3, "inner", 0.2), "stejně široká"),  # s vůlí by drážka sežrala stěnu
+    (split.Lip(1.2, 11, "inner", 0.2), "hlubší než stěna"),  # drážka přes celé víčko
+    (split.Lip(0, 3), "Šířka lemu"),
+    (split.Lip(1.2, -1), "Výška lemu"),
+    (split.Lip(1.2, 3, "inner", -0.1), "Vůle"),
+    (split.Lip(1.2, 3, "middle"), "Strana lemu"),
+])
+def test_lip_that_does_not_fit_is_rejected(lip, message):
+    with pytest.raises(split.SplitError, match=message):
+        split.apply(closed_box(), Plane.XY.offset(15), "both", 0, lip)
+
+
+def test_inner_lip_needs_a_cavity_in_the_section():
+    with pytest.raises(split.SplitError, match="nemá kde vést"):
+        split.apply(BLOCK, Plane.XY.offset(7), "both", 0, split.Lip(1, 2, "inner"))
+
+
+def test_lip_needs_both_parts_and_validate_checks_the_lip_keys():
+    with pytest.raises(split.SplitError, match="obou částí"):
+        split.apply(closed_box(), Plane.XY.offset(15), "below", 0, split.Lip(1, 2))
+    base = {"id": "r", "type": "split", "plane": "XY", "offset": 15, "keep": "both"}
+    split.validate({**base, "lip_width": 1, "lip_height": 2, "lip_side": "outer",
+                    "lip_clearance": "C"})
+    with pytest.raises(split.SplitError, match="výšku"):
+        split.validate({**base, "lip_width": 1})
+    with pytest.raises(split.SplitError, match="jen s šířkou"):
+        split.validate({**base, "lip_height": 2})
+    with pytest.raises(split.SplitError, match="Strana lemu"):
+        split.validate({**base, "lip_width": 1, "lip_height": 2, "lip_side": "x"})
+    with pytest.raises(split.SplitError, match="obou částí"):
+        split.validate({**base, "keep": "below", "lip_width": 1, "lip_height": 2})
+
+
+def test_feature_with_lip_uses_parameters_default_clearance_and_summary():
+    def box_features(**changes):
+        return [
+            {"id": "s0", "type": "sketch", "plane": "XY",
+             "elements": [{"shape": "rectangle", "width": 80, "height": 50}]},
+            {"id": "b", "type": "extrude", "sketch": "s0", "distance": 25},
+            {"id": "s1", "type": "sketch", "plane": "XY", "offset": 2.5,
+             "elements": [{"shape": "rectangle", "width": 75, "height": 45}]},
+            {"id": "d", "type": "extrude", "sketch": "s1", "operation": "cut",
+             "direction": "normal", "distance": 20},
+            split_feature(offset=15, keep="both", lip_width="W", lip_height=3, **changes),
+        ]
+
+    doc = Document.from_dict({"format": "skodacad", "version": VERSION, "name": "x",
+                              "parameters": {"W": 1.2}, "features": box_features()})
+    result = rebuild(doc)
+    assert all(item.status == "ok" for item in result.statuses), result.statuses
+    groove = (77.8 * 47.8 - 75 * 45) * 3.2  # výchozí vůle 0,2 mm
+    tongue = (77.4 * 47.4 - 75 * 45) * 3
+    assert volume(result.part) == pytest.approx(80 * 50 * 25 - 75 * 45 * 20 + tongue - groove,
+                                                abs=1e-6)
+    assert tree_summary(doc.features[-1], {}) == "obě části s lemem"
+    wide = rebuild(Document.from_dict({"format": "skodacad", "version": VERSION, "name": "x",
+                                       "parameters": {"W": 2.4}, "features": box_features()}))
+    status = status_of(wide, "rez")
+    assert status.status == "error" and "stejně široká" in status.message

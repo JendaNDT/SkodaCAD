@@ -3,7 +3,7 @@
 *Datum 15. 11. 2026. Autor na pokyn „další rozšíření modelování“ nechal výběr na mně; vybral jsem
 rozříznutí, protože krabičky na elektroniku a 3D tisk potřebují **základnu a víčko z jednoho
 návrhu** a dosavadní prvky to neumí (vysunutí s řezem odebírá materiál podle skici, ne podle
-roviny). Navazuje P6.18 (lem víčka).*
+roviny). Navazuje P6.18 ([lem a drážka](p6-18-lem-a-drazka.md)).*
 
 ## K čemu to je
 
@@ -39,5 +39,5 @@ Navrhneš uzavřenou krabičku, rozříznuješ ji rovinou a máš základnu a v�
 - Řez je jen **rovinou**; šikmá plocha nebo řez křivkou není součástí této verze.
 - Víčko se při `both` neotáčí a nepřikládá na desku – jen se odsune. Otočení pro tisk je na
   dalším kroku.
-- Lem a drážka mezi základnou a víčkem jsou samostatný prvek (P6.18).
+- Lem a drážka mezi základnou a víčkem jsou rozšíření tohoto prvku, viz [P6.18](p6-18-lem-a-drazka.md).
 - Neověřeno na vlastním dílu autora.

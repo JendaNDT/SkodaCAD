@@ -1258,7 +1258,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `draft` | úkos stěn kolem neutrální roviny | `faces` (odkazy `{at, normal, type, origin}`), `pull` (`+Z` …), `angle` (±30°), `neutral` (souřadnice v mm nebo rovinná plocha) – verze 35 |
 | `rib` | žebro – tenká stěna od trasy až k tělesu | `plane`, `offset`, `points` (otevřená trasa `[[x, y], …]`, aspoň 2 body), `thickness`, `side` (`left`/`right`) – verze 36 |
 | `boss` | sloupek – válec od roviny až k tělesu | `plane`, `offset`, `positions` (`[[x, y], …]`), `diameter`, `hole_diameter` (jen do sloupku), `hole_depth`, `direction` (`reverse`/`normal`) – verze 36 |
-| `split` | rozříznutí dílu rovinou na základnu a víčko | `plane`, `offset`, `keep` (`below`/`above`/`both`), `gap` (mezera mezi částmi, jen s `both`) – verze 37 |
+| `split` | rozříznutí dílu rovinou na základnu a víčko | `plane`, `offset`, `keep` (`below`/`above`/`both`), `gap` (mezera mezi částmi, jen s `both`), `lip_width`, `lip_height`, `lip_side` (`inner`/`outer`), `lip_clearance` (lem a drážka, jen s `both`) – verze 37 |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -1385,6 +1385,17 @@ se horní část odsune po normále o `gap` mm, takže obě části leží od se
 
 ```json
 {"id": "rez", "type": "split", "plane": "XY", "offset": 15, "keep": "both", "gap": 8}
+```
+
+**Lem a drážka** (jen s `both`): `lip_width` přidá na základně pás šířky `lip_width` a výšky
+`lip_height` podél okraje řezu (`lip_side`: `inner` u dutiny, `outer` při vnějším okraji) a ve
+víčku odpovídající drážku, o `lip_clearance` širší a hlubší (bez hodnoty 0,2 mm). Odvodí se z obrysu
+řezu, takže se s výškou řezu a mezerou přizpůsobí samy. Lem i s vůlí musí zůstat uvnitř stěny
+a drážka nesmí být hlubší než stěna víčka, jinak se prvek odmítne.
+
+```json
+{"id": "rez", "type": "split", "plane": "XY", "offset": 15, "keep": "both", "gap": 8,
+ "lip_width": 1.2, "lip_height": 3, "lip_side": "inner", "lip_clearance": 0.2}
 ```
 
 Řez je přesný a objem se vždy ověří: součet částí musí dát původní objem. Rovina, která díl

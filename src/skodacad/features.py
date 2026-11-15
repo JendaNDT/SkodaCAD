@@ -968,7 +968,15 @@ def build_split(ctx: BuildContext, feature: dict[str, Any]) -> None:
         plane = _resolve_plane(ctx, feature)
         gap_value = feature.get("gap")
         gap = ctx.num(gap_value) if gap_value not in (None, "") else 0.0
-        candidate = split.apply(part, plane, feature.get("keep", "below"), gap)
+        lip = None
+        if feature.get("lip_width") not in (None, ""):
+            clearance = feature.get("lip_clearance")
+            lip = split.Lip(
+                ctx.positive(feature, "lip_width", "Šířka lemu"),
+                ctx.positive(feature, "lip_height", "Výška lemu"),
+                feature.get("lip_side", "inner"),
+                ctx.num(clearance) if clearance not in (None, "") else split.DEFAULT_CLEARANCE)
+        candidate = split.apply(part, plane, feature.get("keep", "below"), gap, lip)
         after = inspect_volume(candidate)
     except (split.SplitError, GeometryValidationError) as exc:
         raise FeatureError(f"{label}: {exc}") from None
@@ -1311,8 +1319,9 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
     if kind == "rib" and "thickness" in feature:
         return f"{_plain(feature['thickness'], params)} mm"
     if kind == "split":
-        return {"above": "nad rovinou", "below": "pod rovinou",
+        text = {"above": "nad rovinou", "below": "pod rovinou",
                 "both": "obě části"}.get(feature.get("keep", "below"), "")
+        return text + (" s lemem" if feature.get("lip_width") not in (None, "") else "")
     if kind == "draft" and "angle" in feature:
         return f"{_plain(feature['angle'], params)}°"
     if kind == "chamfer" and "distance" in feature:

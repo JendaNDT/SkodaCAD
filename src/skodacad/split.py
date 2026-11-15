@@ -6,17 +6,39 @@ rovinou (po normále), pod ní, nebo obě části, které se odsunou o zadanou m
 
 Rovina, která díl neprotíná (celý díl by zůstal, nebo by nezbylo nic), se **odmítne** s českou
 radou; nic se potichu neodřízne ani nezahodí.
+
+Lem a drážka (P6.18): při ``both`` jde u řezu přidat **lem** na základně a odpovídající **drážku**
+ve víčku. Oba se odvodí z obrysu řezu (průřez stěn rovinou), takže se s výškou řezu přizpůsobí
+samy a nepotřebují odkazy na plochy. Lem je pás šířky ``width`` podél vnitřního (``inner``) nebo
+vnějšího (``outer``) okraje řezu, vysoký ``height``; drážka je týž pás o ``clearance`` širší
+a hlubší.
 """
 
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
-from build123d import Compound, Keep, Location, Part, Plane, split
+from build123d import (
+    Compound,
+    Face,
+    GeomType,
+    Keep,
+    Kind,
+    Location,
+    Part,
+    Plane,
+    extrude,
+    offset,
+    split,
+)
 
 KEEP = ("above", "below", "both")
-FEATURE_KEYS = {"id", "type", "name", "plane", "offset", "keep", "gap"}
+FEATURE_KEYS = {"id", "type", "name", "plane", "offset", "keep", "gap", "lip_width",
+                "lip_height", "lip_side", "lip_clearance"}
+LIP_SIDES = ("inner", "outer")
+DEFAULT_CLEARANCE = 0.2  # mm, běžná vůle pro tisk FDM
 SIDE_NAMES = {"above": "nad rovinou", "below": "pod rovinou"}
 MAX_GAP = 10000.0  # mm
 
@@ -40,6 +62,34 @@ def validate(feature: dict[str, Any]) -> None:
             raise SplitError("Mezeru („gap“) jde zadat jen při ponechání obou částí („both“).")
         if isinstance(gap, bool) or not isinstance(gap, (int, float, str)):
             raise SplitError("„gap“ musí být číslo nebo výraz.")
+    width = feature.get("lip_width")
+    if width in (None, ""):
+        for key in ("lip_height", "lip_side", "lip_clearance"):
+            if feature.get(key) not in (None, ""):
+                raise SplitError(f"„{key}“ jde zadat jen s šířkou lemu („lip_width“).")
+        return
+    if keep != "both":
+        raise SplitError("Lem a drážka jdou jen při ponechání obou částí („both“).")
+    if feature.get("lip_height") in (None, ""):
+        raise SplitError("Lem potřebuje výšku („lip_height“).")
+    if feature.get("lip_side", "inner") not in LIP_SIDES:
+        raise SplitError("Strana lemu („lip_side“) musí být „inner“ (vnitřní) nebo „outer“ "
+                         "(vnější).")
+    for key in ("lip_width", "lip_height", "lip_clearance"):
+        value = feature.get(key)
+        if value not in (None, "") and (isinstance(value, bool)
+                                        or not isinstance(value, (int, float, str))):
+            raise SplitError(f"„{key}“ musí být číslo nebo výraz.")
+
+
+@dataclass(frozen=True)
+class Lip:
+    """Lem na základně a drážka ve víčku: šířka a výška lemu [mm], strana a vůle drážky [mm]."""
+
+    width: float
+    height: float
+    side: str = "inner"
+    clearance: float = DEFAULT_CLEARANCE
 
 
 def _volume(part: Part | None) -> float:
@@ -61,15 +111,100 @@ def _side(part: Part, plane: Plane, keep: Keep) -> Part | None:
     return result
 
 
-def apply(part: Part, plane: Plane, keep: str = "below", gap: float = 0.0) -> Part:
+def _on_plane(face: Face, plane: Plane, upward: bool) -> bool:
+    if face.geom_type != GeomType.PLANE:
+        return False
+    if abs((face.center() - plane.origin).dot(plane.z_dir)) > 1e-6:
+        return False
+    return face.normal_at().dot(plane.z_dir) * (1 if upward else -1) > 1 - 1e-9
+
+
+def _strips(sections: list[Face], width: float, side: str) -> list[Face]:
+    """Pásy šířky ``width`` podél vnitřního / vnějšího okraje ploch řezu (uvnitř nich)."""
+    strips: list[Face] = []
+    for section in sections:
+        if side == "inner":
+            regions = [Face(wire) for wire in section.inner_wires()]
+            grown = [(offset(region, amount=width, kind=Kind.INTERSECTION), region)
+                     for region in regions]
+            pieces = [(big - small) & section for big, small in grown]
+        else:
+            outer = Face(section.outer_wire())
+            pieces = [(outer - offset(outer, amount=-width, kind=Kind.INTERSECTION)) & section]
+        for piece in pieces:
+            strips.extend(face for face in piece.faces() if face.area > 1e-9)
+    return strips
+
+
+def _lip_solids(strips: list[Face], plane: Plane, depth: float) -> list[Any]:
+    return [solid for strip in strips
+            for solid in extrude(strip, amount=depth, dir=plane.z_dir).solids()]
+
+
+def _add_lip(lower: Part, upper: Part, plane: Plane, lip: Lip) -> tuple[Part, Part]:
+    """Lem na dolní části a drážka v horní (obě z obrysu řezu)."""
+    if lip.side not in LIP_SIDES:
+        raise SplitError("Strana lemu musí být „inner“ (vnitřní) nebo „outer“ (vnější).")
+    for name, value in (("Šířka lemu", lip.width), ("Výška lemu", lip.height)):
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise SplitError(f"{name} musí být větší než 0 (je {value!r}).")
+    if (not isinstance(lip.clearance, (int, float)) or not math.isfinite(lip.clearance)
+            or lip.clearance < 0):
+        raise SplitError(f"Vůle drážky nesmí být záporná (je {lip.clearance!r}).")
+    sections = [face for face in lower.faces() if _on_plane(face, plane, upward=True)]
+    if not sections:
+        raise SplitError("Řez nemá žádnou rovinnou plochu, ze které by lem vyšel.")
+    section_area = sum(face.area for face in sections)
+
+    tongue = _strips(sections, lip.width, lip.side)
+    if not tongue:
+        raise SplitError(
+            "Lem nemá kde vést – řez nemá " + ("vnitřní obrys (dutinu)" if lip.side == "inner"
+            else "vnější obrys") + ". Zkus druhou stranu lemu nebo řez, který protíná stěny.")
+    wide = _strips(sections, lip.width + lip.clearance, lip.side)
+    for strips, what in ((tongue, "Lem"), (wide, "Drážka")):
+        if sum(face.area for face in strips) >= section_area * (1 - 1e-6):
+            raise SplitError(f"{what} je stejně široká jako stěna v řezu nebo širší – zmenši "
+                             "šířku lemu (lem i s vůlí musí zůstat uvnitř stěny).")
+
+    expected = sum(face.area for face in tongue) * lip.height
+    fused = lower
+    for solid in _lip_solids(tongue, plane, lip.height):
+        fused = fused + _part([solid])
+    if (len(fused.solids()) != len(lower.solids())
+            or abs(_volume(fused) - _volume(lower) - expected) > 1e-6 * max(1.0, expected)):
+        raise SplitError("Lem se nepodařilo spojit se základnou – zkus jinou šířku nebo výšku.")
+
+    depth = lip.height + lip.clearance
+    removed_expected = sum(face.area for face in wide) * depth
+    cut = upper
+    for cutter in _lip_solids(wide, plane, depth):
+        cut = cut - _part([cutter])
+    removed = _volume(upper) - _volume(cut)
+    if (len(cut.solids()) != len(upper.solids())
+            or abs(removed - removed_expected) > 1e-6 * max(1.0, removed_expected)):
+        raise SplitError("Drážka je hlubší než stěna víčka nebo ji rozdělí – zmenši výšku lemu "
+                         "nebo vůli.")
+    return _part(list(fused.solids())), _part(list(cut.solids()))
+
+
+def _part(solids: list[Any]) -> Part:
+    return Part(Compound(solids).wrapped)
+
+
+def apply(part: Part, plane: Plane, keep: str = "below", gap: float = 0.0,
+          lip: Lip | None = None) -> Part:
     """Díl rozříznutý rovinou ``plane``: ``above`` ponechá stranu po normále, ``below`` opačnou,
-    ``both`` obě (horní se odsune po normále o ``gap``)."""
+    ``both`` obě (horní se odsune po normále o ``gap``). ``lip`` přidá u ``both`` lem na dolní
+    části a drážku v horní."""
     if keep not in KEEP:
         raise SplitError("Ponechaná část musí být „above“, „below“ nebo „both“.")
     if not isinstance(gap, (int, float)) or not math.isfinite(gap) or gap < 0 or gap > MAX_GAP:
         raise SplitError(f"Mezera mezi částmi musí být od 0 do {MAX_GAP:g} mm (je {gap!r}).")
     if keep != "both" and gap:
         raise SplitError("Mezeru jde zadat jen při ponechání obou částí.")
+    if lip is not None and keep != "both":
+        raise SplitError("Lem a drážka jdou jen při ponechání obou částí.")
 
     before = _volume(part)
     tolerance = _tolerance(before)
@@ -90,5 +225,7 @@ def apply(part: Part, plane: Plane, keep: str = "below", gap: float = 0.0) -> Pa
         return Part(Compound(list(upper.solids())).wrapped)
     if keep == "below":
         return Part(Compound(list(lower.solids())).wrapped)
+    if lip is not None:
+        lower, upper = _add_lip(lower, upper, plane, lip)
     moved = upper.moved(Location(plane.z_dir * gap)) if gap else upper
     return Part(Compound([*lower.solids(), *moved.solids()]).wrapped)

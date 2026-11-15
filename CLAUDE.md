@@ -569,6 +569,13 @@
   se třemi kruhovými skicami. Pravidlo pro krabičky: **skořepina před proměnným zaoblením**
   (po něm je neplatná), zaoblení na hotové skořepině jen do R ≈ 6,8 u stěny 2 mm.
 
+- (15. 11. 2026, pokyn autora „další rozšíření modelování“, výběr nechal na mně) **Rozříznutí a lem – P6.17/P6.18**
+  (`docs/p6-17-rozriznuti.md`, `docs/p6-18-lem-a-drazka.md`, `split.py`): prvek `split`, formát **37** jen s ním.
+  Rovina (`plane`, `offset`) ponechá `below` / `above` (strana normály) / `both` (dvě tělesa, horní se odsune o
+  `gap`). Součet objemů částí se ověří, rovina mimo díl se odmítne česky. U `both` jde přidat lem na základně
+  a drážku ve víčku (`lip_width`, `lip_height`, `lip_side`, `lip_clearance`) – odvozené z **obrysu řezu**, ne
+  z odkazu na plochu (ten by se po změně roviny nebo mezery rozbil). Ukázka `rozriznuta_krabicka.json`.
+
 ## Architektura (`src/skodacad/`)
 
 Etapa 06 (schválena autorem, sloučena v PR #15): `ndt/coverage.py` počítá plochy
@@ -639,6 +646,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | `draft.py` | úkos stěn (P6.11–P6.12): `validate` (struktura zápisu), `apply` (odmítnutí nepodporovaných ploch, volání `BRepOffsetAPI_DraftAngle`, **změření sklonu každé zadané plochy ve výsledku** přes `ModifiedShape` + `is_same`), `axis`, `neutral_from_face`, `DraftError`; prvek `draft` je ve `features.py`, z výběru ho vytváří `ModelSession._draft_from_selection` |
 | `rib.py` | žebro (P6.13–P6.14): `validate` (struktura zápisu), `build` (trasa → stěna dlouhá `reach`, odečtení těla, ponechání kusů ležících na trase, kontrola přečnívání a dotyku s tělesem), `RibError`; prvek `rib` ve `features.py` volá `ctx.apply(…, "add")` |
 | `boss.py` | sloupek (P6.15): `validate`, `build` (válec od roviny, odečtení těla, ponechání kusů na startovním bodě, kontrola přečnívání a dotyku, otvor jen do sloupku), `BossError`; prvek `boss` ve `features.py` volá `ctx.apply(…, "add")` |
+| `split.py` | rozříznutí rovinou (P6.17–P6.18): `validate`, `apply` (strany `Keep.TOP`/`BOTTOM`, součet objemů, odsunutí horní části o `gap`), `Lip` + `_add_lip` (lem z pásu podél obrysu řezu `_strips`, drážka o vůli širší a hlubší, kontrola objemu a počtu těles), `SplitError`; prvek `split` ve `features.py` |
 | `geometry_validation.py` | společná kontrola všech objemových složek a účinku operace; místní číselné výsledky, bez oprav tvaru a bez změny receptu |
 | `rebuild.py` | přepočet seznamu prvků, stavy `ok` / `error` / `skipped`, záznam operací prvků |
 | `properties.py`, `materials.py` | objem, povrch, hmotnost, těžiště |
@@ -1032,6 +1040,23 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 - Pole opakuje jen těleso žebra: kopie mimo materiál vznikne jako samostatné těleso („1 → 2“).
 - Prvek je v `VOLUME_FEATURES` a `REPEATABLE_FEATURES`; `new_feature` dává výchozí trasu
   `[[-15, 15], [15, 15]]` nad blokem 40 × 30 × 10 (aby byl první náhled vidět).
+
+## Známé pasti (rozříznutí a lem)
+
+- „Nad“ je strana **normály roviny**: u `XZ` je normála −Y, takže `above` = y menší než rovina.
+  Plochu dílu (`top` …) jako rovinu bere `_resolve_plane` stejně jako u skici.
+- `split` s `Keep.BOTH` je v OCCT přesný, ale prázdnou stranu vrací jako `Part` s 0 tělesy (ne `None`):
+  `_side` to vyhodnotí jako prázdnou a prvek hlásí „Rovina díl neprotíná“. Rovina přesně na povrchu
+  díl neprotíná taky.
+- Lem a drážka se berou z **rovinných ploch dolní části ležících v rovině řezu** (`_on_plane`), ne z odkazu:
+  proto přežijí změnu `V` i `M`. Pásy: `offset(Face(hole_wire), +w, Kind.INTERSECTION) − Face(hole)`
+  oříznuté sekcí; vnější pás `Face(outer) − offset(Face(outer), −w)`. `Face.offset` neexistuje – funkce
+  `offset(face, amount=…)` vrací `Sketch`.
+- Průnik dvou těles bez překryvu vrací v build123d **`None`**, ne prázdné těleso (test zapadnutí).
+- Počet těles po řezu není 1 – `check_modification` (shodný počet složek) se pro `split` nepoužívá, prvek
+  má vlastní kontrolu (`inspect_volume`, `split.apply`). Další prvky za rozříznutím (zaoblení, sražení) pracují
+  s oběma tělesy a kontrola shody počtu složek pro ně platí od nového stavu.
+- Ukázky se dvěma tělesy: obecný test ukázek zná výjimku `rozriznuta_krabicka` (2 tělesa).
 
 ## Známé pasti (sloupek)
 
@@ -2101,7 +2126,7 @@ je stále odložená; nenahrazovat ji tvrzením o provedeném ručním ověřen�
 | P3 import STEP | sloučeno (PR #46–48) | přijetí autorem, soubory z jiných CADů |
 | P4 výkresy | pracovní výkres sloučen (PR #49–58) | **P4.5 přejímka**: tisk, DXF v jiném CADu, oba OS |
 | P5 sestavy | polohy, vazby a kontroly sloučeny (PR #63, #65, #68); [technické ověření Macu a opravy](docs/p5-5-overeni-macos-2026-10-30.md) v PR #69 | ruční Windows/Excel přeskočeny pokynem autora; známé meze platí |
-| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, PR #140, `7e9a95a`, ověřeně vydané); [žebro](docs/p6-13-zebro.md) a [sloupek](docs/p6-15-sloupek.md) (v36, PR #141, `c53a0da`, ověřeně vydané); [P6.16](docs/p6-16-zaobleni-vice-hran-a-kruhy.md) uzavírá zbylé kandidáty jako meze s důvodem | P6.4 na autorském dílu výslovně přeskočena; rohy se stýkajícími hranami a řízený kruhový přechod nemají v jádře přesné řešení |
+| P6 pokročilé modelování | vybrané operace, režimy a CAD přehled stěny, [řízený přechod](docs/p6-7-rizeny-prechod.md) s vodítky (v34) a rukojeti implementovány; [úkos stěn](docs/p6-11-ukos-steny.md) (v35, PR #140, `7e9a95a`, ověřeně vydané); [žebro](docs/p6-13-zebro.md) a [sloupek](docs/p6-15-sloupek.md) (v36, PR #141, `c53a0da`, ověřeně vydané); [P6.16](docs/p6-16-zaobleni-vice-hran-a-kruhy.md) uzavírá zbylé kandidáty jako meze s důvodem; [rozříznutí a lem](docs/p6-17-rozriznuti.md) (v37, P6.17–P6.18, v PR) | P6.4 na autorském dílu výslovně přeskočena; rohy se stýkajícími hranami a řízený kruhový přechod nemají v jádře přesné řešení |
 | P7 ergonomie | implementační dávky P7.1–P7.47 vydané; [plán nového okna P7.48–P7.58](docs/p7-48-plan-noveho-okna.md), R1–R7 schválené, P7.48–P7.53 sloučené (PR #128), P7.54–P7.56 (vydání C, PR #130) a P7.57–P7.58 (vydání D, PR #131, `0a2f37b`) , P7.59 (PR #132), P7.60 (PR #133, `016cde7`) P7.61–P7.63 (PR #134, `a52f73b`) a responzivita P7.64–P7.67 (PR #135, `6da18ad`) ověřeně vydané, P7.68–P7.71 (PR #136, `a70e9c3`) ověřeně vydané, P7.72–P7.74 (PR #137, `1c8163c`) ověřeně vydané, P7.75–P7.77 (PR #138, `7d2a236`) ověřeně vydané, P7.78–P7.80 a P7.81–P7.82 v PR | P7.78–P7.82; zbývající rozdíly proti návrhu v [P7.58](docs/p7-58-ulozeni-a-srovnani.md); formální autorská přejímka P7.4 není prohlášena za hotovou |
 | P8 výkon/stabilizace | P8.1–P8.5 vydané; [P8.5 ověřené vydání](docs/p8-5-overeni-vydani.md) `e7f5e6d`, PR #119 | hosted Mac P8.5 výkon vynechán autorem; reprezentativní NDT přejímka následně přeskočena, odborná validace tím není hotová |
 | NDT-17 validace | nezahájeno | NDT-16 je mimo rozsah |
