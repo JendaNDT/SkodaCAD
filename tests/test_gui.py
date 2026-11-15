@@ -3879,6 +3879,26 @@ def test_rib_from_menu_previews_then_accepts_one_step(empty_window):
     assert w.session.document.features[-1]["type"] == "extrude"
 
 
+def test_split_from_menu_previews_two_bodies_then_accepts_one_step(empty_window):
+    """P6.17: nové rozříznutí z nabídky – náhled s výchozí rovinou uprostřed bloku."""
+    w = empty_window
+    build_box(w)  # blok 40 × 30 × 10
+    count = len(w.session._undo)
+    w.add_feature_actions["split"].trigger()
+    assert w.feature_preview is not None
+    expected = 40 * 30 * 10  # součet obou částí = původní objem
+    assert w.feature_preview.preview.session.properties.volume_mm3 == pytest.approx(
+        expected, abs=1e-6)
+    assert len(w.feature_preview.preview.session.result.part.solids()) == 2
+    w.feature_preview.accept_button.click()
+    assert len(w.session._undo) == count + 1
+    assert w.session.document.features[-1]["type"] == "split"
+    assert len(w.session.result.part.solids()) == 2
+    w.undo_action.trigger()
+    assert w.session.document.features[-1]["type"] == "extrude"
+    assert len(w.session.result.part.solids()) == 1
+
+
 def test_boss_from_menu_previews_then_accepts_one_step(empty_window):
     """P6.15: nový sloupek z nabídky – náhled s výchozími dvěma sloupky nad blokem."""
     import math

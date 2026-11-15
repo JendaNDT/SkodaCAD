@@ -62,6 +62,8 @@ AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 DRAFT_PULL_CHOICES = (("+Z", "+Z (nahoru)"), ("-Z", "−Z (dolů)"), ("+X", "+X"), ("-X", "−X"),
                       ("+Y", "+Y"), ("-Y", "−Y"))
 RIB_SIDE_CHOICES = (("left", "vlevo od trasy"), ("right", "vpravo od trasy"))
+SPLIT_KEEP_CHOICES = (("below", "část pod rovinou"), ("above", "část nad rovinou"),
+                      ("both", "obě části vedle sebe"))
 BOSS_DIRECTION_CHOICES = (("reverse", "proti normále roviny (dolů u roviny XY)"),
                           ("normal", "po normále roviny (nahoru u roviny XY)"))
 MODE_CHOICES = (("add", "přidat"), ("subtract", "odečíst (otvor)"))
@@ -297,6 +299,18 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                        "bodu k poslednímu). Přidá jen materiál mezi trasou a prvním materiálem; "
                        "trasa nesmí přečnívat přes okraj."),
         ), "Tenká stěna od zadané trasy až k tělesu, třeba výztuha uvnitř krabičky."),
+        Schema("split", "Rozříznutí rovinou", (
+            _NAME,
+            Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
+            Field("offset", "Posun roviny [mm]", "number", required=False),
+            Field("keep", "Ponechat", "choice", choices=SPLIT_KEEP_CHOICES, default="below",
+                  help="Nad rovinou je strana, kam míří její normála (u roviny XY nahoru, u "
+                       "XZ dozadu, u YZ doprava). Obě části vedle sebe dají dvě tělesa – třeba "
+                       "základnu a víčko krabičky."),
+            Field("gap", "Mezera mezi částmi [mm]", "number", required=False,
+                  help="Odsune horní část po normále roviny, ať jsou obě části od sebe.",
+                  when=("keep", "both")),
+        ), "Rozdělí díl rovinou na základnu a víčko, nebo ponechá jen jednu část."),
         Schema("boss", "Sloupek", (
             _NAME,
             Field("plane", "Rovina", "choice", choices=PLANE_CHOICES),
@@ -557,6 +571,8 @@ def new_feature(feature_type: str, existing: list[dict[str, Any]],
                        hole_diameter=3.2, direction="reverse")
     elif feature_type == "rib":  # krátká trasa nad deskou; strana a rovinu upraví uživatel
         feature.update(plane="XZ", points=[[-15, 15], [15, 15]], thickness=3, side="right")
+    elif feature_type == "split":  # rovina uprostřed bloku 40 × 30 × 10, obě části s mezerou
+        feature.update(plane="XY", offset=5, keep="both", gap=5)
     elif feature_type == "draft":  # plochy a neutrální rovinu doplní až výběr ve 3D
         feature.update(pull="+Z", angle=3, neutral=0)
     elif feature_type == "chamfer":

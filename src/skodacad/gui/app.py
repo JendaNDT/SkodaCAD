@@ -287,6 +287,7 @@ def _self_test_window(lines: list[str], model: Path | None) -> bool:
     ok = _self_test_draft(window, lines) and ok
     ok = _self_test_rib(window, lines) and ok
     ok = _self_test_boss(window, lines) and ok
+    ok = _self_test_split(window, lines) and ok
     ok = _self_test_workspace(window, lines) and ok
     ok = _self_test_cards(window, lines) and ok
     ok = _self_test_main_bar(window, lines) and ok
@@ -2156,6 +2157,49 @@ def _self_test_boss(window, lines: list[str]) -> bool:
         return True
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
         lines.append(f"✕ Sloupek: {type(exc).__name__}: {exc}")
+        window.session.dirty = False
+        return False
+
+
+def _self_test_split(window, lines: list[str]) -> bool:
+    """Rozříznutí v zabalené aplikaci: základna a víčko, objemy podle vzorce, Zpět, v37."""
+    from skodacad.document import Document
+
+    walls = 80 * 50 - 75 * 45
+
+    window.session.dirty = False
+    try:
+        if not window.open_model(examples_dir() / "rozriznuta_krabicka.json", template=True):
+            raise ValueError("ukázku nejde otevřít")
+        assert window.session.result.ok, window.session.result.first_error
+        part = window.session.result.part
+        assert len(part.solids()) == 2, "základna a víčko nejsou dvě tělesa"
+        total = 80 * 50 * 25 - 75 * 45 * 20
+        assert abs(part.volume - total) < 1e-6, (part.volume, total)
+        base, lid = sorted(part.solids(), key=lambda solid: solid.bounding_box().min.Z)
+        assert abs(base.volume - (80 * 50 * 2.5 + walls * 12.5)) < 1e-6, base.volume
+        assert abs(lid.volume - (walls * 7.5 + 80 * 50 * 2.5)) < 1e-6, lid.volume
+        window.session.set_parameter("V", "10")
+        assert window.session.result.ok, window.session.result.first_error
+        moved = sorted(window.session.result.part.solids(),
+                       key=lambda solid: solid.bounding_box().min.Z)[0]
+        assert abs(moved.bounding_box().max.Z - 10) < 1e-6, moved.bounding_box().max.Z
+        window.session.undo()
+        assert abs(window.session.result.part.volume - total) < 1e-6, "Zpět nevrátilo objem"
+        path = user_dir() / "self-test-rozrez.json"
+        window.session.document.save(path)
+        assert Document.load(path).to_dict()["version"] == 37
+        window._selected_id = "rez"
+        window._reload_all()
+        QApplication.processEvents()
+        if window.viewer.ready:
+            window.viewer.dump(str(user_dir() / "self-test-rozrez.png"))
+        lines.append(f"✓ Rozříznutí: základna {base.volume:.3f} + víčko {lid.volume:.3f} mm³ podle "
+                     "vzorce, změna roviny, Zpět a uložení v37")
+        window.session.dirty = False
+        return True
+    except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku
+        lines.append(f"✕ Rozříznutí: {type(exc).__name__}: {exc}")
         window.session.dirty = False
         return False
 

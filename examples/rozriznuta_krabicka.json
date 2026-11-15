@@ -1,0 +1,20 @@
+{
+  "format": "skodacad",
+  "version": 37,
+  "name": "Krabička rozříznutá na základnu a víčko",
+  "description": "Uzavřená krabička 80 × 50 × 25 se stěnami a dnem 2,5 mm a dutinou uvnitř. Rovina ve výšce V ji rozřízne na základnu a víčko; obě části zůstanou vedle sebe s mezerou M. Změň V (kde se řeže) nebo M. Přepni „Ponechat“ na jen jednu část, když potřebuješ třeba samotné víčko.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {"V": 15, "M": 8},
+  "features": [
+    {"id": "obrys", "type": "sketch", "name": "Obrys 80 × 50", "plane": "XY",
+     "elements": [{"shape": "rectangle", "width": 80, "height": 50}]},
+    {"id": "telo", "type": "extrude", "name": "Blok", "sketch": "obrys", "distance": 25},
+    {"id": "dutina_skica", "type": "sketch", "name": "Dutina 75 × 45", "plane": "XY",
+     "offset": 2.5, "elements": [{"shape": "rectangle", "width": 75, "height": 45}]},
+    {"id": "dutina", "type": "extrude", "name": "Dutina", "sketch": "dutina_skica",
+     "operation": "cut", "direction": "normal", "distance": 20},
+    {"id": "rez", "type": "split", "name": "Základna a víčko", "plane": "XY", "offset": "V",
+     "keep": "both", "gap": "M"}
+  ]
+}
