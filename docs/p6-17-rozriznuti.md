@@ -34,6 +34,9 @@ Navrhneš uzavřenou krabičku, rozříznuješ ji rovinou a máš základnu a v�
 | nativní self-test | „✓ Rozříznutí“ – základna 17 812,5 + víčko 14 687,5 mm³ podle vzorce |
 | ukázka [`rozriznuta_krabicka.json`](../examples/rozriznuta_krabicka.json) | uzavřená krabička 80 × 50 × 25 s dutinou, řez ve V = 15, mezera M = 8 |
 
+Snímky okna (Linux Xvfb, 1440 × 900): [karta prvku](p6-17-snimky/rozriznuti-karta-prvku.png),
+[základna s lemem a víčko nad ní](p6-17-snimky/rozriznuta-krabicka.png).
+
 ## Meze
 
 - Řez je jen **rovinou**; šikmá plocha nebo řez křivkou není součástí této verze.
