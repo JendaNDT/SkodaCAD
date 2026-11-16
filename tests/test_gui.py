@@ -3899,6 +3899,23 @@ def test_split_from_menu_previews_two_bodies_then_accepts_one_step(empty_window)
     assert len(w.session.result.part.solids()) == 1
 
 
+def test_split_card_offers_print_layout_and_accepts_it(empty_window):
+    """P6.19: pole Rozložení v kartě rozříznutí; po volbě „pro tisk“ leží víčko vedle základny."""
+    w = empty_window
+    build_box(w)  # blok 40 × 30 × 10
+    w.add_feature_actions["split"].trigger()
+    assert w.feature_preview is not None
+    form = w.feature_preview.editor.form
+    arrange = form.widget("arrange")
+    index = arrange.findData("print")
+    assert index >= 0
+    arrange.setCurrentIndex(index)
+    arrange.activated.emit(index)
+    QtWidgets.QApplication.processEvents()
+    feature = w.feature_preview.preview.session.feature(w.feature_preview.preview.feature_id)
+    assert feature.get("arrange") == "print"
+
+
 def test_boss_from_menu_previews_then_accepts_one_step(empty_window):
     """P6.15: nový sloupek z nabídky – náhled s výchozími dvěma sloupky nad blokem."""
     import math

@@ -54,7 +54,9 @@ def test_old_models_load_without_ndt_and_save_as_current_version(path, tmp_path)
     document = Document.load(path)
     assert document.ndt is None
     data = document.to_dict()
-    expected_version = (37 if any(f["type"] == "split" for f in document.features)
+    expected_version = (38 if any(f["type"] == "split" and f.get("arrange", "stack") != "stack"
+                                    for f in document.features)
+                        else 37 if any(f["type"] == "split" for f in document.features)
                         else 36 if any(f["type"] in ("rib", "boss") for f in document.features)
                         else 35 if any(f["type"] == "draft" for f in document.features)
                         else 34 if any(f["type"] == "guided_loft" for f in document.features)

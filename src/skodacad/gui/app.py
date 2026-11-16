@@ -2191,13 +2191,30 @@ def _self_test_split(window, lines: list[str]) -> bool:
         path = user_dir() / "self-test-rozrez.json"
         window.session.document.save(path)
         assert Document.load(path).to_dict()["version"] == 37
+        # rozložení pro tisk (P6.19): víčko otočené vedle základny, obě na úrovni dna
+        window.session.dirty = False  # jinak by otevření další ukázky čekalo na dotaz „uložit?“
+        if not window.open_model(examples_dir() / "krabicka_pro_tisk.json", template=True):
+            raise ValueError("ukázku pro tisk nejde otevřít")
+        assert window.session.result.ok, window.session.result.first_error
+        printed = sorted(window.session.result.part.solids(),
+                         key=lambda solid: solid.bounding_box().min.X)
+        assert len(printed) == 2, "rozložení pro tisk nemá dvě tělesa"
+        flat, turned = printed[0].bounding_box(), printed[1].bounding_box()
+        assert abs(flat.min.Z) < 1e-6 and abs(turned.min.Z) < 1e-6, "části nejsou na jedné desce"
+        assert abs(turned.max.Z - 10) < 1e-6, "víčko není otočené"
+        assert abs(turned.min.X - flat.max.X - 6) < 1e-6, (turned.min.X, flat.max.X)
+        path_print = user_dir() / "self-test-rozrez-tisk.json"
+        window.session.document.save(path_print)
+        assert Document.load(path_print).to_dict()["version"] == 38
+        window.session.dirty = False
+        assert window.open_model(examples_dir() / "rozriznuta_krabicka.json", template=True)
         window._selected_id = "rez"
         window._reload_all()
         QApplication.processEvents()
         if window.viewer.ready:
             window.viewer.dump(str(user_dir() / "self-test-rozrez.png"))
         lines.append(f"✓ Rozříznutí s lemem: základna {base.volume:.3f} + víčko {lid.volume:.3f} "
-                     "mm³ podle vzorce, změna roviny, Zpět a uložení v37")
+                     "mm³ podle vzorce, změna roviny, Zpět, uložení v37 a rozložení pro tisk (v38)")
         window.session.dirty = False
         return True
     except Exception as exc:  # noqa: BLE001 – uvést přesný důvod ve zprávě balíčku

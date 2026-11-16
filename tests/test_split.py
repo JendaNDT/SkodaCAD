@@ -382,3 +382,112 @@ def test_feature_with_lip_uses_parameters_default_clearance_and_summary():
                                        "parameters": {"W": 2.4}, "features": box_features()}))
     status = status_of(wide, "rez")
     assert status.status == "error" and "stejně široká" in status.message
+
+
+# --- rozložení pro tisk (P6.19) ------------------------------------------------------------
+
+
+def print_layout(gap=6.0, lip=None, plane=None, box=None):
+    result = split.apply(box or closed_box(), plane or Plane.XY.offset(15), "both", gap, lip,
+                         "print")
+    base, lid = sorted(result.solids(), key=lambda s: s.bounding_box().min.X)
+    return base, lid
+
+
+def test_print_layout_puts_the_lid_upside_down_beside_the_base_on_the_same_plate():
+    base, lid = print_layout(gap=6)
+    base_box, lid_box = base.bounding_box(), lid.bounding_box()
+    # základna beze změny (dno z = 0), víčko 80 × 50 × 10 otočené: strop na desce (z = 0)
+    assert (base_box.min.Z, base_box.max.Z) == pytest.approx((0, 15), abs=1e-6)
+    assert (lid_box.min.Z, lid_box.max.Z) == pytest.approx((0, 10), abs=1e-6)
+    # vedle ve směru X s mezerou 6 mm, vystředěné ve směru Y
+    assert lid_box.min.X - base_box.max.X == pytest.approx(6, abs=1e-6)
+    assert (lid_box.center().Y, base_box.center().Y) == pytest.approx((0, 0), abs=1e-6)
+    # objem obou částí se otočením a přesunem nezměnil
+    assert base.volume + lid.volume == pytest.approx(volume(closed_box()), abs=1e-6)
+    assert base.is_valid and lid.is_valid
+
+
+def test_print_layout_opens_the_lid_upwards_and_the_groove_faces_up():
+    base, lid = print_layout(gap=6, lip=split.Lip(1.2, 3, "inner", 0.2))
+    box = lid.bounding_box()
+    center = (box.center().X, box.center().Y)
+    top = box.max.Z  # otevřená strana (původní rovina řezu) je teď nahoře
+    assert top == pytest.approx(10, abs=1e-6)
+    # drážka je u dutiny (vnitřní pás 37,5 – 38,9 od osy), hluboká 3,2 mm od otevřené strany
+    in_groove = (center[0] + 38.2, center[1], top - 1.0)
+    in_wall = (center[0] + 39.5, center[1], top - 1.0)  # vnější půlka stěny zůstala
+    in_groove_deep = (center[0] + 38.2, center[1], top - 4.0)  # pod dnem drážky je materiál
+    assert not lid.is_inside(in_groove)
+    assert lid.is_inside(in_wall)
+    assert lid.is_inside(in_groove_deep)
+    # lem základny míří nahoru: nad pásem u dutiny je materiál, nad vnější půlkou stěny ne
+    assert base.bounding_box().max.Z == pytest.approx(18, abs=1e-6)
+    assert base.is_inside((38.2, 0, 16.5))  # základna je vystředěná v počátku
+    assert not base.is_inside((39.5, 0, 16.5))
+
+
+def test_print_layout_works_on_another_plane_with_axis_aligned_frame():
+    # řez rovinou XZ (normála −Y): víčko leží vedle základny ve směru X roviny, na úrovni dna
+    base, lid = print_layout(gap=4, plane=Plane.XZ.offset(5), box=BLOCK)
+    assert len(base.solids()) == len(lid.solids()) == 1
+    assert base.volume + lid.volume == pytest.approx(volume(BLOCK), abs=1e-6)
+    assert lid.bounding_box().min.X - base.bounding_box().max.X == pytest.approx(4, abs=1e-6)
+    # „nad“ rovinou XZ (y = −5, normála −Y) je pás y < −5 široký 15; po otočení leží strop
+    # na úrovni dna základny (z = 0) a víčko u vzdálenějšího konce základny (y 5…20)
+    lid_box = lid.bounding_box()
+    assert (lid_box.min.Z, lid_box.max.Z) == pytest.approx((0, 20), abs=1e-6)
+    assert (lid_box.min.Y, lid_box.max.Y) == pytest.approx((5, 20), abs=1e-6)
+
+
+def test_print_layout_needs_both_parts_axis_aligned_plane_and_validates():
+    with pytest.raises(split.SplitError, match="obou částí"):
+        split.apply(closed_box(), Plane.XY.offset(15), "below", 0, None, "print")
+    with pytest.raises(split.SplitError, match="Rozložení"):
+        split.apply(closed_box(), Plane.XY.offset(15), "both", 0, None, "grid")
+    tilted = Plane(origin=(0, 0, 15), z_dir=(0.2, 0, 1))
+    with pytest.raises(split.SplitError, match="rovnoběžnou s osami"):
+        split.apply(closed_box(), tilted, "both", 0, None, "print")
+    base = {"id": "r", "type": "split", "plane": "XY", "offset": 15, "keep": "both"}
+    split.validate({**base, "arrange": "print"})
+    with pytest.raises(split.SplitError, match="Rozložení"):
+        split.validate({**base, "arrange": "grid"})
+    with pytest.raises(split.SplitError, match="obou částí"):
+        split.validate({**base, "keep": "below", "arrange": "print"})
+
+
+def test_print_layout_feature_needs_format_38_and_example_matches_formula():
+    document = Document.from_dict(block_document([split_feature(keep="both", gap=5,
+                                                                arrange="print")]))
+    assert document.to_dict()["version"] == 38
+    data = block_document([split_feature(keep="both", arrange="print")])
+    data["version"] = 37
+    with pytest.raises(DocumentError, match="verze 38"):
+        Document.from_dict(data)
+    # starý zápis (stack) zůstává ve verzi 37
+    plain = Document.from_dict(block_document([split_feature(keep="both")]))
+    assert plain.to_dict()["version"] == 37
+    assert tree_summary(split_feature(keep="both", arrange="print"), {}) == "pro tisk"
+    assert tree_summary(split_feature(keep="both", arrange="print", lip_width=1, lip_height=2),
+                        {}) == "pro tisk s lemem"
+    result = rebuild(document)
+    assert all(item.status == "ok" for item in result.statuses), result.statuses
+    base, lid = sorted(result.part.solids(), key=lambda s: s.bounding_box().min.X)
+    assert lid.bounding_box().min.X - base.bounding_box().max.X == pytest.approx(5, abs=1e-6)
+
+
+def test_example_box_for_print_matches_formula():
+    document = Document.load("examples/krabicka_pro_tisk.json")
+    result = rebuild(document)
+    assert all(item.status == "ok" for item in result.statuses), result.statuses
+    assert document.to_dict()["version"] == 38
+    tongue = (77.4 * 47.4 - 75 * 45) * 3
+    groove = (77.8 * 47.8 - 75 * 45) * 3.2
+    base, lid = sorted(result.part.solids(), key=lambda s: s.bounding_box().min.X)
+    walls = 80 * 50 - 75 * 45
+    assert base.volume == pytest.approx(80 * 50 * 2.5 + walls * 12.5 + tongue, abs=1e-6)
+    assert lid.volume == pytest.approx(walls * 7.5 + 80 * 50 * 2.5 - groove, abs=1e-6)
+    # obě části na jedné desce (dno z = 0), víčko otočené (výška 10) a 6 mm od základny
+    assert base.bounding_box().min.Z == pytest.approx(0, abs=1e-6)
+    assert (lid.bounding_box().min.Z, lid.bounding_box().max.Z) == pytest.approx((0, 10), abs=1e-6)
+    assert lid.bounding_box().min.X - base.bounding_box().max.X == pytest.approx(6, abs=1e-6)

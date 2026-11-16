@@ -62,6 +62,8 @@ AXIS_CHOICES = (("X", "osa X"), ("Y", "osa Y"), ("Z", "osa Z"))
 DRAFT_PULL_CHOICES = (("+Z", "+Z (nahoru)"), ("-Z", "−Z (dolů)"), ("+X", "+X"), ("-X", "−X"),
                       ("+Y", "+Y"), ("-Y", "−Y"))
 RIB_SIDE_CHOICES = (("left", "vlevo od trasy"), ("right", "vpravo od trasy"))
+SPLIT_ARRANGE_CHOICES = (("stack", "nad sebou (víčko nad základnou)"),
+                         ("print", "pro tisk (víčko otočené vedle základny)"))
 SPLIT_LIP_SIDE_CHOICES = (("inner", "vnitřní okraj řezu (u dutiny)"),
                           ("outer", "vnější okraj řezu"))
 SPLIT_KEEP_CHOICES = (("below", "část pod rovinou"), ("above", "část nad rovinou"),
@@ -309,8 +311,14 @@ FEATURE_SCHEMAS: dict[str, Schema] = {
                   help="Nad rovinou je strana, kam míří její normála (u roviny XY nahoru, u "
                        "XZ dozadu, u YZ doprava). Obě části vedle sebe dají dvě tělesa – třeba "
                        "základnu a víčko krabičky."),
+            Field("arrange", "Rozložení", "choice", choices=SPLIT_ARRANGE_CHOICES,
+                  default="stack", required=False, when=("keep", "both"),
+                  help="Pro tisk: víčko se otočí otevřenou stranou nahoru, položí na úroveň "
+                       "dna základny a odsune vedle ní ve směru osy X roviny – obě části jdou "
+                       "vytisknout na jedné desce."),
             Field("gap", "Mezera mezi částmi [mm]", "number", required=False,
-                  help="Odsune horní část po normále roviny, ať jsou obě části od sebe.",
+                  help="Nad sebou: odsune horní část po normále roviny. Pro tisk: mezera mezi "
+                       "základnou a otočeným víčkem.",
                   when=("keep", "both")),
             Field("lip_width", "Šířka lemu [mm]", "number", required=False, when=("keep", "both"),
                   help="Prázdné = bez lemu. Na základně vznikne lem podél okraje řezu (pás "

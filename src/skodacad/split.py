@@ -12,6 +12,10 @@ ve víčku. Oba se odvodí z obrysu řezu (průřez stěn rovinou), takže se s 
 samy a nepotřebují odkazy na plochy. Lem je pás šířky ``width`` podél vnitřního (``inner``) nebo
 vnějšího (``outer``) okraje řezu, vysoký ``height``; drážka je týž pás o ``clearance`` širší
 a hlubší.
+
+Rozložení pro tisk (P6.19): při ``arrange`` ``print`` se víčko otočí o 180° kolem osy roviny řezu
+(otevřená strana nahoru, strop na desce), položí na stejnou úroveň jako dno základny a odsune
+vedle ní o ``gap``. Obě části tak jdou rovnou vytisknout na jedné desce.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from build123d import (
+    Axis,
     Compound,
     Face,
     GeomType,
@@ -36,7 +41,8 @@ from build123d import (
 
 KEEP = ("above", "below", "both")
 FEATURE_KEYS = {"id", "type", "name", "plane", "offset", "keep", "gap", "lip_width",
-                "lip_height", "lip_side", "lip_clearance"}
+                "lip_height", "lip_side", "lip_clearance", "arrange"}
+ARRANGE = ("stack", "print")
 LIP_SIDES = ("inner", "outer")
 DEFAULT_CLEARANCE = 0.2  # mm, běžná vůle pro tisk FDM
 SIDE_NAMES = {"above": "nad rovinou", "below": "pod rovinou"}
@@ -62,6 +68,12 @@ def validate(feature: dict[str, Any]) -> None:
             raise SplitError("Mezeru („gap“) jde zadat jen při ponechání obou částí („both“).")
         if isinstance(gap, bool) or not isinstance(gap, (int, float, str)):
             raise SplitError("„gap“ musí být číslo nebo výraz.")
+    arrange = feature.get("arrange", "stack")
+    if arrange not in ARRANGE:
+        raise SplitError("Rozložení („arrange“) musí být „stack“ (nad sebou) nebo „print“ "
+                         "(pro tisk vedle sebe).")
+    if arrange == "print" and keep != "both":
+        raise SplitError("Rozložení pro tisk jde jen při ponechání obou částí („both“).")
     width = feature.get("lip_width")
     if width in (None, ""):
         for key in ("lip_height", "lip_side", "lip_clearance"):
@@ -192,11 +204,41 @@ def _part(solids: list[Any]) -> Part:
     return Part(Compound(solids).wrapped)
 
 
+def _along(shape: Part, direction: Any) -> tuple[float, float]:
+    """Nejmenší a největší souřadnice tvaru ve směru ``direction`` (obalový kvádr, osový směr)."""
+    box = shape.bounding_box()
+    values = [(x * direction.X + y * direction.Y + z * direction.Z)
+              for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
+              for z in (box.min.Z, box.max.Z)]
+    return min(values), max(values)
+
+
+def _print_layout(lower: Part, upper: Part, plane: Plane, gap: float) -> Part:
+    """Víčko otočené o 180° kolem osy X roviny řezu (otevřená strana nahoru) na úrovni dna
+    základny, vedle ní ve směru X roviny s mezerou ``gap``, vystředěné ve směru Y roviny."""
+    for axis in (plane.x_dir, plane.y_dir, plane.z_dir):
+        if max(abs(axis.X), abs(axis.Y), abs(axis.Z)) < 1 - 1e-9:
+            raise SplitError("Rozložení pro tisk potřebuje rovinu rovnoběžnou s osami souřadnic.")
+    turned = upper.rotate(Axis(plane.origin, plane.x_dir), 180)
+    low_x1, turn_x0 = _along(lower, plane.x_dir)[1], _along(turned, plane.x_dir)[0]
+    (low_y0, low_y1), (turn_y0, turn_y1) = _along(lower, plane.y_dir), _along(turned, plane.y_dir)
+    (low_z0, _), (turn_z0, _) = _along(lower, plane.z_dir), _along(turned, plane.z_dir)
+    shift = (plane.x_dir * (low_x1 + gap - turn_x0)
+             + plane.y_dir * ((low_y0 + low_y1) / 2 - (turn_y0 + turn_y1) / 2)
+             + plane.z_dir * (low_z0 - turn_z0))
+    placed = turned.moved(Location(shift))
+    return _part([*lower.solids(), *placed.solids()])
+
+
 def apply(part: Part, plane: Plane, keep: str = "below", gap: float = 0.0,
-          lip: Lip | None = None) -> Part:
+          lip: Lip | None = None, arrange: str = "stack") -> Part:
     """Díl rozříznutý rovinou ``plane``: ``above`` ponechá stranu po normále, ``below`` opačnou,
     ``both`` obě (horní se odsune po normále o ``gap``). ``lip`` přidá u ``both`` lem na dolní
-    části a drážku v horní."""
+    části a drážku v horní. ``arrange`` ``print`` položí víčko otočené vedle základny."""
+    if arrange not in ARRANGE:
+        raise SplitError("Rozložení musí být „stack“ (nad sebou) nebo „print“ (pro tisk).")
+    if arrange == "print" and keep != "both":
+        raise SplitError("Rozložení pro tisk jde jen při ponechání obou částí.")
     if keep not in KEEP:
         raise SplitError("Ponechaná část musí být „above“, „below“ nebo „both“.")
     if not isinstance(gap, (int, float)) or not math.isfinite(gap) or gap < 0 or gap > MAX_GAP:
@@ -227,5 +269,7 @@ def apply(part: Part, plane: Plane, keep: str = "below", gap: float = 0.0,
         return Part(Compound(list(lower.solids())).wrapped)
     if lip is not None:
         lower, upper = _add_lip(lower, upper, plane, lip)
+    if arrange == "print":
+        return _print_layout(lower, upper, plane, gap)
     moved = upper.moved(Location(plane.z_dir * gap)) if gap else upper
     return Part(Compound([*lower.solids(), *moved.solids()]).wrapped)

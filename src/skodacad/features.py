@@ -976,7 +976,8 @@ def build_split(ctx: BuildContext, feature: dict[str, Any]) -> None:
                 ctx.positive(feature, "lip_height", "Výška lemu"),
                 feature.get("lip_side", "inner"),
                 ctx.num(clearance) if clearance not in (None, "") else split.DEFAULT_CLEARANCE)
-        candidate = split.apply(part, plane, feature.get("keep", "below"), gap, lip)
+        candidate = split.apply(part, plane, feature.get("keep", "below"), gap, lip,
+                                feature.get("arrange", "stack"))
         after = inspect_volume(candidate)
     except (split.SplitError, GeometryValidationError) as exc:
         raise FeatureError(f"{label}: {exc}") from None
@@ -1321,6 +1322,8 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
     if kind == "split":
         text = {"above": "nad rovinou", "below": "pod rovinou",
                 "both": "obě části"}.get(feature.get("keep", "below"), "")
+        if feature.get("arrange") == "print":
+            text = "pro tisk"  # krátký popis: dlouhý text by zkrátil názvy ostatních řádků stromu
         return text + (" s lemem" if feature.get("lip_width") not in (None, "") else "")
     if kind == "draft" and "angle" in feature:
         return f"{_plain(feature['angle'], params)}°"
