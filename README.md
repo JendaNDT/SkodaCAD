@@ -1258,7 +1258,7 @@ Každý prvek má jedinečné `id`, `type` a volitelně český `name` pro výpi
 | `draft` | úkos stěn kolem neutrální roviny | `faces` (odkazy `{at, normal, type, origin}`), `pull` (`+Z` …), `angle` (±30°), `neutral` (souřadnice v mm nebo rovinná plocha) – verze 35 |
 | `rib` | žebro – tenká stěna od trasy až k tělesu | `plane`, `offset`, `points` (otevřená trasa `[[x, y], …]`, aspoň 2 body), `thickness`, `side` (`left`/`right`) – verze 36 |
 | `boss` | sloupek – válec od roviny až k tělesu | `plane`, `offset`, `positions` (`[[x, y], …]`), `diameter`, `hole_diameter` (jen do sloupku), `hole_depth`, `direction` (`reverse`/`normal`) – verze 36 |
-| `split` | rozříznutí dílu rovinou na základnu a víčko | `plane`, `offset`, `keep` (`below`/`above`/`both`), `gap` (mezera mezi částmi, jen s `both`), `lip_width`, `lip_height`, `lip_side` (`inner`/`outer`), `lip_clearance` (lem a drážka, jen s `both`) – verze 37 |
+| `split` | rozříznutí dílu rovinou na základnu a víčko | `plane`, `offset`, `keep` (`below`/`above`/`both`), `gap` (mezera mezi částmi, jen s `both`), `lip_width`, `lip_height`, `lip_side` (`inner`/`outer`), `lip_clearance` (lem a drážka, jen s `both`), `arrange` (`stack`/`print`, jen s `both`) – verze 37, s `arrange: print` verze 38 |
 | `chamfer` | sražení hran | `edges`, `distance` |
 | `shell` | skořepina (vydlabání) | `thickness`, `open_faces` (např. `["top"]`) |
 | `hole` | díra podle tabulek | `kind`, `size` (`"M6"`), `fit`, `plane`, `offset`, `positions` (`[[x, y], …]`), `depth` nebo `through_all`, `thread_depth`, `diameter` (vlastní průměr), `modeled_thread` (`true` = vymodelovaný závit), `print_clearance` |
@@ -1307,8 +1307,9 @@ nový výběr. Tyto pojistky se nesmějí odhadovat ani automaticky opravovat v 
 Formulář je zachovává při úpravě poloměrů. Pole a zrcadlení tento dokončovací prvek
 neopakují. Dokument s tímto prvkem se ukládá ve **verzi 32**, pokud neobsahuje
 výslovný režim stěny loftu (pak verze 33), řízený přechod (pak verze 34) nebo úkos stěn
-(pak verze 35), žebro nebo sloupek (pak verze 36) či rozříznutí rovinou (pak verze 37). Ostatní díly
-nadále používají nejnižší potřebnou verzi 24–28; verze 1–37 se stále načítají.
+(pak verze 35), žebro nebo sloupek (pak verze 36), rozříznutí rovinou (pak verze 37) či jeho rozložení pro tisk
+(pak verze 38). Ostatní díly nadále používají nejnižší potřebnou verzi 24–28; verze 1–38 se stále
+načítají.
 
 ### Úkos stěn (`draft`, verze 35)
 
@@ -1398,9 +1399,19 @@ a drážka nesmí být hlubší než stěna víčka, jinak se prvek odmítne.
  "lip_width": 1.2, "lip_height": 3, "lip_side": "inner", "lip_clearance": 0.2}
 ```
 
+**Rozložení pro tisk** (`arrange: "print"`, jen s `both`, verze 38): víčko se otočí o 180° kolem osy
+X roviny řezu, takže je otevřenou stranou nahoru a stropem na desce, položí se na úroveň dna základny
+a odsune vedle ní ve směru X roviny o `gap` (vystředěné ve směru Y roviny). Obě části jdou vytisknout
+najednou na jedné desce. Rovina řezu musí být rovnoběžná s osami souřadnic.
+
+```json
+{"id": "rez", "type": "split", "plane": "XY", "offset": 15, "keep": "both", "gap": 6,
+ "arrange": "print", "lip_width": 1.2, "lip_height": 3}
+```
+
 Řez je přesný a objem se vždy ověří: součet částí musí dát původní objem. Rovina, která díl
 **neprotíná** (celý díl by zůstal, nebo by nezbylo nic), se odmítne s českou radou. Prvek neopakuje
-pole ani zrcadlení. Ukázka: *Soubor → Otevřít ukázku → rozriznuta_krabicka*.
+pole ani zrcadlení. Ukázky: *Soubor → Otevřít ukázku → rozriznuta_krabicka* (nad sebou) a *krabicka_pro_tisk*.
 
 ### Význam stěny loftu (`wall_mode`, verze 33)
 

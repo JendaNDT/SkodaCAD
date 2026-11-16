@@ -34,7 +34,9 @@ def test_all_example_recipes_round_trip_without_aliasing_or_source_write(path, t
     loaded.save(destination)
     restored = Document.load(destination)
     assert restored == expected
-    expected_version = (37 if any(f["type"] == "split" for f in restored.features)
+    expected_version = (38 if any(f["type"] == "split" and f.get("arrange", "stack") != "stack"
+                                    for f in restored.features)
+                        else 37 if any(f["type"] == "split" for f in restored.features)
                         else 36 if any(f["type"] in ("rib", "boss") for f in restored.features)
                         else 35 if any(f["type"] == "draft" for f in restored.features)
                         else 34 if any(f["type"] == "guided_loft" for f in restored.features)

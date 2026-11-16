@@ -1,0 +1,71 @@
+{
+  "format": "skodacad",
+  "version": 38,
+  "name": "Krabička rozložená pro tisk",
+  "description": "Stejná uzavřená krabička 80 × 50 × 25 jako v ukázce rozříznutí, ale rozložená pro tisk: víčko je otočené otevřenou stranou nahoru (strop na desce), leží na úrovni dna základny a vedle ní s mezerou M. Základna má vnitřní lem W × H, víčko odpovídající drážku. Obě části jdou vytisknout najednou na jedné desce; změň V, M, W nebo H.",
+  "units": "mm",
+  "material": "PETG",
+  "parameters": {
+    "V": 15,
+    "M": 6,
+    "W": 1.2,
+    "H": 3
+  },
+  "features": [
+    {
+      "id": "obrys",
+      "type": "sketch",
+      "name": "Obrys 80 × 50",
+      "plane": "XY",
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": 80,
+          "height": 50
+        }
+      ]
+    },
+    {
+      "id": "telo",
+      "type": "extrude",
+      "name": "Blok",
+      "sketch": "obrys",
+      "distance": 25
+    },
+    {
+      "id": "dutina_skica",
+      "type": "sketch",
+      "name": "Dutina 75 × 45",
+      "plane": "XY",
+      "offset": 2.5,
+      "elements": [
+        {
+          "shape": "rectangle",
+          "width": 75,
+          "height": 45
+        }
+      ]
+    },
+    {
+      "id": "dutina",
+      "type": "extrude",
+      "name": "Dutina",
+      "sketch": "dutina_skica",
+      "operation": "cut",
+      "direction": "normal",
+      "distance": 20
+    },
+    {
+      "id": "rez",
+      "type": "split",
+      "name": "Základna a víčko pro tisk",
+      "plane": "XY",
+      "offset": "V",
+      "keep": "both",
+      "gap": "M",
+      "lip_width": "W",
+      "lip_height": "H",
+      "arrange": "print"
+    }
+  ]
+}
