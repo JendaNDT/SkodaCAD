@@ -467,7 +467,9 @@ def test_print_layout_feature_needs_format_38_and_example_matches_formula():
     # starý zápis (stack) zůstává ve verzi 37
     plain = Document.from_dict(block_document([split_feature(keep="both")]))
     assert plain.to_dict()["version"] == 37
-    assert tree_summary(split_feature(keep="both", arrange="print"), {}) == "obě části, pro tisk"
+    assert tree_summary(split_feature(keep="both", arrange="print"), {}) == "pro tisk"
+    assert tree_summary(split_feature(keep="both", arrange="print", lip_width=1, lip_height=2),
+                        {}) == "pro tisk s lemem"
     result = rebuild(document)
     assert all(item.status == "ok" for item in result.statuses), result.statuses
     base, lid = sorted(result.part.solids(), key=lambda s: s.bounding_box().min.X)

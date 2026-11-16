@@ -2192,6 +2192,7 @@ def _self_test_split(window, lines: list[str]) -> bool:
         window.session.document.save(path)
         assert Document.load(path).to_dict()["version"] == 37
         # rozložení pro tisk (P6.19): víčko otočené vedle základny, obě na úrovni dna
+        window.session.dirty = False  # jinak by otevření další ukázky čekalo na dotaz „uložit?“
         if not window.open_model(examples_dir() / "krabicka_pro_tisk.json", template=True):
             raise ValueError("ukázku pro tisk nejde otevřít")
         assert window.session.result.ok, window.session.result.first_error
@@ -2205,6 +2206,7 @@ def _self_test_split(window, lines: list[str]) -> bool:
         path_print = user_dir() / "self-test-rozrez-tisk.json"
         window.session.document.save(path_print)
         assert Document.load(path_print).to_dict()["version"] == 38
+        window.session.dirty = False
         assert window.open_model(examples_dir() / "rozriznuta_krabicka.json", template=True)
         window._selected_id = "rez"
         window._reload_all()

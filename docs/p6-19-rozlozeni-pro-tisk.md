@@ -32,6 +32,8 @@ U rozříznutí s `keep: both` přibyla volba **Rozložení**:
 | `tests/test_gui.py` (+1) | pole „Rozložení“ v kartě, volba „pro tisk“ se uloží do prvku |
 | nativní self-test | „✓ Rozříznutí s lemem … a rozložení pro tisk (v38)“ |
 
+Snímek okna: [základna a víčko rozložené pro tisk](p6-17-snimky/krabicka-pro-tisk.png).
+
 ## Meze
 
 - Víčko se otáčí kolem osy X roviny řezu a klade se vedle základny ve směru X; jiný směr nebo

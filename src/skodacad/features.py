@@ -1322,8 +1322,9 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
     if kind == "split":
         text = {"above": "nad rovinou", "below": "pod rovinou",
                 "both": "obě části"}.get(feature.get("keep", "below"), "")
-        text += " s lemem" if feature.get("lip_width") not in (None, "") else ""
-        return text + (", pro tisk" if feature.get("arrange") == "print" else "")
+        if feature.get("arrange") == "print":
+            text = "pro tisk"  # krátký popis: dlouhý text by zkrátil názvy ostatních řádků stromu
+        return text + (" s lemem" if feature.get("lip_width") not in (None, "") else "")
     if kind == "draft" and "angle" in feature:
         return f"{_plain(feature['angle'], params)}°"
     if kind == "chamfer" and "distance" in feature:
