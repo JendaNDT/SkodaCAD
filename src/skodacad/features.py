@@ -50,7 +50,7 @@ from build123d import (
     sweep,
 )
 
-from skodacad import boss, draft, guided_loft, rib, variable_fillet
+from skodacad import boss, draft, guided_loft, rib, split, variable_fillet
 from skodacad.direct_edit import DirectEditError, check_origin, set_diameter
 from skodacad.direct_edit import move_face as direct_move_face
 from skodacad.expressions import evaluate
@@ -233,7 +233,8 @@ FEATURE_TYPES: dict[str, FeatureType] = {}
 VOLUME_FEATURES = frozenset(("extrude", "revolve", "sweep", "loft", "guided_loft",
                              "standard", "hole",
                              "pattern", "mirror", "fillet", "variable_fillet", "chamfer", "shell",
-                             "move_face", "face_diameter", "step_import", "draft", "rib", "boss"))
+                             "move_face", "face_diameter", "step_import", "draft", "rib", "boss",
+                             "split"))
 
 
 def feature(name: str, label_cz: str):
@@ -956,6 +957,34 @@ def build_rib(ctx: BuildContext, feature: dict[str, Any]) -> None:
     ctx.apply(solid, "add", label, empty_add="změň trasu nebo stranu žebra")
 
 
+@feature("split", "Rozříznutí rovinou")
+def build_split(ctx: BuildContext, feature: dict[str, Any]) -> None:
+    """Rozdělí díl rovinou a ponechá část nad ní, pod ní, nebo obě (návrh P6.17). Součet objemů
+    částí se ověří; rovina, která díl neprotíná, se odmítne."""
+    label = "Rozříznutí"
+    part, before = _modification_input(ctx, label)
+    try:
+        split.validate(feature)
+        plane = _resolve_plane(ctx, feature)
+        gap_value = feature.get("gap")
+        gap = ctx.num(gap_value) if gap_value not in (None, "") else 0.0
+        lip = None
+        if feature.get("lip_width") not in (None, ""):
+            clearance = feature.get("lip_clearance")
+            lip = split.Lip(
+                ctx.positive(feature, "lip_width", "Šířka lemu"),
+                ctx.positive(feature, "lip_height", "Výška lemu"),
+                feature.get("lip_side", "inner"),
+                ctx.num(clearance) if clearance not in (None, "") else split.DEFAULT_CLEARANCE)
+        candidate = split.apply(part, plane, feature.get("keep", "below"), gap, lip)
+        after = inspect_volume(candidate)
+    except (split.SplitError, GeometryValidationError) as exc:
+        raise FeatureError(f"{label}: {exc}") from None
+    if feature.get("keep", "below") == "both" and after.solids < 2:
+        raise FeatureError(f"{label}: po řezu zůstala jediná část – rovina díl neprotíná.")
+    ctx.part = candidate
+
+
 @feature("boss", "Sloupek")
 def build_boss(ctx: BuildContext, feature: dict[str, Any]) -> None:
     """Válcové sloupky od roviny až k tělesu (návrh P6.15); otvor jen do sloupku, žádné
@@ -1289,6 +1318,10 @@ def tree_summary(feature: dict[str, Any], params: dict[str, float] | None = None
         return f"Ø{_plain(feature['diameter'], params)}" + (f" ×{count}" if count > 1 else "")
     if kind == "rib" and "thickness" in feature:
         return f"{_plain(feature['thickness'], params)} mm"
+    if kind == "split":
+        text = {"above": "nad rovinou", "below": "pod rovinou",
+                "both": "obě části"}.get(feature.get("keep", "below"), "")
+        return text + (" s lemem" if feature.get("lip_width") not in (None, "") else "")
     if kind == "draft" and "angle" in feature:
         return f"{_plain(feature['angle'], params)}°"
     if kind == "chamfer" and "distance" in feature:

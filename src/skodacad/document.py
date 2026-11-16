@@ -69,9 +69,10 @@ FORMAT = "skodacad"
 # Verze 34: řízený obdélníkový přechod se čtyřmi kubickými vodítky (guided_loft).
 # Verze 35: úkos stěn (draft, návrh docs/p6-11-ukos-steny.md).
 # Verze 36: žebro (rib, návrh docs/p6-13-zebro.md) a sloupek (boss, docs/p6-15-sloupek.md).
-VERSION = 36
+# Verze 37: rozříznutí dílu rovinou (split, návrh docs/p6-17-rozriznuti.md).
+VERSION = 37
 SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36)
+                      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37)
 ASSEMBLY_KIND = "assembly"
 
 
@@ -177,6 +178,16 @@ class Document:
                 try:
                     validate_draft(feature)
                 except DraftError as exc:
+                    raise DocumentError(str(exc)) from None
+            if feature["type"] == "split":
+                if version < 37:
+                    raise DocumentError("Rozříznutí rovinou vyžaduje formát modelu verze 37.")
+                from skodacad.split import SplitError
+                from skodacad.split import validate as validate_split
+
+                try:
+                    validate_split(feature)
+                except SplitError as exc:
                     raise DocumentError(str(exc)) from None
             if feature["type"] == "boss":
                 if version < 36:
@@ -289,7 +300,8 @@ class Document:
     def to_dict(self) -> dict[str, Any]:
         data = {
             "format": FORMAT,
-            "version": (36 if any(f.get("type") in ("rib", "boss") for f in self.features)
+            "version": (37 if any(f.get("type") == "split" for f in self.features)
+                else 36 if any(f.get("type") in ("rib", "boss") for f in self.features)
                 else 35 if any(f.get("type") == "draft" for f in self.features)
                 else 34 if any(f.get("type") == "guided_loft" for f in self.features)
                 else 33 if any(f.get("type") == "loft" and "wall_mode" in f

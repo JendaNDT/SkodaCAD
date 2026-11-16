@@ -19,7 +19,8 @@ def test_examples_are_found():
 def test_examples_build_and_export_everything(examples_dir, tmp_path, name):
     result = rebuild(Document.load(examples_dir / f"{name}.json"))
     assert result.ok, [(s.label, s.message) for s in result.statuses if s.status != "ok"]
-    assert len(result.part.solids()) == 1
+    # ukázka s rozříznutím (P6.17) má záměrně dvě tělesa: základnu a víčko
+    assert len(result.part.solids()) == (2 if name == "rozriznuta_krabicka" else 1)
     for fmt in FORMATS:
         path = export(result.part, tmp_path / f"{name.replace('/', '_')}.{fmt}")
         assert path.stat().st_size > 0
